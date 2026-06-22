@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Deep.Client.Maui.Pages.WelcomePage"
+    AutomationId="Page.Welcome"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
+    x:DataType="vm:WelcomeViewModel"
+    BackgroundColor="{StaticResource PageBackground}"
+    Shell.NavBarIsVisible="False"
+    Title="Добро пожаловать">
+    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="*,Auto,Auto,*" RowSpacing="20" BackgroundColor="{StaticResource PageBackground}">
+        <VerticalStackLayout Grid.Row="1" Spacing="8" HorizontalOptions="Fill">
+            <Label Text="DEEP" FontSize="36" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+            <Label Text="Приватные сообщения через сеть сервисных нод." FontSize="15" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+        </VerticalStackLayout>
+
+        <VerticalStackLayout Grid.Row="2" Spacing="12">
+            <Entry AutomationId="Welcome.DisplayName" Placeholder="Имя профиля" Text="{Binding DisplayName}" />
+            <Button AutomationId="Welcome.Create" Text="Создать аккаунт" Command="{Binding CreateAccountCommand}" />
+            <Button AutomationId="Welcome.Restore" Text="Восстановить по фразе" Clicked="OnRestoreClicked" Style="{StaticResource SecondaryButton}" />
+            <Label AutomationId="Welcome.Error" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="13" />
+        </VerticalStackLayout>
+    </Grid>
+</ContentPage>

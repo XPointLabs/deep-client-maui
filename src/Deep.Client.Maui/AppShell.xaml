@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<Shell
+    x:Class="Deep.Client.Maui.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:pages="clr-namespace:Deep.Client.Maui.Pages"
+    BackgroundColor="{StaticResource PageBackground}"
+    FlyoutBehavior="Disabled"
+    Shell.BackgroundColor="{StaticResource PageBackground}"
+    Shell.ForegroundColor="{StaticResource TextPrimary}">
+    <ShellContent
+        x:Name="OnboardingTab"
+        AutomationId="Tab.Onboarding"
+        Title="Welcome"
+        Route="onboarding"
+        ContentTemplate="{DataTemplate pages:WelcomePage}" />
+
+    <ShellContent
+        x:Name="ConversationsTab"
+        AutomationId="Root.Conversations"
+        IsVisible="False"
+        Title="Диалоги"
+        Route="conversations"
+        ContentTemplate="{DataTemplate pages:ConversationsPage}" />
+</Shell>

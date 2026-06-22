@@ -1,0 +1,305 @@
+﻿name: maui-ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: unit-tests-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: deep-client-maui
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/deep-client-shared
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          path: deep-client-shared
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: ViewModel tests
+        working-directory: deep-client-maui
+        run: dotnet test tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj --configuration Release --logger "trx;LogFileName=viewmodels-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/viewmodels
+      - name: Smoke UI route tests
+        working-directory: deep-client-maui
+        run: dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj --configuration Release --logger "trx;LogFileName=route-smoke-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/route-smoke
+      - name: Upload unit test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maui-unit-test-results-${{ matrix.os }}
+          path: deep-client-maui/artifacts/test-results/${{ matrix.os }}
+          if-no-files-found: error
+
+  release-transport-guard:
+    name: release-transport-guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: deep-client-maui
+      - name: Validate non-Debug transport guard
+        shell: pwsh
+        working-directory: deep-client-maui
+        run: |
+          $source = Get-Content -Raw src/Deep.Client.Maui/MauiProgram.cs
+          $checks = @(
+            @{
+              name = 'debug-only-stub-guard'
+              passed = $source -match '#if DEBUG'
+              message = 'Expected #if DEBUG transport guard in MauiProgram.'
+            },
+            @{
+              name = 'release-message-transport-required'
+              passed = $source -match 'DEEP_TRANSPORT_BASE_URL is required in non-Debug builds'
+              message = 'Expected non-Debug transport requirement message in MauiProgram.'
+            },
+            @{
+              name = 'release-feature-defaults'
+              passed = $source -match 'ClientFeatureFlags.ReleaseDefaults'
+              message = 'Expected release feature defaults wiring in MauiProgram.'
+            },
+            @{
+              name = 'release-call-signaling-required'
+              passed = $source -match 'DEEP_CALL_SIGNALING_BASE_URL is required when calls are enabled in non-Debug builds'
+              message = 'Expected non-Debug call signaling requirement message in MauiProgram.'
+            },
+            @{
+              name = 'release-file-avatar-required'
+              passed = $source -match 'DEEP_FILE_URL is required in non-Debug builds'
+              message = 'Expected non-Debug file/avatar requirement message in MauiProgram.'
+            }
+          )
+          $failed = @($checks | Where-Object { -not $_.passed })
+          New-Item -ItemType Directory -Force -Path artifacts/release-gates | Out-Null
+          [pscustomobject]@{
+            status = if ($failed.Count -eq 0) { 'passed' } else { 'failed' }
+            generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+            commit = '${{ github.sha }}'
+            checks = $checks
+          } | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 artifacts/release-gates/release-transport-guard.json
+          if ($failed.Count -gt 0)
+          {
+            throw ($failed.message -join "`n")
+          }
+      - name: Upload release transport guard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maui-release-transport-guard
+          path: deep-client-maui/artifacts/release-gates/release-transport-guard.json
+          if-no-files-found: error
+
+  android-build:
+    name: build-android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: deep-client-maui
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/deep-client-shared
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          path: deep-client-shared
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - working-directory: deep-client-maui
+        run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
+      - working-directory: deep-client-maui
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android --configuration Release
+      - name: Android device integration test build
+        working-directory: deep-client-maui
+        run: dotnet build tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj -f net10.0-android --configuration Release
+      - name: Write Android build evidence
+        working-directory: deep-client-maui
+        run: |
+          mkdir -p artifacts/platform-matrix
+          cat > artifacts/platform-matrix/android.json <<'JSON'
+          {
+            "platform": "android",
+            "runner": "${{ runner.os }}",
+            "commit": "${{ github.sha }}",
+            "targetFrameworks": ["net10.0-android"],
+            "appBuild": "passed",
+            "deviceIntegrationBuild": "passed"
+          }
+          JSON
+      - name: Upload Android build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maui-platform-android
+          path: deep-client-maui/artifacts/platform-matrix/android.json
+          if-no-files-found: error
+
+  apple-build:
+    name: build-ios-maccatalyst
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: deep-client-maui
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/deep-client-shared
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          path: deep-client-shared
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Select Xcode 26.5
+        shell: bash
+        run: |
+          set -euo pipefail
+          for xcode in /Applications/Xcode_26.5.app /Applications/Xcode_26.5_beta_2.app /Applications/Xcode_26.5_beta.app /Applications/Xcode_26.5.0.app; do
+            if [ -d "$xcode" ]; then
+              developer_dir="$xcode/Contents/Developer"
+              if [ -d "$developer_dir/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" ]; then
+                sudo xcode-select -s "$developer_dir"
+                xcodebuild -version
+                xcrun --sdk macosx --find install_name_tool
+                exit 0
+              fi
+            fi
+          done
+          ls -1 /Applications | grep '^Xcode' || true
+          xcode-select -p || true
+          exit 1
+      - working-directory: deep-client-maui
+        run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
+      - working-directory: deep-client-maui
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-ios --configuration Release -p:RuntimeIdentifier=ios-arm64 -p:BuildIpa=false -p:EnableCodeSigning=false -p:CodesignRequireProvisioningProfile=false -p:TrimMode=copy -p:UseInterpreter=true -p:MtouchUseLlvm=false
+      - working-directory: deep-client-maui
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-maccatalyst --configuration Release
+      - name: iOS device integration test build
+        working-directory: deep-client-maui
+        run: dotnet build tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj -f net10.0-ios --configuration Release -p:RuntimeIdentifier=ios-arm64 -p:EnableCodeSigning=false -p:CodesignRequireProvisioningProfile=false -p:TrimMode=copy -p:UseInterpreter=true -p:MtouchUseLlvm=false
+      - name: Write Apple build evidence
+        working-directory: deep-client-maui
+        run: |
+          mkdir -p artifacts/platform-matrix
+          cat > artifacts/platform-matrix/apple.json <<'JSON'
+          {
+            "platform": "apple",
+            "runner": "${{ runner.os }}",
+            "commit": "${{ github.sha }}",
+            "targetFrameworks": ["net10.0-ios", "net10.0-maccatalyst"],
+            "appBuild": "passed",
+            "deviceIntegrationBuild": "passed"
+          }
+          JSON
+      - name: Upload Apple build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maui-platform-apple
+          path: deep-client-maui/artifacts/platform-matrix/apple.json
+          if-no-files-found: error
+
+  windows-build:
+    name: build-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: deep-client-maui
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/deep-client-shared
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          path: deep-client-shared
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - working-directory: deep-client-maui
+        run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
+      - working-directory: deep-client-maui
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 --configuration Release
+      - name: Write Windows build evidence
+        shell: pwsh
+        working-directory: deep-client-maui
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/platform-matrix | Out-Null
+          [pscustomobject]@{
+            platform = 'windows'
+            runner = '${{ runner.os }}'
+            commit = '${{ github.sha }}'
+            targetFrameworks = @('net10.0-windows10.0.19041.0')
+            appBuild = 'passed'
+          } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 artifacts/platform-matrix/windows.json
+      - name: Upload Windows build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maui-platform-windows
+          path: deep-client-maui/artifacts/platform-matrix/windows.json
+          if-no-files-found: error
+
+  platform-matrix-gate:
+    name: platform-matrix-gate
+    runs-on: ubuntu-latest
+    needs: [unit-tests, release-transport-guard, android-build, apple-build, windows-build]
+    if: always()
+    steps:
+      - name: Validate release-blocking platform matrix
+        shell: pwsh
+        run: |
+          $needs = @'
+          ${{ toJson(needs) }}
+          '@ | ConvertFrom-Json
+          $requiredJobs = @(
+            'unit-tests',
+            'release-transport-guard',
+            'android-build',
+            'apple-build',
+            'windows-build'
+          )
+          $legs = foreach ($job in $requiredJobs)
+          {
+            $result = $needs.PSObject.Properties[$job].Value.result
+            [pscustomobject]@{
+              job = $job
+              result = $result
+              required = $true
+            }
+          }
+          $failed = @($legs | Where-Object { $_.result -ne 'success' })
+          New-Item -ItemType Directory -Force -Path artifacts/platform-matrix | Out-Null
+          [pscustomobject]@{
+            status = if ($failed.Count -eq 0) { 'passed' } else { 'failed' }
+            generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+            commit = '${{ github.sha }}'
+            acceptanceScope = @(
+              'unit-viewmodel-and-route-smoke-tests',
+              'release-transport-no-stub-guard',
+              'android-release-build',
+              'ios-release-build',
+              'maccatalyst-release-build',
+              'windows-release-build'
+            )
+            requiredLegs = $legs
+          } | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 artifacts/platform-matrix/client-platform-matrix.json
+          if ($failed.Count -gt 0)
+          {
+            throw ("Release-blocking platform matrix failed: " + (($failed | ForEach-Object { "$($_.job)=$($_.result)" }) -join ', '))
+          }
+      - name: Upload platform matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deep-client-maui-platform-matrix
+          path: artifacts/platform-matrix/client-platform-matrix.json
+          if-no-files-found: error

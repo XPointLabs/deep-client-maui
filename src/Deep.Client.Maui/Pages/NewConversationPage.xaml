@@ -1,0 +1,45 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Deep.Client.Maui.Pages.NewConversationPage"
+    AutomationId="Page.NewConversation"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
+    x:DataType="vm:ConversationsViewModel"
+    BackgroundColor="{StaticResource PageBackground}"
+    Shell.NavBarIsVisible="False"
+    Title="Новое сообщение">
+    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,*" RowSpacing="20" BackgroundColor="{StaticResource PageBackground}">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Padding="0,12,0,8">
+            <Border
+                AutomationId="NewConversation.Back"
+                WidthRequest="44"
+                HeightRequest="44"
+                Padding="0"
+                Background="Transparent"
+                StrokeThickness="0"
+                VerticalOptions="Center">
+                <Label Text="&lt;" FontSize="24" FontAttributes="Bold" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnBackClicked" />
+                </Border.GestureRecognizers>
+            </Border>
+            <Label Grid.Column="1" Text="Новое сообщение" FontSize="24" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalOptions="Center" />
+        </Grid>
+
+        <VerticalStackLayout Grid.Row="1" Spacing="16" Padding="0,18,0,0">
+            <VerticalStackLayout Spacing="6">
+                <Label Text="Кому" FontSize="13" TextColor="{StaticResource TextSecondary}" />
+                <Entry x:Name="SessionIdEntry" AutomationId="NewConversation.SessionId" Placeholder="ID аккаунта" Text="{Binding NewSessionId}" />
+            </VerticalStackLayout>
+
+            <VerticalStackLayout Spacing="6">
+                <Label Text="Имя" FontSize="13" TextColor="{StaticResource TextSecondary}" />
+                <Entry x:Name="DisplayNameEntry" AutomationId="NewConversation.DisplayName" Placeholder="Имя контакта (необязательно)" Text="{Binding NewDisplayName}" />
+            </VerticalStackLayout>
+
+            <Button AutomationId="NewConversation.Start" Text="Далее" IsEnabled="{Binding CanStartNewConversation}" Clicked="OnStartClicked" />
+            <Label AutomationId="NewConversation.Error" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="13" />
+        </VerticalStackLayout>
+    </Grid>
+</ContentPage>

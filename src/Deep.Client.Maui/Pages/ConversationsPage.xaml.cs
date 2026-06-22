@@ -1,0 +1,157 @@
+﻿using Deep.Client.Maui.Core.ViewModels;
+using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Core.Services;
+using Deep.Client.Shared.Domain;
+
+namespace Deep.Client.Maui.Pages;
+
+public partial class ConversationsPage : ContentPage
+{
+    private const string AvatarFileName = "profile-avatar.jpg";
+    private IDispatcherTimer? autoSyncTimer;
+    private readonly ConversationsViewModel viewModel;
+    private readonly INetworkStatusService networkStatusService;
+    private bool hasLoaded;
+
+    public ConversationsPage(
+        ConversationsViewModel viewModel,
+        INetworkStatusService networkStatusService)
+    {
+        InitializeComponent();
+        this.viewModel = viewModel;
+        this.networkStatusService = networkStatusService;
+        BindingContext = viewModel;
+
+        networkStatusService.StatusChanged += OnNetworkStatusChanged;
+    }
+
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        UpdateProfileAvatarUi();
+        UpdateNetworkUi();
+        if (hasLoaded)
+        {
+            await viewModel.SyncAsync();
+        }
+        else
+        {
+            await viewModel.LoadAsync();
+            hasLoaded = true;
+        }
+
+        EnsureAutoSync();
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        autoSyncTimer?.Stop();
+    }
+
+    private async void OnConversationTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Element { BindingContext: ConversationListItem selected })
+        {
+            return;
+        }
+
+        viewModel.SelectedConversation = selected;
+        await OpenConversationAsync(selected);
+    }
+
+    private void OnSearchClicked(object? sender, EventArgs e)
+    {
+        SearchEntry.IsVisible = !SearchEntry.IsVisible;
+        if (SearchEntry.IsVisible)
+        {
+            SearchEntry.Focus();
+        }
+        else
+        {
+            viewModel.SearchQuery = string.Empty;
+        }
+    }
+
+    private async void OnNewConversationClicked(object? sender, EventArgs e)
+    {
+        await Shell.Current.GoToAsync(ShellRouteCatalog.StartConversation);
+    }
+
+    private async void OnProfileClicked(object? sender, EventArgs e)
+    {
+        await Shell.Current.GoToAsync(ShellRouteCatalog.Settings);
+    }
+
+    private void UpdateProfileAvatarUi()
+    {
+        if (ProfileAvatarImage is null || ProfileInitialLabel is null)
+        {
+            return;
+        }
+
+        var avatarPath = GetAvatarPath();
+        var hasAvatar = File.Exists(avatarPath);
+        ProfileAvatarImage.IsVisible = hasAvatar;
+        ProfileInitialLabel.IsVisible = !hasAvatar;
+        ProfileAvatarImage.Source = hasAvatar ? ImageSource.FromFile(avatarPath) : null;
+    }
+
+    private static string GetAvatarPath() => Path.Combine(FileSystem.Current.AppDataDirectory, AvatarFileName);
+
+    private static Task OpenConversationAsync(ConversationListItem selected)
+    {
+        var route = selected.Kind == ConversationKind.OneToOne
+            ? $"{ShellRouteCatalog.Chat}?sessionId={Uri.EscapeDataString(selected.Id.Value)}&displayName={Uri.EscapeDataString(selected.Title)}"
+            : $"{ShellRouteCatalog.GroupChat}?groupId={Uri.EscapeDataString(selected.Id.Value)}&displayName={Uri.EscapeDataString(selected.Title)}";
+
+        return Shell.Current.GoToAsync(route, animate: false);
+    }
+
+    private void OnNetworkStatusChanged(object? sender, EventArgs e)
+    {
+        MainThread.BeginInvokeOnMainThread(UpdateNetworkUi);
+    }
+
+    private void UpdateNetworkUi()
+    {
+        var connected = networkStatusService.IsConnected;
+        if (ProfileStatusDot is not null)
+        {
+            var key = connected ? "PrimaryColor" : "DangerColor";
+            var app = Application.Current;
+            if (app is not null && app.Resources.TryGetValue(key, out var value) && value is Color color)
+            {
+                ProfileStatusDot.Background = new SolidColorBrush(color);
+            }
+        }
+
+        if (NetworkBanner is not null && NetworkBannerText is not null)
+        {
+            NetworkBanner.IsVisible = !connected;
+            NetworkBannerText.Text = networkStatusService.ConnectionLabel;
+        }
+    }
+
+    private void EnsureAutoSync()
+    {
+        if (autoSyncTimer is null)
+        {
+            autoSyncTimer = Dispatcher.CreateTimer();
+            autoSyncTimer.Interval = TimeSpan.FromSeconds(5);
+            autoSyncTimer.Tick += OnAutoSyncTick;
+        }
+
+        autoSyncTimer.Start();
+    }
+
+    private async void OnAutoSyncTick(object? sender, EventArgs e)
+    {
+        if (viewModel.IsBusy)
+        {
+            return;
+        }
+
+        await viewModel.SyncAsync();
+    }
+}

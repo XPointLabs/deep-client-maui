@@ -1,0 +1,271 @@
+﻿using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Core.ViewModels;
+using Deep.Client.Maui.Services;
+using Deep.Client.Shared.State;
+using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.ApplicationModel.DataTransfer;
+using Microsoft.Maui.Storage;
+
+namespace Deep.Client.Maui.Pages;
+
+public partial class SettingsPage : ContentPage
+{
+    private const string AvatarFileName = "profile-avatar.jpg";
+    private readonly SettingsViewModel viewModel;
+    private readonly ClientRuntime runtime;
+
+    public SettingsPage(SettingsViewModel viewModel, ClientRuntime runtime)
+    {
+        InitializeComponent();
+        this.viewModel = viewModel;
+        this.runtime = runtime;
+        BindingContext = viewModel;
+    }
+
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        await viewModel.LoadAsync();
+        UpdateProfileAvatarUi();
+        SessionIdLabel.Text = FormatSessionIdForDisplay(viewModel.SessionId);
+        VersionLabel.Text = $"Deep {AppInfo.Current.VersionString}";
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        _ = NavigateBackToConversationsAsync();
+        return true;
+    }
+
+    private async void OnBackClicked(object? sender, EventArgs e)
+    {
+        await NavigateBackToConversationsAsync();
+    }
+
+    private static Task NavigateBackToConversationsAsync() =>
+        Shell.Current.GoToAsync($"//{ShellRouteCatalog.Conversations}");
+
+    private static Task NavigateToSettingsSectionAsync(string section) =>
+        Shell.Current.GoToAsync($"{ShellRouteCatalog.SettingsDetail}?section={Uri.EscapeDataString(section)}");
+
+    private async void OnCopySessionIdClicked(object? sender, EventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(viewModel.SessionId) || viewModel.SessionId == "-")
+        {
+            return;
+        }
+
+        await Clipboard.Default.SetTextAsync(viewModel.SessionId);
+    }
+
+    private async void OnShareClicked(object? sender, EventArgs e)
+    {
+        await ShareSessionIdAsync();
+    }
+
+    private async void OnInviteClicked(object? sender, EventArgs e)
+    {
+        await ShareSessionIdAsync();
+    }
+
+    private async Task ShareSessionIdAsync()
+    {
+        if (string.IsNullOrWhiteSpace(viewModel.SessionId) || viewModel.SessionId == "-")
+        {
+            return;
+        }
+
+        await Share.Default.RequestAsync(new ShareTextRequest
+        {
+            Title = "Пригласить друга",
+            Text = $"Добавьте меня в Deep: {viewModel.SessionId}"
+        });
+    }
+
+    private async void OnEditNameClicked(object? sender, EventArgs e)
+    {
+        var currentName = viewModel.AccountDisplayName == "Нет аккаунта" ? string.Empty : viewModel.AccountDisplayName;
+        var updated = await DisplayPromptAsync(
+            "Имя профиля",
+            "Выберите имя, которое будет показываться на этом устройстве.",
+            accept: "Сохранить",
+            cancel: "Отмена",
+            initialValue: currentName,
+            maxLength: 48);
+
+        if (string.IsNullOrWhiteSpace(updated))
+        {
+            return;
+        }
+
+        await viewModel.UpdateDisplayNameAsync(updated.Trim());
+    }
+
+    private async void OnQrClicked(object? sender, EventArgs e)
+    {
+        var action = await DisplayActionSheetAsync("ID аккаунта", "Отмена", null, "Скопировать ID", "Поделиться ID");
+        if (action == "Скопировать ID")
+        {
+            await Clipboard.Default.SetTextAsync(viewModel.SessionId);
+        }
+        else if (action == "Поделиться ID")
+        {
+            await ShareSessionIdAsync();
+        }
+    }
+
+    private async void OnChangePhotoClicked(object? sender, EventArgs e)
+    {
+        await PickProfilePhotoAsync();
+    }
+
+    private async Task PickProfilePhotoAsync()
+    {
+        try
+        {
+            var photo = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = "Выберите фото профиля",
+                FileTypes = FilePickerFileType.Images
+            });
+
+            if (photo is null)
+            {
+                return;
+            }
+
+            await ProfileAvatarSync.SaveAndPublishAsync(photo, GetAvatarPath(), runtime);
+            UpdateProfileAvatarUi();
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Фото профиля", $"Не удалось обновить фото: {ex.Message}", "OK");
+        }
+    }
+
+    private void UpdateProfileAvatarUi()
+    {
+        if (ProfileAvatarImage is null || ProfileInitialLabel is null)
+        {
+            return;
+        }
+
+        var avatarPath = GetAvatarPath();
+        var hasAvatar = File.Exists(avatarPath);
+        ProfileAvatarImage.IsVisible = hasAvatar;
+        ProfileInitialLabel.IsVisible = !hasAvatar;
+        ProfileAvatarImage.Source = hasAvatar ? ImageSource.FromFile(avatarPath) : null;
+    }
+
+    private static string GetAvatarPath() => Path.Combine(FileSystem.Current.AppDataDirectory, AvatarFileName);
+
+    private static string FormatSessionIdForDisplay(string? sessionId)
+    {
+        var value = sessionId?.Trim();
+        if (string.IsNullOrWhiteSpace(value) || value == "-")
+        {
+            return "-";
+        }
+
+        if (value.Length < 48)
+        {
+            return value;
+        }
+
+        var chunkLength = (int)Math.Ceiling(value.Length / 3.0);
+        var chunks = Enumerable.Range(0, (value.Length + chunkLength - 1) / chunkLength)
+            .Select(index =>
+            {
+                var start = index * chunkLength;
+                var length = Math.Min(chunkLength, value.Length - start);
+                return value.Substring(start, length);
+            });
+
+        return string.Join(Environment.NewLine, chunks);
+    }
+
+    private async void OnDonateClicked(object? sender, EventArgs e)
+    {
+        await NavigateToSettingsSectionAsync("donate");
+    }
+
+    private async void OnPathClicked(object? sender, EventArgs e)
+    {
+        await NavigateToSettingsSectionAsync("path");
+    }
+
+    private async void OnSessionNetworkClicked(object? sender, EventArgs e)
+    {
+        await NavigateToSettingsSectionAsync("network");
+    }
+
+    private async void OnPrivacyClicked(object? sender, EventArgs e)
+    {
+        await NavigateToSettingsSectionAsync("privacy");
+    }
+
+    private async void OnNotificationsClicked(object? sender, EventArgs e)
+    {
+        await NavigateToSettingsSectionAsync("notifications");
+    }
+
+    private async void OnConversationsSettingsClicked(object? sender, EventArgs e)
+    {
+        await NavigateToSettingsSectionAsync("conversations");
+    }
+
+    private async void OnAppearanceClicked(object? sender, EventArgs e)
+    {
+        await NavigateToSettingsSectionAsync("appearance");
+    }
+
+    private async void OnMessageRequestsClicked(object? sender, EventArgs e)
+    {
+        await NavigateToSettingsSectionAsync("message-requests");
+    }
+
+    private async void OnRecoveryPhraseClicked(object? sender, EventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(viewModel.RecoveryPhrase))
+        {
+            await DisplayAlertAsync("Фраза восстановления", "Для этого аккаунта не сохранена фраза восстановления.", "OK");
+            return;
+        }
+
+        var action = await DisplayActionSheetAsync("Фраза восстановления", "Отмена", null, "Показать", "Скопировать");
+        if (action == "Скопировать")
+        {
+            await Clipboard.Default.SetTextAsync(viewModel.RecoveryPhrase);
+        }
+        else if (action == "Показать")
+        {
+            await DisplayAlertAsync("Фраза восстановления", viewModel.RecoveryPhrase, "OK");
+        }
+    }
+
+    private async void OnHelpClicked(object? sender, EventArgs e)
+    {
+        await NavigateToSettingsSectionAsync("help");
+    }
+
+    private async void OnLogoutClicked(object? sender, EventArgs e)
+    {
+        var confirmed = await DisplayAlertAsync("Очистить данные", "Выйти из этого аккаунта Deep на устройстве?", "Очистить данные", "Отмена");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        if (viewModel.WipeLocalDataOnLogout)
+        {
+            Preferences.Default.Set("session.wipe-local-on-next-launch", true);
+        }
+
+        await viewModel.LogoutAsync(viewModel.WipeLocalDataOnLogout);
+
+        if (viewModel.WipeLocalDataOnLogout)
+        {
+            await DisplayAlertAsync("Очистить данные", "Локальные данные будут очищены при следующем запуске приложения.", "OK");
+        }
+    }
+}

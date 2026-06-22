@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Deep.Client.Maui.Pages.OnboardingPage"
+    AutomationId="Page.Onboarding"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
+    x:DataType="vm:OnboardingViewModel"
+    BackgroundColor="{StaticResource PageBackground}"
+    Shell.NavBarIsVisible="False"
+    Title="Восстановление">
+    <ScrollView BackgroundColor="{StaticResource PageBackground}">
+        <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,Auto" RowSpacing="18">
+            <VerticalStackLayout Spacing="8" Padding="0,28,0,0">
+                <Label Text="Восстановление" FontSize="34" FontAttributes="Bold" />
+                <Label Text="Введите фразу восстановления, чтобы открыть аккаунт на этом устройстве." FontSize="15" TextColor="{StaticResource TextSecondary}" />
+            </VerticalStackLayout>
+
+            <VerticalStackLayout Grid.Row="1" Spacing="12">
+                <Entry AutomationId="Onboarding.DisplayName" Placeholder="Имя профиля" Text="{Binding DisplayName}" />
+                <Editor AutomationId="Onboarding.RecoveryPhrase" Placeholder="Фраза восстановления (12 слов)" Text="{Binding RecoveryPhrase}" AutoSize="TextChanges" HeightRequest="120" MaxLength="256" />
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                    <Button AutomationId="Onboarding.Back" Text="Назад" Clicked="OnBackClicked" Style="{StaticResource SecondaryButton}" WidthRequest="110" />
+                    <Button AutomationId="Onboarding.Restore" Grid.Column="1" Text="Восстановить" Command="{Binding LoginCommand}" />
+                </Grid>
+            </VerticalStackLayout>
+
+            <Label AutomationId="Onboarding.Error" Grid.Row="2" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="13" />
+        </Grid>
+    </ScrollView>
+</ContentPage>

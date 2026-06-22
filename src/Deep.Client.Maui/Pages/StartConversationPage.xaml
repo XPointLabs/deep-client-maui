@@ -1,0 +1,106 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Deep.Client.Maui.Pages.StartConversationPage"
+    AutomationId="Page.StartConversation"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="#99000000"
+    Shell.NavBarIsVisible="False"
+    Title="Начать беседу">
+    <Grid RowDefinitions="*,Auto" BackgroundColor="#99000000">
+        <BoxView Grid.Row="0" BackgroundColor="Transparent">
+            <BoxView.GestureRecognizers>
+                <TapGestureRecognizer Tapped="OnCloseClicked" />
+            </BoxView.GestureRecognizers>
+        </BoxView>
+
+        <Border
+            Grid.Row="1"
+            Background="{StaticResource PanelBackground}"
+            StrokeThickness="0"
+            Padding="18,12,18,22"
+            StrokeShape="RoundRectangle 22,22,0,0">
+            <VerticalStackLayout Spacing="12">
+                <Grid ColumnDefinitions="44,*,44" ColumnSpacing="8" HeightRequest="56">
+                    <Label
+                        Grid.Column="1"
+                        Text="Начать беседу"
+                        FontSize="18"
+                        FontAttributes="Bold"
+                        HorizontalTextAlignment="Center"
+                        VerticalTextAlignment="Center" />
+
+                    <Border
+                        Grid.Column="2"
+                        AutomationId="StartConversation.Close"
+                        WidthRequest="44"
+                        HeightRequest="44"
+                        Padding="0"
+                        Background="Transparent"
+                        StrokeThickness="0"
+                        VerticalOptions="Center">
+                        <Label Text="x" FontSize="20" FontAttributes="Bold" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCloseClicked" />
+                        </Border.GestureRecognizers>
+                    </Border>
+                </Grid>
+
+                <VerticalStackLayout Spacing="0">
+                    <Grid AutomationId="StartConversation.NewMessage" ColumnDefinitions="48,*,Auto" ColumnSpacing="12" HeightRequest="50">
+                        <Label Text="M" FontSize="19" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+                        <Label Grid.Column="1" Text="Новое сообщение" FontSize="17" FontAttributes="Bold" VerticalTextAlignment="Center" />
+                        <Label Grid.Column="2" Text=">" FontSize="18" TextColor="{StaticResource TextSecondary}" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnNewMessageClicked" />
+                        </Grid.GestureRecognizers>
+                    </Grid>
+                    <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" Margin="60,0,0,0" />
+                    <Grid AutomationId="StartConversation.CreateGroup" ColumnDefinitions="48,*,Auto" ColumnSpacing="12" HeightRequest="50">
+                        <Label Text="G" FontSize="19" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+                        <Label Grid.Column="1" Text="Создать группу" FontSize="17" FontAttributes="Bold" VerticalTextAlignment="Center" />
+                        <Label Grid.Column="2" Text=">" FontSize="18" TextColor="{StaticResource TextSecondary}" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnCreateGroupClicked" />
+                        </Grid.GestureRecognizers>
+                    </Grid>
+                    <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" Margin="60,0,0,0" />
+                    <Grid AutomationId="StartConversation.InviteFriend" ColumnDefinitions="48,*,Auto" ColumnSpacing="12" HeightRequest="50">
+                        <Label Text="+" FontSize="22" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+                        <Label Grid.Column="1" Text="Пригласить друга" FontSize="17" FontAttributes="Bold" VerticalTextAlignment="Center" />
+                        <Label Grid.Column="2" Text=">" FontSize="18" TextColor="{StaticResource TextSecondary}" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnInviteFriendClicked" />
+                        </Grid.GestureRecognizers>
+                    </Grid>
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="8" Padding="0,8,0,0">
+                    <Label Text="ID вашего аккаунта" FontSize="15" FontAttributes="Bold" />
+                    <Label
+                        x:Name="AccountIdLabel"
+                        AutomationId="StartConversation.AccountId"
+                        FontSize="12"
+                        FontFamily="Consolas"
+                        TextColor="{StaticResource TextSecondary}"
+                        LineBreakMode="CharacterWrap" />
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10" Padding="0,4,0,0">
+                        <Border AutomationId="StartConversation.Share" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1" Background="Transparent" Padding="0,10" StrokeShape="RoundRectangle 21">
+                            <Label Text="Поделиться" TextColor="{StaticResource PrimaryColor}" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnShareClicked" />
+                            </Border.GestureRecognizers>
+                        </Border>
+                        <Border Grid.Column="1" AutomationId="StartConversation.Copy" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1" Background="Transparent" Padding="0,10" StrokeShape="RoundRectangle 21">
+                            <Label Text="Скопировать" TextColor="{StaticResource PrimaryColor}" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnCopyClicked" />
+                            </Border.GestureRecognizers>
+                        </Border>
+                    </Grid>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentPage>

@@ -1,0 +1,89 @@
+﻿using Deep.Client.Maui.Core.ViewModels;
+using Deep.Client.Shared.Domain;
+using Deep.Client.Shared.Persistence;
+using Deep.Client.Shared.Services;
+using Deep.Client.Shared.State;
+
+namespace Deep.Client.Maui.ViewModels.Tests.ViewModels;
+
+public sealed class ConversationsViewModelTests
+{
+    [Fact]
+    public async Task StartConversationCommandCreatesOneToOneConversation()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        await runtime.Accounts.RegisterAsync("Owner");
+        var recipient = "05" + new string('a', 64);
+
+        var viewModel = new ConversationsViewModel(runtime)
+        {
+            NewSessionId = recipient,
+            NewDisplayName = "Alice"
+        };
+
+        await viewModel.StartConversationCommand.ExecuteAsync();
+
+        Assert.Single(viewModel.Conversations);
+        Assert.Equal("Alice", viewModel.Conversations[0].Title);
+        Assert.True(string.IsNullOrWhiteSpace(viewModel.NewSessionId));
+    }
+
+    [Fact]
+    public void StartConversationCommandRejectsInvalidSessionId()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var viewModel = new ConversationsViewModel(runtime)
+        {
+            NewSessionId = "invalid"
+        };
+
+        Assert.False(viewModel.StartConversationCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task SyncWithoutConversationChangesDoesNotResetCollection()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        await runtime.Accounts.RegisterAsync("Owner");
+        await runtime.Conversations.GetOrCreateOneToOneAsync(Deep.Client.Shared.Domain.SessionId.CreateNew(), "Alice");
+        var viewModel = new ConversationsViewModel(runtime);
+
+        await viewModel.LoadAsync();
+        var changeCount = 0;
+        viewModel.Conversations.CollectionChanged += (_, _) => changeCount++;
+
+        await viewModel.SyncAsync();
+
+        Assert.Equal(0, changeCount);
+        Assert.Single(viewModel.Conversations);
+    }
+
+    [Fact]
+    public async Task SyncUpdatesUnreadCountFromReadCursorWithoutConversationUpdate()
+    {
+        var clock = new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z"));
+        var runtime = ClientRuntime.CreateStubbed(clock: clock);
+        var owner = await runtime.Accounts.RegisterAsync("Owner");
+        var remote = SessionId.CreateNew();
+        var conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(remote, "Remote");
+        await ((IMessageRepository)runtime.Store).AppendAsync(new Message(
+            MessageId.NewId(),
+            conversation.Id,
+            remote,
+            owner.SessionId,
+            "unread",
+            MessageDirection.Incoming,
+            MessageDeliveryState.Delivered,
+            clock.UtcNow,
+            []));
+        var viewModel = new ConversationsViewModel(runtime);
+
+        await viewModel.LoadAsync();
+        await runtime.Messages.MarkConversationAsReadAsync(conversation.Id, clock.UtcNow.AddSeconds(1));
+        await viewModel.SyncAsync();
+
+        Assert.Single(viewModel.Conversations);
+        Assert.Equal(0, viewModel.Conversations[0].UnreadCount);
+        Assert.False(viewModel.Conversations[0].IsUnread);
+    }
+}

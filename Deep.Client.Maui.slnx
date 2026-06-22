@@ -1,0 +1,12 @@
+﻿<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Deep.Client.Maui.Core/Deep.Client.Maui.Core.csproj" />
+    <Project Path="src/Deep.Client.Maui/Deep.Client.Maui.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj" />
+    <Project Path="tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj" />
+    <Project Path="tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj" />
+    <Project Path="tests/Deep.Client.Maui.UiTests/Deep.Client.Maui.UiTests.csproj" />
+  </Folder>
+</Solution>

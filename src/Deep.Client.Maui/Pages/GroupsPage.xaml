@@ -1,0 +1,133 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Deep.Client.Maui.Pages.GroupsPage"
+    AutomationId="Page.Groups"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
+    x:DataType="vm:GroupsViewModel"
+    BackgroundColor="{StaticResource PageBackground}"
+    Shell.NavBarIsVisible="False"
+    Title="Новая группа">
+    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="14" BackgroundColor="{StaticResource PageBackground}">
+        <Border x:Name="NetworkBanner" Grid.Row="0" Style="{StaticResource PanelBorder}" Padding="10,8" IsVisible="False" Stroke="{StaticResource DangerColor}">
+            <HorizontalStackLayout Spacing="8">
+                <Label Text="Соединение" FontAttributes="Bold" />
+                <Label x:Name="NetworkBannerText" Text="Офлайн" TextColor="{StaticResource DangerColor}" />
+            </HorizontalStackLayout>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Padding="0,12,0,8">
+            <Border
+                AutomationId="Groups.Back"
+                WidthRequest="44"
+                HeightRequest="44"
+                Padding="0"
+                Background="Transparent"
+                StrokeThickness="0"
+                VerticalOptions="Center">
+                <Label Text="&lt;" FontSize="24" FontAttributes="Bold" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnBackClicked" />
+                </Border.GestureRecognizers>
+            </Border>
+
+            <Label Grid.Column="1" Text="Новая группа" FontSize="24" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalOptions="Center" />
+        </Grid>
+
+        <Border Grid.Row="2" Style="{StaticResource PanelBorder}" Padding="12">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+                <Label Text="Создать закрытую группу" FontSize="16" FontAttributes="Bold" />
+
+                <Entry
+                    x:Name="GroupNameEntry"
+                    AutomationId="Groups.GroupName"
+                    Grid.Row="1"
+                    Placeholder="Название группы"
+                    Text="{Binding GroupName}"
+                    ReturnType="Next" />
+
+                <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <Entry
+                        x:Name="MemberSessionIdEntry"
+                        AutomationId="Groups.MemberSessionId"
+                        Placeholder="ID участника"
+                        Text="{Binding MemberSessionId}"
+                        ReturnType="Done"
+                        ReturnCommand="{Binding AddDraftMemberCommand}" />
+                    <Button
+                        AutomationId="Groups.AddMember"
+                        Grid.Column="1"
+                        Text="Добавить"
+                        Command="{Binding AddDraftMemberCommand}"
+                        IsEnabled="{Binding CanAddMember}"
+                        WidthRequest="82" />
+                </Grid>
+
+                <CollectionView
+                    AutomationId="Groups.DraftMembers"
+                    Grid.Row="3"
+                    ItemsSource="{Binding DraftMembers}"
+                    ItemSizingStrategy="MeasureFirstItem"
+                    IsVisible="{Binding HasDraftMembers}"
+                    SelectionMode="Single"
+                    SelectedItem="{Binding SelectedDraftMember, Mode=TwoWay}"
+                    SelectionChanged="OnDraftMemberSelectionChanged"
+                    HeightRequest="90">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:GroupDraftMemberItem">
+                            <Grid ColumnDefinitions="*,Auto" Padding="0,3" ColumnSpacing="8">
+                                <Label Text="{Binding SessionId.Value}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="MiddleTruncation" VerticalOptions="Center" />
+                                <Border Grid.Column="1" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" Padding="10,4" StrokeShape="RoundRectangle 12">
+                                    <Label Text="Удалить" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <Button
+                    AutomationId="Groups.Create"
+                    Grid.Row="4"
+                    Text="Создать группу"
+                    IsEnabled="{Binding CanCreateGroup}"
+                    Clicked="OnCreateGroupClicked"
+                    HeightRequest="46" />
+            </Grid>
+        </Border>
+
+        <CollectionView Grid.Row="3" ItemsSource="{Binding Groups}" ItemSizingStrategy="MeasureFirstItem" SelectionMode="Single" SelectedItem="{Binding SelectedGroup, Mode=TwoWay}" SelectionChanged="OnGroupSelectionChanged">
+            <CollectionView.EmptyView>
+                <Grid Padding="0,80,0,0">
+                    <VerticalStackLayout Spacing="10" HorizontalOptions="Center" VerticalOptions="Start">
+                        <Label Text="Пока нет групп" FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                        <Label Text="Создайте закрытую группу, чтобы открыть приватную комнату." FontSize="14" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+                </Grid>
+            </CollectionView.EmptyView>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="vm:GroupListItem">
+                    <Border Style="{StaticResource ConversationRowBorder}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="14" RowSpacing="3">
+                            <Border Grid.RowSpan="2" WidthRequest="52" HeightRequest="52" Padding="0" StrokeThickness="0" Background="{StaticResource PrimaryColorMuted}" VerticalOptions="Center" StrokeShape="RoundRectangle 26">
+                                <Label Text="G" TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="20" />
+                            </Border>
+                            <Label Grid.Column="1" Text="{Binding Name}" FontAttributes="Bold" FontSize="17" LineBreakMode="TailTruncation" />
+                            <Label Grid.Column="2" Text="{Binding MemberCount, StringFormat='{}{0} уч.'}" TextColor="{StaticResource TextSecondary}" FontSize="12" />
+                            <HorizontalStackLayout Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Spacing="8">
+                                <Label Text="{Binding AdminCount, StringFormat='{}{0} адм.'}" FontSize="14" TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="Архив" FontSize="14" TextColor="{StaticResource TextSecondary}" IsVisible="False">
+                                    <Label.Triggers>
+                                        <DataTrigger TargetType="Label" Binding="{Binding IsDestroyed}" Value="True">
+                                            <Setter Property="IsVisible" Value="True" />
+                                        </DataTrigger>
+                                    </Label.Triggers>
+                                </Label>
+                            </HorizontalStackLayout>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </Grid>
+</ContentPage>
