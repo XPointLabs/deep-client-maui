@@ -21,6 +21,7 @@
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.19041.0</SupportedOSPlatformVersion>
     <TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.19041.0</TargetPlatformMinVersion>
     <EmbedAssembliesIntoApk Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">true</EmbedAssembliesIntoApk>
+    <NoWarn Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">$(NoWarn);BG8403</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -35,6 +36,13 @@
     <EmbeddedResource Include="deep.release.env">
       <LogicalName>deep.release.env</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="deep.bootstrap.json">
+      <LogicalName>deep.bootstrap.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <AndroidLibrary Include="Platforms\Android\Jars\libXray.aar" />
   </ItemGroup>
 
 </Project>

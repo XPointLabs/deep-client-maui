@@ -94,6 +94,21 @@ DEEP_FILE_URL=http://192.168.1.44:28101
 DEEP_PUSH_URL=http://192.168.1.44:28102
 ```
 
+Production Android builds do not use public HTTP(S) node URLs. They embed three
+signed bootstrap anchors from `deep.bootstrap.json`, start `XTLS/libXray`, and
+connect to each seed over VLESS Reality using the node origin IP. Session RPC is
+available to the managed client only through three loopback listeners. The seed
+then returns a dynamic three-hop route whose relay contacts are verified with
+the nodes' Ed25519 identities.
+
+The checked-in Android AAR is reproducible with:
+
+```powershell
+.\eng\build-libxray-android.ps1 `
+  -GoRoot C:\path\to\go1.26.2 `
+  -AndroidSdkRoot C:\path\to\android-sdk
+```
+
 ## MAUI Parity Stages (Session Android/iOS/Desktop)
 
 Reference upstream clients for behavior parity:

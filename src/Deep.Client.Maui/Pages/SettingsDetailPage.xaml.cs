@@ -192,7 +192,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         ContentStack.Children.Add(CreateCategory(
             "XPNT",
             CreateRow("Стейкинг XPNT", "Сервисные ноды получают право работать в сети через on-chain стейкинг.", () => OpenIfUriAsync(environment.StakingPortalUrl)),
-            CreateRow("Сеть контрактов", "Arbitrum Sepolia")));
+            CreateRow("Сеть контрактов", "Arbitrum One")));
 
         ContentStack.Children.Add(CreateCategory(
             "Сервисные ноды",
@@ -217,7 +217,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             ContentStack.Children.Add(CreateCategory(
                 "XPNT",
                 CreateRow("Стейкинг XPNT", "Сервисные ноды получают право работать в сети через on-chain стейкинг.", () => OpenIfUriAsync(environment.StakingPortalUrl)),
-                CreateRow("Сеть контрактов", "Arbitrum Sepolia")));
+                CreateRow("Сеть контрактов", "Arbitrum One")));
 
             ContentStack.Children.Add(CreateCategory(
                 "Сервисные ноды",
@@ -812,16 +812,11 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         foreach (var node in document.RootElement.EnumerateArray())
         {
             var nodeId = GetString(node, "nodeId") ?? "node";
-            var transport = node.TryGetProperty("transport", out var transportElement)
-                ? transportElement
-                : default;
-            var hasTransport = transport.ValueKind == JsonValueKind.Object;
-            var endpoint = hasTransport
-                ? FormatEndpoint(transport, nodeId)
-                : null;
             var status = node.TryGetProperty("transportStatus", out var statusElement)
                 ? statusElement
                 : default;
+            var hasTransport = status.ValueKind == JsonValueKind.Object && GetBool(status, "enabled");
+            string? endpoint = null;
             var healthy = status.ValueKind == JsonValueKind.Object &&
                           GetBool(status, "enabled") &&
                           GetBool(status, "running") &&

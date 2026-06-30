@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "seeds": [
+    {
+      "routerId": "003a0ecf585a1a51770aa3d2ff0bfbdb7c2dd17c4cb4625b71d232b70e55d938",
+      "originIp": "45.13.226.112",
+      "port": 443,
+      "clientId": "c899f1ee-3f74-43e4-bac6-b8931651f32d",
+      "flow": "xtls-rprx-vision",
+      "serverName": "cloudflare-dns.com",
+      "publicKey": "YSF_MDzIwJEGDT41Y-mPxJ5T_U04FYQtG85wwxp_BUA",
+      "shortId": "aa205c2bc035f647",
+      "fingerprint": "chrome",
+      "spiderX": "/",
+      "localPort": 17891
+    },
+    {
+      "routerId": "a6c4e0c73e6fe3aa69b20cc59c697d83e0e83d94fd4a3029c5f5773f36a7e0b9",
+      "originIp": "107.161.160.34",
+      "port": 443,
+      "clientId": "5fbae4ca-3b5d-4894-a9b2-5903fee25dfd",
+      "flow": "xtls-rprx-vision",
+      "serverName": "cloudflare-dns.com",
+      "publicKey": "0L9gWKrEkgRRxBV7w-aN0sfH6y1eG7F0K8RZMoGaNVI",
+      "shortId": "a18944316b0548aa",
+      "fingerprint": "chrome",
+      "spiderX": "/",
+      "localPort": 17892
+    },
+    {
+      "routerId": "30a742b531820e9406eafc0c87f6f54ca38ebfeb152aa0dff1d6a93839cbc8d6",
+      "originIp": "185.206.171.178",
+      "port": 443,
+      "clientId": "f18507ed-0bc3-4050-9457-37dd69f04dbd",
+      "flow": "xtls-rprx-vision",
+      "serverName": "cloudflare-dns.com",
+      "publicKey": "zsD2VAfO4Mngxo65blXdY5bj0pjpcYKa7HIAIBCiGns",
+      "shortId": "631d9972b213b7c2",
+      "fingerprint": "chrome",
+      "spiderX": "/",
+      "localPort": 17893
+    }
+  ]
+}

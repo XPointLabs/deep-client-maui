@@ -37,7 +37,7 @@ public static class MauiProgram
         if (routerBaseUrls.Count > 0)
         {
             builder.Services.AddSingleton(new XNodeRpcClient(
-                new HttpClient { Timeout = TimeSpan.FromSeconds(15) },
+                CreateRouterHttpClient(),
                 new XNodeRpcClientOptions(routerBaseUrls)));
             builder.Services.AddSingleton<ITransportRouteProvider>(sp => sp.GetRequiredService<XNodeRpcClient>());
         }
@@ -290,11 +290,33 @@ public static class MauiProgram
     private static IReadOnlyList<string> ResolveRouterBaseUrls()
     {
         var raw = ResolveRuntimeSetting(RouterBaseUrlsEnv);
-        if (string.IsNullOrWhiteSpace(raw))
+        if (!string.IsNullOrWhiteSpace(raw))
         {
-            return [];
+            return ParseRouterBaseUrls(raw);
         }
 
+#if ANDROID
+        return AndroidRealityTransport.Start();
+#else
+        return [];
+#endif
+    }
+
+    private static HttpClient CreateRouterHttpClient()
+    {
+        return new HttpClient(new SocketsHttpHandler
+        {
+            ConnectTimeout = TimeSpan.FromSeconds(5),
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(15),
+            PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(15)
+        };
+    }
+
+    private static IReadOnlyList<string> ParseRouterBaseUrls(string raw)
+    {
         return raw
             .Split([';', ',', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(static value => Uri.TryCreate(value, UriKind.Absolute, out var uri)
