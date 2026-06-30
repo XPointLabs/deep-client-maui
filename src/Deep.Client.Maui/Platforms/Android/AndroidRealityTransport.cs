@@ -101,7 +101,7 @@ internal static class AndroidRealityTransport
                 {
                     serverName = seed.ServerName,
                     fingerprint = seed.Fingerprint,
-                    publicKey = seed.PublicKey,
+                    password = seed.PublicKey,
                     shortId = seed.ShortId,
                     spiderX = seed.SpiderX
                 }
