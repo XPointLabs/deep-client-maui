@@ -18,7 +18,7 @@
             </HorizontalStackLayout>
         </Border>
 
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="12" Padding="0,8,0,8">
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10" Padding="0,4,0,6">
             <Border
                 AutomationId="GroupChat.Back"
                 WidthRequest="44"
@@ -27,7 +27,7 @@
                 Background="Transparent"
                 StrokeThickness="0"
                 VerticalOptions="Center">
-                <Label Text="&lt;" FontSize="24" FontAttributes="Bold" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Label Text="‹" FontSize="36" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,-3,0,0" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnBackClicked" />
                 </Border.GestureRecognizers>
@@ -39,7 +39,7 @@
                 <Label Text="{Binding GroupTitle}" FontSize="20" FontAttributes="Bold" LineBreakMode="TailTruncation" />
                 <Label Text="{Binding GroupSubtitle}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
             </VerticalStackLayout>
-            <Button Grid.Column="3" AutomationId="GroupChat.Members" Text="..." Style="{StaticResource ToolbarIconButton}" Clicked="OnMembersClicked" />
+            <Button Grid.Column="3" AutomationId="GroupChat.Members" Text="⋮" AutomationProperties.Name="Участники группы" Style="{StaticResource ToolbarIconButton}" Clicked="OnMembersClicked" />
         </Grid>
 
         <CollectionView x:Name="MessagesCollection" AutomationId="GroupChat.Messages" Grid.Row="2" ItemsSource="{Binding Messages}" Scrolled="OnMessagesScrolled">
@@ -50,9 +50,10 @@
             </CollectionView.EmptyView>
             <CollectionView.ItemTemplate>
                 <DataTemplate x:DataType="vm:GroupChatMessageItem">
-                    <Grid Padding="0,0,0,8" ColumnDefinitions="*,*">
-                        <Border Grid.Column="0" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 17" Padding="12,9" HorizontalOptions="Start" MaximumWidthRequest="430">
+                    <Grid Padding="0,0,0,6">
+                        <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="12,8" HorizontalOptions="Start" MaximumWidthRequest="330">
                             <VerticalStackLayout Spacing="4">
+                                <Label Text="{Binding SenderLabel}" IsVisible="{Binding ShowSenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation" />
                                 <Label Text="{Binding Body}" FontSize="15" LineBreakMode="WordWrap" />
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                                     <Border Grid.Column="1" Padding="7,2" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 9" IsVisible="{Binding HasAttachments}">
@@ -62,12 +63,27 @@
                                         </Border.GestureRecognizers>
                                     </Border>
                                     <Label Grid.Column="2" Text="{Binding CreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextSecondary}" />
-                                    <Label Grid.Column="3" Text="{Binding State}" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                                    <Label
+                                        Grid.Column="3"
+                                        Text="{Binding StatusGlyph}"
+                                        IsVisible="{Binding IsStatusVisible}"
+                                        AutomationProperties.Name="{Binding StatusDescription}"
+                                        FontSize="11"
+                                        FontAttributes="Bold"
+                                        TextColor="{StaticResource TextSecondary}">
+                                        <Label.Triggers>
+                                            <DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True">
+                                                <Setter Property="TextColor" Value="{StaticResource PrimaryColor}" />
+                                            </DataTrigger>
+                                            <DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True">
+                                                <Setter Property="TextColor" Value="{StaticResource DangerColor}" />
+                                            </DataTrigger>
+                                        </Label.Triggers>
+                                    </Label>
                                 </Grid>
                             </VerticalStackLayout>
                             <Border.Triggers>
                                 <DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}">
-                                    <Setter Property="Grid.Column" Value="1" />
                                     <Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" />
                                     <Setter Property="HorizontalOptions" Value="End" />
                                 </DataTrigger>
@@ -123,11 +139,11 @@
 
         <Label Grid.Row="5" AutomationId="GroupChat.Error" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="12" LineBreakMode="WordWrap" />
 
-        <Border Grid.Row="6" Background="{StaticResource PanelBackgroundAlt}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" Padding="8" StrokeShape="RoundRectangle 26">
+        <Border Grid.Row="6" Background="{StaticResource PanelBackground}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" Padding="6" StrokeShape="RoundRectangle 24">
             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                <Button AutomationId="GroupChat.Attach" Text="+" Command="{Binding PickAttachmentsCommand}" WidthRequest="44" HeightRequest="44" Style="{StaticResource GhostButton}" />
+                <Button AutomationId="GroupChat.Attach" Text="+" AutomationProperties.Name="Добавить вложение" Command="{Binding PickAttachmentsCommand}" WidthRequest="40" HeightRequest="40" Padding="0" FontSize="25" Style="{StaticResource GhostButton}" />
                 <Entry x:Name="DraftEntry" AutomationId="GroupChat.Draft" Grid.Column="1" Placeholder="Сообщение" Text="{Binding Draft}" BackgroundColor="Transparent" ReturnType="Send" ReturnCommand="{Binding SendCommand}" />
-                <Button AutomationId="GroupChat.Send" Grid.Column="2" Text="Отпр." Command="{Binding SendCommand}" WidthRequest="96" HeightRequest="44" />
+                <Button AutomationId="GroupChat.Send" Grid.Column="2" Text="➤" AutomationProperties.Name="Отправить" Command="{Binding SendCommand}" WidthRequest="40" HeightRequest="40" Padding="0" FontSize="19" />
             </Grid>
         </Border>
     </Grid>

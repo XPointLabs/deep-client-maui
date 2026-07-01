@@ -35,6 +35,28 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task SelfChatKeepsOneOutgoingMessageAndUsesIconStatus()
+    {
+        var backend = new StubSessionBackend();
+        var runtime = ClientRuntime.CreateStubbed(
+            clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")),
+            backend: backend);
+        var account = await runtime.Accounts.RegisterAsync("Notes");
+        var chat = new ChatViewModel(runtime);
+        await chat.OpenOneToOneAsync(account, account.SessionId, "Заметки для себя");
+        chat.Draft = "one copy";
+
+        await chat.SendAsync();
+        await chat.ReceiveAsync();
+
+        var message = Assert.Single(chat.Messages);
+        Assert.Equal(MessageDirection.Outgoing, message.Direction);
+        Assert.Equal("✓", message.StatusGlyph);
+        Assert.Equal("Отправлено", message.StatusDescription);
+        Assert.True(message.IsStatusVisible);
+    }
+
+    [Fact]
     public async Task PickAttachmentsCommandStagesFilesAndAllowsAttachmentOnlySend()
     {
         var backend = new StubSessionBackend();

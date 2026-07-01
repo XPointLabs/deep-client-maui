@@ -18,6 +18,18 @@ public sealed record ChatMessageItem(
 {
     public bool HasAttachments => Attachments.Count > 0;
 
+    public bool IsOutgoing => Direction == MessageDirection.Outgoing;
+
+    public bool IsStatusVisible => MessageStatusPresentation.IsVisible(Direction, State);
+
+    public bool IsReadStatus => State == MessageDeliveryState.Read;
+
+    public bool IsFailedStatus => State == MessageDeliveryState.Failed;
+
+    public string StatusGlyph => MessageStatusPresentation.Glyph(State);
+
+    public string StatusDescription => MessageStatusPresentation.Description(State);
+
     public string AttachmentSummary => Attachments.Count switch
     {
         0 => string.Empty,
@@ -157,6 +169,11 @@ public sealed class ChatViewModel : ViewModelBase
         oldestLoadedMessageAt = null;
         hasOlderMessages = false;
         Conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(recipient, displayName, cancellationToken);
+        if (recipient == activeAccount.SessionId)
+        {
+            await runtime.Messages.RepairSelfConversationAsync(activeAccount.SessionId, cancellationToken);
+        }
+
         SendCommand.RaiseCanExecuteChanged();
         ReceiveCommand.RaiseCanExecuteChanged();
         await ReloadMessagesAsync(cancellationToken);

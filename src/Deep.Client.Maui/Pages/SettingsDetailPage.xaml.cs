@@ -26,6 +26,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
     private readonly RuntimeEnvironmentOptions environment;
     private readonly IPrivacyScreenService privacyScreen;
     private readonly IAppearanceService appearance;
+    private readonly IIpCountryLookup ipCountryLookup;
     private string section = "help";
 
     public SettingsDetailPage(
@@ -35,7 +36,8 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         ITransportRouteProvider routeProvider,
         RuntimeEnvironmentOptions environment,
         IPrivacyScreenService privacyScreen,
-        IAppearanceService appearance)
+        IAppearanceService appearance,
+        IIpCountryLookup ipCountryLookup)
     {
         InitializeComponent();
         this.runtime = runtime;
@@ -45,6 +47,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         this.environment = environment;
         this.privacyScreen = privacyScreen;
         this.appearance = appearance;
+        this.ipCountryLookup = ipCountryLookup;
     }
 
     public void ApplyQueryAttributes(IDictionary<string, object> query)
@@ -142,7 +145,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         ContentStack.Children.Add(CreatePathGraph(
         [
             new("Вы", null, true),
-            new("Маршрут строится", "Получаем список сервисных нод из реестра.", false),
+            new("Маршрут строится", "Получаем текущий маршрут клиента.", false),
             new("Назначение", null, true)
         ]));
 
@@ -164,7 +167,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             ContentStack.Children.Clear();
             ContentStack.Children.Add(CreatePathIntro());
 
-            var routeNodes = BuildRouteNodes(snapshot);
+            var routeNodes = await BuildRouteNodesAsync(snapshot);
             ContentStack.Children.Add(CreatePathGraph(routeNodes));
             ContentStack.Children.Add(CreateOutlineButton("Узнать больше", () => OpenAsync(XPointUrl)));
         }
@@ -833,7 +836,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             .ToArray();
     }
 
-    private static IReadOnlyList<PathNodeDisplay> BuildRouteNodes(TransportRouteSnapshot? snapshot)
+    private async Task<IReadOnlyList<PathNodeDisplay>> BuildRouteNodesAsync(TransportRouteSnapshot? snapshot)
     {
         var nodes = new List<PathNodeDisplay>
         {
@@ -852,12 +855,34 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             foreach (var routeNode in snapshot.Nodes.OrderBy(static node => node.Index))
             {
                 var role = routeNode.Index == 0 ? "Узел входа" : "Сервисная нода";
-                nodes.Add(new PathNodeDisplay(role, routeNode.Endpoint, routeNode.IsReachable));
+                var ip = ResolveRouteIp(routeNode);
+                var country = ip is null
+                    ? null
+                    : await ipCountryLookup.LookupCountryAsync(ip);
+                nodes.Add(new PathNodeDisplay(role, country ?? "Страна не определена", routeNode.IsReachable));
             }
         }
 
         nodes.Add(new PathNodeDisplay("Назначение", null, true));
         return nodes;
+    }
+
+    private static string? ResolveRouteIp(TransportRouteNode node)
+    {
+        if (System.Net.IPAddress.TryParse(node.PublicIp, out var publicIp))
+        {
+            return publicIp.ToString();
+        }
+
+        if (System.Net.IPAddress.TryParse(node.PublicHost, out var publicHost))
+        {
+            return publicHost.ToString();
+        }
+
+        return Uri.TryCreate(node.Endpoint, UriKind.Absolute, out var endpoint) &&
+               System.Net.IPAddress.TryParse(endpoint.Host, out var endpointIp)
+            ? endpointIp.ToString()
+            : null;
     }
 
     private static IReadOnlyList<PathNodeDisplay> BuildRouteNodes(IReadOnlyList<RegistryRouteNode> registryNodes)

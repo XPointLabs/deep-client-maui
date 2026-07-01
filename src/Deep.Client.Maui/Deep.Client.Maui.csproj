@@ -39,6 +39,14 @@
     <EmbeddedResource Include="deep.bootstrap.json">
       <LogicalName>deep.bootstrap.json</LogicalName>
     </EmbeddedResource>
+    <MauiAsset Remove="Resources\Raw\geolite2_country_blocks_ipv4" />
+    <MauiAsset Remove="Resources\Raw\geolite2_country_codes.json" />
+    <EmbeddedResource Include="Resources\Raw\geolite2_country_blocks_ipv4">
+      <LogicalName>geolite2_country_blocks_ipv4</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Raw\geolite2_country_codes.json">
+      <LogicalName>geolite2_country_codes.json</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">

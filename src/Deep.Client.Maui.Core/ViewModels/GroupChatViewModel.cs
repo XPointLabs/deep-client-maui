@@ -2,6 +2,7 @@
 using System.Collections.Specialized;
 using Deep.Client.Maui.Core.Commands;
 using Deep.Client.Shared.Domain;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Core.ViewModels;
@@ -12,9 +13,24 @@ public sealed record GroupChatMessageItem(
     MessageDirection Direction,
     MessageDeliveryState State,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<AttachmentMetadata> Attachments)
+    IReadOnlyList<AttachmentMetadata> Attachments,
+    string SenderLabel)
 {
     public bool HasAttachments => Attachments.Count > 0;
+
+    public bool IsOutgoing => Direction == MessageDirection.Outgoing;
+
+    public bool ShowSenderLabel => Direction == MessageDirection.Incoming && !string.IsNullOrWhiteSpace(SenderLabel);
+
+    public bool IsStatusVisible => MessageStatusPresentation.IsVisible(Direction, State);
+
+    public bool IsReadStatus => State == MessageDeliveryState.Read;
+
+    public bool IsFailedStatus => State == MessageDeliveryState.Failed;
+
+    public string StatusGlyph => MessageStatusPresentation.Glyph(State);
+
+    public string StatusDescription => MessageStatusPresentation.Description(State);
 
     public string AttachmentSummary => Attachments.Count switch
     {
@@ -30,7 +46,9 @@ public sealed class GroupChatViewModel : ViewModelBase
 {
     private const int InitialMessagePageSize = 100;
     private readonly ClientRuntime runtime;
+    private readonly IContactRepository contacts;
     private readonly IAttachmentPickerService? attachmentPicker;
+    private readonly Dictionary<string, string> senderLabels = new(StringComparer.Ordinal);
     private SessionAccount? account;
     private Group? group;
     private string groupTitle = string.Empty;
@@ -48,6 +66,7 @@ public sealed class GroupChatViewModel : ViewModelBase
     public GroupChatViewModel(ClientRuntime runtime, IAttachmentPickerService? attachmentPicker = null)
     {
         this.runtime = runtime;
+        contacts = (IContactRepository)runtime.Store;
         this.attachmentPicker = attachmentPicker;
         Messages = new ObservableRangeCollection<GroupChatMessageItem>();
         StagedAttachments = [];
@@ -243,7 +262,7 @@ public sealed class GroupChatViewModel : ViewModelBase
                 : Draft;
 
             var sent = await runtime.Messages.SendGroupAsync(account.SessionId, group.Id, body, StagedAttachments, cancellationToken: ct);
-            Messages.Add(ToItem(sent));
+            Messages.Add(await ToItemAsync(sent, ct));
             Draft = string.Empty;
             StagedAttachments.Clear();
             SetStatus("Сообщение отправлено.");
@@ -293,7 +312,7 @@ public sealed class GroupChatViewModel : ViewModelBase
             var items = new List<GroupChatMessageItem>(messages.Count);
             foreach (var message in messages)
             {
-                items.Add(ToItem(ApplyReadCursor(message, readCursor)));
+                items.Add(await ToItemAsync(ApplyReadCursor(message, readCursor), ct));
             }
 
             PrependMessageItems(items);
@@ -556,8 +575,34 @@ public sealed class GroupChatViewModel : ViewModelBase
         && account is not null
         && (!string.IsNullOrWhiteSpace(Draft) || StagedAttachments.Count > 0);
 
-    private static GroupChatMessageItem ToItem(Message message) =>
-        new(message.Id, message.Body, message.Direction, message.DeliveryState, message.CreatedAt, message.Attachments);
+    private async Task<GroupChatMessageItem> ToItemAsync(Message message, CancellationToken cancellationToken)
+    {
+        var senderLabel = string.Empty;
+        if (message.Direction == MessageDirection.Incoming)
+        {
+            if (!senderLabels.TryGetValue(message.Sender.Value, out senderLabel))
+            {
+                var contact = await contacts.GetAsync(message.Sender, cancellationToken).ConfigureAwait(false);
+                senderLabel = string.IsNullOrWhiteSpace(contact?.DisplayName)
+                    ? AbbreviateSessionId(message.Sender.Value)
+                    : contact.DisplayName.Trim();
+                senderLabels[message.Sender.Value] = senderLabel;
+            }
+        }
+
+        return new GroupChatMessageItem(
+            message.Id,
+            message.Body,
+            message.Direction,
+            message.DeliveryState,
+            message.CreatedAt,
+            message.Attachments,
+            senderLabel);
+    }
+
+    private static string AbbreviateSessionId(string value) => value.Length <= 14
+        ? value
+        : $"{value[..8]}…{value[^4..]}";
 
     private async Task LoadMessagesAsync(CancellationToken cancellationToken)
     {
@@ -577,7 +622,7 @@ public sealed class GroupChatViewModel : ViewModelBase
         var items = new List<GroupChatMessageItem>(messages.Count);
         foreach (var message in messages)
         {
-            items.Add(ToItem(ApplyReadCursor(message, readAt)));
+            items.Add(await ToItemAsync(ApplyReadCursor(message, readAt), cancellationToken));
         }
 
         SyncMessageItems(items);
@@ -664,7 +709,8 @@ public sealed class GroupChatViewModel : ViewModelBase
         && left.Direction == right.Direction
         && left.State == right.State
         && left.CreatedAt == right.CreatedAt
-        && left.Attachments.SequenceEqual(right.Attachments);
+        && left.Attachments.SequenceEqual(right.Attachments)
+        && left.SenderLabel == right.SenderLabel;
 
     private static void SyncMemberItems(
         ObservableCollection<GroupMemberItem> target,

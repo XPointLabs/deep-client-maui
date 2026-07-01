@@ -85,6 +85,9 @@ public static class MauiProgram
         });
         builder.Services.AddSingleton(featureFlags);
         builder.Services.AddSingleton<IClock, SystemClock>();
+        builder.Services.AddSingleton<IIpCountryLookup>(_ => new IpCountryLookup(
+            _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_blocks_ipv4")),
+            _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_codes.json"))));
         builder.Services.AddSingleton<IAvatarProfileTransport>(_ =>
         {
             var baseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
@@ -301,6 +304,10 @@ public static class MauiProgram
         return [];
 #endif
     }
+
+    private static Stream OpenEmbeddedResource(string name) =>
+        typeof(MauiProgram).Assembly.GetManifestResourceStream(name)
+        ?? throw new FileNotFoundException($"Embedded resource '{name}' was not found.", name);
 
     private static HttpClient CreateRouterHttpClient()
     {
