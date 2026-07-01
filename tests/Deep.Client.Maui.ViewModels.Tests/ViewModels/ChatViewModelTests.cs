@@ -35,6 +35,36 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task SendAddsOptimisticMessageBeforeTransportCompletes()
+    {
+        var transport = new BlockingMessageTransport();
+        var runtime = new ClientRuntime(
+            new InMemorySessionStore(),
+            Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults,
+            new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")),
+            transport);
+        var account = await runtime.Accounts.RegisterAsync("Alice");
+        var chat = new ChatViewModel(runtime);
+        await chat.OpenOneToOneAsync(account, SessionId.CreateNew(), "Bob");
+        chat.Draft = "instant";
+
+        await chat.SendAsync();
+
+        var pending = Assert.Single(chat.Messages);
+        Assert.Equal(MessageDeliveryState.Sending, pending.State);
+        Assert.Equal("◷", pending.StatusGlyph);
+        Assert.Empty(chat.Draft);
+
+        transport.Release();
+        for (var attempt = 0; attempt < 50 && chat.Messages[0].State != MessageDeliveryState.Sent; attempt++)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.Equal(MessageDeliveryState.Sent, chat.Messages[0].State);
+    }
+
+    [Fact]
     public async Task SelfChatKeepsOneOutgoingMessageAndUsesIconStatus()
     {
         var backend = new StubSessionBackend();
@@ -441,5 +471,20 @@ public sealed class ChatViewModelTests
             [
                 AttachmentMetadata.Local("receipt.pdf", "application/pdf", 1024)
             ]);
+    }
+
+    private sealed class BlockingMessageTransport : ISessionMessageTransport
+    {
+        private readonly TaskCompletionSource sendGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task SendAsync(OutboundMessageEnvelope envelope, CancellationToken cancellationToken = default) =>
+            await sendGate.Task.WaitAsync(cancellationToken);
+
+        public Task<IReadOnlyList<InboundMessageEnvelope>> ReceiveAsync(
+            SessionId recipient,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<InboundMessageEnvelope>>([]);
+
+        public void Release() => sendGate.TrySetResult();
     }
 }

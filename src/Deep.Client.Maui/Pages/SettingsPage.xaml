@@ -182,7 +182,7 @@
                     <VerticalStackLayout Spacing="0">
                         <Grid AutomationId="Settings.Donate" ColumnDefinitions="72,*,Auto" ColumnSpacing="0" HeightRequest="60" Padding="12,0">
                             <Label Text="♡" FontSize="28" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
-                            <Label Grid.Column="1" Text="Донат" FontSize="18" FontAttributes="Bold" VerticalTextAlignment="Center" />
+                            <Label Grid.Column="1" Text="Поддержать сеть" FontSize="18" FontAttributes="Bold" VerticalTextAlignment="Center" />
                             <Label Grid.Column="2" Text=">" FontSize="20" TextColor="{StaticResource TextSecondary}" VerticalTextAlignment="Center" />
                             <Grid.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnDonateClicked" />
@@ -202,8 +202,8 @@
                         </Grid>
                         <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" Margin="84,0,14,0" />
                         <Grid AutomationId="Settings.SessionNetwork" ColumnDefinitions="72,*,Auto" ColumnSpacing="0" HeightRequest="60" Padding="12,0">
-                            <Label Text="∞" FontSize="28" FontAttributes="Bold" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
-                            <Label Grid.Column="1" Text="Deep Network" FontSize="18" FontAttributes="Bold" VerticalTextAlignment="Center" />
+                            <Image Source="xpoint_logo.png" WidthRequest="25" HeightRequest="25" Aspect="AspectFit" HorizontalOptions="Center" VerticalOptions="Center" SemanticProperties.Description="XPoint Network" />
+                            <Label Grid.Column="1" Text="Сеть XPoint" FontSize="18" FontAttributes="Bold" VerticalTextAlignment="Center" />
                             <Label Grid.Column="2" Text=">" FontSize="20" TextColor="{StaticResource TextSecondary}" VerticalTextAlignment="Center" />
                             <Grid.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnSessionNetworkClicked" />

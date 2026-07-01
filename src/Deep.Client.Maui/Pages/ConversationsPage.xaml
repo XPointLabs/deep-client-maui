@@ -36,15 +36,24 @@
                 <Border x:Name="ProfileStatusDot" WidthRequest="8" HeightRequest="8" StrokeThickness="0" Background="{StaticResource PrimaryColor}" HorizontalOptions="End" VerticalOptions="End" StrokeShape="RoundRectangle 4" Margin="0,0,1,1" />
             </Grid>
 
-            <Label
+            <HorizontalStackLayout
                 Grid.Column="1"
-                Text="DEEP"
-                FontSize="17"
-                FontAttributes="Bold"
-                FontAutoScalingEnabled="False"
-                HorizontalTextAlignment="Center"
-                VerticalOptions="Center"
-                LineBreakMode="NoWrap" />
+                SemanticProperties.Description="Deep by XPoint Network"
+                Spacing="7"
+                HorizontalOptions="Center"
+                VerticalOptions="Center">
+                <Image
+                    Source="deep_mark.png"
+                    WidthRequest="28"
+                    HeightRequest="28"
+                    Aspect="AspectFit" />
+                <Label
+                    Text="Deep"
+                    FontSize="21"
+                    FontAttributes="Bold"
+                    CharacterSpacing="0"
+                    VerticalTextAlignment="Center" />
+            </HorizontalStackLayout>
 
             <Border
                 Grid.Column="2"

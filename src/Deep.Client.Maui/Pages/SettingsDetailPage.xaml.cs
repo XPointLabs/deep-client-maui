@@ -171,7 +171,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             ContentStack.Children.Add(CreatePathGraph(routeNodes));
             ContentStack.Children.Add(CreateOutlineButton("Узнать больше", () => OpenAsync(XPointUrl)));
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             if (!string.Equals(section, "path", StringComparison.OrdinalIgnoreCase))
             {
@@ -183,7 +183,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             ContentStack.Children.Add(CreatePathGraph(
             [
                 new("Вы", null, true),
-                new("Реестр временно недоступен", ex.Message, false),
+                new("Маршрут временно недоступен", "Не удалось обновить текущий путь. Повторите попытку позже.", false),
                 new("Назначение", null, true)
             ]));
         }
@@ -191,7 +191,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
 
     private void BuildNetworkSection()
     {
-        TitleLabel.Text = "Deep Network";
+        TitleLabel.Text = "Сеть XPoint";
         ContentStack.Children.Add(CreateCategory(
             "XPNT",
             CreateRow("Стейкинг XPNT", "Сервисные ноды получают право работать в сети через on-chain стейкинг.", () => OpenIfUriAsync(environment.StakingPortalUrl)),
@@ -239,7 +239,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             ContentStack.Children.Add(CreateCategory(
                 "XPNT",
                 CreateRow("Стейкинг XPNT", "Сервисные ноды получают право работать в сети через on-chain стейкинг.", () => OpenIfUriAsync(environment.StakingPortalUrl)),
-                CreateRow("Сеть контрактов", "Arbitrum Sepolia")));
+                CreateRow("Сеть контрактов", "Arbitrum One")));
             ContentStack.Children.Add(CreateCategory(
                 "Сервисные ноды",
                 CreateRow("Реестр временно недоступен", ex.Message)));
@@ -312,15 +312,15 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 "Тема",
                 "Палитра интерфейса Deep.",
                 ClientSettingKeys.AppearanceTheme,
-                "XPoint Dark",
-                "XPoint Dark",
-                "XPoint Light")));
+                "Тёмная",
+                "Тёмная",
+                "Светлая")));
 
         ContentStack.Children.Add(CreateCategory(
             "Акцент",
-            CreateAccentRow("XPoint Cyan", "#18C8FF", ClientSettingKeys.AppearanceAccent, "XPoint Cyan"),
-            CreateAccentRow("XPoint Blue", "#126DFF", ClientSettingKeys.AppearanceAccent, "XPoint Blue"),
-            CreateAccentRow("XPoint Violet", "#8A5AFF", ClientSettingKeys.AppearanceAccent, "XPoint Violet")));
+            CreateAccentRow("Голубой", "#18C8FF", ClientSettingKeys.AppearanceAccent, "Голубой"),
+            CreateAccentRow("Синий", "#126DFF", ClientSettingKeys.AppearanceAccent, "Синий"),
+            CreateAccentRow("Фиолетовый", "#8A5AFF", ClientSettingKeys.AppearanceAccent, "Фиолетовый")));
     }
 
     private void BuildMessageRequestsSection()
@@ -385,7 +385,8 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
 
         ContentStack.Children.Add(CreateCategory(
             null,
-            CreateRow("Версия приложения", $"Deep {AppInfo.Current.VersionString}")));
+            CreateRow("Версия приложения", $"Deep {AppInfo.Current.VersionString}"),
+            CreateRow("Сеть", "XPoint Network")));
     }
 
     private Border CreateCategory(string? title, params View[] rows)
@@ -436,7 +437,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             Padding = new Thickness(18, 24, 18, 44),
             Content = new Label
             {
-                Text = "Deep скрывает ваш IP, перенаправляя соединения через несколько сервисных узлов в децентрализованной сети Deep. Вот ваш текущий путь:",
+                Text = "Deep скрывает ваш IP, направляя соединения через несколько сервисных узлов XPoint Network. Вот ваш текущий путь:",
                 FontSize = 16,
                 TextColor = ColorResource("TextSecondary", Colors.Gray),
                 HorizontalTextAlignment = TextAlignment.Center,
@@ -601,7 +602,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
 
     private View CreateAccentRow(string title, string hex, string key, string value)
     {
-        var selected = string.Equals(Preferences.Default.Get(key, "XPoint Cyan"), value, StringComparison.Ordinal);
+        var selected = string.Equals(Preferences.Default.Get(key, "Голубой"), value, StringComparison.Ordinal);
         var grid = new Grid
         {
             ColumnDefinitions =
@@ -641,8 +642,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             var check = new Label
             {
                 Text = "✓",
-                FontSize = 18,
-                FontAttributes = FontAttributes.Bold,
+                FontSize = 17,
                 TextColor = ColorResource("PrimaryColor", Colors.Cyan),
                 VerticalOptions = LayoutOptions.Center
             };
@@ -947,7 +947,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             if (registration is null)
             {
                 Preferences.Default.Set(ClientSettingKeys.NotificationsFastMode, false);
-                StatusLabel.Text = "Разрешение на уведомления не выдано.";
+                StatusLabel.Text = "Push-сервис не вернул токен устройства.";
                 BuildSection();
                 return;
             }

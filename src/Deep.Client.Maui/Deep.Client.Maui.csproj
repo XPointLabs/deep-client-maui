@@ -11,7 +11,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationTitle>Deep</ApplicationTitle>
-    <ApplicationId>org.deep.client</ApplicationId>
+    <ApplicationId>network.xpoint.deep</ApplicationId>
     <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
     <WindowsPackageType>None</WindowsPackageType>
@@ -24,9 +24,22 @@
     <NoWarn Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">$(NoWarn);BG8403</NoWarn>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <AndroidPackageFormats>aab</AndroidPackageFormats>
+    <AndroidLinkMode>SdkOnly</AndroidLinkMode>
+    <AndroidEnableProguard>true</AndroidEnableProguard>
+    <AndroidLinkTool>r8</AndroidLinkTool>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
+    <PackageReference Include="QRCoder" Version="1.8.0" />
     <ProjectReference Include="..\Deep.Client.Maui.Core\Deep.Client.Maui.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <PackageReference Include="Xamarin.Firebase.Messaging" Version="124.1.2" />
+    <GoogleServicesJson Include="Platforms\Android\google-services.json" Condition="Exists('Platforms\Android\google-services.json')" />
   </ItemGroup>
 
   <ItemGroup>
@@ -52,5 +65,17 @@
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
     <AndroidLibrary Include="Platforms\Android\Jars\libXray.aar" />
   </ItemGroup>
+
+  <ItemGroup>
+    <MauiIcon Include="Resources\AppIcon\appicon.png" BaseSize="512,512" />
+    <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#020711" BaseSize="160,160" />
+    <MauiImage Include="Resources\Images\xpoint_logo.png" Resize="True" BaseSize="256,256" />
+    <MauiImage Include="Resources\Images\deep_logo.png" Resize="True" BaseSize="512,512" />
+    <MauiImage Include="Resources\Images\deep_mark.png" Resize="True" BaseSize="256,256" />
+  </ItemGroup>
+
+  <Target Name="EnsureGoogleServicesJson" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' and !Exists('Platforms\Android\google-services.json')">
+    <Error Text="Production Android builds require Platforms\Android\google-services.json. Use eng/build-android-play.ps1 with XPOINT_GOOGLE_SERVICES_JSON." />
+  </Target>
 
 </Project>

@@ -38,7 +38,8 @@ dotnet test tests/Deep.Client.Maui.UiTests/Deep.Client.Maui.UiTests.csproj
 
 Implemented E2 platform contour coverage:
 
-- APNS/FCM/WNS push lifecycle service with token persistence + unregister path.
+- APNS/WNS native token ingestion and provider-token persistence/unregister paths.
+- Android uses the official Firebase Messaging binding, obtains a real FCM token, refreshes it, and registers it with the push subscription API. Synthetic provider tokens are never used.
 - Background sync scheduling with retry backoff.
 - Media transcode + attachment staging pipeline.
 - Share/notification action ingestion bridges for Android/iOS/Windows activations.
@@ -106,8 +107,13 @@ The checked-in Android AAR is reproducible with:
 ```powershell
 .\eng\build-libxray-android.ps1 `
   -GoRoot C:\path\to\go1.26.2 `
-  -AndroidSdkRoot C:\path\to\android-sdk
+  -AndroidSdkRoot C:\path\to\android-sdk `
+  -JavaHome C:\path\to\jdk-21
 ```
+
+The build pins the upstream tag, commit, and `gomobile` version. It rejects an
+AAR unless both native ABIs contain valid ELF section metadata, a `.dynamic`
+section, and 16 KB-aligned load segments.
 
 ## MAUI Parity Stages (Session Android/iOS/Desktop)
 

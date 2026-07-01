@@ -143,6 +143,12 @@ public sealed class ConversationsViewModel : ViewModelBase
     private Task LoadAsync(bool forceMessageSummaries, CancellationToken cancellationToken) =>
         RunBusyAsync(async ct =>
         {
+            var activeAccount = await runtime.Accounts.GetActiveAccountAsync(ct);
+            if (activeAccount is not null)
+            {
+                _ = DispatchPendingMessagesAsync(activeAccount.SessionId);
+            }
+
             var conversations = await runtime.Conversations.ListAsync(ct);
             var previousById = allConversations.ToDictionary(item => item.Id);
             var nextConversations = new List<ConversationListItem>(conversations.Count);
@@ -188,6 +194,18 @@ public sealed class ConversationsViewModel : ViewModelBase
                 SelectedConversation = null;
             }
         }, cancellationToken);
+
+    private async Task DispatchPendingMessagesAsync(SessionId sessionId)
+    {
+        try
+        {
+            await runtime.Messages.DispatchPendingMessagesAsync(sessionId, CancellationToken.None);
+        }
+        catch
+        {
+            // Messages remain persisted and will be retried on the next load.
+        }
+    }
 
     private async Task<ConversationListItem> BuildListItemAsync(
         Conversation conversation,

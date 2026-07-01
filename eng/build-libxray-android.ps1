@@ -1,6 +1,7 @@
 param(
     [string]$GoRoot = $env:GOROOT,
     [string]$AndroidSdkRoot = $env:ANDROID_HOME,
+    [string]$JavaHome = $env:JAVA_HOME,
     [string]$OutputPath = (Join-Path $PSScriptRoot '..\src\Deep.Client.Maui\Platforms\Android\Jars\libXray.aar')
 )
 
@@ -15,6 +16,16 @@ if ([string]::IsNullOrWhiteSpace($GoRoot) -or -not (Test-Path (Join-Path $GoRoot
 if ([string]::IsNullOrWhiteSpace($AndroidSdkRoot) -or -not (Test-Path $AndroidSdkRoot)) {
     throw 'Android SDK with NDK 28.2.13676358 is required. Pass -AndroidSdkRoot or set ANDROID_HOME.'
 }
+if ([string]::IsNullOrWhiteSpace($JavaHome)) {
+    $javaRoot = Get-ChildItem "${env:ProgramFiles}\Android\openjdk" -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if ($null -ne $javaRoot) {
+        $JavaHome = $javaRoot.FullName
+    }
+}
+if ([string]::IsNullOrWhiteSpace($JavaHome) -or -not (Test-Path (Join-Path $JavaHome 'bin\javac.exe'))) {
+    throw 'JDK with javac is required. Pass -JavaHome or set JAVA_HOME.'
+}
 
 $go = Join-Path $GoRoot 'bin\go.exe'
 $version = & $go version
@@ -28,11 +39,11 @@ try {
     $env:GOROOT = $GoRoot
     $env:ANDROID_HOME = $AndroidSdkRoot
     $env:ANDROID_SDK_ROOT = $AndroidSdkRoot
-    $env:PATH = "$(Join-Path $GoRoot 'bin');$env:PATH"
+    $env:JAVA_HOME = $JavaHome
     $env:GOBIN = Join-Path $work 'bin'
+    $env:PATH = "$env:GOBIN;$(Join-Path $GoRoot 'bin');$(Join-Path $JavaHome 'bin');$env:PATH"
 
     & $go install "golang.org/x/mobile/cmd/gomobile@$gomobileVersion"
-    & (Join-Path $env:GOBIN 'gomobile.exe') init
     git clone --depth 1 --branch $libXrayTag https://github.com/XTLS/libXray.git (Join-Path $work 'libxray')
     $actualCommit = git -C (Join-Path $work 'libxray') rev-parse HEAD
     if ($actualCommit -ne $libXrayCommit) {
@@ -43,15 +54,19 @@ try {
     New-Item -ItemType Directory -Force -Path ([IO.Path]::GetDirectoryName($destination)) | Out-Null
     Push-Location (Join-Path $work 'libxray')
     try {
+        & $go get -tool "golang.org/x/mobile/cmd/gobind@$gomobileVersion"
+        & (Join-Path $env:GOBIN 'gomobile.exe') init
         & (Join-Path $env:GOBIN 'gomobile.exe') bind `
-            -target=android/arm64,android/amd64 `
-            -androidapi=26 `
+            '-target=android/arm64,android/amd64' `
+            '-androidapi=26' `
             -o $destination `
             .
     }
     finally {
         Pop-Location
     }
+
+    & (Join-Path $PSScriptRoot 'validate-libxray-aar.ps1') -AarPath $destination
 
     $actualSha256 = (Get-FileHash $destination -Algorithm SHA256).Hash
     Write-Host "Built $destination ($actualSha256)"

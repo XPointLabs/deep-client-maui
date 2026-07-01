@@ -249,24 +249,55 @@ public sealed class GroupChatViewModel : ViewModelBase
             SetStatus("Группа обновлена.");
         }, cancellationToken);
 
-    public Task SendAsync(CancellationToken cancellationToken = default) =>
-        RunBusyAsync(async ct =>
+    public async Task SendAsync(CancellationToken cancellationToken = default)
+    {
+        try
         {
             if (group is null || account is null)
             {
                 throw new InvalidOperationException("Откройте группу перед отправкой сообщений.");
             }
 
+            ErrorMessage = null;
             var body = string.IsNullOrWhiteSpace(Draft)
                 ? "[Вложение]"
                 : Draft;
+            var attachments = StagedAttachments.ToArray();
 
-            var sent = await runtime.Messages.SendGroupAsync(account.SessionId, group.Id, body, StagedAttachments, cancellationToken: ct);
-            Messages.Add(await ToItemAsync(sent, ct));
+            var pending = await runtime.Messages.QueueGroupAsync(
+                account.SessionId,
+                group.Id,
+                body,
+                attachments,
+                cancellationToken);
+            Messages.Add(await ToItemAsync(pending, cancellationToken));
             Draft = string.Empty;
             StagedAttachments.Clear();
+            SetStatus("Отправка сообщения...");
+            _ = DispatchPendingMessageAsync(pending);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    private async Task DispatchPendingMessageAsync(Message pending)
+    {
+        try
+        {
+            var sent = await runtime.Messages.DispatchGroupAsync(pending);
+            await ReplaceMessageItemAsync(sent);
             SetStatus("Сообщение отправлено.");
-        }, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await ReplaceMessageItemAsync(pending.Mark(MessageDeliveryState.Failed));
+            ErrorMessage = $"Не удалось отправить сообщение: {ex.Message}";
+            SetStatus(ErrorMessage, isError: true);
+        }
+    }
 
     public Task PickAttachmentsAsync(CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
@@ -598,6 +629,18 @@ public sealed class GroupChatViewModel : ViewModelBase
             message.CreatedAt,
             message.Attachments,
             senderLabel);
+    }
+
+    private async Task ReplaceMessageItemAsync(Message message)
+    {
+        for (var index = 0; index < Messages.Count; index++)
+        {
+            if (Messages[index].Id == message.Id)
+            {
+                Messages[index] = await ToItemAsync(message, CancellationToken.None);
+                return;
+            }
+        }
     }
 
     private static string AbbreviateSessionId(string value) => value.Length <= 14

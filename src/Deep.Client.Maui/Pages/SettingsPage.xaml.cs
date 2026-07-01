@@ -103,15 +103,7 @@ public partial class SettingsPage : ContentPage
 
     private async void OnQrClicked(object? sender, EventArgs e)
     {
-        var action = await DisplayActionSheetAsync("ID аккаунта", "Отмена", null, "Скопировать ID", "Поделиться ID");
-        if (action == "Скопировать ID")
-        {
-            await Clipboard.Default.SetTextAsync(viewModel.SessionId);
-        }
-        else if (action == "Поделиться ID")
-        {
-            await ShareSessionIdAsync();
-        }
+        await Shell.Current.GoToAsync(ShellRouteCatalog.StartConversation);
     }
 
     private async void OnChangePhotoClicked(object? sender, EventArgs e)
@@ -250,7 +242,7 @@ public partial class SettingsPage : ContentPage
 
     private async void OnLogoutClicked(object? sender, EventArgs e)
     {
-        var confirmed = await DisplayAlertAsync("Очистить данные", "Выйти из этого аккаунта Deep на устройстве?", "Очистить данные", "Отмена");
+        var confirmed = await DisplayAlertAsync("Очистить данные", "Выйти из аккаунта Deep на этом устройстве?", "Очистить данные", "Отмена");
         if (!confirmed)
         {
             return;

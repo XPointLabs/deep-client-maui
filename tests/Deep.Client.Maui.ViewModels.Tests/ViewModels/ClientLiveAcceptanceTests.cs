@@ -90,6 +90,7 @@ public sealed class ClientLiveAcceptanceTests
         var messageBody = $"client-live-message-{Guid.NewGuid():N}";
         aliceChat.Draft = messageBody;
         await aliceChat.SendAsync();
+        await WaitForAsync(() => aliceChat.Messages.Any(item => item.Body == messageBody && item.State == MessageDeliveryState.Sent));
         await bobChat.ReceiveAsync();
 
         Assert.Null(aliceChat.ErrorMessage);
@@ -130,6 +131,7 @@ public sealed class ClientLiveAcceptanceTests
         var groupBody = $"client-live-group-message-{Guid.NewGuid():N}";
         aliceGroupChat.Draft = groupBody;
         await aliceGroupChat.SendAsync();
+        await WaitForAsync(() => aliceGroupChat.Messages.Any(item => item.Body == groupBody && item.State == MessageDeliveryState.Sent));
         await bobGroupChat.RefreshAsync();
 
         Assert.Null(aliceGroupChat.ErrorMessage);
@@ -194,6 +196,17 @@ public sealed class ClientLiveAcceptanceTests
 
     private static RealtimeCallService CreateCallService(string callUrl) =>
         new(new HttpCallSignalingTransport(new HttpClient(), new HttpCallSignalingTransportOptions(callUrl)));
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(20);
+        while (!condition() && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(50);
+        }
+
+        Assert.True(condition(), "Timed out waiting for optimistic message dispatch.");
+    }
 
     private static async Task<bool> HasRemoteSubscriptionAsync(string pushUrl, SessionId sessionId, string token)
     {

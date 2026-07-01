@@ -8,5 +8,11 @@ TestResults/
 *.suo
 *.log
 *.tmp
+*.keystore
+*.jks
+*.p12
+*.pass
+google-services.json
+.secrets/
 coverage/
 appsettings.Production.json

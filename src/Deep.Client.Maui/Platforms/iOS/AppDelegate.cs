@@ -23,7 +23,7 @@ public class AppDelegate : MauiUIApplicationDelegate
     [Export("application:didFailToRegisterForRemoteNotificationsWithError:")]
     public void FailedToRegisterForRemoteNotifications(UIApplication application, NSError error)
     {
-        PushTokenBridge.Set("apns", $"apns-register-failed:{error.LocalizedDescription}");
+        CrashDiagnostics.LogInfo("Push", $"APNs registration failed: {error.LocalizedDescription}");
     }
 
     public override bool OpenUrl(UIApplication application, NSUrl url, NSDictionary options)

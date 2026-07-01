@@ -1,6 +1,7 @@
 ﻿using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Shared.State;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
+using QRCoder;
 
 namespace Deep.Client.Maui.Pages;
 
@@ -8,6 +9,7 @@ public partial class StartConversationPage : ContentPage
 {
     private readonly ClientRuntime runtime;
     private string accountId = string.Empty;
+    private byte[]? accountQrBytes;
 
     public StartConversationPage(ClientRuntime runtime)
     {
@@ -22,6 +24,13 @@ public partial class StartConversationPage : ContentPage
         var account = await runtime.Accounts.GetActiveAccountAsync();
         accountId = account?.SessionId.Value ?? string.Empty;
         AccountIdLabel.Text = string.IsNullOrWhiteSpace(accountId) ? "-" : accountId;
+        accountQrBytes = string.IsNullOrWhiteSpace(accountId)
+            ? null
+            : PngByteQRCodeHelper.GetQRCode(accountId, QRCodeGenerator.ECCLevel.Q, 12);
+        AccountQrImage.IsVisible = accountQrBytes is not null;
+        AccountQrImage.Source = accountQrBytes is null
+            ? null
+            : ImageSource.FromStream(() => new MemoryStream(accountQrBytes, writable: false));
     }
 
     protected override bool OnBackButtonPressed()

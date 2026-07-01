@@ -33,3 +33,18 @@ SOFTWARE.
 This product includes GeoLite2 data created by MaxMind, available from
 https://www.maxmind.com. The country data is distributed under the Creative
 Commons Attribution-ShareAlike 4.0 International License.
+
+## QRCoder
+
+The client uses QRCoder to generate account QR codes locally. QRCoder is
+distributed under the MIT License.
+
+Source: https://github.com/codebude/QRCoder
+
+## Firebase Messaging Android binding
+
+The Android client uses the Microsoft-maintained Xamarin binding for the
+Firebase Messaging Android SDK. Firebase Android SDK components are provided
+under their respective Google open-source licenses.
+
+Source: https://github.com/xamarin/GooglePlayServicesComponents

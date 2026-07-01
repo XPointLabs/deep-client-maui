@@ -11,8 +11,9 @@
     Title="Добро пожаловать">
     <Grid Padding="{StaticResource PagePadding}" RowDefinitions="*,Auto,Auto,*" RowSpacing="20" BackgroundColor="{StaticResource PageBackground}">
         <VerticalStackLayout Grid.Row="1" Spacing="8" HorizontalOptions="Fill">
-            <Label Text="DEEP" FontSize="36" FontAttributes="Bold" HorizontalTextAlignment="Center" />
-            <Label Text="Приватные сообщения через сеть сервисных нод." FontSize="15" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+            <Image Source="deep_mark.png" WidthRequest="118" HeightRequest="118" Aspect="AspectFit" HorizontalOptions="Center" SemanticProperties.Description="Логотип Deep" />
+            <Label Text="Deep" FontSize="36" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+            <Label Text="Приватные сообщения через XPoint Network." FontSize="15" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
         </VerticalStackLayout>
 
         <VerticalStackLayout Grid.Row="2" Spacing="12">

@@ -36,7 +36,7 @@
                 <Label Text="Q" TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="20" />
             </Border>
             <Label Grid.Column="2" Text="{Binding Conversation.DisplayName}" FontSize="18" FontAttributes="Bold" LineBreakMode="TailTruncation" VerticalOptions="Center" />
-            <Button Grid.Column="3" Text="⋮" AutomationProperties.Name="Информация о чате" Style="{StaticResource ToolbarIconButton}" Clicked="OnInfoClicked" />
+            <Button Grid.Column="3" Text="⋮" SemanticProperties.Description="Информация о чате" Style="{StaticResource ToolbarIconButton}" Clicked="OnInfoClicked" />
         </Grid>
 
         <CollectionView x:Name="MessagesCollection" AutomationId="Chat.Messages" Grid.Row="2" ItemsSource="{Binding Messages}" Scrolled="OnMessagesScrolled">
@@ -63,7 +63,7 @@
                                         Grid.Column="3"
                                         Text="{Binding StatusGlyph}"
                                         IsVisible="{Binding IsStatusVisible}"
-                                        AutomationProperties.Name="{Binding StatusDescription}"
+                                        SemanticProperties.Description="{Binding StatusDescription}"
                                         FontSize="11"
                                         FontAttributes="Bold"
                                         TextColor="{StaticResource TextSecondary}">
@@ -101,9 +101,9 @@
 
         <Border Grid.Row="5" Background="{StaticResource PanelBackground}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" Padding="6" StrokeShape="RoundRectangle 24">
             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                <Button AutomationId="Chat.Attach" Text="+" AutomationProperties.Name="Добавить вложение" Command="{Binding PickAttachmentsCommand}" WidthRequest="40" HeightRequest="40" Padding="0" FontSize="25" Style="{StaticResource GhostButton}" />
+                <Button AutomationId="Chat.Attach" Text="+" SemanticProperties.Description="Добавить вложение" Command="{Binding PickAttachmentsCommand}" WidthRequest="40" HeightRequest="40" Padding="0" FontSize="25" Style="{StaticResource GhostButton}" />
                 <Entry x:Name="DraftEntry" AutomationId="Chat.Draft" Grid.Column="1" Placeholder="Сообщение" Text="{Binding Draft}" BackgroundColor="Transparent" ReturnType="Send" ReturnCommand="{Binding SendCommand}" />
-                <Button AutomationId="Chat.Send" Grid.Column="2" Text="➤" AutomationProperties.Name="Отправить" Command="{Binding SendCommand}" WidthRequest="40" HeightRequest="40" Padding="0" FontSize="19" />
+                <Button AutomationId="Chat.Send" Grid.Column="2" Text="➤" SemanticProperties.Description="Отправить" Command="{Binding SendCommand}" WidthRequest="40" HeightRequest="40" Padding="0" FontSize="19" />
             </Grid>
         </Border>
     </Grid>

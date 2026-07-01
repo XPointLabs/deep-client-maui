@@ -18,7 +18,7 @@
                     Background="Transparent"
                     StrokeThickness="0"
                     VerticalOptions="Center">
-                    <Label Text="&lt;" FontSize="24" FontAttributes="Bold" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                    <Label Text="‹" FontSize="36" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,-3,0,0" />
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnBackClicked" />
                     </Border.GestureRecognizers>

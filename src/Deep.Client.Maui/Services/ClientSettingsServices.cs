@@ -60,17 +60,17 @@ public sealed class MauiAppearanceService : IAppearanceService
         }
 
         var followSystem = Preferences.Default.Get(ClientSettingKeys.AppearanceFollowSystem, false);
-        var theme = Preferences.Default.Get(ClientSettingKeys.AppearanceTheme, "XPoint Dark");
+        var theme = Preferences.Default.Get(ClientSettingKeys.AppearanceTheme, "Тёмная");
         app.UserAppTheme = followSystem
             ? AppTheme.Unspecified
-            : theme.Contains("Light", StringComparison.OrdinalIgnoreCase)
+            : IsLightTheme(theme)
                 ? AppTheme.Light
                 : AppTheme.Dark;
 
-        var palette = theme.Contains("Light", StringComparison.OrdinalIgnoreCase)
+        var palette = IsLightTheme(theme)
             ? Palette.XPointLight
             : Palette.XPointDark;
-        var accent = AccentFor(Preferences.Default.Get(ClientSettingKeys.AppearanceAccent, "XPoint Cyan"));
+        var accent = AccentFor(Preferences.Default.Get(ClientSettingKeys.AppearanceAccent, "Голубой"));
 
         SetColor(app, "PageBackground", palette.PageBackground);
         SetColor(app, "PanelBackground", palette.PanelBackground);
@@ -93,10 +93,16 @@ public sealed class MauiAppearanceService : IAppearanceService
     private static Accent AccentFor(string value) =>
         value switch
         {
+            "Синий" => new("#126DFF", "#18C8FF", "#8A5AFF"),
             "XPoint Blue" => new("#126DFF", "#18C8FF", "#8A5AFF"),
+            "Фиолетовый" => new("#8A5AFF", "#126DFF", "#18C8FF"),
             "XPoint Violet" => new("#8A5AFF", "#126DFF", "#18C8FF"),
             _ => new("#18C8FF", "#126DFF", "#8A5AFF")
         };
+
+    private static bool IsLightTheme(string value) =>
+        value.Contains("Light", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("Светл", StringComparison.OrdinalIgnoreCase);
 
     private sealed record Accent(string Primary, string Muted, string Avatar);
 

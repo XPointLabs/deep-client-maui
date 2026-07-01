@@ -28,7 +28,7 @@ The MAUI app is a shell over `deep-client-shared`.
 - share extension equivalents,
 - realtime call lifecycle bridge to shared signaling service.
 
-Unsupported or incomplete behavior stays behind `ClientFeatureFlags` or placeholder services rather than being removed.
+Only behavior backed by a concrete runtime service is exposed in release builds. Feature flags remain for controlled rollout and tests, not as UI placeholders.
 
 ## Runtime Flow
 
@@ -49,7 +49,7 @@ Unsupported or incomplete behavior stays behind `ClientFeatureFlags` or placehol
 
 ## Platform Integrations (E2)
 
-- Push lifecycle service implements APNS/FCM/WNS provider mapping, token persistence, unregister flow, and native token bridge ingestion.
+- Push lifecycle service implements APNS/FCM/WNS provider mapping, real-token persistence, unregister flow, and native token bridge ingestion. It never manufactures provider tokens.
 - Background sync service schedules delayed runs with retry backoff and bridge events for sync workers.
 - Media/attachment pipeline transcodes selected files through `IMediaCodecService` before staging metadata.
 - Share and notification actions parity is handled via Android/iOS/Windows activation ingestion into in-app bridges.
@@ -63,6 +63,7 @@ Unsupported or incomplete behavior stays behind `ClientFeatureFlags` or placehol
 ## Caveats
 
 - Android build currently emits CA1422 warning for legacy `GetParcelableExtra` usage compatibility path; migration to typed overload can be done when min SDK policy is raised.
+- Android FCM uses the external `google-services.json` for package `network.xpoint.deep`, `FirebaseMessagingService` for token refresh/data messages, and automatic signed subscription after account load. Production builds fail when the Firebase configuration is missing.
 - iOS/MacCatalyst token registration requires APNS entitlements and provisioning profiles on physical device/testflight builds.
 - Windows WNS provider path uses channel URI and requires packaged app identity for production push registration.
 - E3 currently uses in-memory signaling transport and compatibility SDP/ICE payload path; platform-native WebRTC media capture/render remains a parity follow-up.

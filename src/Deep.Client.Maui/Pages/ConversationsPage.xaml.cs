@@ -1,7 +1,10 @@
 ﻿using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.Services;
+using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Domain;
+using Deep.Client.Shared.Services;
+using Microsoft.Maui.Storage;
 
 namespace Deep.Client.Maui.Pages;
 
@@ -11,15 +14,19 @@ public partial class ConversationsPage : ContentPage
     private IDispatcherTimer? autoSyncTimer;
     private readonly ConversationsViewModel viewModel;
     private readonly INetworkStatusService networkStatusService;
+    private readonly IPushRegistrationCoordinator pushRegistration;
     private bool hasLoaded;
+    private bool pushRegistrationStarted;
 
     public ConversationsPage(
         ConversationsViewModel viewModel,
-        INetworkStatusService networkStatusService)
+        INetworkStatusService networkStatusService,
+        IPushRegistrationCoordinator pushRegistration)
     {
         InitializeComponent();
         this.viewModel = viewModel;
         this.networkStatusService = networkStatusService;
+        this.pushRegistration = pushRegistration;
         BindingContext = viewModel;
 
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
@@ -41,6 +48,32 @@ public partial class ConversationsPage : ContentPage
         }
 
         EnsureAutoSync();
+        EnsurePushRegistration();
+    }
+
+    private void EnsurePushRegistration()
+    {
+        if (pushRegistrationStarted ||
+            !Preferences.Default.Get(ClientSettingKeys.NotificationsFastMode, true))
+        {
+            return;
+        }
+
+        pushRegistrationStarted = true;
+        _ = RegisterPushAsync();
+    }
+
+    private async Task RegisterPushAsync()
+    {
+        try
+        {
+            await pushRegistration.RegisterAsync();
+        }
+        catch (Exception ex)
+        {
+            CrashDiagnostics.LogInfo("Push", $"Automatic registration failed: {ex.Message}");
+            pushRegistrationStarted = false;
+        }
     }
 
     protected override void OnDisappearing()

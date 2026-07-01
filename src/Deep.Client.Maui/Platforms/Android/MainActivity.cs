@@ -14,108 +14,108 @@ namespace Deep.Client.Maui;
 [Activity(Theme = "@style/Maui.SplashTheme", MainLauncher = true, LaunchMode = LaunchMode.SingleTop, ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
 public class MainActivity : MauiAppCompatActivity
 {
-	protected override void OnCreate(Bundle? savedInstanceState)
-	{
-		base.OnCreate(savedInstanceState);
+    protected override void OnCreate(Bundle? savedInstanceState)
+    {
+        base.OnCreate(savedInstanceState);
 #pragma warning disable CA1422
-		Window?.SetStatusBarColor(Android.Graphics.Color.Black);
-		Window?.SetNavigationBarColor(Android.Graphics.Color.Black);
-		if (OperatingSystem.IsAndroidVersionAtLeast(30) && Window?.InsetsController is { } controller)
-		{
-			controller.SetSystemBarsAppearance(
-				0,
-				(int)(WindowInsetsControllerAppearance.LightStatusBars | WindowInsetsControllerAppearance.LightNavigationBars));
-		}
+        Window?.SetStatusBarColor(Android.Graphics.Color.Black);
+        Window?.SetNavigationBarColor(Android.Graphics.Color.Black);
+        if (OperatingSystem.IsAndroidVersionAtLeast(30) && Window?.InsetsController is { } controller)
+        {
+            controller.SetSystemBarsAppearance(
+                0,
+                (int)(WindowInsetsControllerAppearance.LightStatusBars | WindowInsetsControllerAppearance.LightNavigationBars));
+        }
 
-		if (Window?.DecorView is { } decorView)
-		{
-			var flags = decorView.SystemUiFlags;
-			flags &= ~SystemUiFlags.LightStatusBar;
-			if (OperatingSystem.IsAndroidVersionAtLeast(26))
-			{
-				flags &= ~SystemUiFlags.LightNavigationBar;
-			}
+        if (Window?.DecorView is { } decorView)
+        {
+            var flags = decorView.SystemUiFlags;
+            flags &= ~SystemUiFlags.LightStatusBar;
+            if (OperatingSystem.IsAndroidVersionAtLeast(26))
+            {
+                flags &= ~SystemUiFlags.LightNavigationBar;
+            }
 
-			decorView.SystemUiFlags = flags;
-		}
+            decorView.SystemUiFlags = flags;
+        }
 
-		ApplyPrivacyScreenSetting();
+        ApplyPrivacyScreenSetting();
 #pragma warning restore CA1422
-	}
+    }
 
-	protected override void OnNewIntent(Intent? intent)
-	{
-		base.OnNewIntent(intent);
-		HandleIntent(intent);
-	}
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        HandleIntent(intent);
+    }
 
-	protected override void OnResume()
-	{
-		base.OnResume();
-		ApplyPrivacyScreenSetting();
-		HandleIntent(Intent);
-	}
+    protected override void OnResume()
+    {
+        base.OnResume();
+        ApplyPrivacyScreenSetting();
+        HandleIntent(Intent);
+    }
 
-	private void ApplyPrivacyScreenSetting()
-	{
-		if (Window is null)
-		{
-			return;
-		}
+    private void ApplyPrivacyScreenSetting()
+    {
+        if (Window is null)
+        {
+            return;
+        }
 
-		if (Preferences.Default.Get(ClientSettingKeys.PrivacyScreenSecurity, true))
-		{
-			Window.AddFlags(WindowManagerFlags.Secure);
-		}
-		else
-		{
-			Window.ClearFlags(WindowManagerFlags.Secure);
-		}
-	}
+        if (Preferences.Default.Get(ClientSettingKeys.PrivacyScreenSecurity, true))
+        {
+            Window.AddFlags(WindowManagerFlags.Secure);
+        }
+        else
+        {
+            Window.ClearFlags(WindowManagerFlags.Secure);
+        }
+    }
 
-	private static void HandleIntent(Intent? intent)
-	{
-		if (intent is null)
-		{
-			return;
-		}
+    private static void HandleIntent(Intent? intent)
+    {
+        if (intent is null)
+        {
+            return;
+        }
 
-		var action = intent.Action;
-		if (string.Equals(action, Intent.ActionSend, StringComparison.Ordinal))
-		{
-			var text = intent.GetStringExtra(Intent.ExtraText);
-			var stream = GetShareStream(intent);
-			var files = string.IsNullOrWhiteSpace(stream) ? Array.Empty<string>() : new[] { stream };
+        var action = intent.Action;
+        if (string.Equals(action, Intent.ActionSend, StringComparison.Ordinal))
+        {
+            var text = intent.GetStringExtra(Intent.ExtraText);
+            var stream = GetShareStream(intent);
+            var files = string.IsNullOrWhiteSpace(stream) ? Array.Empty<string>() : new[] { stream };
 
-			MauiShareExtensionBridge.EnqueueAsync(new SharePayload(text, files)).GetAwaiter().GetResult();
-		}
+            MauiShareExtensionBridge.EnqueueAsync(new SharePayload(text, files)).GetAwaiter().GetResult();
+        }
 
-		var notificationAction = intent.GetStringExtra("notification_action");
-		var conversationId = intent.GetStringExtra("conversation_id");
-		var notificationId = intent.GetStringExtra("notification_id");
+        var notificationAction = intent.GetStringExtra("notification_action");
+        var conversationId = intent.GetStringExtra("conversation_id");
+        var notificationId = intent.GetStringExtra("notification_id");
 
-		if (!string.IsNullOrWhiteSpace(notificationAction) && !string.IsNullOrWhiteSpace(conversationId))
-		{
-			NotificationActionBridge.Publish(new NotificationAction(
-				notificationAction,
-				conversationId,
-				notificationId ?? Guid.NewGuid().ToString("N"),
-				DateTimeOffset.UtcNow));
-		}
-	}
+        if (!string.IsNullOrWhiteSpace(notificationAction) && !string.IsNullOrWhiteSpace(conversationId))
+        {
+            NotificationActionBridge.Publish(new NotificationAction(
+                notificationAction,
+                conversationId,
+                notificationId ?? Guid.NewGuid().ToString("N"),
+                DateTimeOffset.UtcNow));
+        }
+    }
 
-	private static string? GetShareStream(Intent intent)
-	{
-		if (OperatingSystem.IsAndroidVersionAtLeast(33))
-		{
-			return intent.GetParcelableExtra(
-				Intent.ExtraStream,
-				Java.Lang.Class.FromType(typeof(Android.Net.Uri)))?.ToString();
-		}
+    private static string? GetShareStream(Intent intent)
+    {
+        if (OperatingSystem.IsAndroidVersionAtLeast(33))
+        {
+            return intent.GetParcelableExtra(
+                Intent.ExtraStream,
+                Java.Lang.Class.FromType(typeof(Android.Net.Uri)))?.ToString();
+        }
 
 #pragma warning disable CA1422
-		return intent.GetParcelableExtra(Intent.ExtraStream)?.ToString();
+        return intent.GetParcelableExtra(Intent.ExtraStream)?.ToString();
 #pragma warning restore CA1422
-	}
+    }
 }
 #endif

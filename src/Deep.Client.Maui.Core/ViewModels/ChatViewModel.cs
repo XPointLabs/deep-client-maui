@@ -210,24 +210,52 @@ public sealed class ChatViewModel : ViewModelBase
         return Task.CompletedTask;
     }
 
-    public Task SendAsync(CancellationToken cancellationToken = default) =>
-        RunBusyAsync(async ct =>
+    public async Task SendAsync(CancellationToken cancellationToken = default)
+    {
+        try
         {
             if (account is null || counterpart is null)
             {
                 throw new InvalidOperationException("Откройте чат перед отправкой.");
             }
 
+            ErrorMessage = null;
             var body = string.IsNullOrWhiteSpace(Draft)
                 ? "[Вложение]"
                 : Draft;
+            var attachments = StagedAttachments.ToArray();
 
-            var sent = await runtime.Messages.SendOneToOneAsync(account.SessionId, counterpart.Value, body, StagedAttachments, ct);
+            var pending = await runtime.Messages.QueueOneToOneAsync(
+                account.SessionId,
+                counterpart.Value,
+                body,
+                attachments,
+                cancellationToken);
 
-            Messages.Add(ToItem(sent));
+            Messages.Add(ToItem(pending));
             Draft = string.Empty;
             StagedAttachments.Clear();
-        }, cancellationToken);
+            _ = DispatchPendingMessageAsync(pending);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    private async Task DispatchPendingMessageAsync(Message pending)
+    {
+        try
+        {
+            var sent = await runtime.Messages.DispatchOneToOneAsync(pending);
+            ReplaceMessageItem(sent);
+        }
+        catch (Exception ex)
+        {
+            ReplaceMessageItem(pending.Mark(MessageDeliveryState.Failed));
+            ErrorMessage = $"Не удалось отправить сообщение: {ex.Message}";
+        }
+    }
 
     public Task ReceiveAsync(CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
@@ -478,6 +506,18 @@ public sealed class ChatViewModel : ViewModelBase
 
     private static ChatMessageItem ToItem(Message message) =>
         new(message.Id, message.Body, message.Direction, message.DeliveryState, message.CreatedAt, message.Attachments);
+
+    private void ReplaceMessageItem(Message message)
+    {
+        for (var index = 0; index < Messages.Count; index++)
+        {
+            if (Messages[index].Id == message.Id)
+            {
+                Messages[index] = ToItem(message);
+                return;
+            }
+        }
+    }
 
     private DateTimeOffset LatestIncomingOrNow(IReadOnlyList<Message> messages)
     {
