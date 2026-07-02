@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using Deep.Client.Maui.Core.Commands;
 using Deep.Client.Shared.Domain;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Core.ViewModels;
@@ -14,6 +15,7 @@ public sealed record ConversationListItem(
     string LastMessagePreview,
     int UnreadCount,
     bool IsUnread,
+    bool IsMessageRequest,
     bool IsSelected);
 
 public sealed class ConversationsViewModel : ViewModelBase
@@ -144,15 +146,29 @@ public sealed class ConversationsViewModel : ViewModelBase
         RunBusyAsync(async ct =>
         {
             var activeAccount = await runtime.Accounts.GetActiveAccountAsync(ct);
-            if (activeAccount is not null)
+            await RefreshLocalAsync(activeAccount, forceMessageSummaries, ct);
+
+            try
             {
-                _ = DispatchPendingMessagesAsync(activeAccount.SessionId);
+                await runtime.Inbox.SynchronizeAsync(ct);
+            }
+            catch when (!ct.IsCancellationRequested)
+            {
+                // Keep the cached conversation list usable while the network is unavailable.
             }
 
-            var conversations = await runtime.Conversations.ListAsync(ct);
+            await RefreshLocalAsync(activeAccount, forceMessageSummaries: false, ct);
+        }, cancellationToken);
+
+    private async Task RefreshLocalAsync(
+        SessionAccount? activeAccount,
+        bool forceMessageSummaries,
+        CancellationToken cancellationToken)
+    {
+            var conversations = await runtime.Conversations.ListAsync(cancellationToken);
             var previousById = allConversations.ToDictionary(item => item.Id);
             var nextConversations = new List<ConversationListItem>(conversations.Count);
-            foreach (var conversation in conversations)
+            foreach (var conversation in conversations.Where(static item => !item.IsHidden))
             {
                 if (!forceMessageSummaries
                     && previousById.TryGetValue(conversation.Id, out var previous)
@@ -161,7 +177,7 @@ public sealed class ConversationsViewModel : ViewModelBase
                     && previous.IsMuted == conversation.Settings.IsMuted
                     && previous.Kind == conversation.Kind)
                 {
-                    var readCursor = await runtime.Messages.GetReadCursorAsync(conversation.Id, ct);
+                    var readCursor = await runtime.Messages.GetReadCursorAsync(conversation.Id, cancellationToken);
                     var cursorChanged = !readCursors.TryGetValue(conversation.Id, out var previousCursor)
                         || previousCursor != readCursor;
                     readCursors[conversation.Id] = readCursor;
@@ -176,7 +192,7 @@ public sealed class ConversationsViewModel : ViewModelBase
                     continue;
                 }
 
-                nextConversations.Add(await BuildListItemAsync(conversation, ct));
+                nextConversations.Add(await BuildListItemAsync(conversation, activeAccount?.SessionId, cancellationToken));
             }
 
             if (allConversations.SequenceEqual(nextConversations))
@@ -193,22 +209,11 @@ public sealed class ConversationsViewModel : ViewModelBase
             {
                 SelectedConversation = null;
             }
-        }, cancellationToken);
-
-    private async Task DispatchPendingMessagesAsync(SessionId sessionId)
-    {
-        try
-        {
-            await runtime.Messages.DispatchPendingMessagesAsync(sessionId, CancellationToken.None);
-        }
-        catch
-        {
-            // Messages remain persisted and will be retried on the next load.
-        }
     }
 
     private async Task<ConversationListItem> BuildListItemAsync(
         Conversation conversation,
+        SessionId? activeSessionId,
         CancellationToken cancellationToken)
     {
         var messages = await runtime.Messages.ListConversationMessagesAsync(conversation.Id, cancellationToken);
@@ -231,6 +236,16 @@ public sealed class ConversationsViewModel : ViewModelBase
             && (readCursor is null || message.CreatedAt > readCursor.Value)
             && message.DeliveryState != MessageDeliveryState.Read);
 
+        var isMessageRequest = false;
+        if (conversation.Kind == ConversationKind.OneToOne
+            && activeSessionId is not null
+            && !string.Equals(conversation.Id.Value, activeSessionId.Value.Value, StringComparison.Ordinal))
+        {
+            var contact = await ((IContactRepository)runtime.Store)
+                .GetAsync(SessionId.Parse(conversation.Id.Value), cancellationToken);
+            isMessageRequest = contact is { IsApproved: false, IsBlocked: false };
+        }
+
         return new ConversationListItem(
             conversation.Id,
             conversation.DisplayName,
@@ -240,6 +255,7 @@ public sealed class ConversationsViewModel : ViewModelBase
             preview,
             unreadCount,
             IsUnread: unreadCount > 0,
+            IsMessageRequest: isMessageRequest,
             IsSelected: false);
     }
 

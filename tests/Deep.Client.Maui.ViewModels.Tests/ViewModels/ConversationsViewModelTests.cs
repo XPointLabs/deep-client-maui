@@ -86,4 +86,24 @@ public sealed class ConversationsViewModelTests
         Assert.Equal(0, viewModel.Conversations[0].UnreadCount);
         Assert.False(viewModel.Conversations[0].IsUnread);
     }
+
+    [Fact]
+    public async Task SyncShowsUnknownSenderAsMessageRequestInConversationList()
+    {
+        var backend = new StubSessionBackend();
+        var senderRuntime = ClientRuntime.CreateStubbed(backend: backend);
+        var recipientRuntime = ClientRuntime.CreateStubbed(backend: backend);
+        var sender = await senderRuntime.Accounts.RegisterAsync("Unknown sender");
+        var recipient = await recipientRuntime.Accounts.RegisterAsync("Recipient");
+        await senderRuntime.Messages.SendOneToOneAsync(sender.SessionId, recipient.SessionId, "hello");
+        var viewModel = new ConversationsViewModel(recipientRuntime);
+
+        await viewModel.SyncAsync();
+
+        var conversation = Assert.Single(viewModel.Conversations);
+        Assert.Equal(sender.SessionId.Value, conversation.Id.Value);
+        Assert.Equal("hello", conversation.LastMessagePreview);
+        Assert.Equal(1, conversation.UnreadCount);
+        Assert.True(conversation.IsMessageRequest);
+    }
 }

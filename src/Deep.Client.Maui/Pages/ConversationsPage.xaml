@@ -126,6 +126,7 @@
                                         </Border>
                                     </HorizontalStackLayout>
                                     <HorizontalStackLayout Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Spacing="8">
+                                        <Label Text="Новый контакт" FontSize="12" TextColor="{StaticResource PrimaryColor}" FontAttributes="Bold" IsVisible="{Binding IsMessageRequest}" />
                                         <Label Text="{Binding LastMessagePreview}" FontSize="14" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" HorizontalOptions="StartAndExpand" />
                                         <Label Text="Без звука" FontSize="12" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsMuted}" />
                                     </HorizontalStackLayout>

@@ -35,6 +35,8 @@ public partial class ConversationsPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
+        BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         UpdateProfileAvatarUi();
         UpdateNetworkUi();
         if (hasLoaded)
@@ -79,7 +81,19 @@ public partial class ConversationsPage : ContentPage
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         autoSyncTimer?.Stop();
+    }
+
+    private void OnBackgroundSyncScheduled()
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            if (!viewModel.IsBusy)
+            {
+                await viewModel.SyncAsync();
+            }
+        });
     }
 
     private async void OnConversationTapped(object? sender, TappedEventArgs e)
