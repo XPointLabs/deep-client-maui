@@ -60,6 +60,28 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task ReplyAndReactionUpdateChatPresentation()
+    {
+        var runtime = ClientRuntime.CreateStubbed();
+        var account = await runtime.Accounts.RegisterAsync("Alice");
+        var chat = new ChatViewModel(runtime);
+        await chat.OpenOneToOneAsync(account, account.SessionId, "Notes");
+        chat.Draft = "original";
+        await chat.SendAsync();
+        var original = Assert.Single(chat.Messages);
+
+        chat.BeginReply(original);
+        chat.Draft = "reply";
+        await chat.SendAsync();
+        var reply = Assert.Single(chat.Messages, message => message.Body == "reply");
+        await chat.ToggleReactionAsync(reply, "👍");
+
+        Assert.Equal(original.Id, chat.Messages.Single(message => message.Body == "reply").ReplyTo?.MessageId);
+        Assert.Equal("👍", chat.Messages.Single(message => message.Body == "reply").ReactionSummary);
+        Assert.False(chat.IsReplying);
+    }
+
+    [Fact]
     public async Task SendAddsOptimisticMessageBeforeTransportCompletes()
     {
         var transport = new BlockingMessageTransport();

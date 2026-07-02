@@ -14,7 +14,9 @@ public sealed record GroupChatMessageItem(
     MessageDeliveryState State,
     DateTimeOffset CreatedAt,
     IReadOnlyList<AttachmentMetadata> Attachments,
-    string SenderLabel)
+    string SenderLabel,
+    MessageReply? ReplyTo,
+    IReadOnlyList<MessageReaction> Reactions)
 {
     public bool HasAttachments => Attachments.Count > 0;
 
@@ -31,6 +33,16 @@ public sealed record GroupChatMessageItem(
     public string StatusGlyph => MessageStatusPresentation.Glyph(State);
 
     public string StatusDescription => MessageStatusPresentation.Description(State);
+
+    public bool HasReply => ReplyTo is not null;
+
+    public string ReplyPreview => ReplyTo?.Body ?? string.Empty;
+
+    public string ReactionSummary => string.Join("  ", Reactions
+        .GroupBy(static reaction => reaction.Emoji, StringComparer.Ordinal)
+        .Select(static group => group.Count() == 1 ? group.Key : $"{group.Key} {group.Count()}"));
+
+    public bool HasReactions => Reactions.Count > 0;
 
     public string AttachmentSummary => Attachments.Count switch
     {
@@ -62,6 +74,7 @@ public sealed class GroupChatViewModel : ViewModelBase
     private bool messagesLoaded;
     private DateTimeOffset? oldestLoadedMessageAt;
     private bool hasOlderMessages;
+    private GroupChatMessageItem? replyingTo;
 
     public GroupChatViewModel(ClientRuntime runtime, IAttachmentPickerService? attachmentPicker = null)
     {
@@ -83,6 +96,7 @@ public sealed class GroupChatViewModel : ViewModelBase
         RemoveMemberCommand = new AsyncCommand(RemoveMemberAsync, () => CanManageMembers && TryGetTargetMember(out _));
         MarkPendingRemovalCommand = new AsyncCommand(MarkPendingRemovalAsync, () => CanManageMembers && TryGetTargetMember(out _));
         UndoPendingRemovalCommand = new AsyncCommand(UndoPendingRemovalAsync, () => CanManageMembers && TryGetTargetMember(out _));
+        CancelReplyCommand = new AsyncCommand(CancelReplyAsync, () => ReplyingTo is not null);
     }
 
     public string GroupTitle
@@ -125,6 +139,8 @@ public sealed class GroupChatViewModel : ViewModelBase
 
     public AsyncCommand UndoPendingRemovalCommand { get; }
 
+    public AsyncCommand CancelReplyCommand { get; }
+
     public string Draft
     {
         get => draft;
@@ -145,6 +161,24 @@ public sealed class GroupChatViewModel : ViewModelBase
         1 => StagedAttachments[0].FileName,
         _ => $"{StagedAttachments.Count} влож."
     };
+
+    public GroupChatMessageItem? ReplyingTo
+    {
+        get => replyingTo;
+        private set
+        {
+            if (SetProperty(ref replyingTo, value))
+            {
+                RaisePropertyChanged(nameof(IsReplying));
+                RaisePropertyChanged(nameof(ReplyingToPreview));
+                CancelReplyCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsReplying => ReplyingTo is not null;
+
+    public string ReplyingToPreview => ReplyingTo?.Body ?? string.Empty;
 
     public string MemberSessionId
     {
@@ -269,10 +303,12 @@ public sealed class GroupChatViewModel : ViewModelBase
                 group.Id,
                 body,
                 attachments,
+                ReplyingTo?.Id,
                 cancellationToken);
             Messages.Add(await ToItemAsync(pending, cancellationToken));
             Draft = string.Empty;
             StagedAttachments.Clear();
+            ReplyingTo = null;
             SetStatus("Отправка сообщения...");
             _ = DispatchPendingMessageAsync(pending);
         }
@@ -282,6 +318,38 @@ public sealed class GroupChatViewModel : ViewModelBase
             SetStatus(ex.Message, isError: true);
         }
     }
+
+    public void BeginReply(GroupChatMessageItem message) => ReplyingTo = message;
+
+    public Task CancelReplyAsync(CancellationToken cancellationToken = default)
+    {
+        ReplyingTo = null;
+        return Task.CompletedTask;
+    }
+
+    public Task ToggleReactionAsync(GroupChatMessageItem message, string emoji, CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            if (account is null || group is null)
+            {
+                return;
+            }
+
+            var remove = message.Reactions.Any(reaction =>
+                reaction.Reactor == account.SessionId
+                && string.Equals(reaction.Emoji, emoji, StringComparison.Ordinal));
+            var updated = await runtime.Messages.SendGroupReactionAsync(
+                account.SessionId,
+                group.Id,
+                message.Id,
+                emoji,
+                remove,
+                ct);
+            if (updated is not null)
+            {
+                await ReplaceMessageItemAsync(updated);
+            }
+        }, cancellationToken);
 
     private async Task DispatchPendingMessageAsync(Message pending)
     {
@@ -628,7 +696,9 @@ public sealed class GroupChatViewModel : ViewModelBase
             message.DeliveryState,
             message.CreatedAt,
             message.Attachments,
-            senderLabel);
+            senderLabel,
+            message.ReplyTo,
+            message.ReactionItems);
     }
 
     private async Task ReplaceMessageItemAsync(Message message)
@@ -753,7 +823,9 @@ public sealed class GroupChatViewModel : ViewModelBase
         && left.State == right.State
         && left.CreatedAt == right.CreatedAt
         && left.Attachments.SequenceEqual(right.Attachments)
-        && left.SenderLabel == right.SenderLabel;
+        && left.SenderLabel == right.SenderLabel
+        && Equals(left.ReplyTo, right.ReplyTo)
+        && left.Reactions.SequenceEqual(right.Reactions);
 
     private static void SyncMemberItems(
         ObservableCollection<GroupMemberItem> target,

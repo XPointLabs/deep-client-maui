@@ -14,7 +14,9 @@ public sealed record ChatMessageItem(
     MessageDirection Direction,
     MessageDeliveryState State,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<AttachmentMetadata> Attachments)
+    IReadOnlyList<AttachmentMetadata> Attachments,
+    MessageReply? ReplyTo,
+    IReadOnlyList<MessageReaction> Reactions)
 {
     public bool HasAttachments => Attachments.Count > 0;
 
@@ -29,6 +31,16 @@ public sealed record ChatMessageItem(
     public string StatusGlyph => MessageStatusPresentation.Glyph(State);
 
     public string StatusDescription => MessageStatusPresentation.Description(State);
+
+    public bool HasReply => ReplyTo is not null;
+
+    public string ReplyPreview => ReplyTo?.Body ?? string.Empty;
+
+    public string ReactionSummary => string.Join("  ", Reactions
+        .GroupBy(static reaction => reaction.Emoji, StringComparer.Ordinal)
+        .Select(static group => group.Count() == 1 ? group.Key : $"{group.Key} {group.Count()}"));
+
+    public bool HasReactions => Reactions.Count > 0;
 
     public string AttachmentSummary => Attachments.Count switch
     {
@@ -54,6 +66,7 @@ public sealed class ChatViewModel : ViewModelBase
     private string? activeCallId;
     private bool isMessageRequest;
     private bool isBlocked;
+    private ChatMessageItem? replyingTo;
 
     public ChatViewModel(ClientRuntime runtime, ICallService? callService = null, IAttachmentPickerService? attachmentPicker = null)
     {
@@ -69,6 +82,7 @@ public sealed class ChatViewModel : ViewModelBase
         ClearAttachmentsCommand = new AsyncCommand(ClearAttachmentsAsync, () => StagedAttachments.Count > 0);
         AcceptMessageRequestCommand = new AsyncCommand(AcceptMessageRequestAsync, () => counterpart is not null && IsMessageRequest);
         BlockContactCommand = new AsyncCommand(BlockContactAsync, () => counterpart is not null && !IsBlocked);
+        CancelReplyCommand = new AsyncCommand(CancelReplyAsync, () => ReplyingTo is not null);
     }
 
     public Conversation? Conversation
@@ -122,6 +136,24 @@ public sealed class ChatViewModel : ViewModelBase
     }
 
     public bool IsComposerEnabled => !IsBlocked;
+
+    public ChatMessageItem? ReplyingTo
+    {
+        get => replyingTo;
+        private set
+        {
+            if (SetProperty(ref replyingTo, value))
+            {
+                RaisePropertyChanged(nameof(IsReplying));
+                RaisePropertyChanged(nameof(ReplyingToPreview));
+                CancelReplyCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsReplying => ReplyingTo is not null;
+
+    public string ReplyingToPreview => ReplyingTo?.Body ?? string.Empty;
 
     public string StagedAttachmentSummary => StagedAttachments.Count switch
     {
@@ -198,6 +230,8 @@ public sealed class ChatViewModel : ViewModelBase
 
     public AsyncCommand BlockContactCommand { get; }
 
+    public AsyncCommand CancelReplyCommand { get; }
+
     public async Task OpenOneToOneAsync(SessionAccount activeAccount, SessionId recipient, string? displayName = null, CancellationToken cancellationToken = default)
     {
         account = activeAccount;
@@ -273,6 +307,7 @@ public sealed class ChatViewModel : ViewModelBase
                 counterpart.Value,
                 body,
                 attachments,
+                ReplyingTo?.Id,
                 cancellationToken);
 
             IsMessageRequest = false;
@@ -280,6 +315,7 @@ public sealed class ChatViewModel : ViewModelBase
             Messages.Add(ToItem(pending));
             Draft = string.Empty;
             StagedAttachments.Clear();
+            ReplyingTo = null;
             _ = DispatchPendingMessageAsync(pending);
         }
         catch (Exception ex)
@@ -287,6 +323,38 @@ public sealed class ChatViewModel : ViewModelBase
             ErrorMessage = ex.Message;
         }
     }
+
+    public void BeginReply(ChatMessageItem message) => ReplyingTo = message;
+
+    public Task CancelReplyAsync(CancellationToken cancellationToken = default)
+    {
+        ReplyingTo = null;
+        return Task.CompletedTask;
+    }
+
+    public Task ToggleReactionAsync(ChatMessageItem message, string emoji, CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            if (account is null || counterpart is null)
+            {
+                return;
+            }
+
+            var remove = message.Reactions.Any(reaction =>
+                reaction.Reactor == account.SessionId
+                && string.Equals(reaction.Emoji, emoji, StringComparison.Ordinal));
+            var updated = await runtime.Messages.SendReactionOneToOneAsync(
+                account.SessionId,
+                counterpart.Value,
+                message.Id,
+                emoji,
+                remove,
+                ct);
+            if (updated is not null)
+            {
+                ReplaceMessageItem(updated);
+            }
+        }, cancellationToken);
 
     public Task AcceptMessageRequestAsync(CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
@@ -576,7 +644,15 @@ public sealed class ChatViewModel : ViewModelBase
     }
 
     private static ChatMessageItem ToItem(Message message) =>
-        new(message.Id, message.Body, message.Direction, message.DeliveryState, message.CreatedAt, message.Attachments);
+        new(
+            message.Id,
+            message.Body,
+            message.Direction,
+            message.DeliveryState,
+            message.CreatedAt,
+            message.Attachments,
+            message.ReplyTo,
+            message.ReactionItems);
 
     private void ReplaceMessageItem(Message message)
     {
@@ -668,7 +744,9 @@ public sealed class ChatViewModel : ViewModelBase
         && left.Direction == right.Direction
         && left.State == right.State
         && left.CreatedAt == right.CreatedAt
-        && left.Attachments.SequenceEqual(right.Attachments);
+        && left.Attachments.SequenceEqual(right.Attachments)
+        && Equals(left.ReplyTo, right.ReplyTo)
+        && left.Reactions.SequenceEqual(right.Reactions);
 
     private bool CanSend() =>
         account is not null

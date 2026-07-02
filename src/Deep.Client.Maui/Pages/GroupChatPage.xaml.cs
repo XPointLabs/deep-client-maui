@@ -280,6 +280,43 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         await AttachmentOpenService.OpenAsync(this, item.Attachments, attachmentFiles);
     }
 
+    private async void OnMessageTapped(object? sender, TappedEventArgs e)
+    {
+        if ((sender as BindableObject)?.BindingContext is not GroupChatMessageItem item)
+        {
+            return;
+        }
+
+        var selected = await DisplayActionSheetAsync(
+            "Сообщение",
+            "Отмена",
+            null,
+            "Ответить",
+            "👍",
+            "❤️",
+            "😂",
+            "😮",
+            "😢",
+            "Скопировать текст");
+        switch (selected)
+        {
+            case "Ответить":
+                viewModel.BeginReply(item);
+                DraftEntry.Focus();
+                break;
+            case "Скопировать текст":
+                await Clipboard.Default.SetTextAsync(item.Body);
+                break;
+            case "👍":
+            case "❤️":
+            case "😂":
+            case "😮":
+            case "😢":
+                await viewModel.ToggleReactionAsync(item, selected);
+                break;
+        }
+    }
+
     private void ApplyComposerPreferences()
     {
         DraftEntry.Keyboard = Preferences.Default.Get(ClientSettingKeys.PrivacyIncognitoKeyboard, true)

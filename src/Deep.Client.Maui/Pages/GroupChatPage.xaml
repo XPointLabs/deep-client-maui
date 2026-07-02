@@ -52,9 +52,19 @@
                 <DataTemplate x:DataType="vm:GroupChatMessageItem">
                     <Grid Padding="0,0,0,6">
                         <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="12,8" HorizontalOptions="Start" MaximumWidthRequest="330">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnMessageTapped" />
+                            </Border.GestureRecognizers>
                             <VerticalStackLayout Spacing="4">
                                 <Label Text="{Binding SenderLabel}" IsVisible="{Binding ShowSenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation" />
+                                <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}">
+                                    <VerticalStackLayout Spacing="2">
+                                        <Label Text="Ответ" FontSize="10" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" />
+                                        <Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="2" />
+                                    </VerticalStackLayout>
+                                </Border>
                                 <Label Text="{Binding Body}" FontSize="15" LineBreakMode="WordWrap" />
+                                <Label Text="{Binding ReactionSummary}" FontSize="14" IsVisible="{Binding HasReactions}" TextColor="{StaticResource TextPrimary}" />
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                                     <Border Grid.Column="1" Padding="7,2" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 9" IsVisible="{Binding HasAttachments}">
                                         <Label Text="{Binding AttachmentSummary}" FontSize="10" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" />
@@ -130,12 +140,24 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="4" Style="{StaticResource PanelBorder}" Padding="10" IsVisible="{Binding HasStagedAttachments}">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                <Label AutomationId="GroupChat.AttachmentSummary" Text="{Binding StagedAttachmentSummary}" LineBreakMode="TailTruncation" VerticalOptions="Center" TextColor="{StaticResource TextSecondary}" />
-                <Button Grid.Column="1" Text="Очистить" Command="{Binding ClearAttachmentsCommand}" WidthRequest="96" Style="{StaticResource SecondaryButton}" />
-            </Grid>
-        </Border>
+        <VerticalStackLayout Grid.Row="4" Spacing="6">
+            <Border Style="{StaticResource PanelBorder}" Padding="10" IsVisible="{Binding IsReplying}">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                    <BoxView WidthRequest="3" Color="{StaticResource PrimaryColor}" />
+                    <VerticalStackLayout Grid.Column="1" Spacing="1">
+                        <Label Text="Ответ" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" />
+                        <Label Text="{Binding ReplyingToPreview}" FontSize="13" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
+                    </VerticalStackLayout>
+                    <Button Grid.Column="2" Text="×" SemanticProperties.Description="Отменить ответ" Command="{Binding CancelReplyCommand}" WidthRequest="38" HeightRequest="38" Padding="0" Style="{StaticResource GhostButton}" />
+                </Grid>
+            </Border>
+            <Border Style="{StaticResource PanelBorder}" Padding="10" IsVisible="{Binding HasStagedAttachments}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <Label AutomationId="GroupChat.AttachmentSummary" Text="{Binding StagedAttachmentSummary}" LineBreakMode="TailTruncation" VerticalOptions="Center" TextColor="{StaticResource TextSecondary}" />
+                    <Button Grid.Column="1" Text="Очистить" Command="{Binding ClearAttachmentsCommand}" WidthRequest="96" Style="{StaticResource SecondaryButton}" />
+                </Grid>
+            </Border>
+        </VerticalStackLayout>
 
         <Label Grid.Row="5" AutomationId="GroupChat.Error" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="12" LineBreakMode="WordWrap" />
 

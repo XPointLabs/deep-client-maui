@@ -112,6 +112,30 @@ public sealed class GroupChatViewModelTests
         Assert.Single(viewModel.Members);
     }
 
+    [Fact]
+    public async Task ReplyAndReactionUpdateGroupChatPresentation()
+    {
+        var runtime = ClientRuntime.CreateStubbed();
+        var owner = await runtime.Accounts.RegisterAsync("Owner");
+        var group = await runtime.Conversations.CreateGroupScaffoldAsync(owner.SessionId, "Replies", []);
+        var viewModel = new GroupChatViewModel(runtime);
+        await viewModel.OpenFromRouteAsync(group.Id.Value, group.Name);
+        viewModel.Draft = "original";
+        await viewModel.SendAsync();
+        var original = Assert.Single(viewModel.Messages);
+
+        viewModel.BeginReply(original);
+        viewModel.Draft = "reply";
+        await viewModel.SendAsync();
+        var reply = viewModel.Messages.Single(message => message.Body == "reply");
+        await viewModel.ToggleReactionAsync(reply, "❤️");
+        var updatedReply = viewModel.Messages.Single(message => message.Body == "reply");
+
+        Assert.Equal(original.Id, updatedReply.ReplyTo?.MessageId);
+        Assert.Equal("❤️", updatedReply.ReactionSummary);
+        Assert.False(viewModel.IsReplying);
+    }
+
     private sealed class FakeAttachmentPicker : IAttachmentPickerService
     {
         public Task<IReadOnlyList<AttachmentMetadata>> PickAsync(CancellationToken cancellationToken = default) =>
