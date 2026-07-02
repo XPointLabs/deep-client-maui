@@ -20,27 +20,22 @@ public sealed class MauiAttachmentPickerService : IAttachmentPickerService
 
     public async Task<IReadOnlyList<AttachmentMetadata>> PickAsync(CancellationToken cancellationToken = default)
     {
-        var results = await FilePicker.Default.PickMultipleAsync(new PickOptions
+        var result = await FilePicker.Default.PickAsync(new PickOptions
         {
-            PickerTitle = "Pick attachments"
+            PickerTitle = "Выберите вложение"
         }).ConfigureAwait(false);
 
-        if (results is null)
+        if (result is null)
         {
             return [];
         }
 
-        var attachments = new List<AttachmentMetadata>();
-        foreach (var result in results)
+        var fileName = SafeFileName(result.FileName);
+        var tempPath = Path.Combine(FileSystem.CacheDirectory, $"pick-{Guid.NewGuid():N}-{fileName}");
+        string? transcodedPath = null;
+        try
         {
-            if (result is null)
-            {
-                continue;
-            }
-
-            var fileName = SafeFileName(result.FileName);
-            await using var stream = await result.OpenReadAsync().ConfigureAwait(false);
-            var tempPath = Path.Combine(FileSystem.CacheDirectory, $"pick-{Guid.NewGuid():N}-{fileName}");
+            await using (var stream = await result.OpenReadAsync().ConfigureAwait(false))
             await using (var output = File.Create(tempPath))
             {
                 await stream.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
@@ -51,26 +46,33 @@ public sealed class MauiAttachmentPickerService : IAttachmentPickerService
                 : result.ContentType;
             var transcoded = await _mediaCodecService.TranscodeAsync(new MediaTranscodeRequest(tempPath, contentType, 25 * 1024 * 1024), cancellationToken)
                 .ConfigureAwait(false);
+            transcodedPath = transcoded.OutputPath;
 
             if (_attachmentFiles.IsEnabled)
             {
                 await using var upload = File.OpenRead(transcoded.OutputPath);
-                attachments.Add(await _attachmentFiles.UploadAsync(
+                var uploaded = await _attachmentFiles.UploadAsync(
                     new AttachmentFileUpload(
                         fileName,
                         transcoded.ContentType,
                         upload),
-                    cancellationToken).ConfigureAwait(false));
-                continue;
+                    cancellationToken).ConfigureAwait(false);
+                return [uploaded];
             }
 
-            attachments.Add(AttachmentMetadata.Local(
+            return [AttachmentMetadata.Local(
                 fileName,
                 transcoded.ContentType,
-                transcoded.SizeBytes));
+                transcoded.SizeBytes)];
         }
-
-        return attachments;
+        finally
+        {
+            TryDelete(tempPath);
+            if (!string.IsNullOrWhiteSpace(transcodedPath))
+            {
+                TryDelete(transcodedPath);
+            }
+        }
     }
 
     private static string SafeFileName(string? fileName)
@@ -85,5 +87,20 @@ public sealed class MauiAttachmentPickerService : IAttachmentPickerService
         }
 
         return safe;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // The OS cache cleaner will remove a file that is temporarily locked.
+        }
     }
 }
