@@ -52,6 +52,8 @@ public sealed class ChatViewModel : ViewModelBase
     private string draft = string.Empty;
     private CallSessionState? activeCallState;
     private string? activeCallId;
+    private bool isMessageRequest;
+    private bool isBlocked;
 
     public ChatViewModel(ClientRuntime runtime, ICallService? callService = null, IAttachmentPickerService? attachmentPicker = null)
     {
@@ -65,6 +67,8 @@ public sealed class ChatViewModel : ViewModelBase
         ReceiveCommand = new AsyncCommand(ReceiveAsync, () => account is not null);
         PickAttachmentsCommand = new AsyncCommand(PickAttachmentsAsync, () => attachmentPicker is not null);
         ClearAttachmentsCommand = new AsyncCommand(ClearAttachmentsAsync, () => StagedAttachments.Count > 0);
+        AcceptMessageRequestCommand = new AsyncCommand(AcceptMessageRequestAsync, () => counterpart is not null && IsMessageRequest);
+        BlockContactCommand = new AsyncCommand(BlockContactAsync, () => counterpart is not null && !IsBlocked);
     }
 
     public Conversation? Conversation
@@ -90,6 +94,34 @@ public sealed class ChatViewModel : ViewModelBase
     public ObservableCollection<AttachmentMetadata> StagedAttachments { get; }
 
     public bool HasStagedAttachments => StagedAttachments.Count > 0;
+
+    public bool IsMessageRequest
+    {
+        get => isMessageRequest;
+        private set
+        {
+            if (SetProperty(ref isMessageRequest, value))
+            {
+                AcceptMessageRequestCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsBlocked
+    {
+        get => isBlocked;
+        private set
+        {
+            if (SetProperty(ref isBlocked, value))
+            {
+                RaisePropertyChanged(nameof(IsComposerEnabled));
+                SendCommand.RaiseCanExecuteChanged();
+                BlockContactCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsComposerEnabled => !IsBlocked;
 
     public string StagedAttachmentSummary => StagedAttachments.Count switch
     {
@@ -162,13 +194,24 @@ public sealed class ChatViewModel : ViewModelBase
 
     public AsyncCommand ClearAttachmentsCommand { get; }
 
+    public AsyncCommand AcceptMessageRequestCommand { get; }
+
+    public AsyncCommand BlockContactCommand { get; }
+
     public async Task OpenOneToOneAsync(SessionAccount activeAccount, SessionId recipient, string? displayName = null, CancellationToken cancellationToken = default)
     {
         account = activeAccount;
         counterpart = recipient;
         oldestLoadedMessageAt = null;
         hasOlderMessages = false;
-        Conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(recipient, displayName, cancellationToken);
+        Conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(
+            recipient,
+            displayName,
+            cancellationToken: cancellationToken);
+        var contact = await runtime.Conversations.GetContactAsync(recipient, cancellationToken);
+        IsBlocked = contact?.IsBlocked == true;
+        IsMessageRequest = recipient != activeAccount.SessionId
+            && contact is { IsApproved: false, IsBlocked: false };
         if (recipient == activeAccount.SessionId)
         {
             await runtime.Messages.RepairSelfConversationAsync(activeAccount.SessionId, cancellationToken);
@@ -232,6 +275,8 @@ public sealed class ChatViewModel : ViewModelBase
                 attachments,
                 cancellationToken);
 
+            IsMessageRequest = false;
+
             Messages.Add(ToItem(pending));
             Draft = string.Empty;
             StagedAttachments.Clear();
@@ -242,6 +287,32 @@ public sealed class ChatViewModel : ViewModelBase
             ErrorMessage = ex.Message;
         }
     }
+
+    public Task AcceptMessageRequestAsync(CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            if (counterpart is null)
+            {
+                return;
+            }
+
+            await runtime.Conversations.ApproveContactAsync(counterpart.Value, ct);
+            IsBlocked = false;
+            IsMessageRequest = false;
+        }, cancellationToken);
+
+    public Task BlockContactAsync(CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            if (counterpart is null)
+            {
+                return;
+            }
+
+            await runtime.Conversations.SetContactBlockedAsync(counterpart.Value, true, ct);
+            IsMessageRequest = false;
+            IsBlocked = true;
+        }, cancellationToken);
 
     private async Task DispatchPendingMessageAsync(Message pending)
     {
@@ -602,6 +673,7 @@ public sealed class ChatViewModel : ViewModelBase
     private bool CanSend() =>
         account is not null
         && counterpart is not null
+        && !IsBlocked
         && (!string.IsNullOrWhiteSpace(Draft) || StagedAttachments.Count > 0);
 
     private void OnStagedAttachmentsChanged(object? sender, NotifyCollectionChangedEventArgs e)

@@ -90,7 +90,11 @@ public sealed class ConversationsViewModel : ViewModelBase
     public async Task<Conversation> StartOneToOneAsync(string sessionId, string? displayName = null, CancellationToken cancellationToken = default)
     {
         var conversation = await runtime.Conversations
-            .GetOrCreateOneToOneAsync(SessionId.Parse(sessionId), displayName, cancellationToken);
+            .GetOrCreateOneToOneAsync(
+                SessionId.Parse(sessionId),
+                displayName,
+                approve: true,
+                cancellationToken: cancellationToken);
 
         await LoadAsync(cancellationToken);
         return conversation;

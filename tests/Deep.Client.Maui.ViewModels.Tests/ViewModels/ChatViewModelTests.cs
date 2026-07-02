@@ -35,6 +35,31 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task UnknownSenderCanBeAcceptedOrBlockedFromChat()
+    {
+        var backend = new StubSessionBackend();
+        var aliceRuntime = ClientRuntime.CreateStubbed(backend: backend);
+        var bobRuntime = ClientRuntime.CreateStubbed(backend: backend);
+        var alice = await aliceRuntime.Accounts.RegisterAsync("Alice");
+        var bob = await bobRuntime.Accounts.RegisterAsync("Bob");
+        await aliceRuntime.Messages.SendOneToOneAsync(alice.SessionId, bob.SessionId, "request");
+        await bobRuntime.Inbox.SynchronizeAsync();
+        var chat = new ChatViewModel(bobRuntime);
+
+        await chat.OpenOneToOneAsync(bob, alice.SessionId, "Alice");
+        Assert.True(chat.IsMessageRequest);
+
+        await chat.AcceptMessageRequestAsync();
+        Assert.False(chat.IsMessageRequest);
+        Assert.True(chat.IsComposerEnabled);
+
+        await chat.BlockContactAsync();
+        Assert.True(chat.IsBlocked);
+        Assert.False(chat.IsComposerEnabled);
+        Assert.False(chat.SendCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task SendAddsOptimisticMessageBeforeTransportCompletes()
     {
         var transport = new BlockingMessageTransport();
