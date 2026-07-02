@@ -187,12 +187,18 @@ public static class MauiProgram
         builder.Services.AddSingleton<INotificationScheduler, MauiNotificationScheduler>();
         builder.Services.AddSingleton<IPrivacyScreenService, MauiPrivacyScreenService>();
         builder.Services.AddSingleton<IAppearanceService, MauiAppearanceService>();
-        builder.Services.AddSingleton<ICallSignalingTransport>(_ =>
+        builder.Services.AddSingleton<ICallSignalingTransport>(services =>
         {
             var baseUrl = ResolveRuntimeSetting(CallSignalingBaseUrlEnv);
             if (!string.IsNullOrWhiteSpace(baseUrl))
             {
-                return new HttpCallSignalingTransport(new HttpClient(), new HttpCallSignalingTransportOptions(baseUrl));
+                return new HttpCallSignalingTransport(
+                    new HttpClient(),
+                    new HttpCallSignalingTransportOptions(baseUrl),
+                    cancellationToken => services
+                        .GetRequiredService<ClientRuntime>()
+                        .Accounts
+                        .GetRecoveryPhraseAsync(cancellationToken));
             }
 
 #if DEBUG
