@@ -225,8 +225,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             ContentStack.Children.Add(CreateCategory(
                 "Сервисные ноды",
                 CreateRow("Зарегистрировано", $"{nodes.Count} нод"),
-                CreateRow("Готовы принимать транспорт", $"{healthy} из {withTransport} нод"),
-                CreateRow("Список нод", "Открыть реестр сервисных нод.", () => OpenIfUriAsync(environment.RegistryUrl))));
+                CreateRow("Готовы принимать транспорт", $"{healthy} из {withTransport} нод")));
         }
         catch (Exception ex)
         {
@@ -276,8 +275,8 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         ContentStack.Children.Add(CreateCategory(
             "Стратегия уведомлений",
             CreateSwitchRow(
-                "Быстрый режим",
-                "Использовать push-уведомления, чтобы получать сообщения без постоянного сетевого опроса.",
+                "Push-уведомления",
+                "Получать уведомления о новых сообщениях и звонках, когда Deep работает в фоне.",
                 ClientSettingKeys.NotificationsFastMode,
                 true,
                 OnFastModeToggledAsync)));
@@ -995,20 +994,11 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 await OpenChatAsync(contact);
                 break;
             case "Принять запрос":
-                await ((IContactRepository)runtime.Store).UpsertAsync(contact with
-                {
-                    IsApproved = true,
-                    IsTrusted = true,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                });
+                await runtime.Conversations.ApproveContactAsync(contact.Id);
                 BuildSection();
                 break;
             case "Заблокировать":
-                await ((IContactRepository)runtime.Store).UpsertAsync(contact with
-                {
-                    IsBlocked = true,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                });
+                await runtime.Conversations.SetContactBlockedAsync(contact.Id, true);
                 BuildSection();
                 break;
         }
@@ -1054,11 +1044,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             return;
         }
 
-        await ((IContactRepository)runtime.Store).UpsertAsync(contact with
-        {
-            IsBlocked = false,
-            UpdatedAt = DateTimeOffset.UtcNow
-        });
+        await runtime.Conversations.SetContactBlockedAsync(contact.Id, false);
         await ShowBlockedContactsAsync();
     }
 
