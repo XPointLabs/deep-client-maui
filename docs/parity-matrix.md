@@ -1,6 +1,6 @@
 ﻿# Deep MAUI Parity Matrix
 
-Last updated: 2026-07-01.
+Last updated: 2026-07-02.
 
 This file tracks the MAUI client slice of the repository-level parity matrix in `../docs/parity-matrix.md`.
 Statuses are intentionally conservative: a flow is `done` only when local runtime behavior and the relevant platform/UI gate are both proven.
@@ -17,7 +17,7 @@ Statuses are intentionally conservative: a flow is `done` only when local runtim
 | Stage/send attachments | partial | Shared live e2e uploads encrypted payloads through local `/file`, passes remote metadata through storage, and downloads/decrypts on the receiving side; MAUI ViewModel live acceptance exercises `PickAttachmentsAsync` with real file upload metadata. | Rendered chat-composer/device acceptance with progress/retry UX and cross-platform file picker evidence. |
 | Create/open/manage groups | partial | Shared live e2e publishes group state and group messages through local `/storage`; MAUI ViewModel live acceptance creates a group, syncs it to another client, and receives a group message through the same backend. | Complete rendered member-role/destructive-action UX and cross-platform device/UI evidence. |
 | Push register/unregister | partial | Android production configuration, native FCM token acquisition/refresh, foreground data notification handling, automatic signed backend subscription, and unregister are implemented. A signed Release APK initialized Firebase on a physical SM-G970F. Synthetic tokens are forbidden. | Credentialed backend FCM send and physical-device delivery evidence; APNs/WNS production credentials. |
-| Calls start/respond/end | partial | Shared live e2e runs offer/answer/bye through local `/api/calls`; MAUI ViewModel live acceptance starts, receives, accepts, connects, and ends a call through the same endpoint. | No native WebRTC media stack yet; release call media acceptance missing. |
+| Calls start/respond/end | partial | Production live e2e proves signed encrypted offer/answer/bye and short-lived ICE credentials. MAUI packages a local WebRTC runtime with audio/video capture, DTLS-SRTP, STUN/TURN, mute, camera controls, push wake-up, and call navigation; Android and Windows builds pass. | Complete rendered two-device media acceptance and add dedicated full-screen incoming-call actions. |
 | Sign out/wipe local state | partial | MAUI settings/auth navigation tests cover local sign-out behavior. | Rendered cross-platform acceptance and persistence wipe verification. |
 
 ## Latest Local Gates

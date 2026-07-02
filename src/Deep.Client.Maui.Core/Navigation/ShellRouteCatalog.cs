@@ -14,6 +14,7 @@ public static class ShellRouteCatalog
     public const string Groups = "groups";
     public const string Settings = "settings";
     public const string SettingsDetail = "settings-detail";
+    public const string Call = "call";
 
     public static IReadOnlyList<ShellRoute> Routes { get; } =
     [
@@ -26,6 +27,7 @@ public static class ShellRouteCatalog
         new(GroupChat, "GroupChat", RequiresAccount: true),
         new(Groups, "Groups", RequiresAccount: true),
         new(Settings, "Settings", RequiresAccount: true),
-        new(SettingsDetail, "SettingsDetail", RequiresAccount: true)
+        new(SettingsDetail, "SettingsDetail", RequiresAccount: true),
+        new(Call, "Call", RequiresAccount: true)
     ];
 }

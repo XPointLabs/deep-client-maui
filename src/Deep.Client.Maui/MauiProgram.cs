@@ -215,6 +215,9 @@ public static class MauiProgram
         });
         builder.Services.AddSingleton<RealtimeCallService>();
         builder.Services.AddSingleton<ICallService, MauiRealtimeCallService>();
+        builder.Services.AddSingleton<ICallIceConfigurationProvider>(services =>
+            (ICallIceConfigurationProvider)services.GetRequiredService<ICallSignalingTransport>());
+        builder.Services.AddSingleton<CallSessionCoordinator>();
         builder.Services.AddSingleton<IAttachmentPickerService, MauiAttachmentPickerService>();
         builder.Services.AddSingleton<INetworkStatusService, MauiConnectivityStatusService>();
         builder.Services.AddSingleton<AuthNavigationState>();
@@ -240,6 +243,7 @@ public static class MauiProgram
         builder.Services.AddTransient<GroupsPage>();
         builder.Services.AddTransient<SettingsPage>();
         builder.Services.AddTransient<SettingsDetailPage>();
+        builder.Services.AddTransient<CallPage>();
 
         return builder.Build();
     }

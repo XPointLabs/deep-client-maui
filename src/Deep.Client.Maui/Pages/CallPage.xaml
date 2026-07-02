@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Deep.Client.Maui.Pages.CallPage"
+    AutomationId="Page.Call"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="#020711"
+    Shell.NavBarIsVisible="False">
+    <Grid RowDefinitions="Auto,*,Auto" Padding="16,16,16,24" RowSpacing="12">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" ZIndex="2">
+            <Button
+                Text="‹"
+                FontSize="34"
+                FontAutoScalingEnabled="False"
+                WidthRequest="44"
+                HeightRequest="44"
+                Padding="0"
+                Style="{StaticResource GhostButton}"
+                SemanticProperties.Description="Вернуться"
+                Clicked="OnBackClicked" />
+            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                <Label x:Name="DisplayNameLabel" Text="Звонок Deep" FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                <Label x:Name="StatusLabel" Text="Подключение" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+            </VerticalStackLayout>
+            <Label Grid.Column="2" x:Name="DurationLabel" Text="00:00" WidthRequest="44" FontSize="12" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" HorizontalTextAlignment="End" />
+        </Grid>
+
+        <Grid Grid.Row="1">
+            <Image Source="deep_mark.png" WidthRequest="156" HeightRequest="156" Opacity="0.22" HorizontalOptions="Center" VerticalOptions="Center" />
+            <HybridWebView
+                x:Name="CallWebView"
+                AutomationId="Call.Media"
+                HybridRoot="wwwroot/call"
+                DefaultFile="index.html"
+                RawMessageReceived="OnRawMessageReceived" />
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,*,*,*" ColumnSpacing="12" ZIndex="2">
+            <Button x:Name="MicrophoneButton" Text="M" FontAttributes="Bold" WidthRequest="56" HeightRequest="56" HorizontalOptions="Center" Style="{StaticResource SecondaryButton}" SemanticProperties.Description="Выключить микрофон" Clicked="OnMicrophoneClicked" />
+            <Button x:Name="CameraButton" Grid.Column="1" Text="V" FontAttributes="Bold" WidthRequest="56" HeightRequest="56" HorizontalOptions="Center" Style="{StaticResource SecondaryButton}" SemanticProperties.Description="Выключить камеру" Clicked="OnCameraClicked" />
+            <Button x:Name="SwitchCameraButton" Grid.Column="2" Text="↻" FontSize="24" WidthRequest="56" HeightRequest="56" HorizontalOptions="Center" Style="{StaticResource SecondaryButton}" SemanticProperties.Description="Переключить камеру" Clicked="OnSwitchCameraClicked" />
+            <Button Grid.Column="3" Text="×" FontSize="28" WidthRequest="56" HeightRequest="56" HorizontalOptions="Center" BackgroundColor="{StaticResource DangerColor}" TextColor="White" SemanticProperties.Description="Завершить звонок" Clicked="OnHangupClicked" />
+        </Grid>
+    </Grid>
+</ContentPage>

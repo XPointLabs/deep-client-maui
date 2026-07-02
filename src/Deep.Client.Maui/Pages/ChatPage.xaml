@@ -18,7 +18,7 @@
             </HorizontalStackLayout>
         </Border>
 
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10" Padding="0,4,0,6">
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="6" Padding="0,4,0,6">
             <Border
                 AutomationId="Chat.Back"
                 WidthRequest="44"
@@ -36,7 +36,9 @@
                 <Label Text="Q" TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="20" />
             </Border>
             <Label Grid.Column="2" Text="{Binding Conversation.DisplayName}" FontSize="18" FontAttributes="Bold" LineBreakMode="TailTruncation" VerticalOptions="Center" />
-            <Button Grid.Column="3" Text="⋮" SemanticProperties.Description="Информация о чате" Style="{StaticResource ToolbarIconButton}" Clicked="OnInfoClicked" />
+            <Button Grid.Column="3" Text="☎" FontSize="18" SemanticProperties.Description="Аудиозвонок" Style="{StaticResource ToolbarIconButton}" Clicked="OnAudioCallClicked" />
+            <Button Grid.Column="4" Text="▣" FontSize="18" SemanticProperties.Description="Видеозвонок" Style="{StaticResource ToolbarIconButton}" Clicked="OnVideoCallClicked" />
+            <Button Grid.Column="5" Text="⋮" SemanticProperties.Description="Информация о чате" Style="{StaticResource ToolbarIconButton}" Clicked="OnInfoClicked" />
         </Grid>
 
         <Grid Grid.Row="2">

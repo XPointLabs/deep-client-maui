@@ -15,6 +15,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private readonly ChatViewModel viewModel;
     private readonly INetworkStatusService networkStatusService;
     private readonly IAttachmentFileTransport attachmentFiles;
+    private readonly CallSessionCoordinator callCoordinator;
     private CancellationTokenSource? pendingScrollToEnd;
     private CancellationTokenSource? routeLoadCancellation;
     private bool pendingScrollAnimate;
@@ -26,12 +27,14 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     public ChatPage(
         ChatViewModel viewModel,
         INetworkStatusService networkStatusService,
-        IAttachmentFileTransport attachmentFiles)
+        IAttachmentFileTransport attachmentFiles,
+        CallSessionCoordinator callCoordinator)
     {
         InitializeComponent();
         this.viewModel = viewModel;
         this.networkStatusService = networkStatusService;
         this.attachmentFiles = attachmentFiles;
+        this.callCoordinator = callCoordinator;
         BindingContext = viewModel;
 
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
@@ -216,6 +219,39 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         }
 
         await AttachmentOpenService.OpenAsync(this, item.Attachments, attachmentFiles);
+    }
+
+    private async void OnAudioCallClicked(object? sender, EventArgs e) =>
+        await OpenCallAsync(isVideo: false);
+
+    private async void OnVideoCallClicked(object? sender, EventArgs e) =>
+        await OpenCallAsync(isVideo: true);
+
+    private async Task OpenCallAsync(bool isVideo)
+    {
+        var conversation = viewModel.Conversation;
+        if (conversation is null || conversation.Kind != ConversationKind.OneToOne)
+        {
+            return;
+        }
+
+        try
+        {
+            var remote = SessionId.Parse(conversation.Id.Value);
+            var descriptor = await callCoordinator.CreateOutgoingAsync(
+                remote,
+                conversation.Id.Value,
+                conversation.DisplayName,
+                isVideo);
+            await Shell.Current.GoToAsync(
+                ShellRouteCatalog.Call,
+                new ShellNavigationQueryParameters { ["call"] = descriptor });
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidOperationException)
+        {
+            CrashDiagnostics.LogException("ChatPage.OpenCall", exception);
+            await DisplayAlertAsync("Звонок Deep", exception.Message, "Закрыть");
+        }
     }
 
     private async void OnMessageTapped(object? sender, TappedEventArgs e)

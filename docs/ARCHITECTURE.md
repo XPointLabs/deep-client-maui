@@ -56,8 +56,8 @@ Only behavior backed by a concrete runtime service is exposed in release builds.
 
 ## Realtime Calls (E3)
 
-- `ICallService` is now backed by `MauiRealtimeCallService`, which delegates signaling/state transitions to shared `RealtimeCallService`.
-- MAUI DI registers `ICallSignalingTransport` + `RealtimeCallService`, replacing the previous placeholder call boundary.
+- `CallSessionCoordinator` is the single signaling inbox consumer for active WebRTC calls and incoming offers. The shared HTTP transport encrypts payloads to the recipient, signs them with the active account, and fetches signed ephemeral ICE credentials.
+- `CallPage` hosts only packaged HTML/JavaScript through `HybridWebView`; no remote page or script can access call media. Browser WebRTC provides DTLS-SRTP audio/video, while MAUI owns permissions, navigation, status, and controls.
 - Current implementation provides deterministic signaling/state/reconnect behavior for runtime and tests while native media engines are integrated.
 
 ## Caveats

@@ -15,18 +15,22 @@ public partial class ConversationsPage : ContentPage
     private readonly ConversationsViewModel viewModel;
     private readonly INetworkStatusService networkStatusService;
     private readonly IPushRegistrationCoordinator pushRegistration;
+    private readonly CallSessionCoordinator callCoordinator;
     private bool hasLoaded;
     private bool pushRegistrationStarted;
+    private bool checkingCalls;
 
     public ConversationsPage(
         ConversationsViewModel viewModel,
         INetworkStatusService networkStatusService,
-        IPushRegistrationCoordinator pushRegistration)
+        IPushRegistrationCoordinator pushRegistration,
+        CallSessionCoordinator callCoordinator)
     {
         InitializeComponent();
         this.viewModel = viewModel;
         this.networkStatusService = networkStatusService;
         this.pushRegistration = pushRegistration;
+        this.callCoordinator = callCoordinator;
         BindingContext = viewModel;
 
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
@@ -51,6 +55,7 @@ public partial class ConversationsPage : ContentPage
 
         EnsureAutoSync();
         EnsurePushRegistration();
+        await CheckIncomingCallsAsync();
     }
 
     private void EnsurePushRegistration()
@@ -93,6 +98,8 @@ public partial class ConversationsPage : ContentPage
             {
                 await viewModel.SyncAsync();
             }
+
+            await CheckIncomingCallsAsync();
         });
     }
 
@@ -200,5 +207,52 @@ public partial class ConversationsPage : ContentPage
         }
 
         await viewModel.SyncAsync();
+        await CheckIncomingCallsAsync();
+    }
+
+    private async Task CheckIncomingCallsAsync()
+    {
+        if (checkingCalls)
+        {
+            return;
+        }
+
+        try
+        {
+            checkingCalls = true;
+            var offers = await callCoordinator.ReceiveIncomingOffersAsync();
+            foreach (var offer in offers)
+            {
+                var known = viewModel.Conversations.FirstOrDefault(item => item.Id.Value == offer.RemoteParty.Value);
+                var call = known is null ? offer : offer with { DisplayName = known.Title };
+                var kind = call.IsVideo ? "Видеозвонок" : "Аудиозвонок";
+                var accepted = await DisplayAlertAsync(
+                    kind,
+                    $"{call.DisplayName} звонит вам в Deep.",
+                    "Ответить",
+                    "Отклонить");
+                if (!accepted)
+                {
+                    await callCoordinator.SendAsync(
+                        call,
+                        CallSignalType.Bye,
+                        "{\"reason\":\"declined\"}");
+                    continue;
+                }
+
+                await Shell.Current.GoToAsync(
+                    ShellRouteCatalog.Call,
+                    new ShellNavigationQueryParameters { ["call"] = call });
+                return;
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            CrashDiagnostics.LogException("ConversationsPage.IncomingCalls", exception);
+        }
+        finally
+        {
+            checkingCalls = false;
+        }
     }
 }

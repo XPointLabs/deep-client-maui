@@ -20,6 +20,7 @@ public partial class AppShell : Shell
         Routing.RegisterRoute(ShellRouteCatalog.Groups, typeof(GroupsPage));
         Routing.RegisterRoute(ShellRouteCatalog.Settings, typeof(SettingsPage));
         Routing.RegisterRoute(ShellRouteCatalog.SettingsDetail, typeof(SettingsDetailPage));
+        Routing.RegisterRoute(ShellRouteCatalog.Call, typeof(CallPage));
 
         this.authNavigationState.AuthenticationChanged += OnAuthenticationChanged;
         Loaded += OnLoaded;

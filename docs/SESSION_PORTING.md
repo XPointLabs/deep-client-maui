@@ -27,7 +27,7 @@ Session reference areas and Deep targets:
 - Conversation settings/profile/search: `conversation/v3/settings/*` -> current info/profile actions and future conversation settings pages.
 - Groups: `home/startconversation/group/*`, `groups/*`, `conversation/v3/settings/*` -> `GroupsPage`, `GroupChatPage`, `GroupsViewModel`, `GroupChatViewModel`.
 - Notifications/push: Session push registration and notification actions -> `MauiPushNotificationService`, `NotificationRegistrationViewModel`, shared push transports.
-- Calls: Session call message/signaling behavior -> `ChatViewModel`, `MauiRealtimeCallService`, platform media work still tracked as future parity.
+- Calls: Session call signaling behavior -> authenticated `CallSessionCoordinator`; WebRTC audio/video media -> packaged `HybridWebView` runtime on `CallPage`; NAT traversal -> signed, short-lived ICE credentials.
 
 ## Required Porting Steps
 
@@ -43,7 +43,7 @@ For every Session-derived behavior:
 
 - MAUI uses a unified cross-platform layout instead of Android-specific activities/fragments/bottom sheets.
 - Debug builds may use deterministic stub transport for local UI work; release builds must require real transport configuration.
-- Calls currently cover signaling state and UI controls; native WebRTC media parity remains a later stage.
+- Incoming call presentation currently uses a MAUI system prompt instead of Session's dedicated full-screen ringing activity. Audio/video media, mute, camera enablement, camera switching, hangup, encrypted signaling, push wake-up, STUN, and TURN relay are implemented.
 - Desktop-style split inbox/detail layout is allowed on wide screens, while mobile should route directly into the chat.
 - Attachment upload metadata can be staged through shared attachment models before final backend storage cutover is complete.
 
@@ -83,4 +83,4 @@ Each parity slice should leave:
 - Rich message rendering: quotes, link previews, media/document/audio variants, reactions, deleted/control messages.
 - Contacts and global search beyond local conversation filtering.
 - Join community/open group URL handling.
-- Full native call media stack and device permission UX.
+- Dedicated full-screen incoming-call notification actions on each operating system.
