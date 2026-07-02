@@ -3,18 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <link rel="stylesheet" href="styles.css">
-  <title>Deep call</title>
+  <link rel="stylesheet" href="/call/styles.css">
+  <title>Deep</title>
 </head>
 <body>
   <main id="stage" class="audio-only">
-    <video id="remoteVideo" autoplay playsinline></video>
-    <video id="localVideo" autoplay playsinline muted></video>
+    <video id="remoteVideo" aria-label="Удалённое видео" autoplay playsinline></video>
+    <video id="localVideo" aria-label="Локальное видео" autoplay playsinline muted></video>
     <div id="audioMark" aria-hidden="true">
       <div class="pulse"></div>
       <div class="mark">D</div>
     </div>
   </main>
-  <script src="app.js"></script>
+  <script src="/_framework/hybridwebview.js"></script>
+  <script src="/call/app.js"></script>
 </body>
 </html>

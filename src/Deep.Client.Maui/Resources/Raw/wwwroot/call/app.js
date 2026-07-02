@@ -10,7 +10,11 @@
   let facingMode = "user";
   const pendingCandidates = [];
 
-  const send = message => window.HybridWebView.SendRawMessage(JSON.stringify(message));
+  const send = message => {
+    if (!window.HybridWebView || typeof window.HybridWebView.InvokeDotNet !== "function") return false;
+    window.HybridWebView.InvokeDotNet("OnWebMessage", [JSON.stringify(message)]).catch(reportError);
+    return true;
+  };
 
   const reportError = error => {
     const message = error && error.message ? error.message : String(error || "Unknown call error");
@@ -113,20 +117,31 @@
     localStream = null;
   }
 
+  async function receive(message) {
+    const parsed = typeof message === "string" ? JSON.parse(message) : message;
+    switch (parsed.command) {
+      case "initialize": await initialize(parsed); break;
+      case "signal": await acceptSignal(parsed.signalType, parsed.payload); break;
+      case "setMicrophone": setTrackEnabled("audio", parsed.enabled); break;
+      case "setCamera": setTrackEnabled("video", parsed.enabled); break;
+      case "switchCamera": await switchCamera(); break;
+      case "hangup": hangup(); break;
+    }
+  }
+
+  window.DeepCallReceive = message => receive(message).catch(reportError);
+
   window.addEventListener("HybridWebViewMessageReceived", event => {
     Promise.resolve().then(async () => {
-      const message = JSON.parse(event.detail.message);
-      switch (message.command) {
-        case "initialize": await initialize(message); break;
-        case "signal": await acceptSignal(message.signalType, message.payload); break;
-        case "setMicrophone": setTrackEnabled("audio", message.enabled); break;
-        case "setCamera": setTrackEnabled("video", message.enabled); break;
-        case "switchCamera": await switchCamera(); break;
-        case "hangup": hangup(); break;
-      }
+      await receive(event.detail.message);
     }).catch(reportError);
   });
 
   window.addEventListener("beforeunload", hangup);
-  send({ type: "ready" });
+  function announceReady() {
+    if (!send({ type: "ready" })) window.setTimeout(announceReady, 50);
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", announceReady);
+  else announceReady();
 })();

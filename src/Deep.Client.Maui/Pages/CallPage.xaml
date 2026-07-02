@@ -30,8 +30,8 @@
             <HybridWebView
                 x:Name="CallWebView"
                 AutomationId="Call.Media"
-                HybridRoot="wwwroot/call"
-                DefaultFile="index.html"
+                HybridRoot="wwwroot"
+                DefaultFile="call/index.html"
                 RawMessageReceived="OnRawMessageReceived" />
         </Grid>
 

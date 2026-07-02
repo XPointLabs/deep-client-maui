@@ -22,6 +22,7 @@ public partial class CallPage : ContentPage, IQueryAttributable
     {
         InitializeComponent();
         this.coordinator = coordinator;
+        CallWebView.SetInvokeJavaScriptTarget(this);
         CallWebView.HandlerChanged += OnWebViewHandlerChanged;
     }
 
@@ -42,7 +43,9 @@ public partial class CallPage : ContentPage, IQueryAttributable
     {
         base.OnAppearing();
         lifetime = new CancellationTokenSource();
+        CallWebViewPlatform.Configure(CallWebView);
         TryInitialize();
+        _ = WaitForWebRuntimeAsync(lifetime.Token);
     }
 
     protected override void OnDisappearing()
@@ -70,14 +73,22 @@ public partial class CallPage : ContentPage, IQueryAttributable
 
     private async void OnRawMessageReceived(object? sender, HybridWebViewRawMessageReceivedEventArgs e)
     {
+        await HandleWebMessageAsync(e.Message);
+    }
+
+    public Task OnWebMessage(string message) =>
+        MainThread.InvokeOnMainThreadAsync(() => HandleWebMessageAsync(message));
+
+    private async Task HandleWebMessageAsync(string? rawMessage)
+    {
         try
         {
-            if (string.IsNullOrWhiteSpace(e.Message))
+            if (string.IsNullOrWhiteSpace(rawMessage))
             {
                 return;
             }
 
-            using var document = JsonDocument.Parse(e.Message);
+            using var document = JsonDocument.Parse(rawMessage);
             var root = document.RootElement;
             var type = root.TryGetProperty("type", out var typeValue) ? typeValue.GetString() : null;
             switch (type)
@@ -117,6 +128,36 @@ public partial class CallPage : ContentPage, IQueryAttributable
         _ = InitializeCallAsync(call, lifetime.Token);
     }
 
+    private async Task WaitForWebRuntimeAsync(CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 30 && !webReady; attempt++)
+        {
+            try
+            {
+                await Task.Delay(100, cancellationToken);
+                var state = await CallWebView.EvaluateJavaScriptAsync("document.readyState");
+                if (state?.Contains("complete", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    webReady = true;
+                    TryInitialize();
+                    return;
+                }
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or TaskCanceledException)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+            }
+        }
+
+        if (!webReady && !cancellationToken.IsCancellationRequested)
+        {
+            StatusLabel.Text = "Не удалось запустить защищённый медиаканал";
+        }
+    }
+
     private async Task InitializeCallAsync(CallDescriptor descriptor, CancellationToken cancellationToken)
     {
         var microphone = await Permissions.RequestAsync<Permissions.Microphone>();
@@ -149,7 +190,7 @@ public partial class CallPage : ContentPage, IQueryAttributable
                 credential = server.Credential
             })
         });
-        CallWebView.SendRawMessage(message);
+        await SendToWebAsync(message);
         StartTimers();
         await ReceiveSignalsAsync(cancellationToken);
     }
@@ -229,7 +270,7 @@ public partial class CallPage : ContentPage, IQueryAttributable
             }
 
             using var payloadDocument = JsonDocument.Parse(signal.Payload);
-            CallWebView.SendRawMessage(JsonSerializer.Serialize(new
+            await SendToWebAsync(JsonSerializer.Serialize(new
             {
                 command = "signal",
                 signalType,
@@ -291,7 +332,13 @@ public partial class CallPage : ContentPage, IQueryAttributable
     private async void OnBackClicked(object? sender, EventArgs e) => await EndAndCloseAsync("back");
 
     private void SendCommand(string command, bool? enabled = null) =>
-        CallWebView.SendRawMessage(JsonSerializer.Serialize(new { command, enabled }));
+        _ = SendToWebAsync(JsonSerializer.Serialize(new { command, enabled }));
+
+    private Task<string?> SendToWebAsync(string message)
+    {
+        var argument = JsonSerializer.Serialize(message);
+        return CallWebView.EvaluateJavaScriptAsync($"window.DeepCallReceive({argument})");
+    }
 
     private async Task EndAndCloseAsync(string reason)
     {
