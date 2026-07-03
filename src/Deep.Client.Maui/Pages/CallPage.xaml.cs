@@ -37,8 +37,7 @@ public partial class CallPage : ContentPage, IQueryAttributable
         call = descriptor;
         DisplayNameLabel.Text = descriptor.DisplayName;
         CameraButton.IsVisible = descriptor.IsVideo;
-        CameraLabel.IsVisible = descriptor.IsVideo;
-        SwitchCameraContainer.IsVisible = descriptor.IsVideo;
+        SwitchCameraButton.IsVisible = descriptor.IsVideo;
         cameraEnabled = descriptor.IsVideo;
         StatusLabel.Text = descriptor.IsIncoming ? "Входящий звонок" : "Вызов...";
     }
