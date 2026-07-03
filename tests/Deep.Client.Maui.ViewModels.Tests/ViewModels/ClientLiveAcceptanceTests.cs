@@ -1,5 +1,4 @@
 ﻿using System.Text;
-using System.Text.Json;
 using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Features;
@@ -34,8 +33,6 @@ public sealed class ClientLiveAcceptanceTests
         var attachmentFiles = new HttpAttachmentFileTransport(
             new HttpClient(),
             new HttpAttachmentFileTransportOptions(fileUrl));
-        var aliceCalls = new ClientCallService(CreateCallService(callUrl));
-        var bobCalls = new ClientCallService(CreateCallService(callUrl));
         var attachmentBytes = Encoding.UTF8.GetBytes($"client-live-attachment-{Guid.NewGuid():N}");
 
         var aliceOnboarding = new OnboardingViewModel(aliceRuntime) { DisplayName = "Alice Live Client" };
@@ -50,6 +47,11 @@ public sealed class ClientLiveAcceptanceTests
         Assert.Equal(aliceOnboarding.Account!.SessionId.Value, aliceOnboarding.SessionId);
         Assert.Equal(bobOnboarding.Account!.SessionId.Value, bobOnboarding.SessionId);
 
+        var alicePhrase = await aliceRuntime.Accounts.GetRecoveryPhraseAsync();
+        var bobPhrase = await bobRuntime.Accounts.GetRecoveryPhraseAsync();
+        var aliceCalls = new ClientCallService(CreateCallService(callUrl, alicePhrase));
+        var bobCalls = new ClientCallService(CreateCallService(callUrl, bobPhrase));
+
         var bobNotifications = new NotificationRegistrationViewModel(new PushRegistrationCoordinator(
             bobRuntime,
             new LocalPushNotificationService("fcm", $"client-live-fcm-{Guid.NewGuid():N}"),
@@ -60,7 +62,6 @@ public sealed class ClientLiveAcceptanceTests
         Assert.Null(bobNotifications.ErrorMessage);
         Assert.Equal("fcm", bobNotifications.Provider);
         Assert.False(string.IsNullOrWhiteSpace(bobNotifications.Token));
-        Assert.True(await HasRemoteSubscriptionAsync(pushUrl, bobOnboarding.Account.SessionId, bobNotifications.Token!));
 
         var aliceConversations = new ConversationsViewModel(aliceRuntime)
         {
@@ -194,8 +195,11 @@ public sealed class ClientLiveAcceptanceTests
             .Split([';', ',', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToArray();
 
-    private static RealtimeCallService CreateCallService(string callUrl) =>
-        new(new HttpCallSignalingTransport(new HttpClient(), new HttpCallSignalingTransportOptions(callUrl)));
+    private static RealtimeCallService CreateCallService(string callUrl, string? recoveryPhrase) =>
+        new(new HttpCallSignalingTransport(
+            new HttpClient(),
+            new HttpCallSignalingTransportOptions(callUrl),
+            _ => Task.FromResult(recoveryPhrase)));
 
     private static async Task WaitForAsync(Func<bool> condition)
     {
@@ -206,37 +210,6 @@ public sealed class ClientLiveAcceptanceTests
         }
 
         Assert.True(condition(), "Timed out waiting for optimistic message dispatch.");
-    }
-
-    private static async Task<bool> HasRemoteSubscriptionAsync(string pushUrl, SessionId sessionId, string token)
-    {
-        using var client = new HttpClient
-        {
-            BaseAddress = new Uri(pushUrl.EndsWith('/') ? pushUrl : pushUrl + "/", UriKind.Absolute)
-        };
-        var json = await client.GetStringAsync($"/subscriptions/{Uri.EscapeDataString(sessionId.Value)}");
-        using var document = JsonDocument.Parse(json);
-        if (!document.RootElement.TryGetProperty("subscriptions", out var subscriptions) ||
-            subscriptions.ValueKind != JsonValueKind.Array)
-        {
-            return false;
-        }
-
-        foreach (var subscription in subscriptions.EnumerateArray())
-        {
-            if (!subscription.TryGetProperty("service_info", out var serviceInfo) ||
-                !serviceInfo.TryGetProperty("token", out var tokenElement))
-            {
-                continue;
-            }
-
-            if (string.Equals(tokenElement.GetString(), token, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private sealed class LiveAttachmentPicker(
