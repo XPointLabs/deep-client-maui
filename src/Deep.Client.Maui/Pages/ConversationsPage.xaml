@@ -76,18 +76,18 @@
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Tapped="OnConversationTapped" />
                                 </Border.GestureRecognizers>
-                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="11" RowSpacing="3" HeightRequest="58">
+                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="11" RowSpacing="2" HeightRequest="60">
                                     <Border Grid.RowSpan="2" WidthRequest="52" HeightRequest="52" Padding="0" StrokeThickness="0" Background="{StaticResource PrimaryColorMuted}" VerticalOptions="Center" StrokeShape="RoundRectangle 26">
                                         <Label Text="Q" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="19" />
                                     </Border>
-                                    <Label Grid.Column="1" Text="{Binding Title}" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" VerticalOptions="End" />
+                                    <Label Grid.Column="1" Text="{Binding Title}" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" VerticalOptions="End" MaxLines="1" />
                                     <Label Grid.Column="2" Text="{Binding UpdatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="12" TextColor="{StaticResource TextTertiary}" VerticalOptions="End" />
                                     <Grid Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                        <HorizontalStackLayout Spacing="6">
-                                        <Label Text="Новый контакт" FontSize="12" TextColor="{StaticResource PrimaryColor}" FontAttributes="Bold" IsVisible="{Binding IsMessageRequest}" />
-                                        <Label Text="{Binding LastMessagePreview}" FontSize="14" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" HorizontalOptions="StartAndExpand" />
-                                        <Label Text="Без звука" FontSize="12" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsMuted}" />
-                                        </HorizontalStackLayout>
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="5">
+                                            <Label Text="Запрос" FontSize="13" TextColor="{StaticResource PrimaryColor}" FontAttributes="Bold" IsVisible="{Binding IsMessageRequest}" />
+                                            <Label Grid.Column="1" Text="{Binding LastMessagePreview}" FontSize="14" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" />
+                                            <Path Grid.Column="2" Data="M4,12 L9,17 L20,6" Stroke="{StaticResource TextSecondary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="16" HeightRequest="16" Aspect="Uniform" IsVisible="{Binding IsMuted}" />
+                                        </Grid>
                                         <Border Grid.Column="1" Background="{StaticResource PrimaryColor}" MinimumWidthRequest="20" HeightRequest="20" Padding="6,0" StrokeThickness="0" StrokeShape="RoundRectangle 10" IsVisible="True">
                                             <Label Text="{Binding UnreadCount}" FontSize="11" TextColor="#03101A" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
                                             <Border.Triggers>

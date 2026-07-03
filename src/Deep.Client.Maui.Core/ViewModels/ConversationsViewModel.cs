@@ -286,8 +286,7 @@ public sealed class ConversationsViewModel : ViewModelBase
                 .ToList();
 
         filtered = filtered
-            .OrderByDescending(item => item.IsUnread)
-            .ThenByDescending(item => item.UpdatedAt)
+            .OrderByDescending(item => item.UpdatedAt)
             .ToList();
 
         var selectedId = SelectedConversation?.Id;

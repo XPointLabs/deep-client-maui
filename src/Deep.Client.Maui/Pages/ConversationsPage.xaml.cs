@@ -12,6 +12,7 @@ public partial class ConversationsPage : ContentPage
 {
     private const string AvatarFileName = "profile-avatar.jpg";
     private IDispatcherTimer? autoSyncTimer;
+    private IDispatcherTimer? incomingCallTimer;
     private readonly ConversationsViewModel viewModel;
     private readonly INetworkStatusService networkStatusService;
     private readonly IPushRegistrationCoordinator pushRegistration;
@@ -54,6 +55,7 @@ public partial class ConversationsPage : ContentPage
         }
 
         EnsureAutoSync();
+        EnsureIncomingCallPolling();
         EnsurePushRegistration();
         await CheckIncomingCallsAsync();
     }
@@ -88,6 +90,7 @@ public partial class ConversationsPage : ContentPage
         base.OnDisappearing();
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         autoSyncTimer?.Stop();
+        incomingCallTimer?.Stop();
     }
 
     private void OnBackgroundSyncScheduled()
@@ -99,7 +102,6 @@ public partial class ConversationsPage : ContentPage
                 await viewModel.SyncAsync();
             }
 
-            await CheckIncomingCallsAsync();
         });
     }
 
@@ -199,6 +201,18 @@ public partial class ConversationsPage : ContentPage
         autoSyncTimer.Start();
     }
 
+    private void EnsureIncomingCallPolling()
+    {
+        if (incomingCallTimer is null)
+        {
+            incomingCallTimer = Dispatcher.CreateTimer();
+            incomingCallTimer.Interval = TimeSpan.FromSeconds(1);
+            incomingCallTimer.Tick += OnIncomingCallTick;
+        }
+
+        incomingCallTimer.Start();
+    }
+
     private async void OnAutoSyncTick(object? sender, EventArgs e)
     {
         if (viewModel.IsBusy)
@@ -207,7 +221,17 @@ public partial class ConversationsPage : ContentPage
         }
 
         await viewModel.SyncAsync();
-        await CheckIncomingCallsAsync();
+    }
+
+    private async void OnIncomingCallTick(object? sender, EventArgs e)
+    {
+        try
+        {
+            await CheckIncomingCallsAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private async Task CheckIncomingCallsAsync()
@@ -246,7 +270,10 @@ public partial class ConversationsPage : ContentPage
                 return;
             }
         }
-        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or System.Net.WebException)
         {
             CrashDiagnostics.LogException("ConversationsPage.IncomingCalls", exception);
         }

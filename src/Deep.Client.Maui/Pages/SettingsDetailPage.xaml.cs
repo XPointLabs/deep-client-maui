@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Services;
@@ -466,7 +466,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             Background = new SolidColorBrush(ColorResource("PanelBackground", Colors.Black)),
             Stroke = new SolidColorBrush(ColorResource("DividerColor", Colors.DimGray)),
             StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(8) },
+            StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(12) },
             Padding = 0,
             Content = stack
         };
@@ -481,17 +481,16 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 new ColumnDefinition { Width = GridLength.Star },
                 new ColumnDefinition { Width = GridLength.Auto }
             ],
-            Padding = new Thickness(14, 14),
+            Padding = new Thickness(14, 11),
             ColumnSpacing = 12,
-            MinimumHeightRequest = 58
+            MinimumHeightRequest = 52
         };
 
         var labels = new VerticalStackLayout { Spacing = 3, VerticalOptions = LayoutOptions.Center };
         labels.Children.Add(new Label
         {
             Text = title,
-            FontSize = 17,
-            FontAttributes = FontAttributes.Bold,
+            FontSize = 16,
             LineBreakMode = LineBreakMode.WordWrap
         });
 
@@ -543,17 +542,16 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 new ColumnDefinition { Width = GridLength.Star },
                 new ColumnDefinition { Width = GridLength.Auto }
             ],
-            Padding = new Thickness(14, 12),
+            Padding = new Thickness(14, 10),
             ColumnSpacing = 12,
-            MinimumHeightRequest = 66
+            MinimumHeightRequest = 58
         };
 
         var labels = new VerticalStackLayout { Spacing = 3, VerticalOptions = LayoutOptions.Center };
         labels.Children.Add(new Label
         {
             Text = title,
-            FontSize = 17,
-            FontAttributes = FontAttributes.Bold,
+            FontSize = 16,
             LineBreakMode = LineBreakMode.WordWrap
         });
         labels.Children.Add(new Label
@@ -610,9 +608,9 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 new ColumnDefinition { Width = GridLength.Star },
                 new ColumnDefinition { Width = GridLength.Auto }
             ],
-            Padding = new Thickness(14, 12),
+            Padding = new Thickness(14, 10),
             ColumnSpacing = 12,
-            MinimumHeightRequest = 58
+            MinimumHeightRequest = 52
         };
 
         grid.Children.Add(new Border
@@ -629,8 +627,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         var label = new Label
         {
             Text = title,
-            FontSize = 17,
-            FontAttributes = FontAttributes.Bold,
+            FontSize = 16,
             VerticalOptions = LayoutOptions.Center
         };
         Grid.SetColumn(label, 1);

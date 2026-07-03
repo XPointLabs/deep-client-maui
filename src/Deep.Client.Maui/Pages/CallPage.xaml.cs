@@ -15,6 +15,7 @@ public partial class CallPage : ContentPage, IQueryAttributable
     private bool webReady;
     private bool initialized;
     private bool isEnding;
+    private bool receivingSignals;
     private bool microphoneEnabled = true;
     private bool cameraEnabled = true;
 
@@ -28,15 +29,18 @@ public partial class CallPage : ContentPage, IQueryAttributable
 
     public void ApplyQueryAttributes(IDictionary<string, object> query)
     {
-        if (query.TryGetValue("call", out var value) && value is CallDescriptor descriptor)
+        if (!query.TryGetValue("call", out var value) || value is not CallDescriptor descriptor)
         {
-            call = descriptor;
-            DisplayNameLabel.Text = descriptor.DisplayName;
-            CameraButton.IsVisible = descriptor.IsVideo;
-            SwitchCameraButton.IsVisible = descriptor.IsVideo;
-            cameraEnabled = descriptor.IsVideo;
-            StatusLabel.Text = descriptor.IsIncoming ? "Входящий звонок" : "Вызов";
+            return;
         }
+
+        call = descriptor;
+        DisplayNameLabel.Text = descriptor.DisplayName;
+        CameraButton.IsVisible = descriptor.IsVideo;
+        CameraLabel.IsVisible = descriptor.IsVideo;
+        SwitchCameraContainer.IsVisible = descriptor.IsVideo;
+        cameraEnabled = descriptor.IsVideo;
+        StatusLabel.Text = descriptor.IsIncoming ? "Входящий звонок" : "Вызов...";
     }
 
     protected override void OnAppearing()
@@ -58,7 +62,7 @@ public partial class CallPage : ContentPage, IQueryAttributable
         lifetime = null;
         if (!isEnding && call is not null)
         {
-            _ = coordinator.SendAsync(call, CallSignalType.Bye, "{\"reason\":\"navigation\"}");
+            _ = SendByeSafelyAsync(call, "navigation");
         }
     }
 
@@ -71,10 +75,8 @@ public partial class CallPage : ContentPage, IQueryAttributable
     private void OnWebViewHandlerChanged(object? sender, EventArgs e) =>
         CallWebViewPlatform.Configure(CallWebView);
 
-    private async void OnRawMessageReceived(object? sender, HybridWebViewRawMessageReceivedEventArgs e)
-    {
+    private async void OnRawMessageReceived(object? sender, HybridWebViewRawMessageReceivedEventArgs e) =>
         await HandleWebMessageAsync(e.Message);
-    }
 
     public Task OnWebMessage(string message) =>
         MainThread.InvokeOnMainThreadAsync(() => HandleWebMessageAsync(message));
@@ -110,7 +112,10 @@ public partial class CallPage : ContentPage, IQueryAttributable
                     break;
             }
         }
-        catch (Exception exception) when (exception is JsonException or InvalidOperationException or HttpRequestException)
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception) when (IsCallException(exception))
         {
             CrashDiagnostics.LogException("CallPage.RawMessage", exception);
             StatusLabel.Text = "Не удалось установить звонок";
@@ -154,45 +159,56 @@ public partial class CallPage : ContentPage, IQueryAttributable
 
         if (!webReady && !cancellationToken.IsCancellationRequested)
         {
-            StatusLabel.Text = "Не удалось запустить защищённый медиаканал";
+            StatusLabel.Text = "Не удалось запустить защищенный медиаканал";
         }
     }
 
     private async Task InitializeCallAsync(CallDescriptor descriptor, CancellationToken cancellationToken)
     {
-        var microphone = await Permissions.RequestAsync<Permissions.Microphone>();
-        if (microphone != PermissionStatus.Granted)
+        try
         {
-            await FailAndCloseAsync("Разрешите доступ к микрофону для звонка.");
-            return;
-        }
-
-        if (descriptor.IsVideo)
-        {
-            var camera = await Permissions.RequestAsync<Permissions.Camera>();
-            if (camera != PermissionStatus.Granted)
+            var microphone = await Permissions.RequestAsync<Permissions.Microphone>();
+            if (microphone != PermissionStatus.Granted)
             {
-                await FailAndCloseAsync("Разрешите доступ к камере для видеозвонка.");
+                await FailAndCloseAsync("Разрешите доступ к микрофону для звонка.");
                 return;
             }
-        }
 
-        var ice = await coordinator.GetIceConfigurationAsync(descriptor.LocalParty, cancellationToken);
-        var message = JsonSerializer.Serialize(new
-        {
-            command = "initialize",
-            initiator = !descriptor.IsIncoming,
-            video = descriptor.IsVideo,
-            iceServers = ice.IceServers.Select(static server => new
+            if (descriptor.IsVideo)
             {
-                urls = server.Urls,
-                username = server.Username,
-                credential = server.Credential
-            })
-        });
-        await SendToWebAsync(message);
-        StartTimers();
-        await ReceiveSignalsAsync(cancellationToken);
+                var camera = await Permissions.RequestAsync<Permissions.Camera>();
+                if (camera != PermissionStatus.Granted)
+                {
+                    await FailAndCloseAsync("Разрешите доступ к камере для видеозвонка.");
+                    return;
+                }
+            }
+
+            var ice = await coordinator.GetIceConfigurationAsync(descriptor.LocalParty, cancellationToken);
+            var message = JsonSerializer.Serialize(new
+            {
+                command = "initialize",
+                initiator = !descriptor.IsIncoming,
+                video = descriptor.IsVideo,
+                iceServers = ice.IceServers.Select(static server => new
+                {
+                    urls = server.Urls,
+                    username = server.Username,
+                    credential = server.Credential
+                })
+            });
+            await SendToWebAsync(message);
+            StartTimers();
+            await ReceiveSignalsAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception) when (IsCallException(exception))
+        {
+            CrashDiagnostics.LogException("CallPage.Initialize", exception);
+            StatusLabel.Text = "Не удалось подключиться";
+        }
     }
 
     private async Task ForwardSignalAsync(JsonElement root)
@@ -216,7 +232,7 @@ public partial class CallPage : ContentPage, IQueryAttributable
     private void StartTimers()
     {
         receiveTimer ??= Dispatcher.CreateTimer();
-        receiveTimer.Interval = TimeSpan.FromMilliseconds(600);
+        receiveTimer.Interval = TimeSpan.FromMilliseconds(750);
         receiveTimer.Tick -= OnReceiveTimerTick;
         receiveTimer.Tick += OnReceiveTimerTick;
         receiveTimer.Start();
@@ -230,12 +246,27 @@ public partial class CallPage : ContentPage, IQueryAttributable
 
     private async void OnReceiveTimerTick(object? sender, EventArgs e)
     {
-        if (lifetime is null || lifetime.IsCancellationRequested)
+        if (lifetime is null || lifetime.IsCancellationRequested || receivingSignals)
         {
             return;
         }
 
-        await ReceiveSignalsAsync(lifetime.Token);
+        try
+        {
+            receivingSignals = true;
+            await ReceiveSignalsAsync(lifetime.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception) when (IsNetworkException(exception))
+        {
+            CrashDiagnostics.LogInfo("CallPage.Signaling", exception.Message);
+        }
+        finally
+        {
+            receivingSignals = false;
+        }
     }
 
     private async Task ReceiveSignalsAsync(CancellationToken cancellationToken)
@@ -251,7 +282,7 @@ public partial class CallPage : ContentPage, IQueryAttributable
             if (signal.Type == CallSignalType.Bye)
             {
                 isEnding = true;
-                StatusLabel.Text = "Звонок завершён";
+                StatusLabel.Text = "Звонок завершен";
                 await Task.Delay(500, CancellationToken.None);
                 await Shell.Current.GoToAsync("..");
                 return;
@@ -283,12 +314,12 @@ public partial class CallPage : ContentPage, IQueryAttributable
     {
         StatusLabel.Text = state switch
         {
-            "connected" => "Защищённое соединение",
-            "connecting" => "Подключение",
-            "disconnected" => "Переподключение",
+            "connected" => "Защищенное соединение",
+            "connecting" => "Подключение...",
+            "disconnected" => "Переподключение...",
             "failed" => "Соединение не установлено",
-            "closed" => "Звонок завершён",
-            _ => "Установка соединения"
+            "closed" => "Звонок завершен",
+            _ => "Установка соединения..."
         };
         if (state == "connected" && connectedAt is null)
         {
@@ -312,7 +343,7 @@ public partial class CallPage : ContentPage, IQueryAttributable
     private void OnMicrophoneClicked(object? sender, EventArgs e)
     {
         microphoneEnabled = !microphoneEnabled;
-        MicrophoneButton.Text = microphoneEnabled ? "M" : "M̸";
+        SetControlState(MicrophoneButton, MicrophoneIcon, microphoneEnabled);
         SemanticProperties.SetDescription(MicrophoneButton, microphoneEnabled ? "Выключить микрофон" : "Включить микрофон");
         SendCommand("setMicrophone", microphoneEnabled);
     }
@@ -320,9 +351,15 @@ public partial class CallPage : ContentPage, IQueryAttributable
     private void OnCameraClicked(object? sender, EventArgs e)
     {
         cameraEnabled = !cameraEnabled;
-        CameraButton.Text = cameraEnabled ? "V" : "V̸";
+        SetControlState(CameraButton, CameraIcon, cameraEnabled);
         SemanticProperties.SetDescription(CameraButton, cameraEnabled ? "Выключить камеру" : "Включить камеру");
         SendCommand("setCamera", cameraEnabled);
+    }
+
+    private static void SetControlState(Border control, Microsoft.Maui.Controls.Shapes.Path icon, bool enabled)
+    {
+        control.Background = new SolidColorBrush(Color.FromArgb(enabled ? "#E8F0F7" : "#33455A"));
+        icon.Stroke = new SolidColorBrush(Color.FromArgb(enabled ? "#07111F" : "#FFFFFF"));
     }
 
     private void OnSwitchCameraClicked(object? sender, EventArgs e) => SendCommand("switchCamera");
@@ -350,18 +387,23 @@ public partial class CallPage : ContentPage, IQueryAttributable
         isEnding = true;
         if (call is not null)
         {
-            try
-            {
-                await coordinator.SendAsync(call, CallSignalType.Bye, JsonSerializer.Serialize(new { reason }));
-            }
-            catch (HttpRequestException exception)
-            {
-                CrashDiagnostics.LogException("CallPage.Hangup", exception);
-            }
+            await SendByeSafelyAsync(call, reason);
         }
 
         SendCommand("hangup");
         await Shell.Current.GoToAsync("..");
+    }
+
+    private async Task SendByeSafelyAsync(CallDescriptor descriptor, string reason)
+    {
+        try
+        {
+            await coordinator.SendAsync(descriptor, CallSignalType.Bye, JsonSerializer.Serialize(new { reason }));
+        }
+        catch (Exception exception) when (IsNetworkException(exception))
+        {
+            CrashDiagnostics.LogInfo("CallPage.Hangup", exception.Message);
+        }
     }
 
     private async Task FailAndCloseAsync(string message)
@@ -369,4 +411,10 @@ public partial class CallPage : ContentPage, IQueryAttributable
         await DisplayAlertAsync("Звонок Deep", message, "Закрыть");
         await EndAndCloseAsync("permission-denied");
     }
+
+    private static bool IsCallException(Exception exception) =>
+        exception is JsonException or InvalidOperationException || IsNetworkException(exception);
+
+    private static bool IsNetworkException(Exception exception) =>
+        exception is HttpRequestException or System.Net.WebException;
 }
