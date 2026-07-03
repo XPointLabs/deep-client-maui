@@ -65,7 +65,7 @@
                 </Grid>
             </Border>
 
-            <CollectionView x:Name="MessagesCollection" AutomationId="GroupChat.Messages" Grid.Row="1" Margin="8,4" ItemsSource="{Binding Messages}" Scrolled="OnMessagesScrolled">
+            <CollectionView x:Name="MessagesCollection" AutomationId="GroupChat.Messages" Grid.Row="1" Margin="8,4" Opacity="0" ItemsSource="{Binding Messages}" ItemsUpdatingScrollMode="KeepLastItemInView" Scrolled="OnMessagesScrolled">
             <CollectionView.EmptyView>
                 <Grid Padding="0,70,0,0">
                     <VerticalStackLayout HorizontalOptions="Center" Spacing="6">

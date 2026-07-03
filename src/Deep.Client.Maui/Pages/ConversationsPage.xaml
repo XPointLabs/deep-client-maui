@@ -31,11 +31,8 @@
                 <Border x:Name="ProfileStatusDot" WidthRequest="10" HeightRequest="10" Stroke="{StaticResource PageBackground}" StrokeThickness="2" Background="{StaticResource PrimaryColor}" HorizontalOptions="End" VerticalOptions="End" StrokeShape="RoundRectangle 5" Margin="0,0,1,1" />
             </Grid>
             <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
-                <HorizontalStackLayout Spacing="7">
-                    <Image Source="deep_mark.png" WidthRequest="23" HeightRequest="23" Aspect="AspectFit" />
-                    <Label Text="Deep" FontSize="20" FontAttributes="Bold" VerticalTextAlignment="Center" />
-                </HorizontalStackLayout>
-                <Label Text="через XPoint Network" FontSize="11" TextColor="{StaticResource TextTertiary}" Margin="30,-2,0,0" />
+                <Label Text="Deep" FontSize="20" FontAttributes="Bold" VerticalTextAlignment="Center" />
+                <Label Text="через XPoint Network" FontSize="11" TextColor="{StaticResource TextTertiary}" Margin="0,-2,0,0" />
             </VerticalStackLayout>
             <Button Grid.Column="2" AutomationId="Conversations.NewConversationTop" Text="＋" SemanticProperties.Description="Новое сообщение" Style="{StaticResource CircularIconButton}" FontSize="25" Clicked="OnNewConversationClicked" />
         </Grid>
@@ -51,7 +48,12 @@
         </Border>
 
         <Grid Grid.Row="3">
-            <CollectionView
+            <RefreshView
+                AutomationId="Conversations.Refresh"
+                IsRefreshing="{Binding IsBusy, Mode=OneWay}"
+                Command="{Binding LoadCommand}"
+                RefreshColor="{StaticResource PrimaryColor}">
+              <CollectionView
                     AutomationId="Conversations.List"
                     ItemsSource="{Binding Conversations}"
                     ItemSizingStrategy="MeasureFirstItem"
@@ -83,7 +85,7 @@
                                     <Grid Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                         <HorizontalStackLayout Spacing="6">
                                         <Label Text="Новый контакт" FontSize="12" TextColor="{StaticResource PrimaryColor}" FontAttributes="Bold" IsVisible="{Binding IsMessageRequest}" />
-                                        <Label Text="{Binding LastMessagePreview}" FontSize="14" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" HorizontalOptions="StartAndExpand" />
+                                        <Label Text="{Binding LastMessagePreview}" FontSize="14" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" HorizontalOptions="StartAndExpand" />
                                         <Label Text="Без звука" FontSize="12" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsMuted}" />
                                         </HorizontalStackLayout>
                                         <Border Grid.Column="1" Background="{StaticResource PrimaryColor}" MinimumWidthRequest="20" HeightRequest="20" Padding="6,0" StrokeThickness="0" StrokeShape="RoundRectangle 10" IsVisible="True">
@@ -97,7 +99,8 @@
                             </Border>
                         </DataTemplate>
                     </CollectionView.ItemTemplate>
-            </CollectionView>
+              </CollectionView>
+            </RefreshView>
 
         </Grid>
     </Grid>

@@ -235,6 +235,18 @@ public sealed class ConversationsViewModel : ViewModelBase
             preview = preview[..42] + "...";
         }
 
+        if (lastMessage?.Direction == MessageDirection.Outgoing)
+        {
+            preview = $"Вы: {preview}";
+        }
+
+        if (lastMessage is { Attachments.Count: > 0 })
+        {
+            preview = lastMessage.Attachments.Count == 1
+                ? $"Фото · {preview}"
+                : $"{lastMessage.Attachments.Count} вложения · {preview}";
+        }
+
         var unreadCount = messages.Count(message =>
             message.Direction == MessageDirection.Incoming
             && (readCursor is null || message.CreatedAt > readCursor.Value)
@@ -293,10 +305,39 @@ public sealed class ConversationsViewModel : ViewModelBase
             return;
         }
 
-        Conversations.Clear();
-        foreach (var conversation in nextItems)
+        for (var targetIndex = 0; targetIndex < nextItems.Count; targetIndex++)
         {
-            Conversations.Add(conversation);
+            var next = nextItems[targetIndex];
+            var existingIndex = -1;
+            for (var index = targetIndex; index < Conversations.Count; index++)
+            {
+                if (Conversations[index].Id == next.Id)
+                {
+                    existingIndex = index;
+                    break;
+                }
+            }
+
+            if (existingIndex < 0)
+            {
+                Conversations.Insert(targetIndex, next);
+                continue;
+            }
+
+            if (existingIndex != targetIndex)
+            {
+                Conversations.Move(existingIndex, targetIndex);
+            }
+
+            if (Conversations[targetIndex] != next)
+            {
+                Conversations[targetIndex] = next;
+            }
+        }
+
+        while (Conversations.Count > nextItems.Count)
+        {
+            Conversations.RemoveAt(Conversations.Count - 1);
         }
     }
 

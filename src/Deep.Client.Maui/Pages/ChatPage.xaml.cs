@@ -96,7 +96,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             didInitialScroll = false;
 
             await viewModel.OpenFromRouteAsync(sessionId, displayName, cancellationToken);
-            QueueScrollToEnd(animate: false, force: true);
+            await RevealInitialMessagesAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -105,6 +105,16 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         {
             CrashDiagnostics.LogException("ChatPage.LoadFromRouteAsync", ex);
         }
+    }
+
+    private async Task RevealInitialMessagesAsync(CancellationToken cancellationToken)
+    {
+        await Task.Delay(32, cancellationToken).ConfigureAwait(false);
+        await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            ScrollMessagesToEnd(animate: false, force: true);
+            MessagesCollection.Opacity = 1;
+        });
     }
 
     private async void OnBackClicked(object? sender, EventArgs e)
@@ -176,7 +186,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             var force = !didInitialScroll || hasOutgoing;
             if (force || shouldStickToEnd)
             {
-                QueueScrollToEnd(e.Action == NotifyCollectionChangedAction.Add, force);
+                QueueScrollToEnd(false, force);
             }
         }
     }
