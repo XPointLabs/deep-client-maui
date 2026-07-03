@@ -115,6 +115,11 @@ public partial class CallPage : ContentPage, IQueryAttributable
         catch (OperationCanceledException)
         {
         }
+        catch (Exception exception) when (IsNetworkException(exception))
+        {
+            CrashDiagnostics.LogInfo("CallPage.Signaling", exception.Message);
+            StatusLabel.Text = "Переподключение...";
+        }
         catch (Exception exception) when (IsCallException(exception))
         {
             CrashDiagnostics.LogException("CallPage.RawMessage", exception);
