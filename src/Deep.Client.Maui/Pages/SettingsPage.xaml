@@ -12,14 +12,13 @@
     <Grid RowDefinitions="Auto,*" BackgroundColor="{StaticResource PageBackground}">
         <Grid
             Grid.Row="0"
-            HeightRequest="64"
-            Padding="0,4,0,0"
-            ColumnDefinitions="56,*,56,56"
+            Style="{StaticResource CompactHeader}"
+            ColumnDefinitions="48,*,48,48"
             BackgroundColor="{StaticResource PageBackground}">
             <Label
                 Grid.ColumnSpan="4"
                 Text="Настройки"
-                FontSize="28"
+                FontSize="20"
                 FontAttributes="Bold"
                 HorizontalTextAlignment="Center"
                 VerticalTextAlignment="Center"
@@ -29,14 +28,14 @@
             <Border
                 Grid.Column="0"
                 AutomationId="Settings.Back"
-                WidthRequest="48"
-                HeightRequest="48"
+                WidthRequest="40"
+                HeightRequest="40"
                 Padding="0"
                 Background="Transparent"
                 StrokeThickness="0"
                 HorizontalOptions="Center"
                 VerticalOptions="Center">
-                <Label Text="x" FontSize="30" FontAttributes="Bold" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Path Data="M6,6 L18,18 M18,6 L6,18" Stroke="{StaticResource TextPrimary}" StrokeThickness="2.2" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnBackClicked" />
                 </Border.GestureRecognizers>
@@ -45,13 +44,13 @@
             <Border
                 Grid.Column="2"
                 AutomationId="Settings.EditName"
-                WidthRequest="48"
-                HeightRequest="48"
+                WidthRequest="40"
+                HeightRequest="40"
                 Background="Transparent"
                 StrokeThickness="0"
                 HorizontalOptions="Center"
                 VerticalOptions="Center">
-                <Label Text="✎" FontSize="24" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Path Data="M5,19 L9,18 L19,8 L16,5 L6,15 Z M14,7 L17,10" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnEditNameClicked" />
                 </Border.GestureRecognizers>
@@ -60,13 +59,15 @@
             <Border
                 Grid.Column="3"
                 AutomationId="Settings.Qr"
-                WidthRequest="48"
-                HeightRequest="48"
+                WidthRequest="40"
+                HeightRequest="40"
                 Background="Transparent"
                 StrokeThickness="0"
                 HorizontalOptions="Center"
                 VerticalOptions="Center">
-                <Label Text="▦" FontSize="27" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Grid WidthRequest="22" HeightRequest="22" HorizontalOptions="Center" VerticalOptions="Center">
+                    <Path Data="M2,2 H9 V9 H2 Z M15,2 H22 V9 H15 Z M2,15 H9 V22 H2 Z M15,15 H18 V18 H15 Z M19,19 H22 V22 H19 Z" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" Aspect="Uniform" />
+                </Grid>
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnQrClicked" />
                 </Border.GestureRecognizers>
@@ -74,21 +75,21 @@
         </Grid>
 
         <ScrollView Grid.Row="1" BackgroundColor="{StaticResource PageBackground}">
-            <VerticalStackLayout Padding="24,16,24,20" Spacing="18">
-                <Grid HorizontalOptions="Center" WidthRequest="114" HeightRequest="102">
+            <VerticalStackLayout Padding="16,10,16,20" Spacing="14">
+                <Grid HorizontalOptions="Center" WidthRequest="104" HeightRequest="94">
                     <Border
                         AutomationId="Settings.Avatar"
-                        WidthRequest="90"
-                        HeightRequest="90"
+                        WidthRequest="88"
+                        HeightRequest="88"
                         Padding="0"
                         StrokeThickness="0"
                         Background="{StaticResource AvatarAccentColor}"
                         HorizontalOptions="Center"
                         VerticalOptions="Start"
-                        StrokeShape="RoundRectangle 45">
+                        StrokeShape="RoundRectangle 44">
                         <Grid>
                             <Image x:Name="ProfileAvatarImage" Aspect="AspectFill" IsVisible="False" />
-                            <Label x:Name="ProfileInitialLabel" Text="Q" TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="38" FontAutoScalingEnabled="False" />
+                            <Label x:Name="ProfileInitialLabel" Text="Q" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="34" FontAutoScalingEnabled="False" />
                         </Grid>
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnChangePhotoClicked" />
@@ -96,15 +97,15 @@
                     </Border>
 
                     <Border
-                        WidthRequest="48"
-                        HeightRequest="48"
+                        WidthRequest="36"
+                        HeightRequest="36"
                         Padding="0"
                         StrokeThickness="0"
                         Background="{StaticResource PrimaryColor}"
-                        StrokeShape="RoundRectangle 24"
+                        StrokeShape="RoundRectangle 18"
                         HorizontalOptions="End"
                         VerticalOptions="End">
-                        <Label Text="+" TextColor="#020711" FontSize="28" FontAttributes="Bold" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Label Text="＋" TextColor="#020711" FontSize="22" FontAttributes="Bold" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnChangePhotoClicked" />
                         </Border.GestureRecognizers>
@@ -114,7 +115,7 @@
                 <Label
                     AutomationId="Settings.DisplayName"
                     Text="{Binding AccountDisplayName}"
-                    FontSize="25"
+                    FontSize="23"
                     FontAttributes="Bold"
                     HorizontalTextAlignment="Center"
                     HorizontalOptions="Fill"
@@ -124,41 +125,22 @@
                     </Label.GestureRecognizers>
                 </Label>
 
-                <VerticalStackLayout Spacing="10" Padding="0,2,0,0">
-                    <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="10">
-                        <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" VerticalOptions="Center" />
-                        <Border
-                            Grid.Column="1"
-                            Padding="18,5"
-                            Background="{StaticResource PageBackground}"
-                            Stroke="{StaticResource DividerColor}"
-                            StrokeThickness="1"
-                            StrokeShape="RoundRectangle 18">
-                            <Label Text="ID вашего аккаунта" FontSize="14" TextColor="{StaticResource TextSecondary}" />
-                        </Border>
-                        <BoxView Grid.Column="2" HeightRequest="1" Color="{StaticResource DividerColor}" VerticalOptions="Center" />
-                    </Grid>
-
-                    <Label
-                        x:Name="SessionIdLabel"
-                        AutomationId="Settings.SessionId"
-                        Text="{Binding SessionId}"
-                        FontSize="17"
-                        FontFamily="Consolas"
-                        HorizontalTextAlignment="Center"
-                        LineBreakMode="WordWrap"
-                        HorizontalOptions="Fill" />
-                </VerticalStackLayout>
+                <Border Style="{StaticResource SettingsSection}" Padding="14,11">
+                    <VerticalStackLayout Spacing="5">
+                        <Label Text="ID аккаунта Deep" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                        <Label x:Name="SessionIdLabel" AutomationId="Settings.SessionId" Text="{Binding SessionId}" FontSize="13" FontFamily="Consolas" LineBreakMode="WordWrap" HorizontalOptions="Fill" />
+                    </VerticalStackLayout>
+                </Border>
 
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="14" Padding="0,2,0,0">
-                    <Border AutomationId="Settings.Share" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1" Background="Transparent" HeightRequest="48" Padding="0" StrokeShape="RoundRectangle 24">
-                        <Label Text="Поделиться" TextColor="{StaticResource PrimaryColor}" FontSize="16" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+                    <Border AutomationId="Settings.Share" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1" Background="Transparent" HeightRequest="42" Padding="0" StrokeShape="RoundRectangle 21">
+                        <Label Text="Поделиться" TextColor="{StaticResource PrimaryColor}" FontSize="15" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnShareClicked" />
                         </Border.GestureRecognizers>
                     </Border>
-                    <Border Grid.Column="1" AutomationId="Settings.Copy" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1" Background="Transparent" HeightRequest="48" Padding="0" StrokeShape="RoundRectangle 24">
-                        <Label Text="Скопировать" TextColor="{StaticResource PrimaryColor}" FontSize="16" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+                    <Border Grid.Column="1" AutomationId="Settings.Copy" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1" Background="Transparent" HeightRequest="42" Padding="0" StrokeShape="RoundRectangle 21">
+                        <Label Text="Скопировать" TextColor="{StaticResource PrimaryColor}" FontSize="15" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnCopySessionIdClicked" />
                         </Border.GestureRecognizers>

@@ -9,97 +9,62 @@
     BackgroundColor="{StaticResource PageBackground}"
     Shell.NavBarIsVisible="False"
     Title="Диалоги">
-    <Grid
-        AutomationId="Conversations.Root"
-        Padding="15,6,16,12"
-        RowDefinitions="Auto,Auto,*"
-        RowSpacing="8"
-        BackgroundColor="{StaticResource PageBackground}">
-        <Border x:Name="NetworkBanner" Grid.Row="0" Style="{StaticResource PanelBorder}" Padding="10,8" IsVisible="False" Stroke="{StaticResource DangerColor}">
-            <HorizontalStackLayout Spacing="8">
-                <Label Text="Соединение" FontAttributes="Bold" />
-                <Label x:Name="NetworkBannerText" Text="Офлайн" TextColor="{StaticResource DangerColor}" />
+    <Grid AutomationId="Conversations.Root" RowDefinitions="Auto,Auto,Auto,*" BackgroundColor="{StaticResource PageBackground}">
+        <Border x:Name="NetworkBanner" Grid.Row="0" Padding="12,7" IsVisible="False" Background="{StaticResource PanelBackground}" StrokeThickness="0">
+            <HorizontalStackLayout Spacing="8" HorizontalOptions="Center">
+                <Border WidthRequest="7" HeightRequest="7" StrokeThickness="0" Background="{StaticResource DangerColor}" StrokeShape="RoundRectangle 4" VerticalOptions="Center" />
+                <Label x:Name="NetworkBannerText" Text="Нет соединения" FontSize="12" TextColor="{StaticResource DangerColor}" />
             </HorizontalStackLayout>
         </Border>
 
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Padding="0,0,0,8">
-            <Grid WidthRequest="28" HeightRequest="28" VerticalOptions="Center">
-                <Border WidthRequest="26" HeightRequest="26" Padding="0" StrokeThickness="0" Background="{StaticResource AvatarAccentColor}" HorizontalOptions="Center" VerticalOptions="Center" StrokeShape="RoundRectangle 13">
+        <Grid Grid.Row="1" Style="{StaticResource CompactHeader}" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+            <Grid WidthRequest="42" HeightRequest="42" VerticalOptions="Center">
+                <Border WidthRequest="40" HeightRequest="40" Padding="0" StrokeThickness="0" Background="{StaticResource AvatarAccentColor}" HorizontalOptions="Center" VerticalOptions="Center" StrokeShape="RoundRectangle 20">
                     <Grid>
                         <Image x:Name="ProfileAvatarImage" Aspect="AspectFill" IsVisible="False" />
-                        <Label x:Name="ProfileInitialLabel" Text="Q" TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="12" FontAutoScalingEnabled="False" />
+                        <Label x:Name="ProfileInitialLabel" Text="Q" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="16" FontAutoScalingEnabled="False" />
                     </Grid>
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnProfileClicked" />
                     </Border.GestureRecognizers>
                 </Border>
-                <Border x:Name="ProfileStatusDot" WidthRequest="8" HeightRequest="8" StrokeThickness="0" Background="{StaticResource PrimaryColor}" HorizontalOptions="End" VerticalOptions="End" StrokeShape="RoundRectangle 4" Margin="0,0,1,1" />
+                <Border x:Name="ProfileStatusDot" WidthRequest="10" HeightRequest="10" Stroke="{StaticResource PageBackground}" StrokeThickness="2" Background="{StaticResource PrimaryColor}" HorizontalOptions="End" VerticalOptions="End" StrokeShape="RoundRectangle 5" Margin="0,0,1,1" />
             </Grid>
-
-            <HorizontalStackLayout
-                Grid.Column="1"
-                SemanticProperties.Description="Deep by XPoint Network"
-                Spacing="7"
-                HorizontalOptions="Center"
-                VerticalOptions="Center">
-                <Image
-                    Source="deep_mark.png"
-                    WidthRequest="28"
-                    HeightRequest="28"
-                    Aspect="AspectFit" />
-                <Label
-                    Text="Deep"
-                    FontSize="21"
-                    FontAttributes="Bold"
-                    CharacterSpacing="0"
-                    VerticalTextAlignment="Center" />
-            </HorizontalStackLayout>
-
-            <Border
-                Grid.Column="2"
-                AutomationId="Conversations.SearchButton"
-                WidthRequest="24"
-                HeightRequest="24"
-                Padding="0"
-                Background="Transparent"
-                StrokeThickness="0"
-                HorizontalOptions="End"
-                VerticalOptions="Center">
-                <Grid WidthRequest="24" HeightRequest="24" HorizontalOptions="Center" VerticalOptions="Center">
-                    <Ellipse WidthRequest="14" HeightRequest="14" Stroke="{StaticResource TextPrimary}" StrokeThickness="2.6" HorizontalOptions="Start" VerticalOptions="Start" Margin="3,3,0,0" />
-                    <Line X1="16" Y1="16" X2="23" Y2="23" Stroke="{StaticResource TextPrimary}" StrokeThickness="2.6" StrokeLineCap="Round" />
-                </Grid>
-                <Border.GestureRecognizers>
-                    <TapGestureRecognizer Tapped="OnSearchClicked" />
-                </Border.GestureRecognizers>
-            </Border>
+            <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
+                <HorizontalStackLayout Spacing="7">
+                    <Image Source="deep_mark.png" WidthRequest="23" HeightRequest="23" Aspect="AspectFit" />
+                    <Label Text="Deep" FontSize="20" FontAttributes="Bold" VerticalTextAlignment="Center" />
+                </HorizontalStackLayout>
+                <Label Text="через XPoint Network" FontSize="11" TextColor="{StaticResource TextTertiary}" Margin="30,-2,0,0" />
+            </VerticalStackLayout>
+            <Button Grid.Column="2" AutomationId="Conversations.NewConversationTop" Text="＋" SemanticProperties.Description="Новое сообщение" Style="{StaticResource CircularIconButton}" FontSize="25" Clicked="OnNewConversationClicked" />
         </Grid>
 
-        <Grid Grid.Row="2">
-            <Grid RowDefinitions="Auto,*" RowSpacing="12">
-                <Entry
-                    x:Name="SearchEntry"
-                    AutomationId="Conversations.Search"
-                    Grid.Row="0"
-                    Placeholder="Поиск диалогов"
-                    Text="{Binding SearchQuery}"
-                    IsVisible="False" />
+        <Border Grid.Row="2" Style="{StaticResource SearchBorder}" Margin="12,4,12,8">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+                <Grid WidthRequest="20" HeightRequest="20" VerticalOptions="Center">
+                    <Ellipse WidthRequest="12" HeightRequest="12" Stroke="{StaticResource TextSecondary}" StrokeThickness="2" HorizontalOptions="Start" VerticalOptions="Start" Margin="1,1,0,0" />
+                    <Line X1="11" Y1="11" X2="18" Y2="18" Stroke="{StaticResource TextSecondary}" StrokeThickness="2" StrokeLineCap="Round" />
+                </Grid>
+                <Entry x:Name="SearchEntry" AutomationId="Conversations.Search" Grid.Column="1" Placeholder="Поиск" Text="{Binding SearchQuery}" HeightRequest="38" Margin="0" BackgroundColor="Transparent" />
+            </Grid>
+        </Border>
 
-                <CollectionView
+        <Grid Grid.Row="3">
+            <CollectionView
                     AutomationId="Conversations.List"
-                    Grid.Row="1"
                     ItemsSource="{Binding Conversations}"
                     ItemSizingStrategy="MeasureFirstItem"
                     SelectionMode="Single"
                     SelectedItem="{Binding SelectedConversation, Mode=TwoWay}">
                     <CollectionView.EmptyView>
-                        <Grid Padding="50,96,50,0">
+                        <Grid Padding="50,88,50,0">
                             <VerticalStackLayout Spacing="10" HorizontalOptions="Center" VerticalOptions="Start">
                                 <Border WidthRequest="70" HeightRequest="70" StrokeThickness="1" Stroke="{StaticResource PrimaryColor}" Background="{StaticResource PanelBackground}" StrokeShape="RoundRectangle 35">
                                     <Label Text="X" FontSize="36" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
                                 </Border>
                                 <Label Text="Пока нет диалогов" FontSize="17" FontAttributes="Bold" HorizontalTextAlignment="Center" />
-                                <Label Text="Нажмите +, чтобы начать чат или создать группу." FontSize="13" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" LineBreakMode="WordWrap" />
+                                <Label Text="Нажмите +, чтобы начать переписку или создать группу." FontSize="13" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" LineBreakMode="WordWrap" />
                             </VerticalStackLayout>
                         </Grid>
                     </CollectionView.EmptyView>
@@ -109,42 +74,31 @@
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Tapped="OnConversationTapped" />
                                 </Border.GestureRecognizers>
-                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="2">
+                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="11" RowSpacing="3" HeightRequest="58">
                                     <Border Grid.RowSpan="2" WidthRequest="52" HeightRequest="52" Padding="0" StrokeThickness="0" Background="{StaticResource PrimaryColorMuted}" VerticalOptions="Center" StrokeShape="RoundRectangle 26">
-                                        <Label Text="Q" TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="20" />
+                                        <Label Text="Q" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="19" />
                                     </Border>
-                                    <Label Grid.Column="1" Text="{Binding Title}" FontSize="17" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                                    <HorizontalStackLayout Grid.Column="2" Spacing="8" HorizontalOptions="End">
-                                        <Label Text="{Binding UpdatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="12" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
-                                        <Border Background="{StaticResource PrimaryColor}" Padding="7,2" StrokeThickness="0" StrokeShape="RoundRectangle 9" IsVisible="True">
-                                            <Label Text="{Binding UnreadCount}" FontSize="11" TextColor="#020711" FontAttributes="Bold" />
-                                            <Border.Triggers>
-                                                <DataTrigger TargetType="Border" Binding="{Binding UnreadCount}" Value="0">
-                                                    <Setter Property="IsVisible" Value="False" />
-                                                </DataTrigger>
-                                            </Border.Triggers>
-                                        </Border>
-                                    </HorizontalStackLayout>
-                                    <HorizontalStackLayout Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Spacing="8">
+                                    <Label Grid.Column="1" Text="{Binding Title}" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" VerticalOptions="End" />
+                                    <Label Grid.Column="2" Text="{Binding UpdatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="12" TextColor="{StaticResource TextTertiary}" VerticalOptions="End" />
+                                    <Grid Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <HorizontalStackLayout Spacing="6">
                                         <Label Text="Новый контакт" FontSize="12" TextColor="{StaticResource PrimaryColor}" FontAttributes="Bold" IsVisible="{Binding IsMessageRequest}" />
                                         <Label Text="{Binding LastMessagePreview}" FontSize="14" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" HorizontalOptions="StartAndExpand" />
                                         <Label Text="Без звука" FontSize="12" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsMuted}" />
-                                    </HorizontalStackLayout>
+                                        </HorizontalStackLayout>
+                                        <Border Grid.Column="1" Background="{StaticResource PrimaryColor}" MinimumWidthRequest="20" HeightRequest="20" Padding="6,0" StrokeThickness="0" StrokeShape="RoundRectangle 10" IsVisible="True">
+                                            <Label Text="{Binding UnreadCount}" FontSize="11" TextColor="#03101A" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+                                            <Border.Triggers>
+                                                <DataTrigger TargetType="Border" Binding="{Binding UnreadCount}" Value="0"><Setter Property="IsVisible" Value="False" /></DataTrigger>
+                                            </Border.Triggers>
+                                        </Border>
+                                    </Grid>
                                 </Grid>
                             </Border>
                         </DataTemplate>
                     </CollectionView.ItemTemplate>
-                </CollectionView>
-            </Grid>
+            </CollectionView>
 
-            <Button
-                AutomationId="Conversations.NewConversation"
-                Text="+"
-                Style="{StaticResource FabButton}"
-                HorizontalOptions="Center"
-                VerticalOptions="End"
-                Margin="0,0,0,44"
-                Clicked="OnNewConversationClicked" />
         </Grid>
     </Grid>
 </ContentPage>

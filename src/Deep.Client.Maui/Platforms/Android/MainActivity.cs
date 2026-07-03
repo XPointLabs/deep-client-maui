@@ -11,13 +11,14 @@ using Microsoft.Maui.Storage;
 
 namespace Deep.Client.Maui;
 
-[Activity(Theme = "@style/Maui.SplashTheme", MainLauncher = true, LaunchMode = LaunchMode.SingleTop, ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
+[Activity(Theme = "@style/Maui.SplashTheme", MainLauncher = true, LaunchMode = LaunchMode.SingleTop, WindowSoftInputMode = SoftInput.AdjustResize, ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
 public class MainActivity : MauiAppCompatActivity
 {
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
 #pragma warning disable CA1422
+        Window?.SetSoftInputMode(SoftInput.AdjustResize);
         Window?.SetStatusBarColor(Android.Graphics.Color.Black);
         Window?.SetNavigationBarColor(Android.Graphics.Color.Black);
         if (OperatingSystem.IsAndroidVersionAtLeast(30) && Window?.InsetsController is { } controller)

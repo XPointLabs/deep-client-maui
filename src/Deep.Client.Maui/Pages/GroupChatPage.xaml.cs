@@ -22,6 +22,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private bool isLoadingOlderMessages;
     private bool shouldStickToEnd = true;
     private bool didInitialScroll;
+    private double expandedPageHeight;
 
     public GroupChatPage(
         GroupChatViewModel viewModel,
@@ -36,11 +37,13 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
         viewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
+        SizeChanged += OnPageSizeChanged;
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        Dispatcher.Dispatch(ApplyAndroidSafeAreaCompensation);
         ApplyComposerPreferences();
         UpdateNetworkUi();
         EnsureAutoRefresh();
@@ -279,6 +282,17 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
         await AttachmentOpenService.OpenAsync(this, item.Attachments, attachmentFiles);
     }
+
+    private void ApplyAndroidSafeAreaCompensation()
+    {
+        expandedPageHeight = Math.Max(expandedPageHeight, Height);
+        var keyboardVisible = expandedPageHeight - Height > 100;
+        var statusBarHeight = keyboardVisible ? 0 : AndroidSafeArea.GetStatusBarHeight();
+        PageLayout.Margin = new Thickness(0, 0, 0, statusBarHeight);
+    }
+
+    private void OnPageSizeChanged(object? sender, EventArgs e) =>
+        ApplyAndroidSafeAreaCompensation();
 
     private async void OnMessageTapped(object? sender, TappedEventArgs e)
     {

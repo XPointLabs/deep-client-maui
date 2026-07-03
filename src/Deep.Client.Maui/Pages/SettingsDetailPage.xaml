@@ -7,18 +7,17 @@
     BackgroundColor="{StaticResource PageBackground}"
     Shell.NavBarIsVisible="False"
     Title="Настройки">
-    <ScrollView BackgroundColor="{StaticResource PageBackground}">
-        <VerticalStackLayout Padding="{StaticResource PagePadding}" Spacing="14">
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Padding="0,12,0,8">
+    <Grid RowDefinitions="Auto,*" BackgroundColor="{StaticResource PageBackground}">
+            <Grid Grid.Row="0" Style="{StaticResource CompactHeader}" ColumnDefinitions="40,*" ColumnSpacing="8">
                 <Border
                     AutomationId="SettingsDetail.Back"
-                    WidthRequest="44"
-                    HeightRequest="44"
+                    WidthRequest="40"
+                    HeightRequest="40"
                     Padding="0"
                     Background="Transparent"
                     StrokeThickness="0"
                     VerticalOptions="Center">
-                    <Label Text="‹" FontSize="36" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,-3,0,0" />
+                    <Path Data="M15,4 L7,12 L15,20" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2.4" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnBackClicked" />
                     </Border.GestureRecognizers>
@@ -28,20 +27,16 @@
                     x:Name="TitleLabel"
                     Grid.Column="1"
                     Text="Настройки"
-                    FontSize="24"
+                    FontSize="20"
                     FontAttributes="Bold"
                     HorizontalTextAlignment="Start"
                     VerticalOptions="Center" />
             </Grid>
-
-            <VerticalStackLayout x:Name="ContentStack" Spacing="12" />
-
-            <Label
-                x:Name="StatusLabel"
-                AutomationId="SettingsDetail.Status"
-                TextColor="{StaticResource TextSecondary}"
-                FontSize="13"
-                LineBreakMode="WordWrap" />
-        </VerticalStackLayout>
-    </ScrollView>
+        <ScrollView Grid.Row="1" BackgroundColor="{StaticResource PageBackground}">
+            <VerticalStackLayout Padding="16,12,16,20" Spacing="14">
+                <VerticalStackLayout x:Name="ContentStack" Spacing="12" />
+                <Label x:Name="StatusLabel" AutomationId="SettingsDetail.Status" TextColor="{StaticResource TextSecondary}" FontSize="13" LineBreakMode="WordWrap" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>

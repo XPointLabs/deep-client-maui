@@ -2,20 +2,23 @@
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
-    <Color x:Key="PageBackground">#020711</Color>
-    <Color x:Key="PanelBackground">#07111F</Color>
-    <Color x:Key="PanelBackgroundAlt">#10244B</Color>
-    <Color x:Key="PrimaryColor">#18C8FF</Color>
-    <Color x:Key="PrimaryColorMuted">#126DFF</Color>
-    <Color x:Key="AvatarAccentColor">#8A5AFF</Color>
-    <Color x:Key="TextPrimary">#F5F9FF</Color>
-    <Color x:Key="TextSecondary">#9DB1C7</Color>
+    <Color x:Key="PageBackground">#050A13</Color>
+    <Color x:Key="PanelBackground">#0B1422</Color>
+    <Color x:Key="PanelBackgroundAlt">#111E31</Color>
+    <Color x:Key="PrimaryColor">#18C8F4</Color>
+    <Color x:Key="PrimaryColorMuted">#176FF2</Color>
+    <Color x:Key="AvatarAccentColor">#2C7BFF</Color>
+    <Color x:Key="TextPrimary">#F7FAFF</Color>
+    <Color x:Key="TextSecondary">#91A4BA</Color>
+    <Color x:Key="TextTertiary">#60748B</Color>
     <Color x:Key="DangerColor">#FF8B8B</Color>
-    <Color x:Key="IncomingBubbleColor">#07111F</Color>
-    <Color x:Key="OutgoingBubbleColor">#10244B</Color>
-    <Color x:Key="DividerColor">#1E3356</Color>
+    <Color x:Key="IncomingBubbleColor">#111C2B</Color>
+    <Color x:Key="OutgoingBubbleColor">#123461</Color>
+    <Color x:Key="DividerColor">#1A2A3E</Color>
+    <Color x:Key="SearchBackground">#111B29</Color>
+    <Color x:Key="PressedBackground">#15243A</Color>
 
-    <Thickness x:Key="PagePadding">18,8,18,12</Thickness>
+    <Thickness x:Key="PagePadding">16,6,16,10</Thickness>
 
     <Style TargetType="ContentPage">
         <Setter Property="BackgroundColor" Value="{StaticResource PageBackground}" />
@@ -23,7 +26,7 @@
 
     <Style TargetType="Label">
         <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
-        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontFamily" Value="OpenSansRegular" />
         <Setter Property="FontAutoScalingEnabled" Value="False" />
     </Style>
 
@@ -31,8 +34,8 @@
         <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
         <Setter Property="PlaceholderColor" Value="{StaticResource TextSecondary}" />
         <Setter Property="BackgroundColor" Value="{StaticResource PanelBackgroundAlt}" />
-        <Setter Property="FontSize" Value="15" />
-        <Setter Property="HeightRequest" Value="48" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="HeightRequest" Value="42" />
         <Setter Property="FontAutoScalingEnabled" Value="False" />
     </Style>
 
@@ -109,10 +112,47 @@
         <Setter Property="Background" Value="{StaticResource PageBackground}" />
         <Setter Property="Stroke" Value="Transparent" />
         <Setter Property="StrokeThickness" Value="0" />
-        <Setter Property="Padding" Value="0,8" />
+        <Setter Property="Padding" Value="12,7" />
         <Setter Property="StrokeShape">
             <Setter.Value>
                 <RoundRectangle CornerRadius="0" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="CompactHeader" TargetType="Grid">
+        <Setter Property="HeightRequest" Value="56" />
+        <Setter Property="Padding" Value="12,4" />
+        <Setter Property="BackgroundColor" Value="{StaticResource PageBackground}" />
+    </Style>
+
+    <Style x:Key="SearchBorder" TargetType="Border">
+        <Setter Property="HeightRequest" Value="38" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="Background" Value="{StaticResource SearchBackground}" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="StrokeShape">
+            <Setter.Value>
+                <RoundRectangle CornerRadius="10" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="CircularIconButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+        <Setter Property="WidthRequest" Value="40" />
+        <Setter Property="HeightRequest" Value="40" />
+        <Setter Property="CornerRadius" Value="20" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="FontSize" Value="21" />
+    </Style>
+
+    <Style x:Key="SettingsSection" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource PanelBackground}" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="StrokeShape">
+            <Setter.Value>
+                <RoundRectangle CornerRadius="12" />
             </Setter.Value>
         </Setter>
     </Style>

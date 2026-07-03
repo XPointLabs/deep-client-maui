@@ -19,8 +19,16 @@ public abstract class ViewModelBase : INotifyPropertyChanged
     public string? ErrorMessage
     {
         get => errorMessage;
-        protected set => SetProperty(ref errorMessage, value);
+        protected set
+        {
+            if (SetProperty(ref errorMessage, value))
+            {
+                RaisePropertyChanged(nameof(HasError));
+            }
+        }
     }
+
+    public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
 
     protected bool SetProperty<T>(ref T storage, T value, [CallerMemberName] string? propertyName = null)
     {

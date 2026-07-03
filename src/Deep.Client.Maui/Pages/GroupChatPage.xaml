@@ -8,50 +8,77 @@
     xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
     x:DataType="vm:GroupChatViewModel"
     BackgroundColor="{StaticResource PageBackground}"
+    SafeAreaEdges="SoftInput"
     Shell.NavBarIsVisible="False"
     Title="Групповой чат">
-    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto" RowSpacing="10" BackgroundColor="{StaticResource PageBackground}">
-        <Border x:Name="NetworkBanner" Grid.Row="0" Style="{StaticResource PanelBorder}" Padding="10,8" IsVisible="False" Stroke="{StaticResource DangerColor}">
-            <HorizontalStackLayout Spacing="8">
-                <Label Text="Соединение" FontAttributes="Bold" />
-                <Label x:Name="NetworkBannerText" Text="Офлайн" TextColor="{StaticResource DangerColor}" />
-            </HorizontalStackLayout>
-        </Border>
-
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10" Padding="0,4,0,6">
-            <Border
-                AutomationId="GroupChat.Back"
-                WidthRequest="44"
-                HeightRequest="44"
-                Padding="0"
-                Background="Transparent"
-                StrokeThickness="0"
-                VerticalOptions="Center">
-                <Label Text="‹" FontSize="36" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,-3,0,0" />
-                <Border.GestureRecognizers>
-                    <TapGestureRecognizer Tapped="OnBackClicked" />
-                </Border.GestureRecognizers>
+    <Grid x:Name="PageLayout" RowDefinitions="Auto,*,Auto,56" RowSpacing="0" BackgroundColor="{StaticResource PageBackground}">
+        <VerticalStackLayout Grid.Row="0" Spacing="0">
+            <Border x:Name="NetworkBanner" Padding="12,6" IsVisible="False" Background="{StaticResource PanelBackground}" StrokeThickness="0">
+                <HorizontalStackLayout Spacing="7" HorizontalOptions="Center">
+                    <Border WidthRequest="7" HeightRequest="7" StrokeThickness="0" Background="{StaticResource DangerColor}" StrokeShape="RoundRectangle 4" VerticalOptions="Center" />
+                    <Label x:Name="NetworkBannerText" Text="Нет соединения" FontSize="12" TextColor="{StaticResource DangerColor}" />
+                </HorizontalStackLayout>
             </Border>
-            <Border Grid.Column="1" WidthRequest="48" HeightRequest="48" Padding="0" StrokeThickness="0" Background="{StaticResource PrimaryColorMuted}" VerticalOptions="Center" StrokeShape="RoundRectangle 24">
-                <Label Text="G" TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="20" />
-            </Border>
-            <VerticalStackLayout Grid.Column="2" Spacing="2" VerticalOptions="Center">
-                <Label Text="{Binding GroupTitle}" FontSize="20" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                <Label Text="{Binding GroupSubtitle}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
-            </VerticalStackLayout>
-            <Button Grid.Column="3" AutomationId="GroupChat.Members" Text="⋮" SemanticProperties.Description="Участники группы" Style="{StaticResource ToolbarIconButton}" Clicked="OnMembersClicked" />
-        </Grid>
+            <Grid Style="{StaticResource CompactHeader}" ColumnDefinitions="40,42,*,40" ColumnSpacing="4">
+                <Border AutomationId="GroupChat.Back" WidthRequest="40" HeightRequest="40" Padding="0" Background="Transparent" StrokeThickness="0" VerticalOptions="Center">
+                    <Path Data="M15,4 L7,12 L15,20" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2.4" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                    <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnBackClicked" /></Border.GestureRecognizers>
+                </Border>
+                <Border Grid.Column="1" WidthRequest="40" HeightRequest="40" Padding="0" StrokeThickness="0" Background="{StaticResource PrimaryColorMuted}" VerticalOptions="Center" StrokeShape="RoundRectangle 20">
+                    <Label Text="G" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="16" />
+                </Border>
+                <VerticalStackLayout Grid.Column="2" Spacing="0" VerticalOptions="Center" Margin="5,0,0,0">
+                    <Label Text="{Binding GroupTitle}" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                    <Label Text="{Binding GroupSubtitle}" FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
+                </VerticalStackLayout>
+                <Button Grid.Column="3" AutomationId="GroupChat.Members" Text="⋮" SemanticProperties.Description="Участники группы" Style="{StaticResource CircularIconButton}" Clicked="OnMembersClicked" />
+            </Grid>
+            <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" />
+        </VerticalStackLayout>
 
-        <CollectionView x:Name="MessagesCollection" AutomationId="GroupChat.Messages" Grid.Row="2" ItemsSource="{Binding Messages}" Scrolled="OnMessagesScrolled">
+        <Grid Grid.Row="1" RowDefinitions="Auto,*">
+            <Border x:Name="MembersPanel" Grid.Row="0" Background="{StaticResource PanelBackground}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="10" Margin="10,8,10,2" IsVisible="False">
+                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                    <Label Text="{Binding StatusMessage}" FontSize="12" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation">
+                        <Label.Triggers>
+                            <DataTrigger TargetType="Label" Binding="{Binding IsStatusError}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger>
+                        </Label.Triggers>
+                    </Label>
+                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <Border Background="{StaticResource SearchBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,0">
+                            <Entry AutomationId="GroupChat.MemberSessionId" Placeholder="ID участника" Text="{Binding MemberSessionId}" HeightRequest="42" BackgroundColor="Transparent" />
+                        </Border>
+                        <Button Grid.Column="1" Text="Добавить" Command="{Binding AddMemberCommand}" WidthRequest="108" />
+                    </Grid>
+                    <CollectionView Grid.Row="2" ItemsSource="{Binding Members}" ItemSizingStrategy="MeasureFirstItem" HeightRequest="86" SelectionMode="Single" SelectedItem="{Binding SelectedMember, Mode=TwoWay}" SelectionChanged="OnMemberSelectionChanged">
+                        <CollectionView.EmptyView><Label Text="Нет участников" FontSize="12" TextColor="{StaticResource TextSecondary}" /></CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:GroupMemberItem">
+                                <Grid ColumnDefinitions="*,Auto,Auto" Padding="0,0,0,4" ColumnSpacing="6">
+                                    <Label Text="{Binding SessionId.Value}" FontSize="11" LineBreakMode="TailTruncation" />
+                                    <Border Grid.Column="1" StrokeThickness="0" Padding="6,2" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 8"><Label Text="{Binding Role}" FontSize="10" TextColor="{StaticResource TextSecondary}" /></Border>
+                                    <Border Grid.Column="2" StrokeThickness="0" Padding="6,2" Background="{StaticResource DangerColor}" StrokeShape="RoundRectangle 8" IsVisible="{Binding IsPendingRemoval}"><Label Text="Ожидает" FontSize="10" TextColor="#050705" /></Border>
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+            </Border>
+
+            <CollectionView x:Name="MessagesCollection" AutomationId="GroupChat.Messages" Grid.Row="1" Margin="8,4" ItemsSource="{Binding Messages}" Scrolled="OnMessagesScrolled">
             <CollectionView.EmptyView>
-                <Grid Padding="0,60,0,0">
-                    <Label Text="Пока нет сообщений группы" FontSize="16" TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+                <Grid Padding="0,70,0,0">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="6">
+                        <Image Source="deep_mark.png" WidthRequest="42" HeightRequest="42" Opacity="0.8" />
+                        <Label Text="Пока нет сообщений" FontSize="15" FontAttributes="Bold" HorizontalOptions="Center" />
+                        <Label Text="Начните защищенную групповую переписку" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+                    </VerticalStackLayout>
                 </Grid>
             </CollectionView.EmptyView>
             <CollectionView.ItemTemplate>
                 <DataTemplate x:DataType="vm:GroupChatMessageItem">
-                    <Grid Padding="0,0,0,6">
-                        <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="12,8" HorizontalOptions="Start" MaximumWidthRequest="330">
+                    <Grid Padding="2,0,2,4">
+                        <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnMessageTapped" />
                             </Border.GestureRecognizers>
@@ -65,14 +92,14 @@
                                 </Border>
                                 <Label Text="{Binding Body}" FontSize="15" LineBreakMode="WordWrap" />
                                 <Label Text="{Binding ReactionSummary}" FontSize="14" IsVisible="{Binding HasReactions}" TextColor="{StaticResource TextPrimary}" />
-                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
                                     <Border Grid.Column="1" Padding="7,2" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 9" IsVisible="{Binding HasAttachments}">
                                         <Label Text="{Binding AttachmentSummary}" FontSize="10" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" />
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer Tapped="OnAttachmentTapped" />
                                         </Border.GestureRecognizers>
                                     </Border>
-                                    <Label Grid.Column="2" Text="{Binding CreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Grid.Column="2" Text="{Binding CreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" />
                                     <Label
                                         Grid.Column="3"
                                         Text="{Binding StatusGlyph}"
@@ -80,7 +107,7 @@
                                         SemanticProperties.Description="{Binding StatusDescription}"
                                         FontSize="11"
                                         FontAttributes="Bold"
-                                        TextColor="{StaticResource TextSecondary}">
+                                        TextColor="{StaticResource TextTertiary}">
                                         <Label.Triggers>
                                             <DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True">
                                                 <Setter Property="TextColor" Value="{StaticResource PrimaryColor}" />
@@ -102,46 +129,11 @@
                     </Grid>
                 </DataTemplate>
             </CollectionView.ItemTemplate>
-        </CollectionView>
+            </CollectionView>
+        </Grid>
 
-        <Border x:Name="MembersPanel" Grid.Row="3" Style="{StaticResource PanelBorder}" Padding="10" IsVisible="False">
-            <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
-                <Label Text="{Binding StatusMessage}" FontSize="12" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation">
-                    <Label.Triggers>
-                        <DataTrigger TargetType="Label" Binding="{Binding IsStatusError}" Value="True">
-                            <Setter Property="TextColor" Value="{StaticResource DangerColor}" />
-                        </DataTrigger>
-                    </Label.Triggers>
-                </Label>
-
-                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <Entry AutomationId="GroupChat.MemberSessionId" Placeholder="ID участника" Text="{Binding MemberSessionId}" />
-                    <Button Grid.Column="1" Text="Добавить" Command="{Binding AddMemberCommand}" WidthRequest="112" />
-                </Grid>
-
-                <CollectionView Grid.Row="2" ItemsSource="{Binding Members}" ItemSizingStrategy="MeasureFirstItem" HeightRequest="86" SelectionMode="Single" SelectedItem="{Binding SelectedMember, Mode=TwoWay}" SelectionChanged="OnMemberSelectionChanged">
-                    <CollectionView.EmptyView>
-                        <Label Text="Нет участников" FontSize="12" TextColor="{StaticResource TextSecondary}" />
-                    </CollectionView.EmptyView>
-                    <CollectionView.ItemTemplate>
-                        <DataTemplate x:DataType="vm:GroupMemberItem">
-                            <Grid ColumnDefinitions="*,Auto,Auto" Padding="0,0,0,4" ColumnSpacing="6">
-                                <Label Text="{Binding SessionId.Value}" FontSize="11" LineBreakMode="TailTruncation" />
-                                <Border Grid.Column="1" StrokeThickness="0" Padding="6,2" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 8">
-                                    <Label Text="{Binding Role}" FontSize="10" TextColor="{StaticResource TextSecondary}" />
-                                </Border>
-                                <Border Grid.Column="2" StrokeThickness="0" Padding="6,2" Background="{StaticResource DangerColor}" StrokeShape="RoundRectangle 8" IsVisible="{Binding IsPendingRemoval}">
-                                    <Label Text="Ожидает" FontSize="10" TextColor="#050705" />
-                                </Border>
-                            </Grid>
-                        </DataTemplate>
-                    </CollectionView.ItemTemplate>
-                </CollectionView>
-            </Grid>
-        </Border>
-
-        <VerticalStackLayout Grid.Row="4" Spacing="6">
-            <Border Style="{StaticResource PanelBorder}" Padding="10" IsVisible="{Binding IsReplying}">
+        <Grid Grid.Row="2" RowDefinitions="Auto,Auto,Auto" RowSpacing="5" Padding="8,4,8,0" BackgroundColor="{StaticResource PageBackground}">
+            <Border Grid.Row="0" Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,7" IsVisible="{Binding IsReplying}">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                     <BoxView WidthRequest="3" Color="{StaticResource PrimaryColor}" />
                     <VerticalStackLayout Grid.Column="1" Spacing="1">
@@ -151,22 +143,20 @@
                     <Button Grid.Column="2" Text="×" SemanticProperties.Description="Отменить ответ" Command="{Binding CancelReplyCommand}" WidthRequest="38" HeightRequest="38" Padding="0" Style="{StaticResource GhostButton}" />
                 </Grid>
             </Border>
-            <Border Style="{StaticResource PanelBorder}" Padding="10" IsVisible="{Binding HasStagedAttachments}">
+            <Border Grid.Row="1" Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,7" IsVisible="{Binding HasStagedAttachments}">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                     <Label AutomationId="GroupChat.AttachmentSummary" Text="{Binding StagedAttachmentSummary}" LineBreakMode="TailTruncation" VerticalOptions="Center" TextColor="{StaticResource TextSecondary}" />
                     <Button Grid.Column="1" Text="Очистить" Command="{Binding ClearAttachmentsCommand}" WidthRequest="96" Style="{StaticResource SecondaryButton}" />
                 </Grid>
             </Border>
-        </VerticalStackLayout>
-
-        <Label Grid.Row="5" AutomationId="GroupChat.Error" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="12" LineBreakMode="WordWrap" />
-
-        <Border Grid.Row="6" Background="{StaticResource PanelBackground}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" Padding="6" StrokeShape="RoundRectangle 24">
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                <Button AutomationId="GroupChat.Attach" Text="+" SemanticProperties.Description="Добавить вложение" Command="{Binding PickAttachmentsCommand}" WidthRequest="40" HeightRequest="40" Padding="0" FontSize="25" Style="{StaticResource GhostButton}" />
-                <Entry x:Name="DraftEntry" AutomationId="GroupChat.Draft" Grid.Column="1" Placeholder="Сообщение" Text="{Binding Draft}" BackgroundColor="Transparent" ReturnType="Send" ReturnCommand="{Binding SendCommand}" />
-                <Button AutomationId="GroupChat.Send" Grid.Column="2" Text="➤" SemanticProperties.Description="Отправить" Command="{Binding SendCommand}" WidthRequest="40" HeightRequest="40" Padding="0" FontSize="19" />
-            </Grid>
-        </Border>
+            <Label Grid.Row="2" AutomationId="GroupChat.Error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" TextColor="{StaticResource DangerColor}" FontSize="12" LineBreakMode="WordWrap" Margin="8,0" />
+        </Grid>
+        <Grid Grid.Row="3" Padding="8,4,8,8" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7" BackgroundColor="{StaticResource PageBackground}">
+            <Button AutomationId="GroupChat.Attach" Text="＋" SemanticProperties.Description="Добавить вложение" Command="{Binding PickAttachmentsCommand}" WidthRequest="42" HeightRequest="42" Padding="0" FontSize="25" Style="{StaticResource CircularIconButton}" />
+            <Border Grid.Column="1" Background="{StaticResource SearchBackground}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" StrokeShape="RoundRectangle 21" Padding="10,0">
+                <Entry x:Name="DraftEntry" AutomationId="GroupChat.Draft" Placeholder="Сообщение" Text="{Binding Draft}" HeightRequest="42" BackgroundColor="Transparent" ReturnType="Send" ReturnCommand="{Binding SendCommand}" />
+            </Border>
+            <Button AutomationId="GroupChat.Send" Grid.Column="2" Text="➤" SemanticProperties.Description="Отправить" Command="{Binding SendCommand}" WidthRequest="42" HeightRequest="42" Padding="0" FontSize="18" CornerRadius="21" />
+        </Grid>
     </Grid>
 </ContentPage>

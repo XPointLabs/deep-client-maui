@@ -8,76 +8,64 @@
     xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
     x:DataType="vm:ChatViewModel"
     BackgroundColor="{StaticResource PageBackground}"
+    SafeAreaEdges="SoftInput"
     Shell.NavBarIsVisible="False"
     Title="Сообщения">
-    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto" RowSpacing="10" BackgroundColor="{StaticResource PageBackground}">
-        <Border x:Name="NetworkBanner" Grid.Row="0" Style="{StaticResource PanelBorder}" Padding="10,8" IsVisible="False" Stroke="{StaticResource DangerColor}">
-            <HorizontalStackLayout Spacing="8">
-                <Label Text="Соединение" FontAttributes="Bold" />
-                <Label x:Name="NetworkBannerText" Text="Офлайн" TextColor="{StaticResource DangerColor}" />
-            </HorizontalStackLayout>
-        </Border>
+    <Grid x:Name="PageLayout" RowDefinitions="Auto,*,Auto,56" RowSpacing="0" BackgroundColor="{StaticResource PageBackground}">
+        <VerticalStackLayout Grid.Row="0" Spacing="0">
+            <Border x:Name="NetworkBanner" Padding="12,6" IsVisible="False" Background="{StaticResource PanelBackground}" StrokeThickness="0">
+                <HorizontalStackLayout Spacing="7" HorizontalOptions="Center">
+                    <Border WidthRequest="7" HeightRequest="7" StrokeThickness="0" Background="{StaticResource DangerColor}" StrokeShape="RoundRectangle 4" VerticalOptions="Center" />
+                    <Label x:Name="NetworkBannerText" Text="Нет соединения" FontSize="12" TextColor="{StaticResource DangerColor}" />
+                </HorizontalStackLayout>
+            </Border>
+            <Grid Style="{StaticResource CompactHeader}" ColumnDefinitions="40,42,*,40,40,40" ColumnSpacing="4">
+                <Border AutomationId="Chat.Back" WidthRequest="40" HeightRequest="40" Padding="0" Background="Transparent" StrokeThickness="0" VerticalOptions="Center">
+                    <Path Data="M15,4 L7,12 L15,20" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2.4" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                    <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnBackClicked" /></Border.GestureRecognizers>
+                </Border>
+                <Border Grid.Column="1" WidthRequest="40" HeightRequest="40" Padding="0" StrokeThickness="0" Background="{StaticResource PrimaryColorMuted}" VerticalOptions="Center" StrokeShape="RoundRectangle 20">
+                    <Label Text="Q" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="16" />
+                </Border>
+                <VerticalStackLayout Grid.Column="2" Spacing="0" VerticalOptions="Center" Margin="5,0,0,0">
+                    <Label Text="{Binding Conversation.DisplayName}" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                    <Label Text="защищено сетью XPoint" FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
+                </VerticalStackLayout>
+                <Button Grid.Column="3" Text="◡" FontSize="20" SemanticProperties.Description="Аудиозвонок" Style="{StaticResource CircularIconButton}" Clicked="OnAudioCallClicked" />
+                <Button Grid.Column="4" Text="▣" FontSize="17" SemanticProperties.Description="Видеозвонок" Style="{StaticResource CircularIconButton}" Clicked="OnVideoCallClicked" />
+                <Button Grid.Column="5" Text="⋮" FontSize="24" SemanticProperties.Description="Информация о чате" Style="{StaticResource CircularIconButton}" Clicked="OnInfoClicked" />
+            </Grid>
+            <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" />
+        </VerticalStackLayout>
 
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="6" Padding="0,4,0,6">
-            <Border
-                AutomationId="Chat.Back"
-                WidthRequest="44"
-                HeightRequest="44"
-                Padding="0"
-                Background="Transparent"
-                StrokeThickness="0"
-                VerticalOptions="Center">
-                <Label Text="‹" FontSize="36" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,-3,0,0" />
-                <Border.GestureRecognizers>
-                    <TapGestureRecognizer Tapped="OnBackClicked" />
-                </Border.GestureRecognizers>
-            </Border>
-            <Border Grid.Column="1" WidthRequest="48" HeightRequest="48" Padding="0" StrokeThickness="0" Background="{StaticResource PrimaryColorMuted}" VerticalOptions="Center" StrokeShape="RoundRectangle 24">
-                <Label Text="Q" TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="20" />
-            </Border>
-            <Label Grid.Column="2" Text="{Binding Conversation.DisplayName}" FontSize="18" FontAttributes="Bold" LineBreakMode="TailTruncation" VerticalOptions="Center" />
-            <Button Grid.Column="3" Text="☎" FontSize="18" SemanticProperties.Description="Аудиозвонок" Style="{StaticResource ToolbarIconButton}" Clicked="OnAudioCallClicked" />
-            <Button Grid.Column="4" Text="▣" FontSize="18" SemanticProperties.Description="Видеозвонок" Style="{StaticResource ToolbarIconButton}" Clicked="OnVideoCallClicked" />
-            <Button Grid.Column="5" Text="⋮" SemanticProperties.Description="Информация о чате" Style="{StaticResource ToolbarIconButton}" Clicked="OnInfoClicked" />
-        </Grid>
+        <Grid Grid.Row="1" RowDefinitions="Auto,*" BackgroundColor="{StaticResource PageBackground}">
+            <Grid Grid.Row="0" Margin="10,8,10,0">
+                <Border AutomationId="Chat.MessageRequest" Padding="12,10" Background="{StaticResource PanelBackground}" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" IsVisible="{Binding IsMessageRequest}">
+                    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" ColumnSpacing="10" RowSpacing="8">
+                        <Label Grid.ColumnSpan="2" Text="Новый контакт. Примите запрос или заблокируйте отправителя." FontSize="13" TextColor="{StaticResource TextSecondary}" LineBreakMode="WordWrap" />
+                        <Button Grid.Row="1" Text="Заблокировать" Command="{Binding BlockContactCommand}" Style="{StaticResource SecondaryButton}" />
+                        <Button Grid.Row="1" Grid.Column="1" Text="Принять" Command="{Binding AcceptMessageRequestCommand}" />
+                    </Grid>
+                </Border>
+                <Border AutomationId="Chat.BlockedContact" Padding="12,10" Background="{StaticResource PanelBackground}" Stroke="{StaticResource DangerColor}" StrokeThickness="1" StrokeShape="RoundRectangle 12" IsVisible="{Binding IsBlocked}">
+                    <Label Text="Контакт заблокирован. Новые сообщения от него не сохраняются." FontSize="13" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+                </Border>
+            </Grid>
 
-        <Grid Grid.Row="2">
-            <Border
-                AutomationId="Chat.MessageRequest"
-                Padding="12,10"
-                Background="{StaticResource PanelBackground}"
-                Stroke="{StaticResource PrimaryColor}"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 8"
-                IsVisible="{Binding IsMessageRequest}">
-                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,*" ColumnSpacing="10" RowSpacing="8">
-                    <Label Grid.ColumnSpan="2" Text="Новый контакт. Вы можете принять запрос или заблокировать отправителя." FontSize="13" TextColor="{StaticResource TextSecondary}" LineBreakMode="WordWrap" />
-                    <Button Grid.Row="1" Text="Заблокировать" Command="{Binding BlockContactCommand}" Style="{StaticResource SecondaryButton}" />
-                    <Button Grid.Row="1" Grid.Column="1" Text="Принять" Command="{Binding AcceptMessageRequestCommand}" />
-                </Grid>
-            </Border>
-            <Border
-                AutomationId="Chat.BlockedContact"
-                Padding="12,10"
-                Background="{StaticResource PanelBackground}"
-                Stroke="{StaticResource DangerColor}"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 8"
-                IsVisible="{Binding IsBlocked}">
-                <Label Text="Контакт заблокирован. Новые сообщения от него не сохраняются." FontSize="13" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
-            </Border>
-        </Grid>
-
-        <CollectionView x:Name="MessagesCollection" AutomationId="Chat.Messages" Grid.Row="3" ItemsSource="{Binding Messages}" Scrolled="OnMessagesScrolled">
+            <CollectionView x:Name="MessagesCollection" AutomationId="Chat.Messages" Grid.Row="1" Margin="8,4" ItemsSource="{Binding Messages}" Scrolled="OnMessagesScrolled">
             <CollectionView.EmptyView>
-                <Grid Padding="0,90,0,0">
-                    <Label Text="Пока нет сообщений" FontSize="16" TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+                <Grid Padding="0,80,0,0">
+                    <VerticalStackLayout HorizontalOptions="Center" Spacing="6">
+                        <Image Source="deep_mark.png" WidthRequest="42" HeightRequest="42" Opacity="0.8" />
+                        <Label Text="Пока нет сообщений" FontSize="15" FontAttributes="Bold" HorizontalOptions="Center" />
+                        <Label Text="Начните защищенную переписку" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+                    </VerticalStackLayout>
                 </Grid>
             </CollectionView.EmptyView>
             <CollectionView.ItemTemplate>
                 <DataTemplate x:DataType="vm:ChatMessageItem">
-                    <Grid Padding="0,0,0,6">
-                        <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="12,8" HorizontalOptions="Start" MaximumWidthRequest="330">
+                    <Grid Padding="2,0,2,4">
+                        <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnMessageTapped" />
                             </Border.GestureRecognizers>
@@ -90,14 +78,14 @@
                                 </Border>
                                 <Label AutomationId="Chat.MessageBody" Text="{Binding Body}" FontSize="15" LineBreakMode="WordWrap" />
                                 <Label Text="{Binding ReactionSummary}" FontSize="14" IsVisible="{Binding HasReactions}" TextColor="{StaticResource TextPrimary}" />
-                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
                                     <Border Grid.Column="1" Padding="7,2" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 9" IsVisible="{Binding HasAttachments}">
                                         <Label Text="{Binding AttachmentSummary}" FontSize="10" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" />
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer Tapped="OnAttachmentTapped" />
                                         </Border.GestureRecognizers>
                                     </Border>
-                                    <Label Grid.Column="2" Text="{Binding CreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Grid.Column="2" Text="{Binding CreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" VerticalOptions="End" />
                                     <Label
                                         Grid.Column="3"
                                         Text="{Binding StatusGlyph}"
@@ -105,7 +93,7 @@
                                         SemanticProperties.Description="{Binding StatusDescription}"
                                         FontSize="11"
                                         FontAttributes="Bold"
-                                        TextColor="{StaticResource TextSecondary}">
+                                        TextColor="{StaticResource TextTertiary}">
                                         <Label.Triggers>
                                             <DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True">
                                                 <Setter Property="TextColor" Value="{StaticResource PrimaryColor}" />
@@ -127,10 +115,11 @@
                     </Grid>
                 </DataTemplate>
             </CollectionView.ItemTemplate>
-        </CollectionView>
+            </CollectionView>
+        </Grid>
 
-        <VerticalStackLayout Grid.Row="4" Spacing="6">
-            <Border Style="{StaticResource PanelBorder}" Padding="10" IsVisible="{Binding IsReplying}">
+        <Grid Grid.Row="2" RowDefinitions="Auto,Auto,Auto" RowSpacing="5" Padding="8,4,8,0" BackgroundColor="{StaticResource PageBackground}">
+            <Border Grid.Row="0" Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,7" IsVisible="{Binding IsReplying}">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                     <BoxView WidthRequest="3" Color="{StaticResource PrimaryColor}" />
                     <VerticalStackLayout Grid.Column="1" Spacing="1">
@@ -140,22 +129,20 @@
                     <Button Grid.Column="2" Text="×" SemanticProperties.Description="Отменить ответ" Command="{Binding CancelReplyCommand}" WidthRequest="38" HeightRequest="38" Padding="0" Style="{StaticResource GhostButton}" />
                 </Grid>
             </Border>
-            <Border Style="{StaticResource PanelBorder}" Padding="10" IsVisible="{Binding HasStagedAttachments}">
+            <Border Grid.Row="1" Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,7" IsVisible="{Binding HasStagedAttachments}">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                     <Label AutomationId="Chat.AttachmentSummary" Text="{Binding StagedAttachmentSummary}" LineBreakMode="TailTruncation" VerticalOptions="Center" TextColor="{StaticResource TextSecondary}" />
                     <Button Grid.Column="1" Text="Очистить" Command="{Binding ClearAttachmentsCommand}" WidthRequest="96" Style="{StaticResource SecondaryButton}" />
                 </Grid>
             </Border>
-        </VerticalStackLayout>
-
-        <Label Grid.Row="5" AutomationId="Chat.Error" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="12" LineBreakMode="WordWrap" />
-
-        <Border Grid.Row="6" Background="{StaticResource PanelBackground}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" Padding="6" StrokeShape="RoundRectangle 24" IsEnabled="{Binding IsComposerEnabled}">
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                <Button AutomationId="Chat.Attach" Text="+" SemanticProperties.Description="Добавить вложение" Command="{Binding PickAttachmentsCommand}" WidthRequest="40" HeightRequest="40" Padding="0" FontSize="25" Style="{StaticResource GhostButton}" />
-                <Entry x:Name="DraftEntry" AutomationId="Chat.Draft" Grid.Column="1" Placeholder="Сообщение" Text="{Binding Draft}" BackgroundColor="Transparent" ReturnType="Send" ReturnCommand="{Binding SendCommand}" />
-                <Button AutomationId="Chat.Send" Grid.Column="2" Text="➤" SemanticProperties.Description="Отправить" Command="{Binding SendCommand}" WidthRequest="40" HeightRequest="40" Padding="0" FontSize="19" />
-            </Grid>
-        </Border>
+            <Label Grid.Row="2" AutomationId="Chat.Error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" TextColor="{StaticResource DangerColor}" FontSize="12" LineBreakMode="WordWrap" Margin="8,0" />
+        </Grid>
+        <Grid Grid.Row="3" Padding="8,4,8,8" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7" IsEnabled="{Binding IsComposerEnabled}" BackgroundColor="{StaticResource PageBackground}">
+            <Button AutomationId="Chat.Attach" Text="＋" SemanticProperties.Description="Добавить вложение" Command="{Binding PickAttachmentsCommand}" WidthRequest="42" HeightRequest="42" Padding="0" FontSize="25" Style="{StaticResource CircularIconButton}" />
+            <Border Grid.Column="1" Background="{StaticResource SearchBackground}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" StrokeShape="RoundRectangle 21" Padding="10,0">
+                <Entry x:Name="DraftEntry" AutomationId="Chat.Draft" Placeholder="Сообщение" Text="{Binding Draft}" HeightRequest="42" BackgroundColor="Transparent" ReturnType="Send" ReturnCommand="{Binding SendCommand}" />
+            </Border>
+            <Button AutomationId="Chat.Send" Grid.Column="2" Text="➤" SemanticProperties.Description="Отправить" Command="{Binding SendCommand}" WidthRequest="42" HeightRequest="42" Padding="0" FontSize="18" CornerRadius="21" />
+        </Grid>
     </Grid>
 </ContentPage>

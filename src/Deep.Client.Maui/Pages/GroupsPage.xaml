@@ -9,33 +9,33 @@
     BackgroundColor="{StaticResource PageBackground}"
     Shell.NavBarIsVisible="False"
     Title="Новая группа">
-    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="14" BackgroundColor="{StaticResource PageBackground}">
-        <Border x:Name="NetworkBanner" Grid.Row="0" Style="{StaticResource PanelBorder}" Padding="10,8" IsVisible="False" Stroke="{StaticResource DangerColor}">
-            <HorizontalStackLayout Spacing="8">
-                <Label Text="Соединение" FontAttributes="Bold" />
-                <Label x:Name="NetworkBannerText" Text="Офлайн" TextColor="{StaticResource DangerColor}" />
+    <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10" BackgroundColor="{StaticResource PageBackground}">
+        <Border x:Name="NetworkBanner" Grid.Row="0" Padding="12,6" IsVisible="False" Background="{StaticResource PanelBackground}" StrokeThickness="0">
+            <HorizontalStackLayout Spacing="7" HorizontalOptions="Center">
+                <Border WidthRequest="7" HeightRequest="7" StrokeThickness="0" Background="{StaticResource DangerColor}" StrokeShape="RoundRectangle 4" VerticalOptions="Center" />
+                <Label x:Name="NetworkBannerText" Text="Нет соединения" FontSize="12" TextColor="{StaticResource DangerColor}" />
             </HorizontalStackLayout>
         </Border>
 
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Padding="0,12,0,8">
+        <Grid Grid.Row="1" Style="{StaticResource CompactHeader}" ColumnDefinitions="40,*,40" ColumnSpacing="8">
             <Border
                 AutomationId="Groups.Back"
-                WidthRequest="44"
-                HeightRequest="44"
+                WidthRequest="40"
+                HeightRequest="40"
                 Padding="0"
                 Background="Transparent"
                 StrokeThickness="0"
                 VerticalOptions="Center">
-                <Label Text="&lt;" FontSize="24" FontAttributes="Bold" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Path Data="M15,4 L7,12 L15,20" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2.4" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnBackClicked" />
                 </Border.GestureRecognizers>
             </Border>
 
-            <Label Grid.Column="1" Text="Новая группа" FontSize="24" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalOptions="Center" />
+            <Label Grid.Column="1" Text="Новая группа" FontSize="20" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalOptions="Center" />
         </Grid>
 
-        <Border Grid.Row="2" Style="{StaticResource PanelBorder}" Padding="12">
+        <Border Grid.Row="2" Style="{StaticResource PanelBorder}" Padding="12" Margin="16,0">
             <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
                 <Label Text="Создать закрытую группу" FontSize="16" FontAttributes="Bold" />
 
@@ -96,7 +96,7 @@
             </Grid>
         </Border>
 
-        <CollectionView Grid.Row="3" ItemsSource="{Binding Groups}" ItemSizingStrategy="MeasureFirstItem" SelectionMode="Single" SelectedItem="{Binding SelectedGroup, Mode=TwoWay}" SelectionChanged="OnGroupSelectionChanged">
+        <CollectionView Grid.Row="3" Margin="4,0" ItemsSource="{Binding Groups}" ItemSizingStrategy="MeasureFirstItem" SelectionMode="Single" SelectedItem="{Binding SelectedGroup, Mode=TwoWay}" SelectionChanged="OnGroupSelectionChanged">
             <CollectionView.EmptyView>
                 <Grid Padding="0,80,0,0">
                     <VerticalStackLayout Spacing="10" HorizontalOptions="Center" VerticalOptions="Start">

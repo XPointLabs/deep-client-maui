@@ -9,25 +9,25 @@
     BackgroundColor="{StaticResource PageBackground}"
     Shell.NavBarIsVisible="False"
     Title="Новое сообщение">
-    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,*" RowSpacing="20" BackgroundColor="{StaticResource PageBackground}">
-        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Padding="0,12,0,8">
+    <Grid RowDefinitions="Auto,*" RowSpacing="0" BackgroundColor="{StaticResource PageBackground}">
+        <Grid Style="{StaticResource CompactHeader}" ColumnDefinitions="40,*,40" ColumnSpacing="8">
             <Border
                 AutomationId="NewConversation.Back"
-                WidthRequest="44"
-                HeightRequest="44"
+                WidthRequest="40"
+                HeightRequest="40"
                 Padding="0"
                 Background="Transparent"
                 StrokeThickness="0"
                 VerticalOptions="Center">
-                <Label Text="&lt;" FontSize="24" FontAttributes="Bold" FontAutoScalingEnabled="False" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Path Data="M15,4 L7,12 L15,20" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2.4" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnBackClicked" />
                 </Border.GestureRecognizers>
             </Border>
-            <Label Grid.Column="1" Text="Новое сообщение" FontSize="24" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalOptions="Center" />
+            <Label Grid.Column="1" Text="Новое сообщение" FontSize="20" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalOptions="Center" />
         </Grid>
 
-        <VerticalStackLayout Grid.Row="1" Spacing="16" Padding="0,18,0,0">
+        <VerticalStackLayout Grid.Row="1" Spacing="16" Padding="16,20,16,0">
             <VerticalStackLayout Spacing="6">
                 <Label Text="Кому" FontSize="13" TextColor="{StaticResource TextSecondary}" />
                 <Entry x:Name="SessionIdEntry" AutomationId="NewConversation.SessionId" Placeholder="ID аккаунта" Text="{Binding NewSessionId}" />
