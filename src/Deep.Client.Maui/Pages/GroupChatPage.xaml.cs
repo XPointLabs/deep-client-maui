@@ -23,6 +23,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private bool shouldStickToEnd = true;
     private bool didInitialScroll;
     private double expandedPageHeight;
+    private GroupChatMessageItem? selectedMessage;
 
     public GroupChatPage(
         GroupChatViewModel viewModel,
@@ -304,41 +305,58 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private void OnPageSizeChanged(object? sender, EventArgs e) =>
         ApplyAndroidSafeAreaCompensation();
 
-    private async void OnMessageTapped(object? sender, TappedEventArgs e)
+    private void OnMessageTapped(object? sender, TappedEventArgs e)
     {
         if ((sender as BindableObject)?.BindingContext is not GroupChatMessageItem item)
         {
             return;
         }
 
-        var selected = await DisplayActionSheetAsync(
-            "Сообщение",
-            "Отмена",
-            null,
-            "Ответить",
-            "👍",
-            "❤️",
-            "😂",
-            "😮",
-            "😢",
-            "Скопировать текст");
-        switch (selected)
+        selectedMessage = item;
+        MessageMenuOverlay.IsVisible = true;
+    }
+
+    private void OnCloseMessageMenu(object? sender, TappedEventArgs e)
+    {
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+    }
+
+    private async void OnReactionClicked(object? sender, EventArgs e)
+    {
+        if (selectedMessage is null || sender is not Button { CommandParameter: string emoji })
         {
-            case "Ответить":
-                viewModel.BeginReply(item);
-                DraftEntry.Focus();
-                break;
-            case "Скопировать текст":
-                await Clipboard.Default.SetTextAsync(item.Body);
-                break;
-            case "👍":
-            case "❤️":
-            case "😂":
-            case "😮":
-            case "😢":
-                await viewModel.ToggleReactionAsync(item, selected);
-                break;
+            return;
         }
+
+        var message = selectedMessage;
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+        await viewModel.ToggleReactionAsync(message, emoji);
+    }
+
+    private void OnReplySelectedMessage(object? sender, TappedEventArgs e)
+    {
+        if (selectedMessage is null)
+        {
+            return;
+        }
+
+        viewModel.BeginReply(selectedMessage);
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+        DraftEntry.Focus();
+    }
+
+    private async void OnCopySelectedMessage(object? sender, TappedEventArgs e)
+    {
+        if (selectedMessage is not null)
+        {
+            await Clipboard.Default.SetTextAsync(selectedMessage.Body);
+        }
+
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
     }
 
     private void ApplyComposerPreferences()

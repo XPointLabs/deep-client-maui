@@ -24,6 +24,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private bool shouldStickToEnd = true;
     private bool didInitialScroll;
     private double expandedPageHeight;
+    private ChatMessageItem? selectedMessage;
 
     public ChatPage(
         ChatViewModel viewModel,
@@ -125,14 +126,43 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private static Task NavigateBackToConversationsAsync() =>
         Shell.Current.GoToAsync($"//{ShellRouteCatalog.Conversations}", animate: false);
 
-    private async void OnInfoClicked(object? sender, EventArgs e)
+    private void OnInfoClicked(object? sender, EventArgs e)
     {
-        var conversation = viewModel.Conversation;
-        await DisplayActionSheetAsync(
-            conversation?.DisplayName ?? "Диалог",
-            "Отмена",
-            null,
-            conversation?.Id.Value ?? "ID аккаунта недоступен");
+        ChatMenuOverlay.IsVisible = true;
+    }
+
+    private void OnCloseChatMenu(object? sender, TappedEventArgs e) => ChatMenuOverlay.IsVisible = false;
+
+    private async void OnCopyConversationIdClicked(object? sender, TappedEventArgs e)
+    {
+        ChatMenuOverlay.IsVisible = false;
+        if (viewModel.Conversation is { } conversation)
+        {
+            await Clipboard.Default.SetTextAsync(conversation.Id.Value);
+        }
+    }
+
+    private async void OnClearConversationClicked(object? sender, TappedEventArgs e)
+    {
+        ChatMenuOverlay.IsVisible = false;
+        if (!await DisplayAlertAsync("Очистить историю?", "Сообщения будут удалены с этого устройства.", "Очистить", "Отмена"))
+        {
+            return;
+        }
+
+        await viewModel.ClearConversationAsync();
+    }
+
+    private async void OnDeleteConversationClicked(object? sender, TappedEventArgs e)
+    {
+        ChatMenuOverlay.IsVisible = false;
+        if (!await DisplayAlertAsync("Удалить чат?", "История будет удалена, а диалог скрыт до нового сообщения.", "Удалить", "Отмена"))
+        {
+            return;
+        }
+
+        await viewModel.DeleteConversationAsync();
+        await NavigateBackToConversationsAsync();
     }
 
     private void OnNetworkStatusChanged(object? sender, EventArgs e)
@@ -278,41 +308,58 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         }
     }
 
-    private async void OnMessageTapped(object? sender, TappedEventArgs e)
+    private void OnMessageTapped(object? sender, TappedEventArgs e)
     {
         if ((sender as BindableObject)?.BindingContext is not ChatMessageItem item)
         {
             return;
         }
 
-        var selected = await DisplayActionSheetAsync(
-            "Сообщение",
-            "Отмена",
-            null,
-            "Ответить",
-            "👍",
-            "❤️",
-            "😂",
-            "😮",
-            "😢",
-            "Скопировать текст");
-        switch (selected)
+        selectedMessage = item;
+        MessageMenuOverlay.IsVisible = true;
+    }
+
+    private void OnCloseMessageMenu(object? sender, TappedEventArgs e)
+    {
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+    }
+
+    private async void OnReactionClicked(object? sender, EventArgs e)
+    {
+        if (selectedMessage is null || sender is not Button { CommandParameter: string emoji })
         {
-            case "Ответить":
-                viewModel.BeginReply(item);
-                DraftEntry.Focus();
-                break;
-            case "Скопировать текст":
-                await Clipboard.Default.SetTextAsync(item.Body);
-                break;
-            case "👍":
-            case "❤️":
-            case "😂":
-            case "😮":
-            case "😢":
-                await viewModel.ToggleReactionAsync(item, selected);
-                break;
+            return;
         }
+
+        var message = selectedMessage;
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+        await viewModel.ToggleReactionAsync(message, emoji);
+    }
+
+    private void OnReplySelectedMessage(object? sender, TappedEventArgs e)
+    {
+        if (selectedMessage is null)
+        {
+            return;
+        }
+
+        viewModel.BeginReply(selectedMessage);
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+        DraftEntry.Focus();
+    }
+
+    private async void OnCopySelectedMessage(object? sender, TappedEventArgs e)
+    {
+        if (selectedMessage is not null)
+        {
+            await Clipboard.Default.SetTextAsync(selectedMessage.Body);
+        }
+
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
     }
 
     private void ApplyComposerPreferences()

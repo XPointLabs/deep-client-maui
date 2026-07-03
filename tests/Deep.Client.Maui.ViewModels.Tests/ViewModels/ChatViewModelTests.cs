@@ -77,8 +77,36 @@ public sealed class ChatViewModelTests
         await chat.ToggleReactionAsync(reply, "👍");
 
         Assert.Equal(original.Id, chat.Messages.Single(message => message.Body == "reply").ReplyTo?.MessageId);
-        Assert.Equal("👍", chat.Messages.Single(message => message.Body == "reply").ReactionSummary);
+        var reaction = Assert.Single(chat.Messages.Single(message => message.Body == "reply").ReactionChips);
+        Assert.Equal("👍", reaction.Emoji);
+        Assert.Equal(1, reaction.Count);
         Assert.False(chat.IsReplying);
+    }
+
+    [Fact]
+    public async Task ClearAndDeleteConversationRemoveHistoryAndHideChat()
+    {
+        var runtime = ClientRuntime.CreateStubbed();
+        var account = await runtime.Accounts.RegisterAsync("Alice");
+        var remote = SessionId.CreateNew();
+        var chat = new ChatViewModel(runtime);
+        await chat.OpenOneToOneAsync(account, remote, "Bob");
+        chat.Draft = "temporary";
+        await chat.SendAsync();
+
+        await chat.ClearConversationAsync();
+
+        Assert.Empty(chat.Messages);
+        Assert.Empty(await runtime.Messages.ListConversationMessagesAsync(chat.Conversation!.Id));
+
+        chat.Draft = "delete me";
+        await chat.SendAsync();
+        await chat.DeleteConversationAsync();
+
+        var stored = await ((IConversationRepository)runtime.Store).GetAsync(chat.Conversation!.Id);
+        Assert.NotNull(stored);
+        Assert.True(stored!.IsHidden);
+        Assert.Empty(await runtime.Messages.ListConversationMessagesAsync(chat.Conversation.Id));
     }
 
     [Fact]

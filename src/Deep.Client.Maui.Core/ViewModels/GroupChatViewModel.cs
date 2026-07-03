@@ -38,9 +38,10 @@ public sealed record GroupChatMessageItem(
 
     public string ReplyPreview => ReplyTo?.Body ?? string.Empty;
 
-    public string ReactionSummary => string.Join("  ", Reactions
+    public IReadOnlyList<MessageReactionChip> ReactionChips => Reactions
         .GroupBy(static reaction => reaction.Emoji, StringComparer.Ordinal)
-        .Select(static group => group.Count() == 1 ? group.Key : $"{group.Key} {group.Count()}"));
+        .Select(static group => new MessageReactionChip(group.Key, group.Count()))
+        .ToArray();
 
     public bool HasReactions => Reactions.Count > 0;
 

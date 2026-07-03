@@ -157,6 +157,37 @@
         </Setter>
     </Style>
 
+    <Style x:Key="ContextMenuBorder" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource PanelBackground}" />
+        <Setter Property="Stroke" Value="{StaticResource DividerColor}" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="8" />
+        <Setter Property="StrokeShape">
+            <Setter.Value><RoundRectangle CornerRadius="14" /></Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ReactionPickerButton" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="Transparent" />
+        <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+        <Setter Property="WidthRequest" Value="43" />
+        <Setter Property="HeightRequest" Value="43" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="CornerRadius" Value="22" />
+        <Setter Property="FontSize" Value="21" />
+        <Setter Property="FontAttributes" Value="None" />
+    </Style>
+
+    <Style x:Key="ReactionChip" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource PanelBackgroundAlt}" />
+        <Setter Property="Stroke" Value="{StaticResource DividerColor}" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="7,3" />
+        <Setter Property="StrokeShape">
+            <Setter.Value><RoundRectangle CornerRadius="12" /></Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="ToolbarIconButton" TargetType="Button">
         <Setter Property="BackgroundColor" Value="Transparent" />
         <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />

@@ -91,7 +91,18 @@
                                     </VerticalStackLayout>
                                 </Border>
                                 <Label Text="{Binding Body}" FontSize="15" LineBreakMode="WordWrap" />
-                                <Label Text="{Binding ReactionSummary}" FontSize="14" IsVisible="{Binding HasReactions}" TextColor="{StaticResource TextPrimary}" />
+                                <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}">
+                                    <BindableLayout.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:MessageReactionChip">
+                                            <Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2">
+                                                <HorizontalStackLayout Spacing="4">
+                                                    <Label Text="{Binding Emoji}" FontSize="14" />
+                                                    <Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" VerticalTextAlignment="Center" />
+                                                </HorizontalStackLayout>
+                                            </Border>
+                                        </DataTemplate>
+                                    </BindableLayout.ItemTemplate>
+                                </FlexLayout>
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
                                     <Border Grid.Column="1" Padding="7,2" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 9" IsVisible="{Binding HasAttachments}">
                                         <Label Text="{Binding AttachmentSummary}" FontSize="10" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" />
@@ -157,6 +168,32 @@
                 <Entry x:Name="DraftEntry" AutomationId="GroupChat.Draft" Placeholder="Сообщение" Text="{Binding Draft}" HeightRequest="42" BackgroundColor="Transparent" ReturnType="Send" ReturnCommand="{Binding SendCommand}" />
             </Border>
             <Button AutomationId="GroupChat.Send" Grid.Column="2" Text="➤" SemanticProperties.Description="Отправить" Command="{Binding SendCommand}" WidthRequest="42" HeightRequest="42" Padding="0" FontSize="18" CornerRadius="21" />
+        </Grid>
+
+        <Grid x:Name="MessageMenuOverlay" Grid.RowSpan="4" IsVisible="False" ZIndex="110">
+            <BoxView Color="#B3000000"><BoxView.GestureRecognizers><TapGestureRecognizer Tapped="OnCloseMessageMenu" /></BoxView.GestureRecognizers></BoxView>
+            <Border Style="{StaticResource ContextMenuBorder}" HorizontalOptions="Fill" VerticalOptions="End" Margin="12,0,12,68">
+                <VerticalStackLayout Spacing="2">
+                    <HorizontalStackLayout Spacing="2" HorizontalOptions="Center">
+                        <Button Text="👍" CommandParameter="👍" Style="{StaticResource ReactionPickerButton}" Clicked="OnReactionClicked" />
+                        <Button Text="❤️" CommandParameter="❤️" Style="{StaticResource ReactionPickerButton}" Clicked="OnReactionClicked" />
+                        <Button Text="😂" CommandParameter="😂" Style="{StaticResource ReactionPickerButton}" Clicked="OnReactionClicked" />
+                        <Button Text="😮" CommandParameter="😮" Style="{StaticResource ReactionPickerButton}" Clicked="OnReactionClicked" />
+                        <Button Text="😢" CommandParameter="😢" Style="{StaticResource ReactionPickerButton}" Clicked="OnReactionClicked" />
+                    </HorizontalStackLayout>
+                    <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" />
+                    <Grid HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
+                        <Path Data="M20,5 H10 C6,5 4,8 4,12 C4,16 7,19 11,19 H14 M9,14 L14,19 L9,24" Stroke="{StaticResource TextPrimary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="Ответить" FontSize="15" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnReplySelectedMessage" /></Grid.GestureRecognizers>
+                    </Grid>
+                    <Grid HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
+                        <Path Data="M8,8 H19 V21 H8 Z M5,3 H16 V8" Stroke="{StaticResource TextPrimary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="Копировать" FontSize="15" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnCopySelectedMessage" /></Grid.GestureRecognizers>
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
         </Grid>
     </Grid>
 </ContentPage>

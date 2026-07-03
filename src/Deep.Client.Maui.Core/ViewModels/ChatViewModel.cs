@@ -8,6 +8,8 @@ using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Core.ViewModels;
 
+public sealed record MessageReactionChip(string Emoji, int Count);
+
 public sealed record ChatMessageItem(
     MessageId Id,
     string Body,
@@ -36,9 +38,10 @@ public sealed record ChatMessageItem(
 
     public string ReplyPreview => ReplyTo?.Body ?? string.Empty;
 
-    public string ReactionSummary => string.Join("  ", Reactions
+    public IReadOnlyList<MessageReactionChip> ReactionChips => Reactions
         .GroupBy(static reaction => reaction.Emoji, StringComparer.Ordinal)
-        .Select(static group => group.Count() == 1 ? group.Key : $"{group.Key} {group.Count()}"));
+        .Select(static group => new MessageReactionChip(group.Key, group.Count()))
+        .ToArray();
 
     public bool HasReactions => Reactions.Count > 0;
 
@@ -331,6 +334,35 @@ public sealed class ChatViewModel : ViewModelBase
         ReplyingTo = null;
         return Task.CompletedTask;
     }
+
+    public Task ClearConversationAsync(CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            if (Conversation is null)
+            {
+                return;
+            }
+
+            await runtime.Messages.ClearConversationMessagesAsync(Conversation.Id, ct);
+            Messages.Clear();
+            oldestLoadedMessageAt = null;
+            hasOlderMessages = false;
+        }, cancellationToken);
+
+    public Task DeleteConversationAsync(CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            if (Conversation is null)
+            {
+                return;
+            }
+
+            await runtime.Messages.ClearConversationMessagesAsync(Conversation.Id, ct);
+            await runtime.Conversations.SetConversationHiddenAsync(Conversation.Id, true, ct);
+            Messages.Clear();
+            oldestLoadedMessageAt = null;
+            hasOlderMessages = false;
+        }, cancellationToken);
 
     public Task ToggleReactionAsync(ChatMessageItem message, string emoji, CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
