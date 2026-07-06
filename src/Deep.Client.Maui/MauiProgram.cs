@@ -180,6 +180,7 @@ public static class MauiProgram
                 : new HttpPushSubscriptionTransport(new HttpClient(), new HttpPushSubscriptionTransportOptions(baseUrl));
         });
         builder.Services.AddSingleton<IPushRegistrationCoordinator, PushRegistrationCoordinator>();
+        builder.Services.AddSingleton<SyncPollingPolicy>();
         builder.Services.AddSingleton<IMediaCodecService, MauiMediaCodecService>();
         builder.Services.AddSingleton<IPermissionsService, MauiPermissionsService>();
         builder.Services.AddSingleton<IBackgroundTaskService, MauiBackgroundTaskService>();

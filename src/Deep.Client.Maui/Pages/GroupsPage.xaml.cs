@@ -10,14 +10,17 @@ public partial class GroupsPage : ContentPage
     private IDispatcherTimer? autoRefreshTimer;
     private readonly GroupsViewModel viewModel;
     private readonly INetworkStatusService networkStatusService;
+    private readonly SyncPollingPolicy syncPollingPolicy;
 
     public GroupsPage(
         GroupsViewModel viewModel,
-        INetworkStatusService networkStatusService)
+        INetworkStatusService networkStatusService,
+        SyncPollingPolicy syncPollingPolicy)
     {
         InitializeComponent();
         this.viewModel = viewModel;
         this.networkStatusService = networkStatusService;
+        this.syncPollingPolicy = syncPollingPolicy;
         BindingContext = viewModel;
 
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
@@ -26,14 +29,17 @@ public partial class GroupsPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
+        BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         UpdateNetworkUi();
         await viewModel.RefreshAsync();
-        EnsureAutoRefresh();
+        await ConfigureAutoRefreshAsync();
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         autoRefreshTimer?.Stop();
     }
 
@@ -109,6 +115,17 @@ public partial class GroupsPage : ContentPage
         }
     }
 
+    private async Task ConfigureAutoRefreshAsync()
+    {
+        if (await syncPollingPolicy.IsPushDrivenSyncAvailableAsync())
+        {
+            autoRefreshTimer?.Stop();
+            return;
+        }
+
+        EnsureAutoRefresh();
+    }
+
     private void EnsureAutoRefresh()
     {
         if (autoRefreshTimer is null)
@@ -129,5 +146,16 @@ public partial class GroupsPage : ContentPage
         }
 
         await viewModel.RefreshAsync();
+    }
+
+    private void OnBackgroundSyncScheduled()
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            if (!viewModel.IsBusy)
+            {
+                await viewModel.RefreshAsync();
+            }
+        });
     }
 }

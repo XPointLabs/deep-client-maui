@@ -17,6 +17,7 @@ public partial class ConversationsPage : ContentPage
     private readonly INetworkStatusService networkStatusService;
     private readonly IPushRegistrationCoordinator pushRegistration;
     private readonly CallSessionCoordinator callCoordinator;
+    private readonly SyncPollingPolicy syncPollingPolicy;
     private bool hasLoaded;
     private bool pushRegistrationStarted;
     private bool checkingCalls;
@@ -25,13 +26,15 @@ public partial class ConversationsPage : ContentPage
         ConversationsViewModel viewModel,
         INetworkStatusService networkStatusService,
         IPushRegistrationCoordinator pushRegistration,
-        CallSessionCoordinator callCoordinator)
+        CallSessionCoordinator callCoordinator,
+        SyncPollingPolicy syncPollingPolicy)
     {
         InitializeComponent();
         this.viewModel = viewModel;
         this.networkStatusService = networkStatusService;
         this.pushRegistration = pushRegistration;
         this.callCoordinator = callCoordinator;
+        this.syncPollingPolicy = syncPollingPolicy;
         BindingContext = viewModel;
 
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
@@ -54,9 +57,9 @@ public partial class ConversationsPage : ContentPage
             hasLoaded = true;
         }
 
-        EnsureAutoSync();
-        EnsureIncomingCallPolling();
         EnsurePushRegistration();
+        await ConfigureAutoSyncAsync();
+        EnsureIncomingCallPolling();
         await CheckIncomingCallsAsync();
     }
 
@@ -77,6 +80,7 @@ public partial class ConversationsPage : ContentPage
         try
         {
             await pushRegistration.RegisterAsync();
+            await MainThread.InvokeOnMainThreadAsync(ConfigureAutoSyncAsync);
         }
         catch (Exception ex)
         {
@@ -187,6 +191,17 @@ public partial class ConversationsPage : ContentPage
             NetworkBanner.IsVisible = !connected;
             NetworkBannerText.Text = networkStatusService.ConnectionLabel;
         }
+    }
+
+    private async Task ConfigureAutoSyncAsync()
+    {
+        if (await syncPollingPolicy.IsPushDrivenSyncAvailableAsync())
+        {
+            autoSyncTimer?.Stop();
+            return;
+        }
+
+        EnsureAutoSync();
     }
 
     private void EnsureAutoSync()

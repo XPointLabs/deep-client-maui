@@ -50,8 +50,8 @@
         <Grid Grid.Row="3">
             <RefreshView
                 AutomationId="Conversations.Refresh"
-                IsRefreshing="{Binding IsBusy, Mode=OneWay}"
-                Command="{Binding LoadCommand}"
+                IsRefreshing="{Binding IsManualRefreshing, Mode=OneWay}"
+                Command="{Binding ManualRefreshCommand}"
                 RefreshColor="{StaticResource PrimaryColor}">
               <CollectionView
                     AutomationId="Conversations.List"

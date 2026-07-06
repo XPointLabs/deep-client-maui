@@ -15,6 +15,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private readonly GroupChatViewModel viewModel;
     private readonly INetworkStatusService networkStatusService;
     private readonly IAttachmentFileTransport attachmentFiles;
+    private readonly SyncPollingPolicy syncPollingPolicy;
     private CancellationTokenSource? pendingScrollToEnd;
     private CancellationTokenSource? routeLoadCancellation;
     private bool pendingScrollAnimate;
@@ -28,12 +29,14 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     public GroupChatPage(
         GroupChatViewModel viewModel,
         INetworkStatusService networkStatusService,
-        IAttachmentFileTransport attachmentFiles)
+        IAttachmentFileTransport attachmentFiles,
+        SyncPollingPolicy syncPollingPolicy)
     {
         InitializeComponent();
         this.viewModel = viewModel;
         this.networkStatusService = networkStatusService;
         this.attachmentFiles = attachmentFiles;
+        this.syncPollingPolicy = syncPollingPolicy;
         BindingContext = viewModel;
 
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
@@ -45,14 +48,17 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     {
         base.OnAppearing();
         Dispatcher.Dispatch(ApplyAndroidSafeAreaCompensation);
+        BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
+        BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         ApplyComposerPreferences();
         UpdateNetworkUi();
-        EnsureAutoRefresh();
+        _ = ConfigureAutoRefreshAsync();
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         autoRefreshTimer?.Stop();
         CancelRouteLoad();
         CancelPendingScrollToEnd();
@@ -209,6 +215,17 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         MembersPanel.IsVisible = !MembersPanel.IsVisible;
     }
 
+    private async Task ConfigureAutoRefreshAsync()
+    {
+        if (await syncPollingPolicy.IsPushDrivenSyncAvailableAsync())
+        {
+            autoRefreshTimer?.Stop();
+            return;
+        }
+
+        EnsureAutoRefresh();
+    }
+
     private void EnsureAutoRefresh()
     {
         if (autoRefreshTimer is null)
@@ -229,6 +246,17 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         }
 
         await viewModel.RefreshAsync();
+    }
+
+    private void OnBackgroundSyncScheduled()
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            if (!viewModel.IsBusy && !string.IsNullOrWhiteSpace(viewModel.GroupTitle))
+            {
+                await viewModel.RefreshAsync();
+            }
+        });
     }
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)

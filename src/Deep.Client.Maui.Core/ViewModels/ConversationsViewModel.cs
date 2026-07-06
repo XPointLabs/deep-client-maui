@@ -27,12 +27,14 @@ public sealed class ConversationsViewModel : ViewModelBase
     private string newSessionId = string.Empty;
     private string newDisplayName = string.Empty;
     private ConversationListItem? selectedConversation;
+    private bool isManualRefreshing;
 
     public ConversationsViewModel(ClientRuntime runtime)
     {
         this.runtime = runtime;
         Conversations = [];
         LoadCommand = new AsyncCommand(LoadAsync);
+        ManualRefreshCommand = new AsyncCommand(ManualRefreshAsync);
         StartConversationCommand = new AsyncCommand(StartConversationCommandAsync, CanStartConversationFromComposer);
     }
 
@@ -40,7 +42,15 @@ public sealed class ConversationsViewModel : ViewModelBase
 
     public AsyncCommand LoadCommand { get; }
 
+    public AsyncCommand ManualRefreshCommand { get; }
+
     public AsyncCommand StartConversationCommand { get; }
+
+    public bool IsManualRefreshing
+    {
+        get => isManualRefreshing;
+        private set => SetProperty(ref isManualRefreshing, value);
+    }
 
     public bool CanStartNewConversation => CanStartConversationFromComposer();
 
@@ -145,6 +155,24 @@ public sealed class ConversationsViewModel : ViewModelBase
 
     public Task SyncAsync(CancellationToken cancellationToken = default) =>
         LoadAsync(forceMessageSummaries: false, cancellationToken);
+
+    private async Task ManualRefreshAsync(CancellationToken cancellationToken)
+    {
+        if (IsManualRefreshing)
+        {
+            return;
+        }
+
+        try
+        {
+            IsManualRefreshing = true;
+            await LoadAsync(forceMessageSummaries: true, cancellationToken);
+        }
+        finally
+        {
+            IsManualRefreshing = false;
+        }
+    }
 
     private Task LoadAsync(bool forceMessageSummaries, CancellationToken cancellationToken) =>
         RunBusyAsync(async ct =>

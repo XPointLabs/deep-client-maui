@@ -16,6 +16,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private readonly INetworkStatusService networkStatusService;
     private readonly IAttachmentFileTransport attachmentFiles;
     private readonly CallSessionCoordinator callCoordinator;
+    private readonly SyncPollingPolicy syncPollingPolicy;
     private CancellationTokenSource? pendingScrollToEnd;
     private CancellationTokenSource? routeLoadCancellation;
     private bool pendingScrollAnimate;
@@ -30,13 +31,15 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         ChatViewModel viewModel,
         INetworkStatusService networkStatusService,
         IAttachmentFileTransport attachmentFiles,
-        CallSessionCoordinator callCoordinator)
+        CallSessionCoordinator callCoordinator,
+        SyncPollingPolicy syncPollingPolicy)
     {
         InitializeComponent();
         this.viewModel = viewModel;
         this.networkStatusService = networkStatusService;
         this.attachmentFiles = attachmentFiles;
         this.callCoordinator = callCoordinator;
+        this.syncPollingPolicy = syncPollingPolicy;
         BindingContext = viewModel;
 
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
@@ -48,14 +51,17 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     {
         base.OnAppearing();
         Dispatcher.Dispatch(ApplyAndroidSafeAreaCompensation);
+        BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
+        BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         ApplyComposerPreferences();
         UpdateNetworkUi();
-        EnsureAutoReceive();
+        _ = ConfigureAutoReceiveAsync();
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         autoReceiveTimer?.Stop();
         CancelRouteLoad();
         CancelPendingScrollToEnd();
@@ -179,6 +185,17 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         }
     }
 
+    private async Task ConfigureAutoReceiveAsync()
+    {
+        if (await syncPollingPolicy.IsPushDrivenSyncAvailableAsync())
+        {
+            autoReceiveTimer?.Stop();
+            return;
+        }
+
+        EnsureAutoReceive();
+    }
+
     private void EnsureAutoReceive()
     {
         if (autoReceiveTimer is null)
@@ -199,6 +216,17 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         }
 
         await viewModel.ReceiveAsync();
+    }
+
+    private void OnBackgroundSyncScheduled()
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            if (!viewModel.IsBusy && viewModel.Conversation is not null)
+            {
+                await viewModel.ReceiveAsync();
+            }
+        });
     }
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
