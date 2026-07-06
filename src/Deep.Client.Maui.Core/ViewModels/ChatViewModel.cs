@@ -400,8 +400,8 @@ public sealed class ChatViewModel : ViewModelBase
         try
         {
             ErrorMessage = null;
-            var attachment = await voiceRecorder.StopAsync(cancellationToken);
             IsRecordingVoice = false;
+            var attachment = await voiceRecorder.StopAsync(cancellationToken);
             if (attachment is null)
             {
                 return;

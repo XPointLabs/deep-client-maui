@@ -18,6 +18,7 @@ public static class MauiProgram
     internal const string StorageBaseUrlEnv = "DEEP_STORAGE_URL";
     internal const string CallSignalingBaseUrlEnv = "DEEP_CALL_SIGNALING_BASE_URL";
     internal const string FileBaseUrlEnv = "DEEP_FILE_URL";
+    internal const string FileConnectIpsEnv = "DEEP_FILE_CONNECT_IPS";
     internal const string PushBaseUrlEnv = "DEEP_PUSH_URL";
     internal const string RegistryBaseUrlEnv = "DEEP_REGISTRY_URL";
     internal const string StakingBackendBaseUrlEnv = "DEEP_STAKING_BACKEND_URL";
@@ -32,6 +33,7 @@ public static class MauiProgram
 
         var featureFlags = BuildFeatureFlags();
         var routerBaseUrls = ResolveRouterBaseUrls();
+        var fileConnectIps = ParseIpAddresses(ResolveRuntimeSetting(FileConnectIpsEnv));
 
         builder.Services.AddSingleton(RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting));
         if (routerBaseUrls.Count > 0)
@@ -60,7 +62,7 @@ public static class MauiProgram
             if (!string.IsNullOrWhiteSpace(storageBaseUrl))
             {
                 return new SessionStorageMessageTransport(
-                    new HttpClient(),
+                    CreateServiceHttpClient(),
                     new SessionStorageMessageTransportOptions(storageBaseUrl));
             }
 
@@ -81,7 +83,7 @@ public static class MauiProgram
 #endif
             }
 
-            return new HttpSessionTransport(new HttpClient(), new HttpSessionTransportOptions(baseUrl));
+            return new HttpSessionTransport(CreateServiceHttpClient(), new HttpSessionTransportOptions(baseUrl));
         });
         builder.Services.AddSingleton(featureFlags);
         builder.Services.AddSingleton<IClock, SystemClock>();
@@ -93,7 +95,7 @@ public static class MauiProgram
             var baseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
             if (!string.IsNullOrWhiteSpace(baseUrl))
             {
-                return new HttpAvatarProfileTransport(new HttpClient(), new HttpAvatarProfileTransportOptions(baseUrl));
+                return new HttpAvatarProfileTransport(CreateFileHttpClient(fileConnectIps), new HttpAvatarProfileTransportOptions(baseUrl));
             }
 
 #if DEBUG
@@ -117,7 +119,7 @@ public static class MauiProgram
             if (!string.IsNullOrWhiteSpace(storageBaseUrl))
             {
                 return new SessionStorageGroupSyncTransport(
-                    new HttpClient(),
+                    CreateServiceHttpClient(),
                     new SessionStorageGroupSyncTransportOptions(storageBaseUrl));
             }
 
@@ -138,7 +140,7 @@ public static class MauiProgram
             var baseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
             if (!string.IsNullOrWhiteSpace(baseUrl))
             {
-                return new HttpAttachmentFileTransport(new HttpClient(), new HttpAttachmentFileTransportOptions(baseUrl));
+                return new HttpAttachmentFileTransport(CreateFileHttpClient(fileConnectIps), new HttpAttachmentFileTransportOptions(baseUrl));
             }
 
 #if DEBUG
@@ -177,7 +179,7 @@ public static class MauiProgram
             var baseUrl = ResolveRuntimeSetting(PushBaseUrlEnv);
             return string.IsNullOrWhiteSpace(baseUrl)
                 ? new DisabledPushSubscriptionTransport()
-                : new HttpPushSubscriptionTransport(new HttpClient(), new HttpPushSubscriptionTransportOptions(baseUrl));
+                : new HttpPushSubscriptionTransport(CreateServiceHttpClient(), new HttpPushSubscriptionTransportOptions(baseUrl));
         });
         builder.Services.AddSingleton<IPushRegistrationCoordinator, PushRegistrationCoordinator>();
         builder.Services.AddSingleton<SyncPollingPolicy>();
@@ -194,7 +196,7 @@ public static class MauiProgram
             if (!string.IsNullOrWhiteSpace(baseUrl))
             {
                 return new HttpCallSignalingTransport(
-                    new HttpClient(),
+                    CreateServiceHttpClient(),
                     new HttpCallSignalingTransportOptions(baseUrl),
                     cancellationToken => services
                         .GetRequiredService<ClientRuntime>()
@@ -323,6 +325,11 @@ public static class MauiProgram
 
     private static HttpClient CreateRouterHttpClient()
     {
+        return CreateServiceHttpClient();
+    }
+
+    private static HttpClient CreateServiceHttpClient()
+    {
         return new HttpClient(new SocketsHttpHandler
         {
             ConnectTimeout = TimeSpan.FromSeconds(5),
@@ -332,6 +339,84 @@ public static class MauiProgram
         {
             Timeout = TimeSpan.FromSeconds(15)
         };
+    }
+
+    private static HttpClient CreateFileHttpClient(IReadOnlyList<System.Net.IPAddress> preferredConnectIps)
+    {
+        var handler = new SocketsHttpHandler
+        {
+            ConnectTimeout = TimeSpan.FromSeconds(10),
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(30),
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+        };
+#if ANDROID
+        handler.ConnectCallback = (context, cancellationToken) =>
+            ConnectFileSocketAsync(context, preferredConnectIps, cancellationToken);
+#endif
+
+        var client = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromMinutes(2)
+        };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Deep/0.2.0");
+        return client;
+    }
+
+#if ANDROID
+    private static async ValueTask<Stream> ConnectFileSocketAsync(
+        SocketsHttpConnectionContext context,
+        IReadOnlyList<System.Net.IPAddress> preferredConnectIps,
+        CancellationToken cancellationToken)
+    {
+        var addresses = await System.Net.Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, cancellationToken)
+            .ConfigureAwait(false);
+        var orderedAddresses = preferredConnectIps
+            .Where(static address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            .Concat(addresses.Where(static address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))
+            .Distinct()
+            .ToArray();
+        Exception? lastError = null;
+
+        foreach (var address in orderedAddresses)
+        {
+            var socket = new System.Net.Sockets.Socket(
+                System.Net.Sockets.SocketType.Stream,
+                System.Net.Sockets.ProtocolType.Tcp)
+            {
+                NoDelay = true
+            };
+
+            try
+            {
+                await socket.ConnectAsync(new System.Net.IPEndPoint(address, context.DnsEndPoint.Port), cancellationToken)
+                    .ConfigureAwait(false);
+                return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+            }
+            catch (Exception ex) when (ex is System.Net.Sockets.SocketException or OperationCanceledException)
+            {
+                lastError = ex;
+                socket.Dispose();
+            }
+        }
+
+        throw new HttpRequestException($"Unable to connect to {context.DnsEndPoint.Host} over IPv4.", lastError);
+    }
+#endif
+
+    private static IReadOnlyList<System.Net.IPAddress> ParseIpAddresses(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return [];
+        }
+
+        return raw
+            .Split([';', ',', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(static value => System.Net.IPAddress.TryParse(value, out var address) ? address : null)
+            .Where(static address => address is not null)
+            .Cast<System.Net.IPAddress>()
+            .Distinct()
+            .ToArray();
     }
 
     private static IReadOnlyList<string> ParseRouterBaseUrls(string raw)

@@ -211,6 +211,38 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task VoiceRecordingClearsRecordingStateBeforeAttachmentUploadCompletes()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var account = await runtime.Accounts.RegisterAsync("Alice");
+        var remote = SessionId.CreateNew();
+        var recorder = new DelayedVoiceMessageRecorder(new AttachmentMetadata(
+            Guid.NewGuid().ToString("n"),
+            "voice-delayed.m4a",
+            "audio/mp4",
+            4096,
+            Duration: TimeSpan.FromSeconds(2)));
+
+        var chat = new ChatViewModel(runtime, attachmentPicker: null, voiceRecorder: recorder);
+        await chat.OpenOneToOneAsync(account, remote, "Bob");
+
+        await chat.StartVoiceRecordingAsync();
+        Assert.True(chat.IsRecordingVoice);
+
+        var stopTask = chat.StopVoiceRecordingAndSendAsync();
+        await recorder.StopStarted.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.False(chat.IsRecordingVoice);
+        Assert.Empty(chat.Messages);
+
+        recorder.CompleteStop();
+        await stopTask;
+
+        var message = Assert.Single(chat.Messages);
+        Assert.True(message.IsVoiceMessage);
+    }
+
+    [Fact]
     public async Task ReceiveWithoutNewMessagesDoesNotResetCollection()
     {
         var backend = new StubSessionBackend();
@@ -599,6 +631,46 @@ public sealed class ChatViewModelTests
             IsRecording = false;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class DelayedVoiceMessageRecorder : IVoiceMessageRecorder
+    {
+        private readonly AttachmentMetadata attachment;
+        private readonly TaskCompletionSource stopStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<AttachmentMetadata?> stopCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public DelayedVoiceMessageRecorder(AttachmentMetadata attachment)
+        {
+            this.attachment = attachment;
+        }
+
+        public bool IsSupported => true;
+
+        public bool IsRecording { get; private set; }
+
+        public Task StopStarted => stopStarted.Task;
+
+        public Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            IsRecording = true;
+            return Task.CompletedTask;
+        }
+
+        public Task<AttachmentMetadata?> StopAsync(CancellationToken cancellationToken = default)
+        {
+            IsRecording = false;
+            stopStarted.TrySetResult();
+            return stopCompleted.Task;
+        }
+
+        public Task CancelAsync(CancellationToken cancellationToken = default)
+        {
+            IsRecording = false;
+            stopCompleted.TrySetCanceled(cancellationToken);
+            return Task.CompletedTask;
+        }
+
+        public void CompleteStop() => stopCompleted.TrySetResult(attachment);
     }
 
     private sealed class BlockingMessageTransport : ISessionMessageTransport

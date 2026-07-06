@@ -388,8 +388,8 @@ public sealed class GroupChatViewModel : ViewModelBase
         try
         {
             ErrorMessage = null;
-            var attachment = await voiceRecorder.StopAsync(cancellationToken);
             IsRecordingVoice = false;
+            var attachment = await voiceRecorder.StopAsync(cancellationToken);
             if (attachment is null)
             {
                 SetStatus("Голосовое сообщение отменено.");

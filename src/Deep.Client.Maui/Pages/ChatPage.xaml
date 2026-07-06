@@ -8,10 +8,9 @@
     xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
     x:DataType="vm:ChatViewModel"
     BackgroundColor="{StaticResource PageBackground}"
-    SafeAreaEdges="SoftInput"
     Shell.NavBarIsVisible="False"
     Title="Сообщения">
-    <Grid x:Name="PageLayout" RowDefinitions="Auto,*,Auto,56" RowSpacing="0" BackgroundColor="{StaticResource PageBackground}">
+    <Grid x:Name="PageLayout" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="0" BackgroundColor="{StaticResource PageBackground}">
         <VerticalStackLayout Grid.Row="0" Spacing="0">
             <Border x:Name="NetworkBanner" Padding="12,6" IsVisible="False" Background="{StaticResource PanelBackground}" StrokeThickness="0">
                 <HorizontalStackLayout Spacing="7" HorizontalOptions="Center">
@@ -209,7 +208,7 @@
             </Border>
             <Label Grid.Row="3" AutomationId="Chat.Error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" TextColor="{StaticResource DangerColor}" FontSize="12" LineBreakMode="WordWrap" Margin="8,0" />
         </Grid>
-        <Grid Grid.Row="3" Padding="8,4,8,8" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7" IsEnabled="{Binding IsComposerEnabled}" BackgroundColor="{StaticResource PageBackground}">
+        <Grid Grid.Row="3" HeightRequest="56" MinimumHeightRequest="56" Padding="8,4,8,8" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7" IsEnabled="{Binding IsComposerEnabled}" BackgroundColor="{StaticResource PageBackground}">
             <Border AutomationId="Chat.Attach" Style="{StaticResource ComposerIconSurface}" SemanticProperties.Description="Добавить вложение">
                 <Path Data="M12,4 L6.5,9.5 C4.3,11.7 4.3,15.3 6.5,17.5 C8.7,19.7 12.3,19.7 14.5,17.5 L21,11 C22.4,9.6 22.4,7.4 21,6 C19.6,4.6 17.4,4.6 16,6 L8.8,13.2 C8.1,13.9 8.1,15.1 8.8,15.8 C9.5,16.5 10.7,16.5 11.4,15.8 L17,10.2" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                 <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnAttachClicked" /></Border.GestureRecognizers>
