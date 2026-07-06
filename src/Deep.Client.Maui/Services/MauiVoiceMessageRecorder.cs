@@ -95,7 +95,21 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
         }
         catch (Exception) when (duration < TimeSpan.FromMilliseconds(700))
         {
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                TryDelete(path);
+            }
+
             return null;
+        }
+        catch (Exception ex)
+        {
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                TryDelete(path);
+            }
+
+            throw new InvalidOperationException("Не удалось сохранить голосовое сообщение.", ex);
         }
         finally
         {
