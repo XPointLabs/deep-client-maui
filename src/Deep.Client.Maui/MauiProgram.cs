@@ -220,6 +220,7 @@ public static class MauiProgram
             (ICallIceConfigurationProvider)services.GetRequiredService<ICallSignalingTransport>());
         builder.Services.AddSingleton<CallSessionCoordinator>();
         builder.Services.AddSingleton<IAttachmentPickerService, MauiAttachmentPickerService>();
+        builder.Services.AddSingleton<IVoiceMessageRecorder, MauiVoiceMessageRecorder>();
         builder.Services.AddSingleton<INetworkStatusService, MauiConnectivityStatusService>();
         builder.Services.AddSingleton<AuthNavigationState>();
 

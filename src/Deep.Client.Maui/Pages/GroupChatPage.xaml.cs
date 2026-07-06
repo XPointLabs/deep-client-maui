@@ -215,6 +215,52 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         MembersPanel.IsVisible = !MembersPanel.IsVisible;
     }
 
+    private void OnAttachClicked(object? sender, TappedEventArgs e)
+    {
+        AttachmentSheetOverlay.IsVisible = true;
+    }
+
+    private void OnCloseAttachmentSheet(object? sender, TappedEventArgs e)
+    {
+        AttachmentSheetOverlay.IsVisible = false;
+    }
+
+    private async void OnPickPhotoClicked(object? sender, TappedEventArgs e) =>
+        await PickAttachmentAsync(AttachmentPickKind.Photo);
+
+    private async void OnPickVideoClicked(object? sender, TappedEventArgs e) =>
+        await PickAttachmentAsync(AttachmentPickKind.Video);
+
+    private async void OnPickFileClicked(object? sender, TappedEventArgs e) =>
+        await PickAttachmentAsync(AttachmentPickKind.File);
+
+    private async Task PickAttachmentAsync(AttachmentPickKind kind)
+    {
+        AttachmentSheetOverlay.IsVisible = false;
+        await viewModel.PickAttachmentsAsync(kind);
+    }
+
+    private async void OnSendClicked(object? sender, TappedEventArgs e)
+    {
+        await viewModel.SendAsync();
+    }
+
+    private async void OnVoiceClicked(object? sender, TappedEventArgs e)
+    {
+        if (viewModel.IsRecordingVoice)
+        {
+            await viewModel.StopVoiceRecordingAndSendAsync();
+            return;
+        }
+
+        await viewModel.StartVoiceRecordingAsync();
+    }
+
+    private async void OnCancelVoiceClicked(object? sender, EventArgs e)
+    {
+        await viewModel.CancelVoiceRecordingAsync();
+    }
+
     private async Task ConfigureAutoRefreshAsync()
     {
         if (await syncPollingPolicy.IsPushDrivenSyncAvailableAsync())

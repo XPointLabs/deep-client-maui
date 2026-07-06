@@ -82,7 +82,48 @@
                                         <Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="2" />
                                     </VerticalStackLayout>
                                 </Border>
-                                <Label AutomationId="Chat.MessageBody" Text="{Binding Body}" FontSize="15" LineBreakMode="WordWrap" />
+                                <Border Style="{StaticResource AttachmentCard}" IsVisible="{Binding IsVoiceMessage}">
+                                    <Grid ColumnDefinitions="38,*,Auto" ColumnSpacing="9">
+                                        <Border WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
+                                            <Path Data="M10,7 L23,18 L10,29 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                        </Border>
+                                        <VerticalStackLayout Grid.Column="1" Spacing="5" VerticalOptions="Center">
+                                            <HorizontalStackLayout Spacing="3" HeightRequest="20" VerticalOptions="Center">
+                                                <BoxView WidthRequest="3" HeightRequest="8" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
+                                                <BoxView WidthRequest="3" HeightRequest="14" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
+                                                <BoxView WidthRequest="3" HeightRequest="10" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
+                                                <BoxView WidthRequest="3" HeightRequest="18" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
+                                                <BoxView WidthRequest="3" HeightRequest="12" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
+                                                <BoxView WidthRequest="3" HeightRequest="16" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
+                                                <BoxView WidthRequest="3" HeightRequest="7" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
+                                                <BoxView WidthRequest="3" HeightRequest="13" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
+                                                <BoxView WidthRequest="3" HeightRequest="9" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
+                                                <BoxView WidthRequest="3" HeightRequest="17" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                            <Label Text="{Binding VoiceDurationLabel}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                        </VerticalStackLayout>
+                                        <Path Grid.Column="2" Data="M12,4 C10.3,4 9,5.3 9,7 V12 C9,13.7 10.3,15 12,15 C13.7,15 15,13.7 15,12 V7 C15,5.3 13.7,4 12,4 Z M7,11 C7,13.8 9.2,16 12,16 C14.8,16 17,13.8 17,11 M12,16 V20" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.6" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="End" />
+                                    </Grid>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnAttachmentTapped" />
+                                    </Border.GestureRecognizers>
+                                </Border>
+                                <Border Style="{StaticResource AttachmentCard}" IsVisible="{Binding HasNonVoiceAttachments}">
+                                    <Grid ColumnDefinitions="42,*,Auto" ColumnSpacing="9">
+                                        <Border WidthRequest="38" HeightRequest="38" Background="{StaticResource PrimaryColorMuted}" StrokeThickness="0" StrokeShape="RoundRectangle 19" VerticalOptions="Center">
+                                            <Path Data="M8,5 H19 L24,10 V27 H8 Z M19,5 V10 H24 M11,18 H21 M11,22 H18" Stroke="White" StrokeThickness="1.8" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                        </Border>
+                                        <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
+                                            <Label Text="{Binding AttachmentTitle}" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                                            <Label Text="{Binding AttachmentSubtitle}" FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
+                                        </VerticalStackLayout>
+                                        <Path Grid.Column="2" Data="M9,5 L16,12 L9,19" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                                    </Grid>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnAttachmentTapped" />
+                                    </Border.GestureRecognizers>
+                                </Border>
+                                <Label AutomationId="Chat.MessageBody" Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" FontSize="15" LineBreakMode="WordWrap" />
                                 <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}">
                                     <BindableLayout.ItemTemplate>
                                         <DataTemplate x:DataType="vm:MessageReactionChip">
@@ -96,12 +137,6 @@
                                     </BindableLayout.ItemTemplate>
                                 </FlexLayout>
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
-                                    <Border Grid.Column="1" Padding="7,2" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 9" IsVisible="{Binding HasAttachments}">
-                                        <Label Text="{Binding AttachmentSummary}" FontSize="10" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" />
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Tapped="OnAttachmentTapped" />
-                                        </Border.GestureRecognizers>
-                                    </Border>
                                     <Label Grid.Column="2" Text="{Binding CreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" VerticalOptions="End" />
                                     <Label
                                         Grid.Column="3"
@@ -135,7 +170,7 @@
             </CollectionView>
         </Grid>
 
-        <Grid Grid.Row="2" RowDefinitions="Auto,Auto,Auto" RowSpacing="5" Padding="8,4,8,0" BackgroundColor="{StaticResource PageBackground}">
+        <Grid Grid.Row="2" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="5" Padding="8,4,8,0" BackgroundColor="{StaticResource PageBackground}">
             <Border Grid.Row="0" Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,7" IsVisible="{Binding IsReplying}">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                     <BoxView WidthRequest="3" Color="{StaticResource PrimaryColor}" />
@@ -148,18 +183,80 @@
             </Border>
             <Border Grid.Row="1" Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,7" IsVisible="{Binding HasStagedAttachments}">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <Label AutomationId="Chat.AttachmentSummary" Text="{Binding StagedAttachmentSummary}" LineBreakMode="TailTruncation" VerticalOptions="Center" TextColor="{StaticResource TextSecondary}" />
+                    <HorizontalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding StagedAttachments}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="domain:AttachmentMetadata">
+                                <Border Background="{StaticResource PanelBackgroundAlt}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="9,5">
+                                    <HorizontalStackLayout Spacing="6">
+                                        <Path Data="M8,5 H18 L23,10 V25 H8 Z M18,5 V10 H23" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.7" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                                        <Label Text="{Binding FileName}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" WidthRequest="150" />
+                                    </HorizontalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </HorizontalStackLayout>
                     <Button Grid.Column="1" Text="Очистить" Command="{Binding ClearAttachmentsCommand}" WidthRequest="96" Style="{StaticResource SecondaryButton}" />
                 </Grid>
             </Border>
-            <Label Grid.Row="2" AutomationId="Chat.Error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" TextColor="{StaticResource DangerColor}" FontSize="12" LineBreakMode="WordWrap" Margin="8,0" />
+            <Border Grid.Row="2" Background="{StaticResource PanelBackground}" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="10,7" IsVisible="{Binding IsRecordingVoice}">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
+                    <Border WidthRequest="28" HeightRequest="28" Background="{StaticResource DangerColor}" StrokeThickness="0" StrokeShape="RoundRectangle 14">
+                        <Path Data="M12,5 C10.3,5 9,6.3 9,8 V12 C9,13.7 10.3,15 12,15 C13.7,15 15,13.7 15,12 V8 C15,6.3 13.7,5 12,5 Z M6,11 C6,14.3 8.7,17 12,17 C15.3,17 18,14.3 18,11 M12,17 V21" Stroke="#020711" StrokeThickness="1.8" Fill="Transparent" WidthRequest="20" HeightRequest="20" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Border>
+                    <Label Grid.Column="1" Text="{Binding VoiceRecordingLabel}" FontSize="13" TextColor="{StaticResource TextPrimary}" VerticalTextAlignment="Center" />
+                    <Button Grid.Column="2" Text="Отмена" Clicked="OnCancelVoiceClicked" WidthRequest="92" Style="{StaticResource SecondaryButton}" />
+                </Grid>
+            </Border>
+            <Label Grid.Row="3" AutomationId="Chat.Error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" TextColor="{StaticResource DangerColor}" FontSize="12" LineBreakMode="WordWrap" Margin="8,0" />
         </Grid>
         <Grid Grid.Row="3" Padding="8,4,8,8" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7" IsEnabled="{Binding IsComposerEnabled}" BackgroundColor="{StaticResource PageBackground}">
-            <Button AutomationId="Chat.Attach" Text="＋" SemanticProperties.Description="Добавить вложение" Command="{Binding PickAttachmentsCommand}" WidthRequest="42" HeightRequest="42" Padding="0" FontSize="25" Style="{StaticResource CircularIconButton}" />
+            <Border AutomationId="Chat.Attach" Style="{StaticResource ComposerIconSurface}" SemanticProperties.Description="Добавить вложение">
+                <Path Data="M12,4 L6.5,9.5 C4.3,11.7 4.3,15.3 6.5,17.5 C8.7,19.7 12.3,19.7 14.5,17.5 L21,11 C22.4,9.6 22.4,7.4 21,6 C19.6,4.6 17.4,4.6 16,6 L8.8,13.2 C8.1,13.9 8.1,15.1 8.8,15.8 C9.5,16.5 10.7,16.5 11.4,15.8 L17,10.2" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnAttachClicked" /></Border.GestureRecognizers>
+            </Border>
             <Border Grid.Column="1" Background="{StaticResource SearchBackground}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" StrokeShape="RoundRectangle 21" Padding="10,0">
                 <Entry x:Name="DraftEntry" AutomationId="Chat.Draft" Placeholder="Сообщение" Text="{Binding Draft}" HeightRequest="42" BackgroundColor="Transparent" ReturnType="Send" ReturnCommand="{Binding SendCommand}" />
             </Border>
-            <Button AutomationId="Chat.Send" Grid.Column="2" Text="➤" SemanticProperties.Description="Отправить" Command="{Binding SendCommand}" WidthRequest="42" HeightRequest="42" Padding="0" FontSize="18" CornerRadius="21" />
+            <Border AutomationId="Chat.Send" Grid.Column="2" Style="{StaticResource ComposerPrimarySurface}" SemanticProperties.Description="Отправить" IsVisible="{Binding ShowSendButton}">
+                <Path Data="M5,20 L22,12 L5,4 V10 L15,12 L5,14 Z" Fill="#020711" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnSendClicked" /></Border.GestureRecognizers>
+            </Border>
+            <Border AutomationId="Chat.Voice" Grid.Column="2" Style="{StaticResource ComposerPrimarySurface}" SemanticProperties.Description="Голосовое сообщение" IsVisible="{Binding ShowVoiceButton}">
+                <Path Data="M12,4 C10.3,4 9,5.3 9,7 V12 C9,13.7 10.3,15 12,15 C13.7,15 15,13.7 15,12 V7 C15,5.3 13.7,4 12,4 Z M6,11 C6,14.3 8.7,17 12,17 C15.3,17 18,14.3 18,11 M12,17 V21 M9,21 H15" Stroke="#020711" StrokeThickness="2" Fill="Transparent" WidthRequest="23" HeightRequest="23" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnVoiceClicked" /></Border.GestureRecognizers>
+            </Border>
+        </Grid>
+
+        <Grid x:Name="AttachmentSheetOverlay" Grid.RowSpan="4" IsVisible="False" ZIndex="105">
+            <BoxView Color="#99000000"><BoxView.GestureRecognizers><TapGestureRecognizer Tapped="OnCloseAttachmentSheet" /></BoxView.GestureRecognizers></BoxView>
+            <Border Style="{StaticResource AttachmentSheetBorder}" VerticalOptions="End">
+                <VerticalStackLayout Spacing="14">
+                    <BoxView WidthRequest="42" HeightRequest="4" Color="{StaticResource DividerColor}" CornerRadius="2" HorizontalOptions="Center" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="7" HorizontalOptions="Center">
+                            <Border Style="{StaticResource AttachSheetIcon}">
+                                <Path Data="M5,7 H23 V21 H5 Z M8,18 L12,14 L15,17 L17,15 L22,20 M10,10 A2,2 0 1 0 10,14 A2,2 0 1 0 10,10" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="26" HeightRequest="26" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnPickPhotoClicked" /></Border.GestureRecognizers>
+                            </Border>
+                            <Label Text="Галерея" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="7" HorizontalOptions="Center">
+                            <Border Style="{StaticResource AttachSheetIcon}">
+                                <Path Data="M5,8 H17 V20 H5 Z M17,11 L23,8 V20 L17,17 Z" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="26" HeightRequest="26" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnPickVideoClicked" /></Border.GestureRecognizers>
+                            </Border>
+                            <Label Text="Видео" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="2" Spacing="7" HorizontalOptions="Center">
+                            <Border Style="{StaticResource AttachSheetIcon}">
+                                <Path Data="M8,4 H17 L22,9 V24 H8 Z M17,4 V9 H22 M11,16 H19 M11,20 H17" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="26" HeightRequest="26" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnPickFileClicked" /></Border.GestureRecognizers>
+                            </Border>
+                            <Label Text="Файл" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
         </Grid>
 
         <Grid x:Name="ChatMenuOverlay" Grid.RowSpan="4" IsVisible="False" ZIndex="100">

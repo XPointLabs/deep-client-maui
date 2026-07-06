@@ -4,9 +4,36 @@ using Deep.Client.Shared.Domain;
 
 namespace Deep.Client.Maui.Core.ViewModels;
 
+public enum AttachmentPickKind
+{
+    Photo,
+    Video,
+    File
+}
+
 public interface IAttachmentPickerService
 {
     Task<IReadOnlyList<AttachmentMetadata>> PickAsync(CancellationToken cancellationToken = default);
+}
+
+public interface ITypedAttachmentPickerService : IAttachmentPickerService
+{
+    Task<IReadOnlyList<AttachmentMetadata>> PickAsync(
+        AttachmentPickKind kind,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IVoiceMessageRecorder
+{
+    bool IsSupported { get; }
+
+    bool IsRecording { get; }
+
+    Task StartAsync(CancellationToken cancellationToken = default);
+
+    Task<AttachmentMetadata?> StopAsync(CancellationToken cancellationToken = default);
+
+    Task CancelAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class AttachmentPickerViewModel : ViewModelBase

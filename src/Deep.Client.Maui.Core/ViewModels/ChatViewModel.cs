@@ -45,12 +45,19 @@ public sealed record ChatMessageItem(
 
     public bool HasReactions => Reactions.Count > 0;
 
-    public string AttachmentSummary => Attachments.Count switch
-    {
-        0 => string.Empty,
-        1 => Attachments[0].FileName,
-        _ => $"{Attachments.Count} влож."
-    };
+    public bool HasVisibleBody => MessageAttachmentPresentation.HasVisibleBody(Body);
+
+    public bool IsVoiceMessage => MessageAttachmentPresentation.IsVoiceMessage(Attachments);
+
+    public bool HasNonVoiceAttachments => HasAttachments && !IsVoiceMessage;
+
+    public string AttachmentSummary => MessageAttachmentPresentation.Summary(Attachments);
+
+    public string AttachmentTitle => MessageAttachmentPresentation.Title(Attachments);
+
+    public string AttachmentSubtitle => MessageAttachmentPresentation.Subtitle(Attachments);
+
+    public string VoiceDurationLabel => MessageAttachmentPresentation.VoiceDuration(Attachments);
 }
 
 public sealed class ChatViewModel : ViewModelBase
@@ -59,6 +66,7 @@ public sealed class ChatViewModel : ViewModelBase
     private readonly ClientRuntime runtime;
     private readonly ICallService callService;
     private readonly IAttachmentPickerService? attachmentPicker;
+    private readonly IVoiceMessageRecorder? voiceRecorder;
     private Conversation? conversation;
     private SessionAccount? account;
     private SessionId? counterpart;
@@ -69,13 +77,19 @@ public sealed class ChatViewModel : ViewModelBase
     private string? activeCallId;
     private bool isMessageRequest;
     private bool isBlocked;
+    private bool isRecordingVoice;
     private ChatMessageItem? replyingTo;
 
-    public ChatViewModel(ClientRuntime runtime, ICallService? callService = null, IAttachmentPickerService? attachmentPicker = null)
+    public ChatViewModel(
+        ClientRuntime runtime,
+        ICallService? callService = null,
+        IAttachmentPickerService? attachmentPicker = null,
+        IVoiceMessageRecorder? voiceRecorder = null)
     {
         this.runtime = runtime;
         this.callService = callService ?? new UnavailableCallService();
         this.attachmentPicker = attachmentPicker;
+        this.voiceRecorder = voiceRecorder;
         Messages = new ObservableRangeCollection<ChatMessageItem>();
         StagedAttachments = [];
         StagedAttachments.CollectionChanged += OnStagedAttachmentsChanged;
@@ -102,6 +116,7 @@ public sealed class ChatViewModel : ViewModelBase
             if (SetProperty(ref draft, value))
             {
                 SendCommand.RaiseCanExecuteChanged();
+                RaiseComposerStateChanged();
             }
         }
     }
@@ -111,6 +126,34 @@ public sealed class ChatViewModel : ViewModelBase
     public ObservableCollection<AttachmentMetadata> StagedAttachments { get; }
 
     public bool HasStagedAttachments => StagedAttachments.Count > 0;
+
+    public bool HasComposedContent => !string.IsNullOrWhiteSpace(Draft) || StagedAttachments.Count > 0;
+
+    public bool CanRecordVoice => voiceRecorder?.IsSupported == true
+        && account is not null
+        && counterpart is not null
+        && !IsBlocked;
+
+    public bool IsRecordingVoice
+    {
+        get => isRecordingVoice;
+        private set
+        {
+            if (SetProperty(ref isRecordingVoice, value))
+            {
+                RaiseComposerStateChanged();
+                RaisePropertyChanged(nameof(VoiceRecordingLabel));
+            }
+        }
+    }
+
+    public bool ShowVoiceButton => CanRecordVoice && (!HasComposedContent || IsRecordingVoice);
+
+    public bool ShowSendButton => HasComposedContent && !IsRecordingVoice;
+
+    public string VoiceRecordingLabel => IsRecordingVoice
+        ? "Идет запись голосового сообщения"
+        : string.Empty;
 
     public bool IsMessageRequest
     {
@@ -134,6 +177,7 @@ public sealed class ChatViewModel : ViewModelBase
                 RaisePropertyChanged(nameof(IsComposerEnabled));
                 SendCommand.RaiseCanExecuteChanged();
                 BlockContactCommand.RaiseCanExecuteChanged();
+                RaiseComposerStateChanged();
             }
         }
     }
@@ -256,6 +300,7 @@ public sealed class ChatViewModel : ViewModelBase
 
         SendCommand.RaiseCanExecuteChanged();
         ReceiveCommand.RaiseCanExecuteChanged();
+        RaiseComposerStateChanged();
         await ReloadMessagesAsync(cancellationToken);
     }
 
@@ -270,6 +315,12 @@ public sealed class ChatViewModel : ViewModelBase
     public void StageAttachment(AttachmentMetadata attachment) => StagedAttachments.Add(attachment);
 
     public Task PickAttachmentsAsync(CancellationToken cancellationToken = default) =>
+        PickAttachmentsAsync(null, cancellationToken);
+
+    public Task PickAttachmentsAsync(AttachmentPickKind kind, CancellationToken cancellationToken = default) =>
+        PickAttachmentsAsync((AttachmentPickKind?)kind, cancellationToken);
+
+    private Task PickAttachmentsAsync(AttachmentPickKind? kind, CancellationToken cancellationToken) =>
         RunBusyAsync(async ct =>
         {
             if (attachmentPicker is null)
@@ -277,7 +328,9 @@ public sealed class ChatViewModel : ViewModelBase
                 throw new InvalidOperationException("Выбор вложений недоступен.");
             }
 
-            var picked = await attachmentPicker.PickAsync(ct);
+            var picked = kind is { } requestedKind && attachmentPicker is ITypedAttachmentPickerService typedPicker
+                ? await typedPicker.PickAsync(requestedKind, ct)
+                : await attachmentPicker.PickAsync(ct);
             foreach (var attachment in picked)
             {
                 StagedAttachments.Add(attachment);
@@ -301,30 +354,104 @@ public sealed class ChatViewModel : ViewModelBase
 
             ErrorMessage = null;
             var body = string.IsNullOrWhiteSpace(Draft)
-                ? "[Вложение]"
+                ? MessageAttachmentPresentation.GenericAttachmentPlaceholder
                 : Draft;
             var attachments = StagedAttachments.ToArray();
 
-            var pending = await runtime.Messages.QueueOneToOneAsync(
-                account.SessionId,
-                counterpart.Value,
-                body,
-                attachments,
-                ReplyingTo?.Id,
-                cancellationToken);
-
-            IsMessageRequest = false;
-
-            Messages.Add(ToItem(pending));
+            await QueueMessageAsync(body, attachments, cancellationToken);
             Draft = string.Empty;
             StagedAttachments.Clear();
             ReplyingTo = null;
-            _ = DispatchPendingMessageAsync(pending);
         }
         catch (Exception ex)
         {
             ErrorMessage = ex.Message;
         }
+    }
+
+    public async Task StartVoiceRecordingAsync(CancellationToken cancellationToken = default)
+    {
+        if (voiceRecorder is null)
+        {
+            ErrorMessage = "Запись голосовых сообщений недоступна на этом устройстве.";
+            return;
+        }
+
+        try
+        {
+            ErrorMessage = null;
+            await voiceRecorder.StartAsync(cancellationToken);
+            IsRecordingVoice = true;
+        }
+        catch (Exception ex)
+        {
+            IsRecordingVoice = false;
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    public async Task StopVoiceRecordingAndSendAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsRecordingVoice || voiceRecorder is null)
+        {
+            return;
+        }
+
+        try
+        {
+            ErrorMessage = null;
+            var attachment = await voiceRecorder.StopAsync(cancellationToken);
+            IsRecordingVoice = false;
+            if (attachment is null)
+            {
+                return;
+            }
+
+            await QueueMessageAsync(
+                MessageAttachmentPresentation.VoiceAttachmentPlaceholder,
+                [attachment],
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await CancelVoiceRecordingAsync(cancellationToken);
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    public async Task CancelVoiceRecordingAsync(CancellationToken cancellationToken = default)
+    {
+        if (voiceRecorder is not null)
+        {
+            await voiceRecorder.CancelAsync(cancellationToken);
+        }
+
+        IsRecordingVoice = false;
+    }
+
+    private async Task QueueMessageAsync(
+        string body,
+        IReadOnlyList<AttachmentMetadata> attachments,
+        CancellationToken cancellationToken)
+    {
+        if (account is null || counterpart is null)
+        {
+            throw new InvalidOperationException("Откройте чат перед отправкой.");
+        }
+
+        var pending = await runtime.Messages.QueueOneToOneAsync(
+            account.SessionId,
+            counterpart.Value,
+            body,
+            attachments,
+            ReplyingTo?.Id,
+            cancellationToken);
+
+        IsMessageRequest = false;
+
+        Messages.Add(ToItem(pending));
+        ReplyingTo = null;
+        _ = DispatchPendingMessageAsync(pending);
     }
 
     public void BeginReply(ChatMessageItem message) => ReplyingTo = message;
@@ -790,8 +917,17 @@ public sealed class ChatViewModel : ViewModelBase
     {
         RaisePropertyChanged(nameof(HasStagedAttachments));
         RaisePropertyChanged(nameof(StagedAttachmentSummary));
+        RaiseComposerStateChanged();
         SendCommand.RaiseCanExecuteChanged();
         ClearAttachmentsCommand.RaiseCanExecuteChanged();
+    }
+
+    private void RaiseComposerStateChanged()
+    {
+        RaisePropertyChanged(nameof(HasComposedContent));
+        RaisePropertyChanged(nameof(CanRecordVoice));
+        RaisePropertyChanged(nameof(ShowVoiceButton));
+        RaisePropertyChanged(nameof(ShowSendButton));
     }
 
     private sealed class UnavailableCallService : ICallService

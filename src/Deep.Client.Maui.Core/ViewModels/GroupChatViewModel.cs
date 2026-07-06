@@ -45,12 +45,19 @@ public sealed record GroupChatMessageItem(
 
     public bool HasReactions => Reactions.Count > 0;
 
-    public string AttachmentSummary => Attachments.Count switch
-    {
-        0 => string.Empty,
-        1 => Attachments[0].FileName,
-        _ => $"{Attachments.Count} влож."
-    };
+    public bool HasVisibleBody => MessageAttachmentPresentation.HasVisibleBody(Body);
+
+    public bool IsVoiceMessage => MessageAttachmentPresentation.IsVoiceMessage(Attachments);
+
+    public bool HasNonVoiceAttachments => HasAttachments && !IsVoiceMessage;
+
+    public string AttachmentSummary => MessageAttachmentPresentation.Summary(Attachments);
+
+    public string AttachmentTitle => MessageAttachmentPresentation.Title(Attachments);
+
+    public string AttachmentSubtitle => MessageAttachmentPresentation.Subtitle(Attachments);
+
+    public string VoiceDurationLabel => MessageAttachmentPresentation.VoiceDuration(Attachments);
 }
 
 public sealed record GroupMemberItem(SessionId SessionId, GroupMemberRole Role, bool IsPendingRemoval);
@@ -61,6 +68,7 @@ public sealed class GroupChatViewModel : ViewModelBase
     private readonly ClientRuntime runtime;
     private readonly IContactRepository contacts;
     private readonly IAttachmentPickerService? attachmentPicker;
+    private readonly IVoiceMessageRecorder? voiceRecorder;
     private readonly Dictionary<string, string> senderLabels = new(StringComparer.Ordinal);
     private SessionAccount? account;
     private Group? group;
@@ -75,13 +83,18 @@ public sealed class GroupChatViewModel : ViewModelBase
     private bool messagesLoaded;
     private DateTimeOffset? oldestLoadedMessageAt;
     private bool hasOlderMessages;
+    private bool isRecordingVoice;
     private GroupChatMessageItem? replyingTo;
 
-    public GroupChatViewModel(ClientRuntime runtime, IAttachmentPickerService? attachmentPicker = null)
+    public GroupChatViewModel(
+        ClientRuntime runtime,
+        IAttachmentPickerService? attachmentPicker = null,
+        IVoiceMessageRecorder? voiceRecorder = null)
     {
         this.runtime = runtime;
         contacts = (IContactRepository)runtime.Store;
         this.attachmentPicker = attachmentPicker;
+        this.voiceRecorder = voiceRecorder;
         Messages = new ObservableRangeCollection<GroupChatMessageItem>();
         StagedAttachments = [];
         Members = [];
@@ -150,11 +163,39 @@ public sealed class GroupChatViewModel : ViewModelBase
             if (SetProperty(ref draft, value))
             {
                 SendCommand.RaiseCanExecuteChanged();
+                RaiseComposerStateChanged();
             }
         }
     }
 
     public bool HasStagedAttachments => StagedAttachments.Count > 0;
+
+    public bool HasComposedContent => !string.IsNullOrWhiteSpace(Draft) || StagedAttachments.Count > 0;
+
+    public bool CanRecordVoice => voiceRecorder?.IsSupported == true
+        && group is not null
+        && account is not null;
+
+    public bool IsRecordingVoice
+    {
+        get => isRecordingVoice;
+        private set
+        {
+            if (SetProperty(ref isRecordingVoice, value))
+            {
+                RaiseComposerStateChanged();
+                RaisePropertyChanged(nameof(VoiceRecordingLabel));
+            }
+        }
+    }
+
+    public bool ShowVoiceButton => CanRecordVoice && (!HasComposedContent || IsRecordingVoice);
+
+    public bool ShowSendButton => HasComposedContent && !IsRecordingVoice;
+
+    public string VoiceRecordingLabel => IsRecordingVoice
+        ? "Идет запись голосового сообщения"
+        : string.Empty;
 
     public string StagedAttachmentSummary => StagedAttachments.Count switch
     {
@@ -244,6 +285,7 @@ public sealed class GroupChatViewModel : ViewModelBase
         RefreshCommand.RaiseCanExecuteChanged();
         SendCommand.RaiseCanExecuteChanged();
         RaiseMemberCommandCanExecuteChanged();
+        RaiseComposerStateChanged();
         await LoadMessagesAsync(cancellationToken);
         await RefreshAsync(cancellationToken);
     }
@@ -295,29 +337,88 @@ public sealed class GroupChatViewModel : ViewModelBase
 
             ErrorMessage = null;
             var body = string.IsNullOrWhiteSpace(Draft)
-                ? "[Вложение]"
+                ? MessageAttachmentPresentation.GenericAttachmentPlaceholder
                 : Draft;
             var attachments = StagedAttachments.ToArray();
 
-            var pending = await runtime.Messages.QueueGroupAsync(
-                account.SessionId,
-                group.Id,
-                body,
-                attachments,
-                ReplyingTo?.Id,
-                cancellationToken);
-            Messages.Add(await ToItemAsync(pending, cancellationToken));
+            SetStatus("Отправка сообщения...");
+            await QueueMessageAsync(body, attachments, cancellationToken);
             Draft = string.Empty;
             StagedAttachments.Clear();
             ReplyingTo = null;
-            SetStatus("Отправка сообщения...");
-            _ = DispatchPendingMessageAsync(pending);
         }
         catch (Exception ex)
         {
             ErrorMessage = ex.Message;
             SetStatus(ex.Message, isError: true);
         }
+    }
+
+    public async Task StartVoiceRecordingAsync(CancellationToken cancellationToken = default)
+    {
+        if (voiceRecorder is null)
+        {
+            ErrorMessage = "Запись голосовых сообщений недоступна на этом устройстве.";
+            SetStatus(ErrorMessage, isError: true);
+            return;
+        }
+
+        try
+        {
+            ErrorMessage = null;
+            await voiceRecorder.StartAsync(cancellationToken);
+            IsRecordingVoice = true;
+            SetStatus("Запись голосового сообщения...");
+        }
+        catch (Exception ex)
+        {
+            IsRecordingVoice = false;
+            ErrorMessage = ex.Message;
+            SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    public async Task StopVoiceRecordingAndSendAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsRecordingVoice || voiceRecorder is null)
+        {
+            return;
+        }
+
+        try
+        {
+            ErrorMessage = null;
+            var attachment = await voiceRecorder.StopAsync(cancellationToken);
+            IsRecordingVoice = false;
+            if (attachment is null)
+            {
+                SetStatus("Голосовое сообщение отменено.");
+                return;
+            }
+
+            SetStatus("Отправка голосового сообщения...");
+            await QueueMessageAsync(
+                MessageAttachmentPresentation.VoiceAttachmentPlaceholder,
+                [attachment],
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await CancelVoiceRecordingAsync(cancellationToken);
+            ErrorMessage = ex.Message;
+            SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    public async Task CancelVoiceRecordingAsync(CancellationToken cancellationToken = default)
+    {
+        if (voiceRecorder is not null)
+        {
+            await voiceRecorder.CancelAsync(cancellationToken);
+        }
+
+        IsRecordingVoice = false;
+        SetStatus("Запись отменена.");
     }
 
     public void BeginReply(GroupChatMessageItem message) => ReplyingTo = message;
@@ -369,6 +470,12 @@ public sealed class GroupChatViewModel : ViewModelBase
     }
 
     public Task PickAttachmentsAsync(CancellationToken cancellationToken = default) =>
+        PickAttachmentsAsync(null, cancellationToken);
+
+    public Task PickAttachmentsAsync(AttachmentPickKind kind, CancellationToken cancellationToken = default) =>
+        PickAttachmentsAsync((AttachmentPickKind?)kind, cancellationToken);
+
+    private Task PickAttachmentsAsync(AttachmentPickKind? kind, CancellationToken cancellationToken) =>
         RunBusyAsync(async ct =>
         {
             if (attachmentPicker is null)
@@ -376,7 +483,9 @@ public sealed class GroupChatViewModel : ViewModelBase
                 throw new InvalidOperationException("Выбор вложений недоступен.");
             }
 
-            var picked = await attachmentPicker.PickAsync(ct);
+            var picked = kind is { } requestedKind && attachmentPicker is ITypedAttachmentPickerService typedPicker
+                ? await typedPicker.PickAsync(requestedKind, ct)
+                : await attachmentPicker.PickAsync(ct);
             foreach (var attachment in picked)
             {
                 StagedAttachments.Add(attachment);
@@ -718,6 +827,28 @@ public sealed class GroupChatViewModel : ViewModelBase
         ? value
         : $"{value[..8]}…{value[^4..]}";
 
+    private async Task QueueMessageAsync(
+        string body,
+        IReadOnlyList<AttachmentMetadata> attachments,
+        CancellationToken cancellationToken)
+    {
+        if (group is null || account is null)
+        {
+            throw new InvalidOperationException("Откройте группу перед отправкой сообщений.");
+        }
+
+        var pending = await runtime.Messages.QueueGroupAsync(
+            account.SessionId,
+            group.Id,
+            body,
+            attachments,
+            ReplyingTo?.Id,
+            cancellationToken);
+        Messages.Add(await ToItemAsync(pending, cancellationToken));
+        ReplyingTo = null;
+        _ = DispatchPendingMessageAsync(pending);
+    }
+
     private async Task LoadMessagesAsync(CancellationToken cancellationToken)
     {
         if (group is null)
@@ -848,8 +979,17 @@ public sealed class GroupChatViewModel : ViewModelBase
     {
         RaisePropertyChanged(nameof(HasStagedAttachments));
         RaisePropertyChanged(nameof(StagedAttachmentSummary));
+        RaiseComposerStateChanged();
         SendCommand.RaiseCanExecuteChanged();
         ClearAttachmentsCommand.RaiseCanExecuteChanged();
+    }
+
+    private void RaiseComposerStateChanged()
+    {
+        RaisePropertyChanged(nameof(HasComposedContent));
+        RaisePropertyChanged(nameof(CanRecordVoice));
+        RaisePropertyChanged(nameof(ShowVoiceButton));
+        RaisePropertyChanged(nameof(ShowSendButton));
     }
 
     private void SetStatus(string message, bool isError = false)

@@ -5,7 +5,7 @@ using Deep.Client.Shared.Services;
 
 namespace Deep.Client.Maui.Services;
 
-public sealed class MauiAttachmentPickerService : IAttachmentPickerService
+public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
 {
     private const long MaxAttachmentBytes = 25 * 1024 * 1024;
 
@@ -30,18 +30,26 @@ public sealed class MauiAttachmentPickerService : IAttachmentPickerService
             "Видео из галереи",
             "Файл"));
 
-        if (string.IsNullOrWhiteSpace(choice) || choice == "Отмена")
+        return choice switch
         {
-            return [];
-        }
+            "Фото из галереи" => await PickAsync(AttachmentPickKind.Photo, cancellationToken).ConfigureAwait(false),
+            "Видео из галереи" => await PickAsync(AttachmentPickKind.Video, cancellationToken).ConfigureAwait(false),
+            "Файл" => await PickAsync(AttachmentPickKind.File, cancellationToken).ConfigureAwait(false),
+            _ => []
+        };
+    }
 
-        IReadOnlyList<FileResult> results = choice switch
+    public async Task<IReadOnlyList<AttachmentMetadata>> PickAsync(
+        AttachmentPickKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<FileResult> results = kind switch
         {
-            "Фото из галереи" => await MediaPicker.Default.PickPhotosAsync(new MediaPickerOptions
+            AttachmentPickKind.Photo => await MediaPicker.Default.PickPhotosAsync(new MediaPickerOptions
             {
                 Title = "Выберите фото"
             }).ConfigureAwait(false),
-            "Видео из галереи" => await MediaPicker.Default.PickVideosAsync(new MediaPickerOptions
+            AttachmentPickKind.Video => await MediaPicker.Default.PickVideosAsync(new MediaPickerOptions
             {
                 Title = "Выберите видео"
             }).ConfigureAwait(false),

@@ -188,6 +188,52 @@
         </Setter>
     </Style>
 
+    <Style x:Key="ComposerIconSurface" TargetType="Border">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="WidthRequest" Value="42" />
+        <Setter Property="HeightRequest" Value="42" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="StrokeShape">
+            <Setter.Value><RoundRectangle CornerRadius="21" /></Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ComposerPrimarySurface" TargetType="Border" BasedOn="{StaticResource ComposerIconSurface}">
+        <Setter Property="Background" Value="{StaticResource PrimaryColor}" />
+    </Style>
+
+    <Style x:Key="AttachmentCard" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource PanelBackgroundAlt}" />
+        <Setter Property="Stroke" Value="{StaticResource DividerColor}" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="8" />
+        <Setter Property="StrokeShape">
+            <Setter.Value><RoundRectangle CornerRadius="12" /></Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="AttachmentSheetBorder" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource PanelBackground}" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="Padding" Value="16,10,16,18" />
+        <Setter Property="StrokeShape">
+            <Setter.Value><RoundRectangle CornerRadius="22,22,0,0" /></Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="AttachSheetIcon" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource PanelBackgroundAlt}" />
+        <Setter Property="Stroke" Value="{StaticResource DividerColor}" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="WidthRequest" Value="52" />
+        <Setter Property="HeightRequest" Value="52" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="StrokeShape">
+            <Setter.Value><RoundRectangle CornerRadius="26" /></Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="ToolbarIconButton" TargetType="Button">
         <Setter Property="BackgroundColor" Value="Transparent" />
         <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />

@@ -188,6 +188,29 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task VoiceRecordingQueuesAudioAttachmentOptimistically()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var account = await runtime.Accounts.RegisterAsync("Alice");
+        var remote = SessionId.CreateNew();
+        var recorder = new FakeVoiceMessageRecorder();
+
+        var chat = new ChatViewModel(runtime, attachmentPicker: null, voiceRecorder: recorder);
+        await chat.OpenOneToOneAsync(account, remote, "Bob");
+
+        await chat.StartVoiceRecordingAsync();
+        Assert.True(chat.IsRecordingVoice);
+
+        await chat.StopVoiceRecordingAndSendAsync();
+
+        var message = Assert.Single(chat.Messages);
+        Assert.True(message.IsVoiceMessage);
+        Assert.False(message.HasVisibleBody);
+        Assert.Equal("Голосовое сообщение", message.AttachmentTitle);
+        Assert.Equal("00:02", message.VoiceDurationLabel);
+    }
+
+    [Fact]
     public async Task ReceiveWithoutNewMessagesDoesNotResetCollection()
     {
         var backend = new StubSessionBackend();
@@ -546,6 +569,36 @@ public sealed class ChatViewModelTests
             [
                 AttachmentMetadata.Local("receipt.pdf", "application/pdf", 1024)
             ]);
+    }
+
+    private sealed class FakeVoiceMessageRecorder : IVoiceMessageRecorder
+    {
+        public bool IsSupported => true;
+
+        public bool IsRecording { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            IsRecording = true;
+            return Task.CompletedTask;
+        }
+
+        public Task<AttachmentMetadata?> StopAsync(CancellationToken cancellationToken = default)
+        {
+            IsRecording = false;
+            return Task.FromResult<AttachmentMetadata?>(new AttachmentMetadata(
+                Guid.NewGuid().ToString("n"),
+                "voice.m4a",
+                "audio/mp4",
+                4096,
+                Duration: TimeSpan.FromSeconds(2)));
+        }
+
+        public Task CancelAsync(CancellationToken cancellationToken = default)
+        {
+            IsRecording = false;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class BlockingMessageTransport : ISessionMessageTransport

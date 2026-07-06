@@ -51,6 +51,30 @@ public sealed class GroupChatViewModelTests
     }
 
     [Fact]
+    public async Task VoiceRecordingQueuesGroupAudioAttachment()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var owner = await runtime.Accounts.RegisterAsync("Owner");
+        var group = await runtime.Conversations.CreateGroupScaffoldAsync(owner.SessionId, "Voice", [], CancellationToken.None);
+        var recorder = new FakeVoiceMessageRecorder();
+
+        var viewModel = new GroupChatViewModel(runtime, voiceRecorder: recorder);
+        await viewModel.OpenFromRouteAsync(group.Id.Value, group.Name);
+
+        await viewModel.StartVoiceRecordingAsync();
+        Assert.True(viewModel.IsRecordingVoice);
+
+        await viewModel.StopVoiceRecordingAndSendAsync();
+
+        var message = Assert.Single(viewModel.Messages);
+        Assert.True(message.IsVoiceMessage);
+        Assert.False(message.HasVisibleBody);
+        Assert.Equal("Голосовое сообщение", message.AttachmentTitle);
+        Assert.Equal("00:03", message.VoiceDurationLabel);
+    }
+
+
+    [Fact]
     public async Task AddPromoteAndRemoveMemberUpdatesGroupMembers()
     {
         var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
@@ -145,5 +169,35 @@ public sealed class GroupChatViewModelTests
             [
                 AttachmentMetadata.Local("group-note.txt", "text/plain", 256)
             ]);
+    }
+
+    private sealed class FakeVoiceMessageRecorder : IVoiceMessageRecorder
+    {
+        public bool IsSupported => true;
+
+        public bool IsRecording { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            IsRecording = true;
+            return Task.CompletedTask;
+        }
+
+        public Task<AttachmentMetadata?> StopAsync(CancellationToken cancellationToken = default)
+        {
+            IsRecording = false;
+            return Task.FromResult<AttachmentMetadata?>(new AttachmentMetadata(
+                Guid.NewGuid().ToString("n"),
+                "group-voice.m4a",
+                "audio/mp4",
+                6144,
+                Duration: TimeSpan.FromSeconds(3)));
+        }
+
+        public Task CancelAsync(CancellationToken cancellationToken = default)
+        {
+            IsRecording = false;
+            return Task.CompletedTask;
+        }
     }
 }
