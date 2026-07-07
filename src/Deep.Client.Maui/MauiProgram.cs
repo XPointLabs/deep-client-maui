@@ -9,6 +9,15 @@ using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
 using Microsoft.Maui.Storage;
 
+#if ANDROID
+using Android.Content.Res;
+using Android.Graphics.Drawables;
+using Android.Widget;
+using Microsoft.Maui.Graphics;
+using Microsoft.Maui.Handlers;
+using Microsoft.Maui.Platform;
+#endif
+
 namespace Deep.Client.Maui;
 
 public static class MauiProgram
@@ -30,6 +39,9 @@ public static class MauiProgram
     {
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>();
+#if ANDROID
+        ConfigureAndroidTextInputChrome();
+#endif
 
         var featureFlags = BuildFeatureFlags();
         var routerBaseUrls = ResolveRouterBaseUrls();
@@ -251,6 +263,41 @@ public static class MauiProgram
 
         return builder.Build();
     }
+
+#if ANDROID
+    private static void ConfigureAndroidTextInputChrome()
+    {
+        EntryHandler.Mapper.AppendToMapping("DeepBorderlessEntry", static (handler, _) =>
+            RemoveAndroidTextInputUnderline(handler.PlatformView, handler.VirtualView));
+        EditorHandler.Mapper.AppendToMapping("DeepBorderlessEditor", static (handler, _) =>
+            RemoveAndroidTextInputUnderline(handler.PlatformView, handler.VirtualView));
+    }
+
+    private static void RemoveAndroidTextInputUnderline(EditText textInput, IView view)
+    {
+        textInput.BackgroundTintList = ColorStateList.ValueOf(Android.Graphics.Color.Transparent);
+        textInput.Background = CreateAndroidTextInputBackground(view);
+        textInput.SetIncludeFontPadding(false);
+        textInput.SetMinHeight(0);
+        textInput.SetPadding(textInput.PaddingLeft, 0, textInput.PaddingRight, 0);
+    }
+
+    private static Drawable? CreateAndroidTextInputBackground(IView view)
+    {
+        if (view.Background is not SolidPaint { Color: { } color } || color.Alpha <= 0)
+        {
+            return null;
+        }
+
+        var density = Android.App.Application.Context.Resources?.DisplayMetrics?.Density ?? 1f;
+        var radius = 10 * density;
+        var drawable = new GradientDrawable();
+        drawable.SetShape(ShapeType.Rectangle);
+        drawable.SetCornerRadius(radius);
+        drawable.SetColor(color.ToPlatform());
+        return drawable;
+    }
+#endif
 
     private static ClientFeatureFlags BuildFeatureFlags()
     {
