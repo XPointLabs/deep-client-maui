@@ -91,10 +91,16 @@
                                 </Border>
                                 <Border Style="{StaticResource AttachmentCard}" IsVisible="{Binding IsVoiceMessage}">
                                     <Grid ColumnDefinitions="38,*,Auto" ColumnSpacing="9">
-                                        <Border WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
-                                            <Path Data="M10,7 L23,18 L10,29 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                        <Border AutomationId="GroupChat.VoicePlayButton" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
+                                            <Grid WidthRequest="18" HeightRequest="18" HorizontalOptions="Center" VerticalOptions="Center">
+                                                <Path Data="M10,7 L23,18 L10,29 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" IsVisible="{Binding IsVoiceIdle}" />
+                                                <Path Data="M8,6 H11 V22 H8 Z M17,6 H20 V22 H17 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" IsVisible="{Binding IsVoicePlaying}" />
+                                            </Grid>
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnVoiceMessageTapped" />
+                                            </Border.GestureRecognizers>
                                         </Border>
-                                        <VerticalStackLayout Grid.Column="1" Spacing="5" VerticalOptions="Center">
+                                        <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
                                             <HorizontalStackLayout Spacing="3" HeightRequest="20" VerticalOptions="Center">
                                                 <BoxView WidthRequest="3" HeightRequest="8" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
                                                 <BoxView WidthRequest="3" HeightRequest="14" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
@@ -107,13 +113,11 @@
                                                 <BoxView WidthRequest="3" HeightRequest="9" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
                                                 <BoxView WidthRequest="3" HeightRequest="17" Color="{StaticResource PrimaryColor}" VerticalOptions="Center" />
                                             </HorizontalStackLayout>
-                                            <Label Text="{Binding VoiceDurationLabel}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                            <ProgressBar AutomationId="GroupChat.VoiceProgress" Progress="{Binding VoicePlaybackProgress}" HeightRequest="3" ProgressColor="{StaticResource PrimaryColor}" BackgroundColor="{StaticResource DividerColor}" />
+                                            <Label AutomationId="GroupChat.VoicePlaybackLabel" Text="{Binding VoicePlaybackLabel}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
                                         </VerticalStackLayout>
                                         <Path Grid.Column="2" Data="M12,4 C10.3,4 9,5.3 9,7 V12 C9,13.7 10.3,15 12,15 C13.7,15 15,13.7 15,12 V7 C15,5.3 13.7,4 12,4 Z M7,11 C7,13.8 9.2,16 12,16 C14.8,16 17,13.8 17,11 M12,16 V20" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.6" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="End" />
                                     </Grid>
-                                    <Border.GestureRecognizers>
-                                        <TapGestureRecognizer Tapped="OnVoiceMessageTapped" />
-                                    </Border.GestureRecognizers>
                                 </Border>
                                 <Border Style="{StaticResource AttachmentCard}" IsVisible="{Binding HasNonVoiceAttachments}">
                                     <Grid ColumnDefinitions="42,*,Auto" ColumnSpacing="9">
@@ -205,7 +209,7 @@
                     <Button Grid.Column="1" Text="Очистить" Command="{Binding ClearAttachmentsCommand}" WidthRequest="96" Style="{StaticResource SecondaryButton}" />
                 </Grid>
             </Border>
-            <Border Grid.Row="2" Style="{StaticResource VoiceRecordingPanel}" IsVisible="{Binding IsRecordingVoice}">
+            <Border x:Name="VoiceRecordingPanel" Grid.Row="2" Style="{StaticResource VoiceRecordingPanel}" IsVisible="{Binding IsRecordingVoice}">
                 <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="9">
                     <Border WidthRequest="10" HeightRequest="10" Background="{StaticResource DangerColor}" StrokeThickness="0" StrokeShape="RoundRectangle 5" VerticalOptions="Center" />
                     <Label x:Name="VoiceElapsedLabel" Grid.Column="1" Text="00:00" FontSize="14" TextColor="{StaticResource TextPrimary}" VerticalTextAlignment="Center" />
@@ -217,9 +221,11 @@
                         <BoxView Style="{StaticResource VoiceWaveBar}" HeightRequest="13" />
                         <BoxView Style="{StaticResource VoiceWaveBar}" HeightRequest="17" />
                         <BoxView Style="{StaticResource VoiceWaveBar}" HeightRequest="9" />
-                        <Label Text="Запись" FontSize="12" TextColor="{StaticResource TextSecondary}" VerticalTextAlignment="Center" Margin="5,0,0,0" />
+                        <Label x:Name="VoiceSlideHintLabel" Text="Сдвиньте влево для отмены" FontSize="12" TextColor="{StaticResource TextSecondary}" VerticalTextAlignment="Center" Margin="5,0,0,0" />
                     </HorizontalStackLayout>
-                    <Button Grid.Column="3" Text="Отмена" Clicked="OnCancelVoiceClicked" WidthRequest="86" HeightRequest="34" Style="{StaticResource GhostButton}" TextColor="{StaticResource DangerColor}" />
+                    <Border x:Name="VoiceCancelPill" Grid.Column="3" Padding="10,5" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 14" VerticalOptions="Center">
+                        <Label Text="Отмена" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    </Border>
                 </Grid>
             </Border>
             <Label Grid.Row="3" AutomationId="GroupChat.Error" Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" TextColor="{StaticResource DangerColor}" FontSize="12" LineBreakMode="WordWrap" Margin="8,0" />
@@ -236,9 +242,12 @@
                 <Path Data="M5,20 L22,12 L5,4 V10 L15,12 L5,14 Z" Fill="#020711" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                 <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnSendClicked" /></Border.GestureRecognizers>
             </Border>
-            <Border AutomationId="GroupChat.Voice" Grid.Column="2" Style="{StaticResource ComposerPrimarySurface}" SemanticProperties.Description="Голосовое сообщение" IsVisible="{Binding ShowVoiceButton}">
+            <Border x:Name="VoiceButton" AutomationId="GroupChat.Voice" Grid.Column="2" Style="{StaticResource ComposerPrimarySurface}" SemanticProperties.Description="Голосовое сообщение" IsVisible="{Binding ShowVoiceButton}">
                 <Path Data="M12,4 C10.3,4 9,5.3 9,7 V12 C9,13.7 10.3,15 12,15 C13.7,15 15,13.7 15,12 V7 C15,5.3 13.7,4 12,4 Z M6,11 C6,14.3 8.7,17 12,17 C15.3,17 18,14.3 18,11 M12,17 V21 M9,21 H15" Stroke="#020711" StrokeThickness="2" Fill="Transparent" WidthRequest="23" HeightRequest="23" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
-                <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnVoiceClicked" /></Border.GestureRecognizers>
+                <Border.GestureRecognizers>
+                    <PointerGestureRecognizer PointerPressed="OnVoicePointerPressed" PointerMoved="OnVoicePointerMoved" PointerReleased="OnVoicePointerReleased" />
+                    <PanGestureRecognizer PanUpdated="OnVoicePanUpdated" />
+                </Border.GestureRecognizers>
             </Border>
         </Grid>
 

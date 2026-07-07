@@ -7,10 +7,17 @@ using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
 using Microsoft.Maui.Storage;
 
+#if ANDROID
+using Android.Views;
+using AndroidView = Android.Views.View;
+#endif
+
 namespace Deep.Client.Maui.Pages;
 
 public partial class ChatPage : ContentPage, IQueryAttributable
 {
+    private const double VoiceCancelSwipeThreshold = 84;
+    private const double VoiceCancelPanelTranslation = 36;
     private IDispatcherTimer? autoReceiveTimer;
     private readonly ChatViewModel viewModel;
     private readonly INetworkStatusService networkStatusService;
@@ -22,6 +29,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private CancellationTokenSource? routeLoadCancellation;
     private IDisposable? keyboardInsetSubscription;
     private IDispatcherTimer? voiceRecordingTimer;
+    private IDispatcherTimer? voicePlaybackTimer;
     private bool pendingScrollAnimate;
     private bool pendingScrollForce;
     private bool isLoadingOlderMessages;
@@ -30,8 +38,16 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private double expandedPageHeight;
     private double keyboardBottomInset;
     private DateTimeOffset voiceRecordingStartedAt;
+    private Point voicePointerStart;
+    private bool voicePointerActive;
+    private bool voiceCancelBySwipe;
+    private Task? voiceGestureStartTask;
+    private string? activeVoiceAttachmentId;
     private ChatMessageItem? selectedMessage;
     private AttachmentMetadata? selectedAttachment;
+#if ANDROID
+    private AndroidView? voiceButtonPlatformView;
+#endif
 
     public ChatPage(
         ChatViewModel viewModel,
@@ -51,11 +67,19 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
         viewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
         SizeChanged += OnPageSizeChanged;
+#if ANDROID
+        VoiceButton.HandlerChanged += OnVoiceButtonHandlerChanged;
+#endif
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
+#if ANDROID
+        OnVoiceButtonHandlerChanged(VoiceButton, EventArgs.Empty);
+        AndroidVoiceGestureRouter.Touch -= OnAndroidVoiceGesture;
+        AndroidVoiceGestureRouter.Touch += OnAndroidVoiceGesture;
+#endif
         keyboardInsetSubscription?.Dispose();
         keyboardInsetSubscription = AndroidKeyboardInsets.Observe(OnKeyboardInsetChanged);
         Dispatcher.Dispatch(ApplyAndroidSafeAreaCompensation);
@@ -76,9 +100,14 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         ApplyAndroidSafeAreaCompensation();
         autoReceiveTimer?.Stop();
         StopRecordingUiTimer();
+        StopVoicePlaybackTimer();
+        ClearActiveVoicePlayback();
         voicePlayback.Stop();
         CancelRouteLoad();
         CancelPendingScrollToEnd();
+#if ANDROID
+        AndroidVoiceGestureRouter.Touch -= OnAndroidVoiceGesture;
+#endif
     }
 
     protected override bool OnBackButtonPressed()
@@ -183,26 +212,53 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         await viewModel.SendAsync();
     }
 
-    private async void OnVoiceClicked(object? sender, TappedEventArgs e)
+    private void OnVoicePointerPressed(object? sender, PointerEventArgs e)
     {
-        if (viewModel.IsRecordingVoice)
+        if (voicePointerActive || !viewModel.ShowVoiceButton)
         {
-            StopRecordingUiTimer();
-            await viewModel.StopVoiceRecordingAndSendAsync();
             return;
         }
 
-        await viewModel.StartVoiceRecordingAsync();
-        if (viewModel.IsRecordingVoice)
-        {
-            StartRecordingUiTimer();
-        }
+        BeginVoiceRecordingGesture(e.GetPosition(PageLayout) ?? new Point(0, 0));
     }
 
-    private async void OnCancelVoiceClicked(object? sender, EventArgs e)
+    private void OnVoicePointerMoved(object? sender, PointerEventArgs e)
     {
-        StopRecordingUiTimer();
-        await viewModel.CancelVoiceRecordingAsync();
+        if (!voicePointerActive)
+        {
+            return;
+        }
+
+        var point = e.GetPosition(PageLayout);
+        if (point is null)
+        {
+            return;
+        }
+
+        var deltaX = point.Value.X - voicePointerStart.X;
+        var cancelProgress = Math.Clamp(-deltaX / VoiceCancelSwipeThreshold, 0, 1);
+        voiceCancelBySwipe = cancelProgress >= 1;
+        ApplyVoiceRecordingGestureProgress(cancelProgress);
+    }
+
+    private async void OnVoicePointerReleased(object? sender, PointerEventArgs e)
+    {
+        await FinishVoiceRecordingGestureAsync();
+    }
+
+    private void OnVoicePanUpdated(object? sender, PanUpdatedEventArgs e)
+    {
+        if (!voicePointerActive)
+        {
+            return;
+        }
+
+        if (e.StatusType is GestureStatus.Running or GestureStatus.Completed or GestureStatus.Canceled)
+        {
+            var cancelProgress = Math.Clamp(-e.TotalX / VoiceCancelSwipeThreshold, 0, 1);
+            voiceCancelBySwipe = cancelProgress >= 1;
+            ApplyVoiceRecordingGestureProgress(cancelProgress);
+        }
     }
 
     private async void OnCopyConversationIdClicked(object? sender, TappedEventArgs e)
@@ -367,10 +423,26 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
         try
         {
-            await voicePlayback.ToggleAsync(item.Attachments[0], attachmentFiles);
+            var attachment = item.Attachments[0];
+            if (string.Equals(activeVoiceAttachmentId, attachment.AttachmentId, StringComparison.Ordinal)
+                && voicePlayback.Snapshot.IsPlaying)
+            {
+                voicePlayback.Stop();
+                ApplyVoicePlaybackSnapshot(VoicePlaybackSnapshot.Stopped);
+                return;
+            }
+
+            ClearActiveVoicePlayback();
+            activeVoiceAttachmentId = attachment.AttachmentId;
+            item.SetVoicePlayback(isPlaying: true, progress: 0, position: TimeSpan.Zero);
+
+            await voicePlayback.ToggleAsync(attachment, attachmentFiles);
+            ApplyVoicePlaybackSnapshot(voicePlayback.Snapshot);
+            EnsureVoicePlaybackTimer();
         }
         catch (Exception ex)
         {
+            ClearActiveVoicePlayback();
             await DisplayAlertAsync("Голосовое сообщение", ex.Message, "OK");
         }
     }
@@ -576,6 +648,236 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         var seconds = Math.Max(0, (int)elapsed.TotalSeconds);
         VoiceElapsedLabel.Text = $"{seconds / 60:00}:{seconds % 60:00}";
     }
+
+    private async Task StartVoiceRecordingGestureAsync()
+    {
+        await viewModel.StartVoiceRecordingAsync();
+        if (viewModel.IsRecordingVoice)
+        {
+            StartRecordingUiTimer();
+        }
+    }
+
+    private void BeginVoiceRecordingGesture(Point startPoint)
+    {
+        if (voicePointerActive || !viewModel.ShowVoiceButton)
+        {
+            return;
+        }
+
+        voicePointerActive = true;
+        voiceCancelBySwipe = false;
+        voicePointerStart = startPoint;
+        ResetVoiceRecordingGestureUi();
+        voiceGestureStartTask = StartVoiceRecordingGestureAsync();
+    }
+
+    private void UpdateVoiceRecordingGesture(Point currentPoint)
+    {
+        if (!voicePointerActive)
+        {
+            return;
+        }
+
+        var deltaX = currentPoint.X - voicePointerStart.X;
+        var cancelProgress = Math.Clamp(-deltaX / VoiceCancelSwipeThreshold, 0, 1);
+        voiceCancelBySwipe = cancelProgress >= 1;
+        ApplyVoiceRecordingGestureProgress(cancelProgress);
+    }
+
+    private async Task FinishVoiceRecordingGestureAsync()
+    {
+        if (!voicePointerActive && voiceGestureStartTask is null)
+        {
+            return;
+        }
+
+        voicePointerActive = false;
+        var startTask = voiceGestureStartTask;
+        voiceGestureStartTask = null;
+        if (startTask is not null)
+        {
+            await startTask;
+        }
+
+        StopRecordingUiTimer();
+        ResetVoiceRecordingGestureUi();
+        if (!viewModel.IsRecordingVoice)
+        {
+            voiceCancelBySwipe = false;
+            return;
+        }
+
+        if (voiceCancelBySwipe)
+        {
+            await viewModel.CancelVoiceRecordingAsync();
+        }
+        else
+        {
+            await viewModel.StopVoiceRecordingAndSendAsync();
+        }
+
+        voiceCancelBySwipe = false;
+    }
+
+    private void ApplyVoiceRecordingGestureProgress(double progress)
+    {
+        VoiceRecordingPanel.TranslationX = -VoiceCancelPanelTranslation * progress;
+        VoiceCancelPill.Opacity = 1 - (0.55 * progress);
+        VoiceSlideHintLabel.Text = progress >= 1
+            ? "Отпустите, чтобы отменить"
+            : "Сдвиньте влево для отмены";
+        VoiceSlideHintLabel.TextColor = progress >= 1
+            ? ResourceColor("DangerColor", Colors.IndianRed)
+            : ResourceColor("TextSecondary", Colors.Gray);
+    }
+
+    private void ResetVoiceRecordingGestureUi()
+    {
+        VoiceRecordingPanel.TranslationX = 0;
+        VoiceCancelPill.Opacity = 1;
+        VoiceSlideHintLabel.Text = "Сдвиньте влево для отмены";
+        VoiceSlideHintLabel.TextColor = ResourceColor("TextSecondary", Colors.Gray);
+    }
+
+    private void EnsureVoicePlaybackTimer()
+    {
+        if (!voicePlayback.Snapshot.IsPlaying)
+        {
+            StopVoicePlaybackTimer();
+            return;
+        }
+
+        voicePlaybackTimer ??= Dispatcher.CreateTimer();
+        voicePlaybackTimer.Interval = TimeSpan.FromMilliseconds(200);
+        voicePlaybackTimer.Tick -= OnVoicePlaybackTick;
+        voicePlaybackTimer.Tick += OnVoicePlaybackTick;
+        voicePlaybackTimer.Start();
+    }
+
+    private void StopVoicePlaybackTimer()
+    {
+        voicePlaybackTimer?.Stop();
+    }
+
+    private void OnVoicePlaybackTick(object? sender, EventArgs e) =>
+        ApplyVoicePlaybackSnapshot(voicePlayback.Snapshot);
+
+    private void ApplyVoicePlaybackSnapshot(VoicePlaybackSnapshot snapshot)
+    {
+        if (!string.Equals(activeVoiceAttachmentId, snapshot.AttachmentId, StringComparison.Ordinal))
+        {
+            ClearVoicePlayback(activeVoiceAttachmentId);
+        }
+
+        if (snapshot.AttachmentId is null)
+        {
+            activeVoiceAttachmentId = null;
+            StopVoicePlaybackTimer();
+            return;
+        }
+
+        activeVoiceAttachmentId = snapshot.AttachmentId;
+        var item = FindVoiceMessageItem(snapshot.AttachmentId);
+        item?.SetVoicePlayback(snapshot.IsPlaying, snapshot.Progress, snapshot.Position);
+
+        if (!snapshot.IsPlaying)
+        {
+            ClearVoicePlayback(snapshot.AttachmentId);
+            activeVoiceAttachmentId = null;
+            StopVoicePlaybackTimer();
+        }
+    }
+
+    private ChatMessageItem? FindVoiceMessageItem(string attachmentId) =>
+        viewModel.Messages.FirstOrDefault(message =>
+            string.Equals(message.VoiceAttachmentId, attachmentId, StringComparison.Ordinal));
+
+    private void ClearActiveVoicePlayback()
+    {
+        ClearVoicePlayback(activeVoiceAttachmentId);
+        activeVoiceAttachmentId = null;
+    }
+
+    private void ClearVoicePlayback(string? attachmentId)
+    {
+        if (attachmentId is null)
+        {
+            return;
+        }
+
+        FindVoiceMessageItem(attachmentId)?.ClearVoicePlayback();
+    }
+
+    private static Color ResourceColor(string key, Color fallback) =>
+        Application.Current?.Resources.TryGetValue(key, out var value) == true && value is Color color
+            ? color
+            : fallback;
+
+#if ANDROID
+    private void OnAndroidVoiceGesture(object? sender, AndroidVoiceGestureEventArgs e)
+    {
+        if (!voicePointerActive)
+        {
+            return;
+        }
+
+        if (e.Action is MotionEventActions.Move or MotionEventActions.Up or MotionEventActions.Cancel)
+        {
+            UpdateVoiceRecordingGesture(new Point(e.RawX, e.RawY));
+        }
+    }
+
+    private void OnVoiceButtonHandlerChanged(object? sender, EventArgs e)
+    {
+        if (voiceButtonPlatformView is not null)
+        {
+            voiceButtonPlatformView.Touch -= OnVoiceButtonPlatformTouch;
+        }
+
+        voiceButtonPlatformView = VoiceButton.Handler?.PlatformView as AndroidView;
+        if (voiceButtonPlatformView is not null)
+        {
+            voiceButtonPlatformView.Clickable = true;
+            voiceButtonPlatformView.LongClickable = false;
+            voiceButtonPlatformView.Touch += OnVoiceButtonPlatformTouch;
+        }
+    }
+
+    private void OnVoiceButtonPlatformTouch(object? sender, AndroidView.TouchEventArgs e)
+    {
+        var motion = e.Event;
+        if (motion is null)
+        {
+            return;
+        }
+
+        e.Handled = false;
+        switch (motion.ActionMasked)
+        {
+            case MotionEventActions.Down:
+                voiceButtonPlatformView?.Parent?.RequestDisallowInterceptTouchEvent(true);
+                BeginVoiceRecordingGesture(new Point(motion.RawX, motion.RawY));
+                break;
+
+            case MotionEventActions.Move:
+                UpdateVoiceRecordingGesture(new Point(motion.RawX, motion.RawY));
+                break;
+
+            case MotionEventActions.Up:
+                UpdateVoiceRecordingGesture(new Point(motion.RawX, motion.RawY));
+                voiceButtonPlatformView?.Parent?.RequestDisallowInterceptTouchEvent(false);
+                _ = FinishVoiceRecordingGestureAsync();
+                break;
+
+            case MotionEventActions.Cancel:
+                UpdateVoiceRecordingGesture(new Point(motion.RawX, motion.RawY));
+                voiceButtonPlatformView?.Parent?.RequestDisallowInterceptTouchEvent(false);
+                _ = FinishVoiceRecordingGestureAsync();
+                break;
+        }
+    }
+#endif
 
     private static string DescribeAttachment(AttachmentMetadata attachment, int totalCount)
     {

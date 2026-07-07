@@ -12,6 +12,19 @@ using WindowsStorageFile = Windows.Storage.StorageFile;
 
 namespace Deep.Client.Maui.Services;
 
+public sealed record VoicePlaybackSnapshot(
+    string? AttachmentId,
+    bool IsPlaying,
+    TimeSpan Position,
+    TimeSpan Duration)
+{
+    public static readonly VoicePlaybackSnapshot Stopped = new(null, false, TimeSpan.Zero, TimeSpan.Zero);
+
+    public double Progress => Duration.TotalMilliseconds <= 0
+        ? 0
+        : Math.Clamp(Position.TotalMilliseconds / Duration.TotalMilliseconds, 0, 1);
+}
+
 public sealed class VoiceMessagePlaybackService : IDisposable
 {
 #if ANDROID
@@ -20,6 +33,9 @@ public sealed class VoiceMessagePlaybackService : IDisposable
     private WindowsMediaPlayer? player;
 #endif
     private string? playingAttachmentId;
+    private TimeSpan playingDuration;
+
+    public VoicePlaybackSnapshot Snapshot => GetSnapshot();
 
     public async Task ToggleAsync(
         AttachmentMetadata attachment,
@@ -41,6 +57,7 @@ public sealed class VoiceMessagePlaybackService : IDisposable
         next.SetDataSource(file.Path);
         next.Completion += (_, _) => Stop();
         next.Prepare();
+        playingDuration = TimeSpan.FromMilliseconds(Math.Max(0, next.Duration));
         player = next;
         playingAttachmentId = attachment.AttachmentId;
         next.Start();
@@ -51,8 +68,10 @@ public sealed class VoiceMessagePlaybackService : IDisposable
         next.MediaEnded += (_, _) => Stop();
         player = next;
         playingAttachmentId = attachment.AttachmentId;
+        playingDuration = attachment.Duration ?? TimeSpan.Zero;
         next.Play();
 #else
+        playingDuration = attachment.Duration ?? TimeSpan.Zero;
         await Launcher.Default.OpenAsync(new OpenFileRequest(
             file.FileName,
             new ReadOnlyFile(file.Path, file.ContentType))).ConfigureAwait(false);
@@ -65,6 +84,7 @@ public sealed class VoiceMessagePlaybackService : IDisposable
         var active = player;
         player = null;
         playingAttachmentId = null;
+        playingDuration = TimeSpan.Zero;
         if (active is null)
         {
             return;
@@ -89,6 +109,7 @@ public sealed class VoiceMessagePlaybackService : IDisposable
         var active = player;
         player = null;
         playingAttachmentId = null;
+        playingDuration = TimeSpan.Zero;
         if (active is null)
         {
             return;
@@ -99,8 +120,65 @@ public sealed class VoiceMessagePlaybackService : IDisposable
         active.Dispose();
 #else
         playingAttachmentId = null;
+        playingDuration = TimeSpan.Zero;
 #endif
     }
 
     public void Dispose() => Stop();
+
+    private VoicePlaybackSnapshot GetSnapshot()
+    {
+        var attachmentId = playingAttachmentId;
+        if (string.IsNullOrWhiteSpace(attachmentId))
+        {
+            return VoicePlaybackSnapshot.Stopped;
+        }
+
+#if ANDROID
+        var active = player;
+        if (active is null)
+        {
+            return VoicePlaybackSnapshot.Stopped;
+        }
+
+        try
+        {
+            var duration = TimeSpan.FromMilliseconds(Math.Max(0, active.Duration));
+            if (duration <= TimeSpan.Zero)
+            {
+                duration = playingDuration;
+            }
+
+            return new VoicePlaybackSnapshot(
+                attachmentId,
+                active.IsPlaying,
+                TimeSpan.FromMilliseconds(Math.Max(0, active.CurrentPosition)),
+                duration);
+        }
+        catch (ObjectDisposedException)
+        {
+            return VoicePlaybackSnapshot.Stopped;
+        }
+#elif WINDOWS
+        var active = player;
+        if (active is null)
+        {
+            return VoicePlaybackSnapshot.Stopped;
+        }
+
+        var duration = active.PlaybackSession.NaturalDuration;
+        if (duration <= TimeSpan.Zero)
+        {
+            duration = playingDuration;
+        }
+
+        return new VoicePlaybackSnapshot(
+            attachmentId,
+            active.PlaybackSession.PlaybackState == Windows.Media.Playback.MediaPlaybackState.Playing,
+            active.PlaybackSession.Position,
+            duration);
+#else
+        return new VoicePlaybackSnapshot(attachmentId, false, TimeSpan.Zero, playingDuration);
+#endif
+    }
 }

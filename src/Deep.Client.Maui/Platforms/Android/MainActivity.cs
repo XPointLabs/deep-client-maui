@@ -44,6 +44,12 @@ public class MainActivity : MauiAppCompatActivity
 #pragma warning restore CA1422
     }
 
+    public override bool DispatchTouchEvent(MotionEvent? ev)
+    {
+        AndroidVoiceGestureRouter.Dispatch(ev);
+        return base.DispatchTouchEvent(ev);
+    }
+
     protected override void OnNewIntent(Intent? intent)
     {
         base.OnNewIntent(intent);

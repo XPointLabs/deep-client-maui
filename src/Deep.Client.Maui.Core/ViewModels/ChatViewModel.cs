@@ -1,5 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using Deep.Client.Maui.Core.Commands;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Platform;
@@ -10,16 +12,50 @@ namespace Deep.Client.Maui.Core.ViewModels;
 
 public sealed record MessageReactionChip(string Emoji, int Count);
 
-public sealed record ChatMessageItem(
-    MessageId Id,
-    string Body,
-    MessageDirection Direction,
-    MessageDeliveryState State,
-    DateTimeOffset CreatedAt,
-    IReadOnlyList<AttachmentMetadata> Attachments,
-    MessageReply? ReplyTo,
-    IReadOnlyList<MessageReaction> Reactions)
+public sealed class ChatMessageItem : INotifyPropertyChanged
 {
+    private bool isVoicePlaying;
+    private double voicePlaybackProgress;
+    private string? voicePlaybackPositionLabel;
+
+    public ChatMessageItem(
+        MessageId id,
+        string body,
+        MessageDirection direction,
+        MessageDeliveryState state,
+        DateTimeOffset createdAt,
+        IReadOnlyList<AttachmentMetadata> attachments,
+        MessageReply? replyTo,
+        IReadOnlyList<MessageReaction> reactions)
+    {
+        Id = id;
+        Body = body;
+        Direction = direction;
+        State = state;
+        CreatedAt = createdAt;
+        Attachments = attachments;
+        ReplyTo = replyTo;
+        Reactions = reactions;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public MessageId Id { get; }
+
+    public string Body { get; }
+
+    public MessageDirection Direction { get; }
+
+    public MessageDeliveryState State { get; }
+
+    public DateTimeOffset CreatedAt { get; }
+
+    public IReadOnlyList<AttachmentMetadata> Attachments { get; }
+
+    public MessageReply? ReplyTo { get; }
+
+    public IReadOnlyList<MessageReaction> Reactions { get; }
+
     public bool HasAttachments => Attachments.Count > 0;
 
     public bool IsOutgoing => Direction == MessageDirection.Outgoing;
@@ -58,6 +94,69 @@ public sealed record ChatMessageItem(
     public string AttachmentSubtitle => MessageAttachmentPresentation.Subtitle(Attachments);
 
     public string VoiceDurationLabel => MessageAttachmentPresentation.VoiceDuration(Attachments);
+
+    public string VoicePlaybackLabel => isVoicePlaying && !string.IsNullOrWhiteSpace(voicePlaybackPositionLabel)
+        ? voicePlaybackPositionLabel
+        : VoiceDurationLabel;
+
+    public bool IsVoicePlaying
+    {
+        get => isVoicePlaying;
+        private set
+        {
+            if (SetProperty(ref isVoicePlaying, value))
+            {
+                RaisePropertyChanged(nameof(IsVoiceIdle));
+            }
+        }
+    }
+
+    public bool IsVoiceIdle => !IsVoicePlaying;
+
+    public double VoicePlaybackProgress
+    {
+        get => voicePlaybackProgress;
+        private set => SetProperty(ref voicePlaybackProgress, value);
+    }
+
+    public string? VoiceAttachmentId => IsVoiceMessage ? Attachments[0].AttachmentId : null;
+
+    public void SetVoicePlayback(bool isPlaying, double progress, TimeSpan position)
+    {
+        IsVoicePlaying = isPlaying;
+        VoicePlaybackProgress = Math.Clamp(progress, 0, 1);
+        voicePlaybackPositionLabel = FormatVoicePosition(position);
+        RaisePropertyChanged(nameof(VoicePlaybackLabel));
+    }
+
+    public void ClearVoicePlayback()
+    {
+        IsVoicePlaying = false;
+        VoicePlaybackProgress = 0;
+        voicePlaybackPositionLabel = null;
+        RaisePropertyChanged(nameof(VoicePlaybackLabel));
+    }
+
+    private static string FormatVoicePosition(TimeSpan value)
+    {
+        var seconds = Math.Max(0, (int)Math.Round(value.TotalSeconds));
+        return $"{seconds / 60:00}:{seconds % 60:00}";
+    }
+
+    private bool SetProperty<T>(ref T storage, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(storage, value))
+        {
+            return false;
+        }
+
+        storage = value;
+        RaisePropertyChanged(propertyName);
+        return true;
+    }
+
+    private void RaisePropertyChanged(string? propertyName) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
 
 public sealed class ChatViewModel : ViewModelBase
