@@ -10,6 +10,7 @@ internal static class AndroidRealityTransport
 {
     private const string BootstrapResource = "deep.bootstrap.json";
     private static readonly object Sync = new();
+    private static global::LibXray.IDialerController? dialerController;
     private static IReadOnlyList<string>? routerBaseUrls;
 
     public static IReadOnlyList<string> Start()
@@ -27,6 +28,8 @@ internal static class AndroidRealityTransport
                 .Select(seed => $"http://127.0.0.1:{seed.LocalPort}")
                 .ToArray();
 
+            RegisterDialerController();
+
             if (!global::LibXray.LibXray.XrayState)
             {
                 var dataDirectory = Path.Combine(FileSystem.AppDataDirectory, "xray");
@@ -43,6 +46,12 @@ internal static class AndroidRealityTransport
             routerBaseUrls = urls;
             return routerBaseUrls;
         }
+    }
+
+    private static void RegisterDialerController()
+    {
+        dialerController ??= new AndroidXrayDialerController();
+        global::LibXray.LibXray.RegisterDialerController(dialerController);
     }
 
     private static RealityBootstrap LoadBootstrap()
