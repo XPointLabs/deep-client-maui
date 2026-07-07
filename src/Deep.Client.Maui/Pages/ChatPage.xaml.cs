@@ -20,6 +20,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private readonly VoiceMessagePlaybackService voicePlayback = new();
     private CancellationTokenSource? pendingScrollToEnd;
     private CancellationTokenSource? routeLoadCancellation;
+    private IDisposable? keyboardInsetSubscription;
     private IDispatcherTimer? voiceRecordingTimer;
     private bool pendingScrollAnimate;
     private bool pendingScrollForce;
@@ -27,6 +28,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private bool shouldStickToEnd = true;
     private bool didInitialScroll;
     private double expandedPageHeight;
+    private double keyboardBottomInset;
     private DateTimeOffset voiceRecordingStartedAt;
     private ChatMessageItem? selectedMessage;
     private AttachmentMetadata? selectedAttachment;
@@ -54,6 +56,8 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        keyboardInsetSubscription?.Dispose();
+        keyboardInsetSubscription = AndroidKeyboardInsets.Observe(OnKeyboardInsetChanged);
         Dispatcher.Dispatch(ApplyAndroidSafeAreaCompensation);
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
@@ -66,6 +70,10 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     {
         base.OnDisappearing();
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
+        keyboardInsetSubscription?.Dispose();
+        keyboardInsetSubscription = null;
+        keyboardBottomInset = 0;
+        ApplyAndroidSafeAreaCompensation();
         autoReceiveTimer?.Stop();
         StopRecordingUiTimer();
         voicePlayback.Stop();
@@ -432,13 +440,22 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private void ApplyAndroidSafeAreaCompensation()
     {
         expandedPageHeight = Math.Max(expandedPageHeight, Height);
-        var keyboardVisible = expandedPageHeight - Height > 100;
+        var keyboardVisibleByResize = expandedPageHeight - Height > 100;
+        var keyboardPadding = keyboardVisibleByResize ? 0 : keyboardBottomInset;
+        var keyboardVisible = keyboardVisibleByResize || keyboardPadding > 0;
         var statusBarHeight = keyboardVisible ? 0 : AndroidSafeArea.GetStatusBarHeight();
         PageLayout.Margin = new Thickness(0, 0, 0, statusBarHeight);
+        PageLayout.Padding = new Thickness(0, 0, 0, keyboardPadding);
     }
 
     private void OnPageSizeChanged(object? sender, EventArgs e) =>
         ApplyAndroidSafeAreaCompensation();
+
+    private void OnKeyboardInsetChanged(double bottomInset)
+    {
+        keyboardBottomInset = bottomInset;
+        MainThread.BeginInvokeOnMainThread(ApplyAndroidSafeAreaCompensation);
+    }
 
     private async void OnAudioCallClicked(object? sender, EventArgs e) =>
         await OpenCallAsync(isVideo: false);
