@@ -158,23 +158,23 @@
     </Style>
 
     <Style x:Key="ContextMenuBorder" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource PanelBackground}" />
+        <Setter Property="Background" Value="{StaticResource PanelBackgroundAlt}" />
         <Setter Property="Stroke" Value="{StaticResource DividerColor}" />
         <Setter Property="StrokeThickness" Value="1" />
-        <Setter Property="Padding" Value="8" />
+        <Setter Property="Padding" Value="6" />
         <Setter Property="StrokeShape">
-            <Setter.Value><RoundRectangle CornerRadius="14" /></Setter.Value>
+            <Setter.Value><RoundRectangle CornerRadius="18" /></Setter.Value>
         </Setter>
     </Style>
 
     <Style x:Key="ReactionPickerButton" TargetType="Button">
-        <Setter Property="BackgroundColor" Value="Transparent" />
+        <Setter Property="BackgroundColor" Value="{StaticResource PageBackground}" />
         <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
-        <Setter Property="WidthRequest" Value="43" />
-        <Setter Property="HeightRequest" Value="43" />
+        <Setter Property="WidthRequest" Value="44" />
+        <Setter Property="HeightRequest" Value="44" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="CornerRadius" Value="22" />
-        <Setter Property="FontSize" Value="21" />
+        <Setter Property="FontSize" Value="22" />
         <Setter Property="FontAttributes" Value="None" />
     </Style>
 
@@ -214,24 +214,67 @@
     </Style>
 
     <Style x:Key="AttachmentSheetBorder" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource PanelBackground}" />
+        <Setter Property="Background" Value="{StaticResource PanelBackgroundAlt}" />
         <Setter Property="StrokeThickness" Value="0" />
-        <Setter Property="Padding" Value="16,10,16,18" />
+        <Setter Property="Padding" Value="14,9,14,18" />
         <Setter Property="StrokeShape">
             <Setter.Value><RoundRectangle CornerRadius="22,22,0,0" /></Setter.Value>
         </Setter>
     </Style>
 
     <Style x:Key="AttachSheetIcon" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource PageBackground}" />
+        <Setter Property="Stroke" Value="Transparent" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="WidthRequest" Value="58" />
+        <Setter Property="HeightRequest" Value="58" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="StrokeShape">
+            <Setter.Value><RoundRectangle CornerRadius="29" /></Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="TelegramSheetHandle" TargetType="BoxView">
+        <Setter Property="WidthRequest" Value="38" />
+        <Setter Property="HeightRequest" Value="4" />
+        <Setter Property="Color" Value="{StaticResource DividerColor}" />
+        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="HorizontalOptions" Value="Center" />
+    </Style>
+
+    <Style x:Key="SheetActionRow" TargetType="Grid">
+        <Setter Property="HeightRequest" Value="50" />
+        <Setter Property="ColumnDefinitions" Value="36,*,Auto" />
+        <Setter Property="Padding" Value="8,0" />
+        <Setter Property="ColumnSpacing" Value="8" />
+    </Style>
+
+    <Style x:Key="SheetIconCircle" TargetType="Border">
+        <Setter Property="WidthRequest" Value="32" />
+        <Setter Property="HeightRequest" Value="32" />
+        <Setter Property="Background" Value="{StaticResource PageBackground}" />
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="StrokeShape">
+            <Setter.Value><RoundRectangle CornerRadius="16" /></Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="VoiceRecordingPanel" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource PanelBackgroundAlt}" />
         <Setter Property="Stroke" Value="{StaticResource DividerColor}" />
         <Setter Property="StrokeThickness" Value="1" />
-        <Setter Property="WidthRequest" Value="52" />
-        <Setter Property="HeightRequest" Value="52" />
-        <Setter Property="Padding" Value="0" />
         <Setter Property="StrokeShape">
-            <Setter.Value><RoundRectangle CornerRadius="26" /></Setter.Value>
+            <Setter.Value><RoundRectangle CornerRadius="22" /></Setter.Value>
         </Setter>
+        <Setter Property="Padding" Value="10,6" />
+    </Style>
+
+    <Style x:Key="VoiceWaveBar" TargetType="BoxView">
+        <Setter Property="WidthRequest" Value="3" />
+        <Setter Property="Color" Value="{StaticResource PrimaryColor}" />
+        <Setter Property="VerticalOptions" Value="Center" />
+        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="Opacity" Value="0.9" />
     </Style>
 
     <Style x:Key="ToolbarIconButton" TargetType="Button">

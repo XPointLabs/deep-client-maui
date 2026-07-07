@@ -17,15 +17,19 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private readonly IAttachmentFileTransport attachmentFiles;
     private readonly CallSessionCoordinator callCoordinator;
     private readonly SyncPollingPolicy syncPollingPolicy;
+    private readonly VoiceMessagePlaybackService voicePlayback = new();
     private CancellationTokenSource? pendingScrollToEnd;
     private CancellationTokenSource? routeLoadCancellation;
+    private IDispatcherTimer? voiceRecordingTimer;
     private bool pendingScrollAnimate;
     private bool pendingScrollForce;
     private bool isLoadingOlderMessages;
     private bool shouldStickToEnd = true;
     private bool didInitialScroll;
     private double expandedPageHeight;
+    private DateTimeOffset voiceRecordingStartedAt;
     private ChatMessageItem? selectedMessage;
+    private AttachmentMetadata? selectedAttachment;
 
     public ChatPage(
         ChatViewModel viewModel,
@@ -63,6 +67,8 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         base.OnDisappearing();
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         autoReceiveTimer?.Stop();
+        StopRecordingUiTimer();
+        voicePlayback.Stop();
         CancelRouteLoad();
         CancelPendingScrollToEnd();
     }
@@ -173,15 +179,21 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     {
         if (viewModel.IsRecordingVoice)
         {
+            StopRecordingUiTimer();
             await viewModel.StopVoiceRecordingAndSendAsync();
             return;
         }
 
         await viewModel.StartVoiceRecordingAsync();
+        if (viewModel.IsRecordingVoice)
+        {
+            StartRecordingUiTimer();
+        }
     }
 
     private async void OnCancelVoiceClicked(object? sender, EventArgs e)
     {
+        StopRecordingUiTimer();
         await viewModel.CancelVoiceRecordingAsync();
     }
 
@@ -328,14 +340,93 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         }
     }
 
-    private async void OnAttachmentTapped(object? sender, TappedEventArgs e)
+    private void OnAttachmentTapped(object? sender, TappedEventArgs e)
     {
         if ((sender as BindableObject)?.BindingContext is not ChatMessageItem item)
         {
             return;
         }
 
-        await AttachmentOpenService.OpenAsync(this, item.Attachments, attachmentFiles);
+        ShowAttachmentActionSheet(item.Attachments);
+    }
+
+    private async void OnVoiceMessageTapped(object? sender, TappedEventArgs e)
+    {
+        if ((sender as BindableObject)?.BindingContext is not ChatMessageItem item || item.Attachments.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await voicePlayback.ToggleAsync(item.Attachments[0], attachmentFiles);
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Голосовое сообщение", ex.Message, "OK");
+        }
+    }
+
+    private void ShowAttachmentActionSheet(IReadOnlyList<AttachmentMetadata> attachments)
+    {
+        selectedAttachment = attachments.Count == 0 ? null : attachments[0];
+        if (selectedAttachment is null)
+        {
+            return;
+        }
+
+        AttachmentActionTitle.Text = selectedAttachment.FileName;
+        AttachmentActionSubtitle.Text = DescribeAttachment(selectedAttachment, attachments.Count);
+        AttachmentActionOverlay.IsVisible = true;
+    }
+
+    private void OnCloseAttachmentActionSheet(object? sender, TappedEventArgs e)
+    {
+        AttachmentActionOverlay.IsVisible = false;
+        selectedAttachment = null;
+    }
+
+    private async void OnOpenAttachmentClicked(object? sender, TappedEventArgs e)
+    {
+        if (selectedAttachment is not { } attachment)
+        {
+            return;
+        }
+
+        AttachmentActionOverlay.IsVisible = false;
+        selectedAttachment = null;
+        await AttachmentOpenService.OpenAsync(this, [attachment], attachmentFiles);
+    }
+
+    private async void OnShareAttachmentClicked(object? sender, TappedEventArgs e)
+    {
+        if (selectedAttachment is not { } attachment)
+        {
+            return;
+        }
+
+        AttachmentActionOverlay.IsVisible = false;
+        selectedAttachment = null;
+        try
+        {
+            await AttachmentOpenService.ShareAsync(attachment, attachmentFiles);
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Вложение", ex.Message, "OK");
+        }
+    }
+
+    private async void OnCopyAttachmentNameClicked(object? sender, TappedEventArgs e)
+    {
+        if (selectedAttachment is not { } attachment)
+        {
+            return;
+        }
+
+        AttachmentActionOverlay.IsVisible = false;
+        selectedAttachment = null;
+        await Clipboard.Default.SetTextAsync(attachment.FileName);
     }
 
     private void ApplyAndroidSafeAreaCompensation()
@@ -441,6 +532,61 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         DraftEntry.Keyboard = Preferences.Default.Get(ClientSettingKeys.PrivacyIncognitoKeyboard, true)
             ? Keyboard.Create(KeyboardFlags.None)
             : Keyboard.Default;
+    }
+
+    private void StartRecordingUiTimer()
+    {
+        voiceRecordingStartedAt = DateTimeOffset.UtcNow;
+        UpdateRecordingElapsed();
+        voiceRecordingTimer ??= Dispatcher.CreateTimer();
+        voiceRecordingTimer.Interval = TimeSpan.FromSeconds(1);
+        voiceRecordingTimer.Tick -= OnVoiceRecordingTick;
+        voiceRecordingTimer.Tick += OnVoiceRecordingTick;
+        voiceRecordingTimer.Start();
+    }
+
+    private void StopRecordingUiTimer()
+    {
+        voiceRecordingTimer?.Stop();
+        VoiceElapsedLabel.Text = "00:00";
+    }
+
+    private void OnVoiceRecordingTick(object? sender, EventArgs e) => UpdateRecordingElapsed();
+
+    private void UpdateRecordingElapsed()
+    {
+        var elapsed = DateTimeOffset.UtcNow - voiceRecordingStartedAt;
+        var seconds = Math.Max(0, (int)elapsed.TotalSeconds);
+        VoiceElapsedLabel.Text = $"{seconds / 60:00}:{seconds % 60:00}";
+    }
+
+    private static string DescribeAttachment(AttachmentMetadata attachment, int totalCount)
+    {
+        var kind = attachment.ContentType switch
+        {
+            var value when value.StartsWith("image/", StringComparison.OrdinalIgnoreCase) => "Фото",
+            var value when value.StartsWith("video/", StringComparison.OrdinalIgnoreCase) => "Видео",
+            var value when value.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) => "Аудио",
+            "application/pdf" => "PDF",
+            _ => "Файл"
+        };
+        var count = totalCount > 1 ? $" из {totalCount}" : string.Empty;
+        return $"{kind}{count} · {FormatSize(attachment.SizeBytes)}";
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024)
+        {
+            return $"{bytes} Б";
+        }
+
+        if (bytes < 1024 * 1024)
+        {
+            return $"{bytes / 1024d:0.#} КБ";
+        }
+
+        return $"{bytes / 1024d / 1024d:0.#} МБ";
     }
 
     private void QueueScrollToEnd(bool animate, bool force = false)

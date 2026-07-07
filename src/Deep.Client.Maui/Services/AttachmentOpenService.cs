@@ -1,10 +1,13 @@
 ﻿using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.ApplicationModel.DataTransfer;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Storage;
 
 namespace Deep.Client.Maui.Services;
+
+public sealed record PreparedAttachmentFile(string FileName, string ContentType, string Path);
 
 public static class AttachmentOpenService
 {
@@ -19,14 +22,7 @@ public static class AttachmentOpenService
             return;
         }
 
-        var attachment = attachments.Count == 1
-            ? attachments[0]
-            : await SelectAttachmentAsync(page, attachments);
-
-        if (attachment is null)
-        {
-            return;
-        }
+        var attachment = attachments[0];
 
         if (!attachmentFiles.IsEnabled || attachment.RemoteUri is null)
         {
@@ -39,16 +35,10 @@ public static class AttachmentOpenService
 
         try
         {
-            var downloaded = await attachmentFiles.DownloadAsync(attachment, cancellationToken);
-            var fileName = SafeFileName(downloaded.FileName);
-            var cachePath = Path.Combine(
-                FileSystem.CacheDirectory,
-                $"attachment-{attachment.AttachmentId}-{fileName}");
-
-            await File.WriteAllBytesAsync(cachePath, downloaded.Content, cancellationToken).ConfigureAwait(false);
+            var file = await DownloadToCacheAsync(attachment, attachmentFiles, cancellationToken).ConfigureAwait(false);
             await Launcher.Default.OpenAsync(new OpenFileRequest(
-                downloaded.FileName,
-                new ReadOnlyFile(cachePath, downloaded.ContentType)));
+                file.FileName,
+                new ReadOnlyFile(file.Path, file.ContentType)));
         }
         catch (Exception ex)
         {
@@ -56,27 +46,38 @@ public static class AttachmentOpenService
         }
     }
 
-    private static async Task<AttachmentMetadata?> SelectAttachmentAsync(
-        Page page,
-        IReadOnlyList<AttachmentMetadata> attachments)
+    public static async Task ShareAsync(
+        AttachmentMetadata attachment,
+        IAttachmentFileTransport attachmentFiles,
+        CancellationToken cancellationToken = default)
     {
-        var labels = attachments
-            .Select((attachment, index) => $"{index + 1}. {attachment.FileName}")
-            .ToArray();
-
-        var selected = await page.DisplayActionSheetAsync("Вложения", "Отмена", null, labels);
-        if (string.IsNullOrWhiteSpace(selected) || selected == "Отмена")
+        var file = await DownloadToCacheAsync(attachment, attachmentFiles, cancellationToken).ConfigureAwait(false);
+        await Share.Default.RequestAsync(new ShareFileRequest
         {
-            return null;
+            Title = file.FileName,
+            File = new ShareFile(file.Path, file.ContentType)
+        }).ConfigureAwait(false);
+    }
+
+    public static async Task<PreparedAttachmentFile> DownloadToCacheAsync(
+        AttachmentMetadata attachment,
+        IAttachmentFileTransport attachmentFiles,
+        CancellationToken cancellationToken = default)
+    {
+        if (!attachmentFiles.IsEnabled || attachment.RemoteUri is null)
+        {
+            throw new InvalidOperationException(
+                "Файл не был загружен на сервер вложений и доступен только на устройстве отправителя.");
         }
 
-        var indexEnd = selected.IndexOf('.', StringComparison.Ordinal);
-        return indexEnd > 0
-            && int.TryParse(selected[..indexEnd], out var index)
-            && index > 0
-            && index <= attachments.Count
-                ? attachments[index - 1]
-                : null;
+        var downloaded = await attachmentFiles.DownloadAsync(attachment, cancellationToken).ConfigureAwait(false);
+        var fileName = SafeFileName(downloaded.FileName);
+        var cachePath = Path.Combine(
+            FileSystem.CacheDirectory,
+            $"attachment-{attachment.AttachmentId}-{fileName}");
+
+        await File.WriteAllBytesAsync(cachePath, downloaded.Content, cancellationToken).ConfigureAwait(false);
+        return new PreparedAttachmentFile(downloaded.FileName, downloaded.ContentType, cachePath);
     }
 
     private static string SafeFileName(string fileName)
