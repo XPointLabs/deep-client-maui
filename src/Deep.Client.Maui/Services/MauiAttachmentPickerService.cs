@@ -96,7 +96,16 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
             var contentType = ResolveContentType(result.ContentType, fileName);
             if (kind == AttachmentPickKind.File)
             {
-                return await CreateAttachmentAsync(tempPath, fileName, contentType, cancellationToken).ConfigureAwait(false);
+                return await CreateAttachmentAsync(
+                        tempPath,
+                        fileName,
+                        contentType,
+                        isDocument: true,
+                        width: null,
+                        height: null,
+                        duration: null,
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             if (kind == AttachmentPickKind.Photo)
@@ -111,7 +120,15 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
                 .ConfigureAwait(false);
             transcodedPath = transcoded.OutputPath;
 
-            return await CreateAttachmentAsync(transcoded.OutputPath, fileName, transcoded.ContentType, cancellationToken)
+            return await CreateAttachmentAsync(
+                    transcoded.OutputPath,
+                    fileName,
+                    transcoded.ContentType,
+                    isDocument: false,
+                    transcoded.Width,
+                    transcoded.Height,
+                    duration: null,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
         finally
@@ -128,6 +145,10 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
         string path,
         string fileName,
         string contentType,
+        bool isDocument,
+        int? width,
+        int? height,
+        TimeSpan? duration,
         CancellationToken cancellationToken)
     {
         var size = new FileInfo(path).Length;
@@ -136,15 +157,26 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
             throw new InvalidOperationException($"Вложение превышает лимит {MaxAttachmentBytes} байт.");
         }
 
+        AttachmentMetadata attachment;
         if (attachmentFiles.IsEnabled)
         {
             await using var upload = File.OpenRead(path);
-            return await attachmentFiles.UploadAsync(
-                new AttachmentFileUpload(fileName, contentType, upload),
+            attachment = await attachmentFiles.UploadAsync(
+                new AttachmentFileUpload(fileName, contentType, upload, width, height, duration, isDocument),
                 cancellationToken).ConfigureAwait(false);
         }
+        else
+        {
+            attachment = AttachmentMetadata.Local(fileName, contentType, size, width, height, duration, isDocument);
+        }
 
-        return AttachmentMetadata.Local(fileName, contentType, size);
+        if (!isDocument && contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            await AttachmentOpenService.CacheLocalCopyAsync(attachment, path, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return attachment;
     }
 
     private static string SafeFileName(string? fileName)

@@ -26,7 +26,8 @@ public static class AttachmentOpenService
 
         var attachment = attachments[0];
 
-        if (!attachmentFiles.IsEnabled || attachment.RemoteUri is null)
+        var cached = TryGetCachedFile(attachment);
+        if (cached is null && (!attachmentFiles.IsEnabled || attachment.RemoteUri is null))
         {
             await page.DisplayAlertAsync(
                 "Вложение недоступно",
@@ -37,7 +38,8 @@ public static class AttachmentOpenService
 
         try
         {
-            var file = await DownloadToCacheAsync(attachment, attachmentFiles, cancellationToken).ConfigureAwait(false);
+            var file = cached
+                ?? await DownloadToCacheAsync(attachment, attachmentFiles, cancellationToken).ConfigureAwait(false);
             await Launcher.Default.OpenAsync(new OpenFileRequest(
                 file.FileName,
                 new ReadOnlyFile(file.Path, file.ContentType)));
@@ -66,6 +68,11 @@ public static class AttachmentOpenService
         IAttachmentFileTransport attachmentFiles,
         CancellationToken cancellationToken = default)
     {
+        if (TryGetCachedFile(attachment) is { } cached)
+        {
+            return cached;
+        }
+
         if (!attachmentFiles.IsEnabled || attachment.RemoteUri is null)
         {
             throw new InvalidOperationException(
@@ -73,15 +80,48 @@ public static class AttachmentOpenService
         }
 
         var downloaded = await attachmentFiles.DownloadAsync(attachment, cancellationToken).ConfigureAwait(false);
-        var fileName = SafeFileName(downloaded.FileName);
         CleanupOldAttachmentCache();
-        var cachePath = Path.Combine(
-            FileSystem.CacheDirectory,
-            $"attachment-{SafeFileName(attachment.AttachmentId)}-{fileName}");
+        var cachePath = CachePathFor(attachment);
 
         await File.WriteAllBytesAsync(cachePath, downloaded.Content, cancellationToken).ConfigureAwait(false);
         return new PreparedAttachmentFile(downloaded.FileName, downloaded.ContentType, cachePath);
     }
+
+    public static PreparedAttachmentFile? TryGetCachedFile(AttachmentMetadata attachment)
+    {
+        var cachePath = CachePathFor(attachment);
+        return File.Exists(cachePath)
+            ? new PreparedAttachmentFile(attachment.FileName, attachment.ContentType, cachePath)
+            : null;
+    }
+
+    public static async Task<PreparedAttachmentFile> CacheLocalCopyAsync(
+        AttachmentMetadata attachment,
+        string sourcePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+        {
+            throw new FileNotFoundException("Attachment source file was not found.", sourcePath);
+        }
+
+        CleanupOldAttachmentCache();
+        var cachePath = CachePathFor(attachment);
+        if (!string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(cachePath), StringComparison.OrdinalIgnoreCase))
+        {
+            await using var source = File.OpenRead(sourcePath);
+            await using var destination = File.Create(cachePath);
+            await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+            await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return new PreparedAttachmentFile(attachment.FileName, attachment.ContentType, cachePath);
+    }
+
+    private static string CachePathFor(AttachmentMetadata attachment) =>
+        Path.Combine(
+            FileSystem.CacheDirectory,
+            $"attachment-{SafeFileName(attachment.AttachmentId)}-{SafeFileName(attachment.FileName)}");
 
     private static string SafeFileName(string fileName)
     {

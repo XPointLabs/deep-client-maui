@@ -35,6 +35,39 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public void ImagePresentationSeparatesPhotosFromImageDocuments()
+    {
+        var photo = new ChatMessageItem(
+            MessageId.NewId(),
+            "[Вложение]",
+            MessageDirection.Outgoing,
+            MessageDeliveryState.Sent,
+            DateTimeOffset.UnixEpoch,
+            [AttachmentMetadata.Local("photo.jpg", "image/jpeg", 1024, width: 1280, height: 720)],
+            replyTo: null,
+            reactions: []);
+        var imageDocument = new ChatMessageItem(
+            MessageId.NewId(),
+            "[Вложение]",
+            MessageDirection.Outgoing,
+            MessageDeliveryState.Sent,
+            DateTimeOffset.UnixEpoch,
+            [AttachmentMetadata.Local("diagram.png", "image/png", 2048, isDocument: true)],
+            replyTo: null,
+            reactions: []);
+
+        Assert.True(photo.IsImageMessage);
+        Assert.False(photo.HasGenericAttachments);
+        Assert.Equal("Фото", photo.AttachmentTitle);
+        Assert.True(photo.ImagePreviewWidthRequest > photo.ImagePreviewHeightRequest);
+
+        Assert.False(imageDocument.IsImageMessage);
+        Assert.True(imageDocument.HasGenericAttachments);
+        Assert.Equal("diagram.png", imageDocument.AttachmentTitle);
+        Assert.StartsWith("Файл ·", imageDocument.AttachmentSubtitle);
+    }
+
+    [Fact]
     public async Task UnknownSenderCanBeAcceptedOrBlockedFromChat()
     {
         var backend = new StubSessionBackend();

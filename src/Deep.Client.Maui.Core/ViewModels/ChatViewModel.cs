@@ -18,6 +18,7 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
     private bool isVoicePlaying;
     private double voicePlaybackProgress;
     private string? voicePlaybackPositionLabel;
+    private string? imagePreviewPath;
 
     public ChatMessageItem(
         MessageId id,
@@ -86,6 +87,18 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
 
     public bool IsVoiceMessage => MessageAttachmentPresentation.IsVoiceMessage(Attachments);
 
+    public bool IsImageMessage => MessageAttachmentPresentation.IsInlineImage(Attachments);
+
+    public AttachmentMetadata? PrimaryImageAttachment => MessageAttachmentPresentation.PrimaryInlineImage(Attachments);
+
+    public bool HasImagePreview => IsImageMessage && !string.IsNullOrWhiteSpace(ImagePreviewPath);
+
+    public bool IsImagePreviewLoading => IsImageMessage && string.IsNullOrWhiteSpace(ImagePreviewPath);
+
+    public bool HasMultipleImages => IsImageMessage && Attachments.Count > 1;
+
+    public bool HasGenericAttachments => HasAttachments && !IsVoiceMessage && !IsImageMessage;
+
     public bool HasNonVoiceAttachments => HasAttachments && !IsVoiceMessage;
 
     public string AttachmentSummary => MessageAttachmentPresentation.Summary(Attachments);
@@ -95,6 +108,25 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
     public string AttachmentSubtitle => MessageAttachmentPresentation.Subtitle(Attachments);
 
     public string VoiceDurationLabel => MessageAttachmentPresentation.VoiceDuration(Attachments);
+
+    public string ImageCountLabel => MessageAttachmentPresentation.ImageCountLabel(Attachments);
+
+    public double ImagePreviewWidthRequest => MessageAttachmentPresentation.ImagePreviewSize(PrimaryImageAttachment).Width;
+
+    public double ImagePreviewHeightRequest => MessageAttachmentPresentation.ImagePreviewSize(PrimaryImageAttachment).Height;
+
+    public string? ImagePreviewPath
+    {
+        get => imagePreviewPath;
+        private set
+        {
+            if (SetProperty(ref imagePreviewPath, value))
+            {
+                RaisePropertyChanged(nameof(HasImagePreview));
+                RaisePropertyChanged(nameof(IsImagePreviewLoading));
+            }
+        }
+    }
 
     public string VoicePlaybackLabel => isVoicePlaying && !string.IsNullOrWhiteSpace(voicePlaybackPositionLabel)
         ? voicePlaybackPositionLabel
@@ -136,6 +168,14 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
         VoicePlaybackProgress = 0;
         voicePlaybackPositionLabel = null;
         RaisePropertyChanged(nameof(VoicePlaybackLabel));
+    }
+
+    public void SetImagePreviewPath(string path)
+    {
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            ImagePreviewPath = path;
+        }
     }
 
     private static string FormatVoicePosition(TimeSpan value)

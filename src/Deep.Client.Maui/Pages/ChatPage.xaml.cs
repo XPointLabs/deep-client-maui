@@ -36,6 +36,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private bool isLoadingOlderMessages;
     private bool shouldStickToEnd = true;
     private bool didInitialScroll;
+    private bool isLoadingImagePreviews;
     private double expandedPageHeight;
     private double keyboardBottomInset;
     private DateTimeOffset voiceRecordingStartedAt;
@@ -96,6 +97,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             _ = RefreshConversationChromeAsync();
         }
 
+        _ = EnsureImagePreviewsAsync();
         _ = ConfigureAutoReceiveAsync();
     }
 
@@ -156,6 +158,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
             await viewModel.OpenFromRouteAsync(sessionId, displayName, cancellationToken);
             UpdateHeaderAvatarUi();
+            _ = EnsureImagePreviewsAsync();
             await RevealInitialMessagesAsync(cancellationToken);
         }
         catch (OperationCanceledException)
@@ -457,6 +460,11 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (e.Action is NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Reset)
+        {
+            _ = EnsureImagePreviewsAsync();
+        }
+
         if (MessageSearchBar.IsVisible)
         {
             RefreshMessageSearch(scrollToCurrent: false);
@@ -513,14 +521,99 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         }
     }
 
-    private void OnAttachmentTapped(object? sender, TappedEventArgs e)
+    private async void OnAttachmentTapped(object? sender, TappedEventArgs e)
     {
         if ((sender as BindableObject)?.BindingContext is not ChatMessageItem item)
         {
             return;
         }
 
+        if (item.IsImageMessage)
+        {
+            await OpenInlineImageAsync(item);
+            return;
+        }
+
         ShowAttachmentActionSheet(item.Attachments);
+    }
+
+    private async Task EnsureImagePreviewsAsync()
+    {
+        if (isLoadingImagePreviews)
+        {
+            return;
+        }
+
+        try
+        {
+            isLoadingImagePreviews = true;
+            var messages = viewModel.Messages
+                .Where(static message => message.IsImageMessage && !message.HasImagePreview)
+                .ToArray();
+
+            foreach (var item in messages)
+            {
+                var attachment = item.PrimaryImageAttachment;
+                if (attachment is null || item.HasImagePreview)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var file = AttachmentOpenService.TryGetCachedFile(attachment);
+                    if (file is null && attachmentFiles.IsEnabled && attachment.RemoteUri is not null)
+                    {
+                        file = await AttachmentOpenService.DownloadToCacheAsync(attachment, attachmentFiles)
+                            .ConfigureAwait(false);
+                    }
+
+                    if (file is not null)
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(() => item.SetImagePreviewPath(file.Path));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    CrashDiagnostics.LogException("ChatPage.ImagePreview", ex);
+                }
+            }
+        }
+        finally
+        {
+            isLoadingImagePreviews = false;
+        }
+    }
+
+    private async Task OpenInlineImageAsync(ChatMessageItem item)
+    {
+        var attachment = item.PrimaryImageAttachment;
+        if (attachment is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var file = AttachmentOpenService.TryGetCachedFile(attachment)
+                ?? await AttachmentOpenService.DownloadToCacheAsync(attachment, attachmentFiles);
+            item.SetImagePreviewPath(file.Path);
+            ImageViewerTitle.Text = item.HasMultipleImages
+                ? $"1 из {item.Attachments.Count}"
+                : "Фото";
+            ImageViewerImage.Source = ImageSource.FromFile(file.Path);
+            ImageViewerOverlay.IsVisible = true;
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Фото", ex.Message, "OK");
+        }
+    }
+
+    private void OnCloseImageViewer(object? sender, TappedEventArgs e)
+    {
+        ImageViewerOverlay.IsVisible = false;
+        ImageViewerImage.Source = null;
     }
 
     private async void OnVoiceMessageTapped(object? sender, TappedEventArgs e)
@@ -1007,7 +1100,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     {
         var kind = attachment.ContentType switch
         {
-            var value when value.StartsWith("image/", StringComparison.OrdinalIgnoreCase) => "Фото",
+            var value when !attachment.IsDocument && value.StartsWith("image/", StringComparison.OrdinalIgnoreCase) => "Фото",
             var value when value.StartsWith("video/", StringComparison.OrdinalIgnoreCase) => "Видео",
             var value when value.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) => "Аудио",
             "application/pdf" => "PDF",

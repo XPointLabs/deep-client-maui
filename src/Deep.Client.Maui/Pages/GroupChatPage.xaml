@@ -139,7 +139,21 @@
                                         <Path Grid.Column="2" Data="M12,4 C10.3,4 9,5.3 9,7 V12 C9,13.7 10.3,15 12,15 C13.7,15 15,13.7 15,12 V7 C15,5.3 13.7,4 12,4 Z M7,11 C7,13.8 9.2,16 12,16 C14.8,16 17,13.8 17,11 M12,16 V20" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.6" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="End" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource AttachmentCard}" IsVisible="{Binding HasNonVoiceAttachments}">
+                                <Border IsVisible="{Binding IsImageMessage}" Padding="0" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 14">
+                                    <Grid WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}">
+                                        <Image Source="{Binding ImagePreviewPath}" Aspect="AspectFill" IsVisible="{Binding HasImagePreview}" WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}" />
+                                        <Grid IsVisible="{Binding IsImagePreviewLoading}" BackgroundColor="{StaticResource PanelBackgroundAlt}" WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}">
+                                            <ActivityIndicator IsRunning="{Binding IsImagePreviewLoading}" Color="{StaticResource PrimaryColor}" WidthRequest="28" HeightRequest="28" HorizontalOptions="Center" VerticalOptions="Center" />
+                                        </Grid>
+                                        <Border IsVisible="{Binding HasMultipleImages}" HorizontalOptions="End" VerticalOptions="Start" Margin="8" Padding="8,3" StrokeThickness="0" Background="#B3000000" StrokeShape="RoundRectangle 10">
+                                            <Label Text="{Binding ImageCountLabel}" FontSize="11" FontAttributes="Bold" TextColor="White" />
+                                        </Border>
+                                    </Grid>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnAttachmentTapped" />
+                                    </Border.GestureRecognizers>
+                                </Border>
+                                <Border Style="{StaticResource AttachmentCard}" IsVisible="{Binding HasGenericAttachments}">
                                     <Grid ColumnDefinitions="42,*,Auto" ColumnSpacing="9">
                                         <Border WidthRequest="38" HeightRequest="38" Background="{StaticResource PrimaryColorMuted}" StrokeThickness="0" StrokeShape="RoundRectangle 19" VerticalOptions="Center">
                                             <Path Data="M8,5 H19 L24,10 V27 H8 Z M19,5 V10 H24 M11,18 H21 M11,22 H18" Stroke="White" StrokeThickness="1.8" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
@@ -341,6 +355,19 @@
                     </Grid>
                 </VerticalStackLayout>
             </Border>
+        </Grid>
+
+        <Grid x:Name="ImageViewerOverlay" Grid.RowSpan="5" IsVisible="False" ZIndex="112" BackgroundColor="#F2000000">
+            <Grid RowDefinitions="56,*">
+                <Grid ColumnDefinitions="56,*" Padding="4,0,12,0" BackgroundColor="#66000000">
+                    <Border WidthRequest="44" HeightRequest="44" Background="Transparent" StrokeThickness="0" VerticalOptions="Center">
+                        <Path Data="M7,7 L17,17 M17,7 L7,17" Stroke="White" StrokeThickness="2.2" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnCloseImageViewer" /></Border.GestureRecognizers>
+                    </Border>
+                    <Label x:Name="ImageViewerTitle" Grid.Column="1" Text="Фото" FontSize="16" FontAttributes="Bold" TextColor="White" VerticalTextAlignment="Center" LineBreakMode="TailTruncation" />
+                </Grid>
+                <Image x:Name="ImageViewerImage" Grid.Row="1" Aspect="AspectFit" Margin="0" />
+            </Grid>
         </Grid>
 
         <Grid x:Name="ChatMenuOverlay" Grid.RowSpan="5" IsVisible="False" ZIndex="100">

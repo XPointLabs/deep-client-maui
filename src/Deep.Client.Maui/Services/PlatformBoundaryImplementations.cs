@@ -97,7 +97,7 @@ public sealed class MauiMediaCodecService : IMediaCodecService
                 var size = new FileInfo(outputPath).Length;
                 if (request.MaxBytes <= 0 || size <= request.MaxBytes)
                 {
-                    return new MediaTranscodeResult(outputPath, "image/jpeg", size);
+                    return new MediaTranscodeResult(outputPath, "image/jpeg", size, bitmap.Width, bitmap.Height);
                 }
 
                 File.Delete(outputPath);
