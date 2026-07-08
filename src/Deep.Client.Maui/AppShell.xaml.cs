@@ -14,6 +14,7 @@ public partial class AppShell : Shell
 
         Routing.RegisterRoute(ShellRouteCatalog.Restore, typeof(OnboardingPage));
         Routing.RegisterRoute(ShellRouteCatalog.Chat, typeof(ChatPage));
+        Routing.RegisterRoute(ShellRouteCatalog.ContactProfile, typeof(ContactProfilePage));
         Routing.RegisterRoute(ShellRouteCatalog.StartConversation, typeof(StartConversationPage));
         Routing.RegisterRoute(ShellRouteCatalog.NewConversation, typeof(NewConversationPage));
         Routing.RegisterRoute(ShellRouteCatalog.GroupChat, typeof(GroupChatPage));

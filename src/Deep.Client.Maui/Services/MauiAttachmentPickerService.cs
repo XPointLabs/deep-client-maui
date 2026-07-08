@@ -71,13 +71,16 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
         foreach (var result in results)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            attachments.Add(await PrepareAsync(result, cancellationToken).ConfigureAwait(false));
+            attachments.Add(await PrepareAsync(result, kind, cancellationToken).ConfigureAwait(false));
         }
 
         return attachments;
     }
 
-    private async Task<AttachmentMetadata> PrepareAsync(FileResult result, CancellationToken cancellationToken)
+    private async Task<AttachmentMetadata> PrepareAsync(
+        FileResult result,
+        AttachmentPickKind kind,
+        CancellationToken cancellationToken)
     {
         var fileName = SafeFileName(result.FileName);
         var tempPath = Path.Combine(FileSystem.CacheDirectory, $"pick-{Guid.NewGuid():N}-{fileName}");
@@ -91,21 +94,25 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
             }
 
             var contentType = ResolveContentType(result.ContentType, fileName);
+            if (kind == AttachmentPickKind.File)
+            {
+                return await CreateAttachmentAsync(tempPath, fileName, contentType, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (kind == AttachmentPickKind.Photo)
+            {
+                contentType = "image/jpeg";
+                fileName = WithExtension(fileName, ".jpg");
+            }
+
             var transcoded = await mediaCodecService.TranscodeAsync(
                     new MediaTranscodeRequest(tempPath, contentType, MaxAttachmentBytes),
                     cancellationToken)
                 .ConfigureAwait(false);
             transcodedPath = transcoded.OutputPath;
 
-            if (attachmentFiles.IsEnabled)
-            {
-                await using var upload = File.OpenRead(transcoded.OutputPath);
-                return await attachmentFiles.UploadAsync(
-                    new AttachmentFileUpload(fileName, transcoded.ContentType, upload),
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            return AttachmentMetadata.Local(fileName, transcoded.ContentType, transcoded.SizeBytes);
+            return await CreateAttachmentAsync(transcoded.OutputPath, fileName, transcoded.ContentType, cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -117,6 +124,29 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
         }
     }
 
+    private async Task<AttachmentMetadata> CreateAttachmentAsync(
+        string path,
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken)
+    {
+        var size = new FileInfo(path).Length;
+        if (MaxAttachmentBytes > 0 && size > MaxAttachmentBytes)
+        {
+            throw new InvalidOperationException($"Вложение превышает лимит {MaxAttachmentBytes} байт.");
+        }
+
+        if (attachmentFiles.IsEnabled)
+        {
+            await using var upload = File.OpenRead(path);
+            return await attachmentFiles.UploadAsync(
+                new AttachmentFileUpload(fileName, contentType, upload),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return AttachmentMetadata.Local(fileName, contentType, size);
+    }
+
     private static string SafeFileName(string? fileName)
     {
         var safe = string.IsNullOrWhiteSpace(fileName) ? "attachment" : fileName;
@@ -126,6 +156,14 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
         }
 
         return safe;
+    }
+
+    private static string WithExtension(string fileName, string extension)
+    {
+        var withoutExtension = Path.GetFileNameWithoutExtension(fileName);
+        return string.IsNullOrWhiteSpace(withoutExtension)
+            ? $"photo{extension}"
+            : $"{withoutExtension}{extension}";
     }
 
     private static string ResolveContentType(string? contentType, string fileName)

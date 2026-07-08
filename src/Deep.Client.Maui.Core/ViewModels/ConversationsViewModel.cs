@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using Deep.Client.Maui.Core.Commands;
+using Deep.Client.Maui.Core.Presentation;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.State;
@@ -9,6 +10,7 @@ namespace Deep.Client.Maui.Core.ViewModels;
 public sealed record ConversationListItem(
     ConversationId Id,
     string Title,
+    string AvatarInitial,
     ConversationKind Kind,
     DateTimeOffset UpdatedAt,
     bool IsMuted,
@@ -26,6 +28,7 @@ public sealed class ConversationsViewModel : ViewModelBase
     private string searchQuery = string.Empty;
     private string newSessionId = string.Empty;
     private string newDisplayName = string.Empty;
+    private string accountInitial = "D";
     private ConversationListItem? selectedConversation;
     private bool isManualRefreshing;
 
@@ -45,6 +48,12 @@ public sealed class ConversationsViewModel : ViewModelBase
     public AsyncCommand ManualRefreshCommand { get; }
 
     public AsyncCommand StartConversationCommand { get; }
+
+    public string AccountInitial
+    {
+        get => accountInitial;
+        private set => SetProperty(ref accountInitial, value);
+    }
 
     public bool IsManualRefreshing
     {
@@ -178,6 +187,7 @@ public sealed class ConversationsViewModel : ViewModelBase
         RunBusyAsync(async ct =>
         {
             var activeAccount = await runtime.Accounts.GetActiveAccountAsync(ct);
+            AccountInitial = DeepDisplayName.AvatarInitial(activeAccount?.DisplayName, activeAccount?.SessionId.Value);
             await RefreshLocalAsync(activeAccount, forceMessageSummaries, ct);
 
             try
@@ -202,10 +212,11 @@ public sealed class ConversationsViewModel : ViewModelBase
             var nextConversations = new List<ConversationListItem>(conversations.Count);
             foreach (var conversation in conversations.Where(static item => !item.IsHidden))
             {
+                var resolvedTitle = ResolveConversationTitle(conversation);
                 if (!forceMessageSummaries
                     && previousById.TryGetValue(conversation.Id, out var previous)
                     && previous.UpdatedAt == conversation.UpdatedAt
-                    && string.Equals(previous.Title, conversation.DisplayName, StringComparison.Ordinal)
+                    && string.Equals(previous.Title, resolvedTitle, StringComparison.Ordinal)
                     && previous.IsMuted == conversation.Settings.IsMuted
                     && previous.Kind == conversation.Kind)
                 {
@@ -248,10 +259,10 @@ public sealed class ConversationsViewModel : ViewModelBase
         SessionId? activeSessionId,
         CancellationToken cancellationToken)
     {
-        var messages = await runtime.Messages.ListConversationMessagesAsync(conversation.Id, cancellationToken);
         var readCursor = await runtime.Messages.GetReadCursorAsync(conversation.Id, cancellationToken);
         readCursors[conversation.Id] = readCursor;
-        var lastMessage = messages.LastOrDefault();
+        var recentMessages = await runtime.Messages.ListRecentConversationMessagesAsync(conversation.Id, 1, cancellationToken);
+        var lastMessage = recentMessages.LastOrDefault();
         var preview = lastMessage?.Body;
         if (string.IsNullOrWhiteSpace(preview))
         {
@@ -275,10 +286,10 @@ public sealed class ConversationsViewModel : ViewModelBase
                 : $"{lastMessage.Attachments.Count} вложения · {preview}";
         }
 
-        var unreadCount = messages.Count(message =>
-            message.Direction == MessageDirection.Incoming
-            && (readCursor is null || message.CreatedAt > readCursor.Value)
-            && message.DeliveryState != MessageDeliveryState.Read);
+        var unreadCount = await runtime.Messages.CountUnreadConversationMessagesAsync(
+            conversation.Id,
+            readCursor,
+            cancellationToken);
 
         var isMessageRequest = false;
         if (conversation.Kind == ConversationKind.OneToOne
@@ -290,9 +301,12 @@ public sealed class ConversationsViewModel : ViewModelBase
             isMessageRequest = contact is { IsApproved: false, IsBlocked: false };
         }
 
+        var title = ResolveConversationTitle(conversation);
+
         return new ConversationListItem(
             conversation.Id,
-            conversation.DisplayName,
+            title,
+            DeepDisplayName.AvatarInitial(title, conversation.Id.Value),
             conversation.Kind,
             conversation.UpdatedAt,
             conversation.Settings.IsMuted,
@@ -301,6 +315,24 @@ public sealed class ConversationsViewModel : ViewModelBase
             IsUnread: unreadCount > 0,
             IsMessageRequest: isMessageRequest,
             IsSelected: false);
+    }
+
+    private static string ResolveConversationTitle(Conversation conversation)
+    {
+        if (conversation.Kind != ConversationKind.OneToOne)
+        {
+            return conversation.DisplayName;
+        }
+
+        try
+        {
+            var sessionId = SessionId.Parse(conversation.Id.Value);
+            return DeepDisplayName.ContactTitleOrFallback(sessionId, conversation.DisplayName);
+        }
+        catch (FormatException)
+        {
+            return conversation.DisplayName;
+        }
     }
 
     private void ApplyFilter()

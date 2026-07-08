@@ -182,7 +182,8 @@ public static class MauiProgram
                 sp.GetRequiredService<ISessionMessageTransport>(),
                 sp.GetRequiredService<IGroupSyncTransport>(),
                 sp.GetRequiredService<IAvatarProfileTransport>(),
-                legacyStatePath);
+                legacyStatePath,
+                storeDecorator: store => new SecureRecoverySessionStore(store));
         });
 
         builder.Services.AddSingleton<IPushNotificationService, MauiPushNotificationService>();
@@ -255,6 +256,7 @@ public static class MauiProgram
         builder.Services.AddTransient<StartConversationPage>();
         builder.Services.AddTransient<NewConversationPage>();
         builder.Services.AddTransient<ChatPage>();
+        builder.Services.AddTransient<ContactProfilePage>();
         builder.Services.AddTransient<GroupChatPage>();
         builder.Services.AddTransient<GroupsPage>();
         builder.Services.AddTransient<SettingsPage>();

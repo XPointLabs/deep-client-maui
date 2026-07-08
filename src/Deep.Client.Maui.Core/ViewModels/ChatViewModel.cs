@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Deep.Client.Maui.Core.Commands;
+using Deep.Client.Maui.Core.Presentation;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Platform;
 using Deep.Client.Shared.Services;
@@ -204,8 +205,25 @@ public sealed class ChatViewModel : ViewModelBase
     public Conversation? Conversation
     {
         get => conversation;
-        private set => SetProperty(ref conversation, value);
+        private set
+        {
+            if (SetProperty(ref conversation, value))
+            {
+                RaisePropertyChanged(nameof(ConversationTitle));
+            }
+        }
     }
+
+    public SessionId? Counterpart => counterpart;
+
+    public string ConversationTitle =>
+        Conversation is null
+            ? string.Empty
+            : counterpart is { } id
+                ? DeepDisplayName.ContactTitleOrFallback(id, Conversation.DisplayName)
+                : Conversation.DisplayName;
+
+    public bool IsSelfConversation => account is not null && counterpart == account.SessionId;
 
     public string Draft
     {
@@ -382,6 +400,8 @@ public sealed class ChatViewModel : ViewModelBase
     {
         account = activeAccount;
         counterpart = recipient;
+        RaisePropertyChanged(nameof(Counterpart));
+        RaisePropertyChanged(nameof(IsSelfConversation));
         oldestLoadedMessageAt = null;
         hasOlderMessages = false;
         Conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(
@@ -409,6 +429,22 @@ public sealed class ChatViewModel : ViewModelBase
             ?? throw new InvalidOperationException("Войдите в аккаунт перед открытием чата.");
 
         await OpenOneToOneAsync(active, SessionId.Parse(sessionId), displayName, cancellationToken);
+    }
+
+    public async Task RefreshConversationMetadataAsync(CancellationToken cancellationToken = default)
+    {
+        if (account is null || counterpart is null)
+        {
+            return;
+        }
+
+        Conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(
+            counterpart.Value,
+            cancellationToken: cancellationToken);
+        var contact = await runtime.Conversations.GetContactAsync(counterpart.Value, cancellationToken);
+        IsBlocked = contact?.IsBlocked == true;
+        IsMessageRequest = counterpart.Value != account.SessionId
+            && contact is { IsApproved: false, IsBlocked: false };
     }
 
     public void StageAttachment(AttachmentMetadata attachment) => StagedAttachments.Add(attachment);
@@ -588,6 +624,19 @@ public sealed class ChatViewModel : ViewModelBase
             Messages.Clear();
             oldestLoadedMessageAt = null;
             hasOlderMessages = false;
+        }, cancellationToken);
+
+    public Task DeleteMessageAsync(ChatMessageItem message, CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            if (await runtime.Messages.DeleteMessageAsync(message.Id, ct))
+            {
+                RemoveMessageItem(message.Id);
+                if (ReplyingTo?.Id == message.Id)
+                {
+                    ReplyingTo = null;
+                }
+            }
         }, cancellationToken);
 
     public Task ToggleReactionAsync(ChatMessageItem message, string emoji, CancellationToken cancellationToken = default) =>
@@ -919,6 +968,18 @@ public sealed class ChatViewModel : ViewModelBase
             if (Messages[index].Id == message.Id)
             {
                 Messages[index] = ToItem(message);
+                return;
+            }
+        }
+    }
+
+    private void RemoveMessageItem(MessageId messageId)
+    {
+        for (var index = 0; index < Messages.Count; index++)
+        {
+            if (Messages[index].Id == messageId)
+            {
+                Messages.RemoveAt(index);
                 return;
             }
         }

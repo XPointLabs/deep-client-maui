@@ -433,11 +433,11 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         {
             Background = Colors.Transparent,
             StrokeThickness = 0,
-            Padding = new Thickness(18, 24, 18, 44),
+            Padding = new Thickness(18, 18, 18, 28),
             Content = new Label
             {
                 Text = "Deep скрывает ваш IP, направляя соединения через несколько сервисных узлов XPoint Network. Вот ваш текущий путь:",
-                FontSize = 16,
+                FontSize = 14,
                 TextColor = ColorResource("TextSecondary", Colors.Gray),
                 HorizontalTextAlignment = TextAlignment.Center,
                 LineBreakMode = LineBreakMode.WordWrap
@@ -464,8 +464,8 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         return new Border
         {
             Background = new SolidColorBrush(ColorResource("PanelBackground", Colors.Black)),
-            Stroke = new SolidColorBrush(ColorResource("DividerColor", Colors.DimGray)),
-            StrokeThickness = 1,
+            Stroke = Brush.Transparent,
+            StrokeThickness = 0,
             StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(12) },
             Padding = 0,
             Content = stack
@@ -481,9 +481,9 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 new ColumnDefinition { Width = GridLength.Star },
                 new ColumnDefinition { Width = GridLength.Auto }
             ],
-            Padding = new Thickness(14, 11),
+            Padding = new Thickness(16, 9),
             ColumnSpacing = 12,
-            MinimumHeightRequest = 52
+            MinimumHeightRequest = 50
         };
 
         var labels = new VerticalStackLayout { Spacing = 3, VerticalOptions = LayoutOptions.Center };
@@ -491,7 +491,8 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         {
             Text = title,
             FontSize = 16,
-            LineBreakMode = LineBreakMode.WordWrap
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1
         });
 
         if (!string.IsNullOrWhiteSpace(subtitle))
@@ -499,9 +500,10 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             labels.Children.Add(new Label
             {
                 Text = subtitle,
-                FontSize = 12,
+                FontSize = 13,
                 TextColor = ColorResource("TextSecondary", Colors.Gray),
-                LineBreakMode = LineBreakMode.WordWrap
+                LineBreakMode = LineBreakMode.TailTruncation,
+                MaxLines = 2
             });
         }
 
@@ -511,8 +513,8 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         {
             var trailing = new Label
             {
-                Text = trailingText ?? ">",
-                FontSize = trailingText is null ? 20 : 14,
+                Text = trailingText ?? "›",
+                FontSize = trailingText is null ? 22 : 14,
                 TextColor = ColorResource("TextSecondary", Colors.Gray),
                 VerticalOptions = LayoutOptions.Center,
                 HorizontalTextAlignment = TextAlignment.End,
@@ -542,9 +544,9 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 new ColumnDefinition { Width = GridLength.Star },
                 new ColumnDefinition { Width = GridLength.Auto }
             ],
-            Padding = new Thickness(14, 10),
+            Padding = new Thickness(16, 9),
             ColumnSpacing = 12,
-            MinimumHeightRequest = 58
+            MinimumHeightRequest = 56
         };
 
         var labels = new VerticalStackLayout { Spacing = 3, VerticalOptions = LayoutOptions.Center };
@@ -552,14 +554,16 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         {
             Text = title,
             FontSize = 16,
-            LineBreakMode = LineBreakMode.WordWrap
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1
         });
         labels.Children.Add(new Label
         {
             Text = subtitle,
-            FontSize = 12,
+            FontSize = 13,
             TextColor = ColorResource("TextSecondary", Colors.Gray),
-            LineBreakMode = LineBreakMode.WordWrap
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 2
         });
         grid.Children.Add(labels);
 
@@ -735,7 +739,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             labels.Children.Add(new Label
             {
                 Text = node.Title,
-                FontSize = 20,
+                FontSize = 16,
                 FontAttributes = FontAttributes.Bold,
                 LineBreakMode = LineBreakMode.WordWrap
             });
@@ -744,8 +748,8 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 labels.Children.Add(new Label
                 {
                     Text = node.Subtitle,
-                    FontSize = 16,
-                    TextColor = ColorResource("TextPrimary", Colors.White).WithAlpha(0.9f),
+                    FontSize = 13,
+                    TextColor = ColorResource("TextSecondary", Colors.Gray),
                     LineBreakMode = LineBreakMode.WordWrap
                 });
             }
@@ -768,7 +772,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
     {
         var button = new Border
         {
-            HeightRequest = 50,
+            HeightRequest = 44,
             HorizontalOptions = LayoutOptions.Fill,
             Margin = new Thickness(48, 8, 48, 20),
             Background = Colors.Transparent,
@@ -778,7 +782,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             Content = new Label
             {
                 Text = text,
-                FontSize = 18,
+                FontSize = 15,
                 FontAttributes = FontAttributes.Bold,
                 TextColor = ColorResource("PrimaryColor", Colors.Cyan),
                 HorizontalTextAlignment = TextAlignment.Center,

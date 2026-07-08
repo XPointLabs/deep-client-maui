@@ -2,6 +2,7 @@
 using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Core.Presentation;
 using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
@@ -44,6 +45,8 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private Task? voiceGestureStartTask;
     private string? activeVoiceAttachmentId;
     private ChatMessageItem? selectedMessage;
+    private readonly List<ChatMessageItem> messageSearchMatches = [];
+    private int messageSearchIndex = -1;
     private AttachmentMetadata? selectedAttachment;
 #if ANDROID
     private AndroidView? voiceButtonPlatformView;
@@ -65,6 +68,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         BindingContext = viewModel;
 
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
+        ContactProfileUpdateBus.ContactChanged += OnContactProfileChanged;
         viewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
         SizeChanged += OnPageSizeChanged;
 #if ANDROID
@@ -87,6 +91,11 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         ApplyComposerPreferences();
         UpdateNetworkUi();
+        if (viewModel.Conversation is not null)
+        {
+            _ = RefreshConversationChromeAsync();
+        }
+
         _ = ConfigureAutoReceiveAsync();
     }
 
@@ -146,6 +155,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             didInitialScroll = false;
 
             await viewModel.OpenFromRouteAsync(sessionId, displayName, cancellationToken);
+            UpdateHeaderAvatarUi();
             await RevealInitialMessagesAsync(cancellationToken);
         }
         catch (OperationCanceledException)
@@ -180,7 +190,48 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         ChatMenuOverlay.IsVisible = true;
     }
 
+    private async void OnContactHeaderTapped(object? sender, TappedEventArgs e) =>
+        await OpenContactProfileAsync();
+
     private void OnCloseChatMenu(object? sender, TappedEventArgs e) => ChatMenuOverlay.IsVisible = false;
+
+    private void OnSearchMessagesClicked(object? sender, TappedEventArgs e)
+    {
+        ChatMenuOverlay.IsVisible = false;
+        ShowMessageSearch();
+    }
+
+    private void ShowMessageSearch()
+    {
+        MessageSearchBar.IsVisible = true;
+        RefreshMessageSearch(scrollToCurrent: !string.IsNullOrWhiteSpace(MessageSearchEntry.Text));
+        MessageSearchEntry.Focus();
+    }
+
+    private void OnMessageSearchTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        messageSearchIndex = -1;
+        RefreshMessageSearch();
+    }
+
+    private void OnMessageSearchSubmitted(object? sender, EventArgs e) =>
+        MoveMessageSearch(1);
+
+    private void OnMessageSearchPreviousClicked(object? sender, TappedEventArgs e) =>
+        MoveMessageSearch(-1);
+
+    private void OnMessageSearchNextClicked(object? sender, TappedEventArgs e) =>
+        MoveMessageSearch(1);
+
+    private void OnCloseMessageSearchClicked(object? sender, TappedEventArgs e)
+    {
+        MessageSearchBar.IsVisible = false;
+        MessageSearchEntry.Unfocus();
+        MessageSearchEntry.Text = string.Empty;
+        MessageSearchCountLabel.Text = string.Empty;
+        messageSearchMatches.Clear();
+        messageSearchIndex = -1;
+    }
 
     private void OnAttachClicked(object? sender, TappedEventArgs e)
     {
@@ -261,12 +312,57 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         }
     }
 
-    private async void OnCopyConversationIdClicked(object? sender, TappedEventArgs e)
+    private async void OnContactInfoClicked(object? sender, TappedEventArgs e)
     {
         ChatMenuOverlay.IsVisible = false;
+        await OpenContactProfileAsync();
+    }
+
+    private async Task OpenContactProfileAsync()
+    {
         if (viewModel.Conversation is { } conversation)
         {
-            await Clipboard.Default.SetTextAsync(conversation.Id.Value);
+            await Shell.Current.GoToAsync(
+                ShellRouteCatalog.ContactProfile,
+                new ShellNavigationQueryParameters
+                {
+                    ["sessionId"] = conversation.Id.Value,
+                    ["displayName"] = conversation.DisplayName
+                });
+        }
+    }
+
+    private async Task RefreshConversationChromeAsync()
+    {
+        try
+        {
+            await viewModel.RefreshConversationMetadataAsync();
+            UpdateHeaderAvatarUi();
+        }
+        catch (Exception ex)
+        {
+            CrashDiagnostics.LogException("ChatPage.RefreshConversationChrome", ex);
+        }
+    }
+
+    private void UpdateHeaderAvatarUi()
+    {
+        var conversation = viewModel.Conversation;
+        var counterpart = viewModel.Counterpart;
+        if (conversation is null || counterpart is null)
+        {
+            return;
+        }
+
+        HeaderAvatarInitial.Text = DeepDisplayName.AvatarInitial(viewModel.ConversationTitle, conversation.Id.Value);
+        var avatarPath = ContactAvatarStore.GetAvatarPath(counterpart.Value, viewModel.IsSelfConversation);
+        var hasAvatar = File.Exists(avatarPath);
+        HeaderAvatarImage.Source = null;
+        HeaderAvatarImage.IsVisible = hasAvatar;
+        HeaderAvatarInitial.IsVisible = !hasAvatar;
+        if (hasAvatar)
+        {
+            HeaderAvatarImage.Source = ImageSource.FromFile(avatarPath);
         }
     }
 
@@ -296,6 +392,14 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private void OnNetworkStatusChanged(object? sender, EventArgs e)
     {
         MainThread.BeginInvokeOnMainThread(UpdateNetworkUi);
+    }
+
+    private void OnContactProfileChanged(object? sender, SessionId contactId)
+    {
+        if (viewModel.Counterpart is { } counterpart && counterpart == contactId)
+        {
+            MainThread.BeginInvokeOnMainThread(() => _ = RefreshConversationChromeAsync());
+        }
     }
 
     private void UpdateNetworkUi()
@@ -353,6 +457,11 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (MessageSearchBar.IsVisible)
+        {
+            RefreshMessageSearch(scrollToCurrent: false);
+        }
+
         if (e.Action is NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Reset)
         {
             if (e.Action == NotifyCollectionChangedAction.Add && !WasAppendedToEnd(e))
@@ -513,10 +622,8 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     {
         expandedPageHeight = Math.Max(expandedPageHeight, Height);
         var keyboardVisibleByResize = expandedPageHeight - Height > 100;
-        var keyboardPadding = keyboardVisibleByResize ? 0 : keyboardBottomInset;
-        var keyboardVisible = keyboardVisibleByResize || keyboardPadding > 0;
-        var statusBarHeight = keyboardVisible ? 0 : AndroidSafeArea.GetStatusBarHeight();
-        PageLayout.Margin = new Thickness(0, 0, 0, statusBarHeight);
+        var keyboardPadding = keyboardVisibleByResize ? 0 : Math.Max(0, keyboardBottomInset);
+        PageLayout.Margin = Thickness.Zero;
         PageLayout.Padding = new Thickness(0, 0, 0, keyboardPadding);
     }
 
@@ -614,6 +721,23 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
         MessageMenuOverlay.IsVisible = false;
         selectedMessage = null;
+    }
+
+    private async void OnDeleteSelectedMessage(object? sender, TappedEventArgs e)
+    {
+        if (selectedMessage is not { } message)
+        {
+            return;
+        }
+
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+        if (!await DisplayAlertAsync("Удалить сообщение?", "Сообщение будет удалено с этого устройства.", "Удалить", "Отмена"))
+        {
+            return;
+        }
+
+        await viewModel.DeleteMessageAsync(message);
     }
 
     private void ApplyComposerPreferences()
@@ -978,6 +1102,93 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         didInitialScroll = true;
         shouldStickToEnd = true;
     }
+
+    private void RefreshMessageSearch(bool scrollToCurrent = true)
+    {
+        var current = messageSearchIndex >= 0 && messageSearchIndex < messageSearchMatches.Count
+            ? messageSearchMatches[messageSearchIndex]
+            : null;
+        var query = MessageSearchEntry.Text?.Trim();
+        messageSearchMatches.Clear();
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            messageSearchIndex = -1;
+            MessageSearchCountLabel.Text = string.Empty;
+            return;
+        }
+
+        foreach (var message in viewModel.Messages)
+        {
+            if (MessageMatchesSearch(message, query))
+            {
+                messageSearchMatches.Add(message);
+            }
+        }
+
+        if (messageSearchMatches.Count == 0)
+        {
+            messageSearchIndex = -1;
+            MessageSearchCountLabel.Text = "0/0";
+            return;
+        }
+
+        var preservedIndex = current is null ? -1 : messageSearchMatches.IndexOf(current);
+        messageSearchIndex = preservedIndex >= 0 ? preservedIndex : messageSearchMatches.Count - 1;
+        UpdateMessageSearchCount();
+
+        if (scrollToCurrent)
+        {
+            ScrollToMessageSearchMatch();
+        }
+    }
+
+    private void MoveMessageSearch(int delta)
+    {
+        if (messageSearchMatches.Count == 0)
+        {
+            RefreshMessageSearch();
+        }
+
+        if (messageSearchMatches.Count == 0)
+        {
+            return;
+        }
+
+        messageSearchIndex = (messageSearchIndex + delta + messageSearchMatches.Count) % messageSearchMatches.Count;
+        UpdateMessageSearchCount();
+        ScrollToMessageSearchMatch();
+    }
+
+    private void UpdateMessageSearchCount()
+    {
+        MessageSearchCountLabel.Text = messageSearchIndex >= 0
+            ? $"{messageSearchIndex + 1}/{messageSearchMatches.Count}"
+            : "0/0";
+    }
+
+    private void ScrollToMessageSearchMatch()
+    {
+        if (messageSearchIndex < 0 || messageSearchIndex >= messageSearchMatches.Count)
+        {
+            return;
+        }
+
+        CancelPendingScrollToEnd();
+        shouldStickToEnd = false;
+        MessagesCollection.ScrollTo(messageSearchMatches[messageSearchIndex], position: ScrollToPosition.Center, animate: true);
+    }
+
+    private static bool MessageMatchesSearch(ChatMessageItem message, string query) =>
+        ContainsSearchText(message.Body, query)
+        || ContainsSearchText(message.ReplyPreview, query)
+        || ContainsSearchText(message.AttachmentTitle, query)
+        || ContainsSearchText(message.AttachmentSubtitle, query)
+        || ContainsSearchText(message.AttachmentSummary, query);
+
+    private static bool ContainsSearchText(string? value, string query) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Contains(query, StringComparison.CurrentCultureIgnoreCase);
 
     private bool WasAppendedToEnd(NotifyCollectionChangedEventArgs e)
     {

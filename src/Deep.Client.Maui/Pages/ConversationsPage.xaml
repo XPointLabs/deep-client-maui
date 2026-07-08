@@ -22,7 +22,7 @@
                 <Border WidthRequest="40" HeightRequest="40" Padding="0" StrokeThickness="0" Background="{StaticResource AvatarAccentColor}" HorizontalOptions="Center" VerticalOptions="Center" StrokeShape="RoundRectangle 20">
                     <Grid>
                         <Image x:Name="ProfileAvatarImage" Aspect="AspectFill" IsVisible="False" />
-                        <Label x:Name="ProfileInitialLabel" Text="Q" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="16" FontAutoScalingEnabled="False" />
+                        <Label x:Name="ProfileInitialLabel" Text="{Binding AccountInitial}" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="16" FontAutoScalingEnabled="False" />
                     </Grid>
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnProfileClicked" />
@@ -34,7 +34,12 @@
                 <Label Text="Deep" FontSize="20" FontAttributes="Bold" VerticalTextAlignment="Center" />
                 <Label Text="через XPoint Network" FontSize="11" TextColor="{StaticResource TextTertiary}" Margin="0,-2,0,0" />
             </VerticalStackLayout>
-            <Button Grid.Column="2" AutomationId="Conversations.NewConversationTop" Text="＋" SemanticProperties.Description="Новое сообщение" Style="{StaticResource CircularIconButton}" FontSize="25" Clicked="OnNewConversationClicked" />
+            <Border Grid.Column="2" AutomationId="Conversations.NewConversationTop" WidthRequest="42" HeightRequest="42" Background="Transparent" StrokeThickness="0" SemanticProperties.Description="Новое сообщение" VerticalOptions="Center">
+                <Path Data="M12,5 V19 M5,12 H19" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2.4" StrokeLineCap="Round" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnNewConversationClicked" />
+                </Border.GestureRecognizers>
+            </Border>
         </Grid>
 
         <Border Grid.Row="2" Style="{StaticResource SearchBorder}" Margin="12,4,12,8">
@@ -78,7 +83,7 @@
                                 </Border.GestureRecognizers>
                                 <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="11" RowSpacing="2" HeightRequest="60">
                                     <Border Grid.RowSpan="2" WidthRequest="52" HeightRequest="52" Padding="0" StrokeThickness="0" Background="{StaticResource PrimaryColorMuted}" VerticalOptions="Center" StrokeShape="RoundRectangle 26">
-                                        <Label Text="Q" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="19" />
+                                        <Label Text="{Binding AvatarInitial}" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="19" />
                                     </Border>
                                     <Label Grid.Column="1" Text="{Binding Title}" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" VerticalOptions="End" MaxLines="1" />
                                     <Label Grid.Column="2" Text="{Binding UpdatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="12" TextColor="{StaticResource TextTertiary}" VerticalOptions="End" />

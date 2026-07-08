@@ -37,7 +37,12 @@ public sealed class MauiPrivacyScreenService : IPrivacyScreenService
             return;
         }
 
-        if (enabled)
+#if DEBUG
+        var screenSecurityEnabled = false;
+#else
+        var screenSecurityEnabled = enabled;
+#endif
+        if (screenSecurityEnabled)
         {
             window.AddFlags(WindowManagerFlags.Secure);
         }

@@ -1,5 +1,6 @@
 ﻿using Deep.Client.Maui.Core.Commands;
 using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Core.Presentation;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Shared.State;
 
@@ -12,7 +13,6 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly INetworkStatusService networkStatusService;
     private string accountDisplayName = "Нет аккаунта";
     private string sessionId = "-";
-    private string recoveryPhrase = string.Empty;
     private string connectionStatus = "Неизвестно";
     private bool wipeLocalDataOnLogout;
 
@@ -36,19 +36,29 @@ public sealed class SettingsViewModel : ViewModelBase
     public string AccountDisplayName
     {
         get => accountDisplayName;
-        private set => SetProperty(ref accountDisplayName, value);
+        private set
+        {
+            if (SetProperty(ref accountDisplayName, value))
+            {
+                RaisePropertyChanged(nameof(AccountInitial));
+            }
+        }
     }
+
+    public string AccountInitial => AccountDisplayName == "Нет аккаунта"
+        ? "D"
+        : DeepDisplayName.AvatarInitial(AccountDisplayName, SessionId);
 
     public string SessionId
     {
         get => sessionId;
-        private set => SetProperty(ref sessionId, value);
-    }
-
-    public string RecoveryPhrase
-    {
-        get => recoveryPhrase;
-        private set => SetProperty(ref recoveryPhrase, value);
+        private set
+        {
+            if (SetProperty(ref sessionId, value))
+            {
+                RaisePropertyChanged(nameof(AccountInitial));
+            }
+        }
     }
 
     public string ConnectionStatus
@@ -75,11 +85,13 @@ public sealed class SettingsViewModel : ViewModelBase
             var account = await runtime.Accounts.GetActiveAccountAsync(ct);
             AccountDisplayName = account?.DisplayName ?? "Нет аккаунта";
             SessionId = account?.SessionId.Value ?? "-";
-            RecoveryPhrase = await runtime.Accounts.GetRecoveryPhraseAsync(ct) ?? string.Empty;
             ConnectionStatus = networkStatusService.ConnectionLabel;
             RaisePropertyChanged(nameof(IsNetworkConnected));
             LogoutCommand.RaiseCanExecuteChanged();
         }, cancellationToken);
+
+    public Task<string?> GetRecoveryPhraseAsync(CancellationToken cancellationToken = default) =>
+        runtime.Accounts.GetRecoveryPhraseAsync(cancellationToken);
 
     public Task UpdateDisplayNameAsync(string displayName, CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
@@ -97,7 +109,6 @@ public sealed class SettingsViewModel : ViewModelBase
 
             AccountDisplayName = "Нет аккаунта";
             SessionId = "-";
-            RecoveryPhrase = string.Empty;
             LogoutCommand.RaiseCanExecuteChanged();
         }, cancellationToken);
     }

@@ -218,7 +218,8 @@ public partial class SettingsPage : ContentPage
 
     private async void OnRecoveryPhraseClicked(object? sender, EventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(viewModel.RecoveryPhrase))
+        var recoveryPhrase = await viewModel.GetRecoveryPhraseAsync();
+        if (string.IsNullOrWhiteSpace(recoveryPhrase))
         {
             await DisplayAlertAsync("Фраза восстановления", "Для этого аккаунта не сохранена фраза восстановления.", "OK");
             return;
@@ -227,11 +228,34 @@ public partial class SettingsPage : ContentPage
         var action = await DisplayActionSheetAsync("Фраза восстановления", "Отмена", null, "Показать", "Скопировать");
         if (action == "Скопировать")
         {
-            await Clipboard.Default.SetTextAsync(viewModel.RecoveryPhrase);
+            await CopySensitiveTextAsync(recoveryPhrase);
         }
         else if (action == "Показать")
         {
-            await DisplayAlertAsync("Фраза восстановления", viewModel.RecoveryPhrase, "OK");
+            await DisplayAlertAsync("Фраза восстановления", recoveryPhrase, "OK");
+        }
+    }
+
+    private static async Task CopySensitiveTextAsync(string value)
+    {
+        await Clipboard.Default.SetTextAsync(value);
+        _ = ClearClipboardIfUnchangedAsync(value);
+    }
+
+    private static async Task ClearClipboardIfUnchangedAsync(string value)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1));
+            var current = await Clipboard.Default.GetTextAsync();
+            if (string.Equals(current, value, StringComparison.Ordinal))
+            {
+                await Clipboard.Default.SetTextAsync(string.Empty);
+            }
+        }
+        catch
+        {
+            // Clipboard access is best-effort and must not affect settings UX.
         }
     }
 

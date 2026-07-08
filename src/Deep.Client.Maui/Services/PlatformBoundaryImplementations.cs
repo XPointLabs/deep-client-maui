@@ -4,16 +4,32 @@ using Deep.Client.Shared.Services;
 using System.Text.Json;
 using Microsoft.Maui.Storage;
 
+#if ANDROID
+using AndroidBitmap = Android.Graphics.Bitmap;
+using AndroidBitmapFactory = Android.Graphics.BitmapFactory;
+#endif
+
 namespace Deep.Client.Maui.Services;
 
 public sealed class MauiMediaCodecService : IMediaCodecService
 {
+    private const int MaxPhotoDimension = 1600;
+    private const int InitialPhotoQuality = 86;
+    private const int MinPhotoQuality = 70;
+
     public async Task<MediaTranscodeResult> TranscodeAsync(MediaTranscodeRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.SourcePath) || !File.Exists(request.SourcePath))
         {
             throw new FileNotFoundException("Source media file was not found.", request.SourcePath);
         }
+
+#if ANDROID
+        if (request.TargetContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return await Task.Run(() => TranscodeImageAndroid(request), cancellationToken).ConfigureAwait(false);
+        }
+#endif
 
         var extension = ContentTypeToExtension(request.TargetContentType);
         var outputPath = Path.Combine(FileSystem.CacheDirectory, $"media-{Guid.NewGuid():N}{extension}");
@@ -32,6 +48,80 @@ public sealed class MauiMediaCodecService : IMediaCodecService
 
         return new MediaTranscodeResult(outputPath, request.TargetContentType, size);
     }
+
+#if ANDROID
+    private static MediaTranscodeResult TranscodeImageAndroid(MediaTranscodeRequest request)
+    {
+        var bounds = new AndroidBitmapFactory.Options { InJustDecodeBounds = true };
+        AndroidBitmapFactory.DecodeFile(request.SourcePath, bounds);
+        if (bounds.OutWidth <= 0 || bounds.OutHeight <= 0)
+        {
+            throw new InvalidOperationException("Selected image could not be decoded.");
+        }
+
+        var options = new AndroidBitmapFactory.Options
+        {
+            InSampleSize = CalculateSampleSize(bounds.OutWidth, bounds.OutHeight, MaxPhotoDimension),
+            InPreferredConfig = AndroidBitmap.Config.Argb8888
+        };
+
+        using var decoded = AndroidBitmapFactory.DecodeFile(request.SourcePath, options)
+            ?? throw new InvalidOperationException("Selected image could not be decoded.");
+        AndroidBitmap? scaled = null;
+        var bitmap = decoded;
+        var longestSide = Math.Max(decoded.Width, decoded.Height);
+        if (longestSide > MaxPhotoDimension)
+        {
+            var scale = MaxPhotoDimension / (double)longestSide;
+            var width = Math.Max(1, (int)Math.Round(decoded.Width * scale));
+            var height = Math.Max(1, (int)Math.Round(decoded.Height * scale));
+            scaled = AndroidBitmap.CreateScaledBitmap(decoded, width, height, true);
+            bitmap = scaled;
+        }
+
+        try
+        {
+            var jpegFormat = AndroidBitmap.CompressFormat.Jpeg
+                ?? throw new InvalidOperationException("Android JPEG encoder is not available.");
+            for (var quality = InitialPhotoQuality; quality >= MinPhotoQuality; quality -= 8)
+            {
+                var outputPath = Path.Combine(FileSystem.CacheDirectory, $"media-{Guid.NewGuid():N}.jpg");
+                using (var output = File.Create(outputPath))
+                {
+                    if (!bitmap.Compress(jpegFormat, quality, output))
+                    {
+                        throw new InvalidOperationException("Selected image could not be compressed.");
+                    }
+                }
+
+                var size = new FileInfo(outputPath).Length;
+                if (request.MaxBytes <= 0 || size <= request.MaxBytes)
+                {
+                    return new MediaTranscodeResult(outputPath, "image/jpeg", size);
+                }
+
+                File.Delete(outputPath);
+            }
+        }
+        finally
+        {
+            scaled?.Dispose();
+        }
+
+        throw new InvalidOperationException($"Compressed image exceeds limit {request.MaxBytes} bytes.");
+    }
+
+    private static int CalculateSampleSize(int width, int height, int maxDimension)
+    {
+        var sampleSize = 1;
+        while ((width / (sampleSize * 2)) >= maxDimension || (height / (sampleSize * 2)) >= maxDimension)
+        {
+            sampleSize *= 2;
+        }
+
+        return sampleSize;
+    }
+#endif
 
     private static string ContentTypeToExtension(string contentType)
     {

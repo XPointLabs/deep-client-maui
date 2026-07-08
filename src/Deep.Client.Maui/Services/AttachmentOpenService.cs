@@ -11,6 +11,8 @@ public sealed record PreparedAttachmentFile(string FileName, string ContentType,
 
 public static class AttachmentOpenService
 {
+    private static readonly TimeSpan AttachmentCacheMaxAge = TimeSpan.FromDays(1);
+
     public static async Task OpenAsync(
         Page page,
         IReadOnlyList<AttachmentMetadata> attachments,
@@ -72,9 +74,10 @@ public static class AttachmentOpenService
 
         var downloaded = await attachmentFiles.DownloadAsync(attachment, cancellationToken).ConfigureAwait(false);
         var fileName = SafeFileName(downloaded.FileName);
+        CleanupOldAttachmentCache();
         var cachePath = Path.Combine(
             FileSystem.CacheDirectory,
-            $"attachment-{attachment.AttachmentId}-{fileName}");
+            $"attachment-{SafeFileName(attachment.AttachmentId)}-{fileName}");
 
         await File.WriteAllBytesAsync(cachePath, downloaded.Content, cancellationToken).ConfigureAwait(false);
         return new PreparedAttachmentFile(downloaded.FileName, downloaded.ContentType, cachePath);
@@ -92,5 +95,25 @@ public static class AttachmentOpenService
         }
 
         return safe;
+    }
+
+    private static void CleanupOldAttachmentCache()
+    {
+        try
+        {
+            var cutoff = DateTimeOffset.UtcNow - AttachmentCacheMaxAge;
+            foreach (var file in Directory.EnumerateFiles(FileSystem.CacheDirectory, "attachment-*"))
+            {
+                var info = new FileInfo(file);
+                if (info.LastWriteTimeUtc < cutoff.UtcDateTime)
+                {
+                    info.Delete();
+                }
+            }
+        }
+        catch
+        {
+            // Cache cleanup is opportunistic.
+        }
     }
 }

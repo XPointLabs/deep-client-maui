@@ -70,7 +70,12 @@ public class MainActivity : MauiAppCompatActivity
             return;
         }
 
-        if (Preferences.Default.Get(ClientSettingKeys.PrivacyScreenSecurity, true))
+#if DEBUG
+        var screenSecurityEnabled = false;
+#else
+        var screenSecurityEnabled = Preferences.Default.Get(ClientSettingKeys.PrivacyScreenSecurity, true);
+#endif
+        if (screenSecurityEnabled)
         {
             Window.AddFlags(WindowManagerFlags.Secure);
         }

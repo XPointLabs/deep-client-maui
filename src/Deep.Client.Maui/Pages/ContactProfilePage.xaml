@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Deep.Client.Maui.Pages.ContactProfilePage"
+    AutomationId="Page.ContactProfile"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="{StaticResource PageBackground}"
+    Shell.NavBarIsVisible="False"
+    Title="Профиль">
+    <Grid RowDefinitions="Auto,*" BackgroundColor="{StaticResource PageBackground}">
+        <VerticalStackLayout Grid.Row="0" Spacing="0">
+            <Grid Style="{StaticResource CompactHeader}" ColumnDefinitions="40,*,40" ColumnSpacing="8">
+                <Border AutomationId="ContactProfile.Back" WidthRequest="40" HeightRequest="40" Padding="0" Background="Transparent" StrokeThickness="0" VerticalOptions="Center">
+                    <Path Data="M15,4 L7,12 L15,20" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2.4" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnBackClicked" />
+                    </Border.GestureRecognizers>
+                </Border>
+                <Label Grid.Column="1" Text="Профиль" FontSize="20" FontAttributes="Bold" VerticalTextAlignment="Center" />
+                <Border Grid.Column="2" AutomationId="ContactProfile.EditNameTop" WidthRequest="40" HeightRequest="40" Padding="0" Background="Transparent" StrokeThickness="0" VerticalOptions="Center">
+                    <Path Data="M5,19 L9,18 L19,8 L16,5 L6,15 Z M14,7 L17,10" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnEditNameClicked" />
+                    </Border.GestureRecognizers>
+                </Border>
+            </Grid>
+            <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" />
+        </VerticalStackLayout>
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="20,24,20,32" Spacing="16">
+                <VerticalStackLayout Spacing="10" HorizontalOptions="Center">
+                    <Grid WidthRequest="112" HeightRequest="112" HorizontalOptions="Center">
+                        <Border WidthRequest="108" HeightRequest="108" Padding="0" StrokeThickness="0" Background="{StaticResource PrimaryColorMuted}" StrokeShape="RoundRectangle 54" HorizontalOptions="Center" VerticalOptions="Center">
+                            <Grid>
+                                <Image x:Name="AvatarImage" Aspect="AspectFill" IsVisible="False" />
+                                <Label x:Name="AvatarLabel" Text="D" TextColor="White" FontAttributes="Bold" FontSize="42" HorizontalOptions="Center" VerticalOptions="Center" FontAutoScalingEnabled="False" />
+                            </Grid>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnChangePhotoClicked" />
+                            </Border.GestureRecognizers>
+                        </Border>
+                        <Border AutomationId="ContactProfile.ChangePhoto" WidthRequest="34" HeightRequest="34" StrokeThickness="2" Stroke="{StaticResource PageBackground}" Background="{StaticResource PrimaryColor}" StrokeShape="RoundRectangle 17" HorizontalOptions="End" VerticalOptions="End">
+                            <Path Data="M7,9 H10 L12,6 H16 L18,9 H21 V19 H7 Z M14,12 A3,3 0 1 0 14,18 A3,3 0 1 0 14,12" Stroke="#03101A" StrokeThickness="1.7" Fill="Transparent" WidthRequest="21" HeightRequest="21" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnChangePhotoClicked" />
+                            </Border.GestureRecognizers>
+                        </Border>
+                    </Grid>
+                    <VerticalStackLayout Spacing="3" HorizontalOptions="Center">
+                        <Label x:Name="DisplayNameLabel" Text="Контакт" FontSize="25" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                        <Label x:Name="StatusLabel" Text="Контакт Deep" FontSize="13" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                    <VerticalStackLayout x:Name="MessageButton" AutomationId="ContactProfile.Message" Spacing="6" HorizontalOptions="Center">
+                        <Border WidthRequest="48" HeightRequest="48" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 24">
+                            <Path Data="M5,6 H19 V16 H10 L6,20 V16 H5 Z" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.9" Fill="Transparent" WidthRequest="25" HeightRequest="25" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <Label Text="Сообщение" FontSize="12" TextColor="{StaticResource PrimaryColor}" HorizontalTextAlignment="Center" />
+                        <VerticalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnMessageClicked" />
+                        </VerticalStackLayout.GestureRecognizers>
+                    </VerticalStackLayout>
+                    <VerticalStackLayout x:Name="AudioCallButton" Grid.Column="1" AutomationId="ContactProfile.AudioCall" Spacing="6" HorizontalOptions="Center">
+                        <Border WidthRequest="48" HeightRequest="48" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 24">
+                            <Path Data="M7,3 L10,8 L7,10 C9,14 12,17 16,19 L18,16 L23,19 C22,22 20,24 17,23 C9,20 4,15 2,7 C1,4 4,2 7,3 Z" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="25" HeightRequest="25" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <Label Text="Аудио" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+                        <VerticalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnAudioCallClicked" />
+                        </VerticalStackLayout.GestureRecognizers>
+                    </VerticalStackLayout>
+                    <VerticalStackLayout x:Name="VideoCallButton" Grid.Column="2" AutomationId="ContactProfile.VideoCall" Spacing="6" HorizontalOptions="Center">
+                        <Border WidthRequest="48" HeightRequest="48" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 24">
+                            <Path Data="M4,7 H16 V17 H4 Z M16,10 L22,7 V17 L16,14 Z" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="25" HeightRequest="25" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <Label Text="Видео" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+                        <VerticalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnVideoCallClicked" />
+                        </VerticalStackLayout.GestureRecognizers>
+                    </VerticalStackLayout>
+                </Grid>
+
+                <Border Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="0">
+                        <Grid AutomationId="ContactProfile.EditName" HeightRequest="60" Padding="14,0" ColumnDefinitions="38,*,Auto">
+                            <Path Data="M5,19 L9,18 L19,8 L16,5 L6,15 Z M14,7 L17,10" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.9" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
+                                <Label Text="Имя контакта" FontSize="15" />
+                                <Label x:Name="NameValueLabel" Text="Контакт" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
+                            </VerticalStackLayout>
+                            <Label Grid.Column="2" Text="Изменить" TextColor="{StaticResource PrimaryColor}" FontSize="13" VerticalTextAlignment="Center" />
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnEditNameClicked" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
+                        <BoxView HeightRequest="1" Margin="52,0,0,0" Color="{StaticResource DividerColor}" />
+                        <Grid AutomationId="ContactProfile.ChangePhotoRow" HeightRequest="56" Padding="14,0" ColumnDefinitions="38,*">
+                            <Path Data="M7,9 H10 L12,6 H16 L18,9 H21 V19 H7 Z M14,12 A3,3 0 1 0 14,18 A3,3 0 1 0 14,12" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="Изменить фото" FontSize="16" VerticalTextAlignment="Center" />
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnChangePhotoClicked" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
+                        <BoxView x:Name="RemovePhotoDivider" HeightRequest="1" Margin="52,0,0,0" Color="{StaticResource DividerColor}" />
+                        <Grid x:Name="RemovePhotoRow" AutomationId="ContactProfile.RemovePhoto" HeightRequest="56" Padding="14,0" ColumnDefinitions="38,*">
+                            <Path Data="M6,6 L18,18 M18,6 L6,18" Stroke="{StaticResource DangerColor}" StrokeThickness="2.2" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="Удалить фото" FontSize="16" TextColor="{StaticResource DangerColor}" VerticalTextAlignment="Center" />
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnRemovePhotoClicked" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="0">
+                        <Grid AutomationId="ContactProfile.CopyId" Padding="14,12" ColumnDefinitions="38,*" RowDefinitions="Auto,Auto" RowSpacing="7">
+                            <Path Data="M8,8 H18 V22 H8 Z M12,4 H22 V18" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="ID аккаунта Deep" FontSize="12" TextColor="{StaticResource TextSecondary}" VerticalTextAlignment="Center" />
+                            <Label x:Name="AccountIdLabel" Grid.Row="1" Grid.ColumnSpan="2" FontSize="14" LineBreakMode="CharacterWrap" HorizontalOptions="Fill" />
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnCopyIdTapped" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="0">
+                        <Grid HeightRequest="56" Padding="14,0" ColumnDefinitions="38,*">
+                            <Path Data="M4,7 H20 M8,7 V4 H16 V7 M7,10 V20 H17 V10 M10,12 V18 M14,12 V18" Stroke="{StaticResource TextPrimary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="Очистить историю" FontSize="16" VerticalTextAlignment="Center" />
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnClearHistoryClicked" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
+                        <BoxView HeightRequest="1" Margin="52,0,0,0" Color="{StaticResource DividerColor}" />
+                        <Grid x:Name="BlockRow" HeightRequest="56" Padding="14,0" ColumnDefinitions="38,*">
+                            <Path x:Name="BlockIcon" Data="M12,3 A9,9 0 1 0 12,21 A9,9 0 1 0 12,3 M6,18 L18,6" Stroke="{StaticResource DangerColor}" StrokeThickness="1.9" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" VerticalOptions="Center" />
+                            <Label x:Name="BlockLabel" Grid.Column="1" Text="Заблокировать" FontSize="16" TextColor="{StaticResource DangerColor}" VerticalTextAlignment="Center" />
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnBlockClicked" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <Grid
+            x:Name="EditNameOverlay"
+            Grid.RowSpan="2"
+            AutomationId="ContactProfile.EditNameOverlay"
+            BackgroundColor="#99030912"
+            IsVisible="False">
+            <Grid.GestureRecognizers>
+                <TapGestureRecognizer Tapped="OnCancelEditNameClicked" />
+            </Grid.GestureRecognizers>
+            <Border
+                Background="{StaticResource PanelBackground}"
+                StrokeThickness="0"
+                StrokeShape="RoundRectangle 22"
+                Padding="18,16,18,14"
+                Margin="12,132,12,0"
+                VerticalOptions="Start">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer />
+                </Border.GestureRecognizers>
+                <VerticalStackLayout Spacing="12">
+                    <Label x:Name="EditNameTitleLabel" Text="Имя" FontSize="18" FontAttributes="Bold" />
+                    <Border Style="{StaticResource SearchBorder}" Margin="0" Padding="12,2">
+                        <Entry
+                            x:Name="EditNameEntry"
+                            AutomationId="ContactProfile.EditNameEntry"
+                            BackgroundColor="Transparent"
+                            ClearButtonVisibility="WhileEditing"
+                            FontSize="17"
+                            MaxLength="48"
+                            Placeholder="Имя"
+                            ReturnType="Done"
+                            Completed="OnEditNameEntryCompleted" />
+                    </Border>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <Button Text="Отмена" Clicked="OnCancelEditNameClicked" Style="{StaticResource SecondaryButton}" />
+                        <Button Grid.Column="1" Text="Готово" Clicked="OnSaveEditNameClicked" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+    </Grid>
+</ContentPage>

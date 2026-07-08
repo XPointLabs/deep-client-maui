@@ -600,6 +600,19 @@ public sealed class GroupChatViewModel : ViewModelBase
         return Task.CompletedTask;
     }
 
+    public Task DeleteMessageAsync(GroupChatMessageItem message, CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            if (await runtime.Messages.DeleteMessageAsync(message.Id, ct))
+            {
+                RemoveMessageItem(message.Id);
+                if (ReplyingTo?.Id == message.Id)
+                {
+                    ReplyingTo = null;
+                }
+            }
+        }, cancellationToken);
+
     public Task LoadOlderMessagesAsync(CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
         {
@@ -920,6 +933,18 @@ public sealed class GroupChatViewModel : ViewModelBase
             if (Messages[index].Id == message.Id)
             {
                 Messages[index] = await ToItemAsync(message, CancellationToken.None);
+                return;
+            }
+        }
+    }
+
+    private void RemoveMessageItem(MessageId messageId)
+    {
+        for (var index = 0; index < Messages.Count; index++)
+        {
+            if (Messages[index].Id == messageId)
+            {
+                Messages.RemoveAt(index);
                 return;
             }
         }

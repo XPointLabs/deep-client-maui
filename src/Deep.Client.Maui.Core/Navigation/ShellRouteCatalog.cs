@@ -8,6 +8,7 @@ public static class ShellRouteCatalog
     public const string Restore = "restore";
     public const string Conversations = "conversations";
     public const string Chat = "chat";
+    public const string ContactProfile = "contact-profile";
     public const string StartConversation = "start-conversation";
     public const string NewConversation = "new-conversation";
     public const string GroupChat = "group-chat";
@@ -22,6 +23,7 @@ public static class ShellRouteCatalog
         new(Restore, "Restore", RequiresAccount: false),
         new(Conversations, "Conversations", RequiresAccount: true),
         new(Chat, "Chat", RequiresAccount: true),
+        new(ContactProfile, "ContactProfile", RequiresAccount: true),
         new(StartConversation, "StartConversation", RequiresAccount: true),
         new(NewConversation, "NewConversation", RequiresAccount: true),
         new(GroupChat, "GroupChat", RequiresAccount: true),
