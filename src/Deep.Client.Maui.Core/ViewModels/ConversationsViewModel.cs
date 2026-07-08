@@ -162,6 +162,14 @@ public sealed class ConversationsViewModel : ViewModelBase
     public Task LoadAsync(CancellationToken cancellationToken = default) =>
         LoadAsync(forceMessageSummaries: true, cancellationToken);
 
+    public Task LoadCachedAsync(CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            var activeAccount = await runtime.Accounts.GetActiveAccountAsync(ct);
+            AccountInitial = DeepDisplayName.AvatarInitial(activeAccount?.DisplayName, activeAccount?.SessionId.Value);
+            await RefreshLocalAsync(activeAccount, forceMessageSummaries: true, ct);
+        }, cancellationToken);
+
     public Task SyncAsync(CancellationToken cancellationToken = default) =>
         LoadAsync(forceMessageSummaries: false, cancellationToken);
 

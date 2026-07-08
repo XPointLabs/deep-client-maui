@@ -47,16 +47,13 @@ public partial class ConversationsPage : ContentPage
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         UpdateProfileAvatarUi();
         UpdateNetworkUi();
-        if (hasLoaded)
+        await viewModel.LoadCachedAsync();
+        if (!hasLoaded)
         {
-            await viewModel.SyncAsync();
-        }
-        else
-        {
-            await viewModel.LoadAsync();
             hasLoaded = true;
         }
 
+        _ = SyncConversationsInBackgroundAsync();
         EnsurePushRegistration();
         await ConfigureAutoSyncAsync();
         EnsureIncomingCallPolling();
@@ -99,14 +96,27 @@ public partial class ConversationsPage : ContentPage
 
     private void OnBackgroundSyncScheduled()
     {
-        MainThread.BeginInvokeOnMainThread(async () =>
-        {
-            if (!viewModel.IsBusy)
-            {
-                await viewModel.SyncAsync();
-            }
+        MainThread.BeginInvokeOnMainThread(() => _ = SyncConversationsInBackgroundAsync());
+    }
 
-        });
+    private async Task SyncConversationsInBackgroundAsync()
+    {
+        if (viewModel.IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            await viewModel.SyncAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            CrashDiagnostics.LogException("ConversationsPage.BackgroundSync", ex);
+        }
     }
 
     private async void OnConversationTapped(object? sender, TappedEventArgs e)

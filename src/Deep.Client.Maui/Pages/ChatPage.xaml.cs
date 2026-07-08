@@ -39,6 +39,8 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private bool shouldStickToEnd = true;
     private bool didInitialScroll;
     private bool isLoadingImagePreviews;
+    private bool imagePreviewReloadRequested;
+    private readonly HashSet<string> loadingImagePreviewAttachmentIds = new(StringComparer.Ordinal);
     private double expandedPageHeight;
     private double keyboardBottomInset;
     private DateTimeOffset voiceRecordingStartedAt;
@@ -181,11 +183,11 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private async Task RevealInitialMessagesAsync(CancellationToken cancellationToken)
     {
-        await Task.Delay(32, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         await MainThread.InvokeOnMainThreadAsync(() =>
         {
-            ScrollMessagesToEnd(animate: false, force: true);
             MessagesCollection.Opacity = 1;
+            QueueScrollToEnd(animate: false, force: true);
         });
     }
 
@@ -469,7 +471,11 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.Action is NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Reset)
+        if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems is not null)
+        {
+            _ = EnsureImagePreviewsAsync(e.NewItems.OfType<ChatMessageItem>());
+        }
+        else if (e.Action == NotifyCollectionChangedAction.Reset)
         {
             _ = EnsureImagePreviewsAsync();
         }
@@ -552,17 +558,18 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         ShowAttachmentActionSheet(item, item.Attachments);
     }
 
-    private async Task EnsureImagePreviewsAsync()
+    private async Task EnsureImagePreviewsAsync(IEnumerable<ChatMessageItem>? candidates = null)
     {
         if (isLoadingImagePreviews)
         {
+            imagePreviewReloadRequested = true;
             return;
         }
 
         try
         {
             isLoadingImagePreviews = true;
-            var messages = viewModel.Messages
+            var messages = (candidates ?? viewModel.Messages)
                 .Where(static message => message.IsImageMessage && !message.HasImagePreview)
                 .ToArray();
 
@@ -571,6 +578,12 @@ public partial class ChatPage : ContentPage, IQueryAttributable
                 var attachment = item.PrimaryImageAttachment;
                 if (attachment is null || item.HasImagePreview)
                 {
+                    continue;
+                }
+
+                if (!loadingImagePreviewAttachmentIds.Add(attachment.AttachmentId))
+                {
+                    imagePreviewReloadRequested = true;
                     continue;
                 }
 
@@ -592,11 +605,20 @@ public partial class ChatPage : ContentPage, IQueryAttributable
                 {
                     CrashDiagnostics.LogException("ChatPage.ImagePreview", ex);
                 }
+                finally
+                {
+                    loadingImagePreviewAttachmentIds.Remove(attachment.AttachmentId);
+                }
             }
         }
         finally
         {
             isLoadingImagePreviews = false;
+            if (imagePreviewReloadRequested)
+            {
+                imagePreviewReloadRequested = false;
+                _ = EnsureImagePreviewsAsync();
+            }
         }
     }
 

@@ -15,6 +15,22 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
     private double voicePlaybackProgress;
     private string? voicePlaybackPositionLabel;
     private string? imagePreviewPath;
+    private readonly bool hasVisibleBody;
+    private readonly bool isVoiceMessage;
+    private readonly bool isImageMessage;
+    private readonly AttachmentMetadata? primaryImageAttachment;
+    private readonly bool hasMultipleImages;
+    private readonly bool hasGenericAttachments;
+    private readonly bool hasNonVoiceAttachments;
+    private readonly string attachmentSummary;
+    private readonly string attachmentTitle;
+    private readonly string attachmentSubtitle;
+    private readonly string voiceDurationLabel;
+    private readonly string imageCountLabel;
+    private readonly double imagePreviewWidthRequest;
+    private readonly double imagePreviewHeightRequest;
+    private readonly string? voiceAttachmentId;
+    private readonly IReadOnlyList<MessageReactionChip> reactionChips;
 
     public GroupChatMessageItem(
         MessageId id,
@@ -36,6 +52,28 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
         SenderLabel = senderLabel;
         ReplyTo = replyTo;
         Reactions = reactions;
+        hasVisibleBody = MessageAttachmentPresentation.HasVisibleBody(body);
+        isVoiceMessage = MessageAttachmentPresentation.IsVoiceMessage(attachments);
+        isImageMessage = MessageAttachmentPresentation.IsInlineImage(attachments);
+        primaryImageAttachment = MessageAttachmentPresentation.PrimaryInlineImage(attachments);
+        hasMultipleImages = isImageMessage && attachments.Count > 1;
+        hasGenericAttachments = attachments.Count > 0 && !isVoiceMessage && !isImageMessage;
+        hasNonVoiceAttachments = attachments.Count > 0 && !isVoiceMessage;
+        attachmentSummary = MessageAttachmentPresentation.Summary(attachments);
+        attachmentTitle = MessageAttachmentPresentation.Title(attachments);
+        attachmentSubtitle = MessageAttachmentPresentation.Subtitle(attachments);
+        voiceDurationLabel = MessageAttachmentPresentation.VoiceDuration(attachments);
+        imageCountLabel = MessageAttachmentPresentation.ImageCountLabel(attachments);
+        var previewSize = MessageAttachmentPresentation.ImagePreviewSize(primaryImageAttachment);
+        imagePreviewWidthRequest = previewSize.Width;
+        imagePreviewHeightRequest = previewSize.Height;
+        voiceAttachmentId = isVoiceMessage ? attachments[0].AttachmentId : null;
+        reactionChips = reactions.Count == 0
+            ? []
+            : reactions
+                .GroupBy(static reaction => reaction.Emoji, StringComparer.Ordinal)
+                .Select(static group => new MessageReactionChip(group.Key, group.Count()))
+                .ToArray();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -78,44 +116,41 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
 
     public string ReplyPreview => ReplyTo?.Body ?? string.Empty;
 
-    public IReadOnlyList<MessageReactionChip> ReactionChips => Reactions
-        .GroupBy(static reaction => reaction.Emoji, StringComparer.Ordinal)
-        .Select(static group => new MessageReactionChip(group.Key, group.Count()))
-        .ToArray();
+    public IReadOnlyList<MessageReactionChip> ReactionChips => reactionChips;
 
     public bool HasReactions => Reactions.Count > 0;
 
-    public bool HasVisibleBody => MessageAttachmentPresentation.HasVisibleBody(Body);
+    public bool HasVisibleBody => hasVisibleBody;
 
-    public bool IsVoiceMessage => MessageAttachmentPresentation.IsVoiceMessage(Attachments);
+    public bool IsVoiceMessage => isVoiceMessage;
 
-    public bool IsImageMessage => MessageAttachmentPresentation.IsInlineImage(Attachments);
+    public bool IsImageMessage => isImageMessage;
 
-    public AttachmentMetadata? PrimaryImageAttachment => MessageAttachmentPresentation.PrimaryInlineImage(Attachments);
+    public AttachmentMetadata? PrimaryImageAttachment => primaryImageAttachment;
 
     public bool HasImagePreview => IsImageMessage && !string.IsNullOrWhiteSpace(ImagePreviewPath);
 
     public bool IsImagePreviewLoading => IsImageMessage && string.IsNullOrWhiteSpace(ImagePreviewPath);
 
-    public bool HasMultipleImages => IsImageMessage && Attachments.Count > 1;
+    public bool HasMultipleImages => hasMultipleImages;
 
-    public bool HasGenericAttachments => HasAttachments && !IsVoiceMessage && !IsImageMessage;
+    public bool HasGenericAttachments => hasGenericAttachments;
 
-    public bool HasNonVoiceAttachments => HasAttachments && !IsVoiceMessage;
+    public bool HasNonVoiceAttachments => hasNonVoiceAttachments;
 
-    public string AttachmentSummary => MessageAttachmentPresentation.Summary(Attachments);
+    public string AttachmentSummary => attachmentSummary;
 
-    public string AttachmentTitle => MessageAttachmentPresentation.Title(Attachments);
+    public string AttachmentTitle => attachmentTitle;
 
-    public string AttachmentSubtitle => MessageAttachmentPresentation.Subtitle(Attachments);
+    public string AttachmentSubtitle => attachmentSubtitle;
 
-    public string VoiceDurationLabel => MessageAttachmentPresentation.VoiceDuration(Attachments);
+    public string VoiceDurationLabel => voiceDurationLabel;
 
-    public string ImageCountLabel => MessageAttachmentPresentation.ImageCountLabel(Attachments);
+    public string ImageCountLabel => imageCountLabel;
 
-    public double ImagePreviewWidthRequest => MessageAttachmentPresentation.ImagePreviewSize(PrimaryImageAttachment).Width;
+    public double ImagePreviewWidthRequest => imagePreviewWidthRequest;
 
-    public double ImagePreviewHeightRequest => MessageAttachmentPresentation.ImagePreviewSize(PrimaryImageAttachment).Height;
+    public double ImagePreviewHeightRequest => imagePreviewHeightRequest;
 
     public string? ImagePreviewPath
     {
@@ -154,7 +189,7 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
         private set => SetProperty(ref voicePlaybackProgress, value);
     }
 
-    public string? VoiceAttachmentId => IsVoiceMessage ? Attachments[0].AttachmentId : null;
+    public string? VoiceAttachmentId => voiceAttachmentId;
 
     public void SetVoicePlayback(bool isPlaying, double progress, TimeSpan position)
     {
@@ -206,7 +241,7 @@ public sealed record GroupMemberItem(SessionId SessionId, GroupMemberRole Role, 
 
 public sealed class GroupChatViewModel : ViewModelBase
 {
-    private const int InitialMessagePageSize = 100;
+    private const int InitialMessagePageSize = 60;
     private readonly ClientRuntime runtime;
     private readonly IContactRepository contacts;
     private readonly IAttachmentPickerService? attachmentPicker;
@@ -429,7 +464,6 @@ public sealed class GroupChatViewModel : ViewModelBase
         RaiseMemberCommandCanExecuteChanged();
         RaiseComposerStateChanged();
         await LoadMessagesAsync(cancellationToken);
-        await RefreshAsync(cancellationToken);
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default) =>
@@ -460,9 +494,20 @@ public sealed class GroupChatViewModel : ViewModelBase
                 ? await runtime.Messages.ReceiveGroupAsync(account.SessionId, activeGroup.Id, ct)
                 : [];
 
-            if (!messagesLoaded || received.Count > 0)
+            if (!messagesLoaded)
             {
                 await LoadMessagesAsync(ct);
+            }
+            else if (received.Count > 0)
+            {
+                var readAt = await runtime.Messages.MarkConversationAsReadAsync(
+                    activeGroup.Id,
+                    LatestIncomingOrNow(received),
+                    ct);
+                foreach (var message in received.OrderBy(message => message.CreatedAt))
+                {
+                    await UpsertMessageItemAsync(ApplyReadCursor(message, readAt), ct);
+                }
             }
 
             SetStatus("Группа обновлена.");
@@ -978,6 +1023,31 @@ public sealed class GroupChatViewModel : ViewModelBase
         }
     }
 
+    private async Task UpsertMessageItemAsync(Message message, CancellationToken cancellationToken)
+    {
+        var item = await ToItemAsync(message, cancellationToken);
+        for (var index = 0; index < Messages.Count; index++)
+        {
+            if (Messages[index].Id == item.Id)
+            {
+                if (!SameMessageItem(Messages[index], item))
+                {
+                    Messages[index] = item;
+                }
+
+                return;
+            }
+
+            if (Messages[index].CreatedAt > item.CreatedAt)
+            {
+                Messages.Insert(index, item);
+                return;
+            }
+        }
+
+        Messages.Add(item);
+    }
+
     private void RemoveMessageItem(MessageId messageId)
     {
         for (var index = 0; index < Messages.Count; index++)
@@ -1096,10 +1166,7 @@ public sealed class GroupChatViewModel : ViewModelBase
 
     private void PrependMessageItems(IReadOnlyList<GroupChatMessageItem> items)
     {
-        for (var index = items.Count - 1; index >= 0; index--)
-        {
-            Messages.Insert(0, items[index]);
-        }
+        MessageItems.InsertRange(0, items);
     }
 
     private bool HasSamePrefix(IReadOnlyList<GroupChatMessageItem> items)

@@ -352,8 +352,8 @@ public sealed class ChatViewModelTests
         var chat = new ChatViewModel(runtime);
         await chat.OpenOneToOneAsync(account, remote, "Remote");
 
-        Assert.Equal(100, chat.Messages.Count);
-        Assert.Equal("message-005", chat.Messages[0].Body);
+        Assert.Equal(60, chat.Messages.Count);
+        Assert.Equal("message-045", chat.Messages[0].Body);
 
         await chat.LoadOlderMessagesAsync();
 

@@ -1,4 +1,5 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 
@@ -42,6 +43,7 @@ public sealed class ObservableRangeCollection<T> : ObservableCollection<T>
             return;
         }
 
+        var startIndex = Items.Count;
         CheckReentrancy();
         suppressCollectionChanged = true;
         try
@@ -58,7 +60,42 @@ public sealed class ObservableRangeCollection<T> : ObservableCollection<T>
 
         OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
         OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
-        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(
+            NotifyCollectionChangedAction.Add,
+            (IList)materialized,
+            startIndex));
+    }
+
+    public void InsertRange(int index, IEnumerable<T> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        var materialized = items.ToArray();
+        if (materialized.Length == 0)
+        {
+            return;
+        }
+
+        CheckReentrancy();
+        suppressCollectionChanged = true;
+        try
+        {
+            for (var offset = 0; offset < materialized.Length; offset++)
+            {
+                Items.Insert(index + offset, materialized[offset]);
+            }
+        }
+        finally
+        {
+            suppressCollectionChanged = false;
+        }
+
+        OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(
+            NotifyCollectionChangedAction.Add,
+            (IList)materialized,
+            index));
     }
 
     protected override void OnCollectionChanged(NotifyCollectionChangedEventArgs e)
