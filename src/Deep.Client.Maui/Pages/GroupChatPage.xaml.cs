@@ -18,6 +18,8 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 {
     private const double VoiceCancelSwipeThreshold = 84;
     private const double VoiceCancelPanelTranslation = 36;
+    private const double MessageLongPressMoveThreshold = 14;
+    private static readonly TimeSpan MessageLongPressDelay = TimeSpan.FromMilliseconds(420);
     private IDispatcherTimer? autoRefreshTimer;
     private readonly GroupChatViewModel viewModel;
     private readonly INetworkStatusService networkStatusService;
@@ -42,11 +44,18 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private bool voicePointerActive;
     private bool voiceCancelBySwipe;
     private Task? voiceGestureStartTask;
+    private IDispatcherTimer? messageLongPressTimer;
+    private Point messagePointerStart;
+    private GroupChatMessageItem? pendingLongPressMessage;
+    private bool suppressNextAttachmentTap;
     private string? activeVoiceAttachmentId;
     private GroupChatMessageItem? selectedMessage;
     private readonly List<GroupChatMessageItem> messageSearchMatches = [];
     private int messageSearchIndex = -1;
     private AttachmentMetadata? selectedAttachment;
+    private GroupChatMessageItem? selectedAttachmentMessage;
+    private AttachmentMetadata? imageViewerAttachment;
+    private GroupChatMessageItem? imageViewerMessage;
 #if ANDROID
     private AndroidView? voiceButtonPlatformView;
 #endif
@@ -502,6 +511,12 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     private async void OnAttachmentTapped(object? sender, TappedEventArgs e)
     {
+        if (suppressNextAttachmentTap)
+        {
+            suppressNextAttachmentTap = false;
+            return;
+        }
+
         if ((sender as BindableObject)?.BindingContext is not GroupChatMessageItem item)
         {
             return;
@@ -513,7 +528,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
             return;
         }
 
-        ShowAttachmentActionSheet(item.Attachments);
+        ShowAttachmentActionSheet(item, item.Attachments);
     }
 
     private async Task EnsureImagePreviewsAsync()
@@ -581,6 +596,8 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
                 ? $"1 из {item.Attachments.Count}"
                 : "Фото";
             ImageViewerImage.Source = ImageSource.FromFile(file.Path);
+            imageViewerAttachment = attachment;
+            imageViewerMessage = item;
             ImageViewerOverlay.IsVisible = true;
         }
         catch (Exception ex)
@@ -593,6 +610,8 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     {
         ImageViewerOverlay.IsVisible = false;
         ImageViewerImage.Source = null;
+        imageViewerAttachment = null;
+        imageViewerMessage = null;
     }
 
     private async void OnVoiceMessageTapped(object? sender, TappedEventArgs e)
@@ -628,9 +647,10 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         }
     }
 
-    private void ShowAttachmentActionSheet(IReadOnlyList<AttachmentMetadata> attachments)
+    private void ShowAttachmentActionSheet(GroupChatMessageItem? message, IReadOnlyList<AttachmentMetadata> attachments)
     {
         selectedAttachment = attachments.Count == 0 ? null : attachments[0];
+        selectedAttachmentMessage = message;
         if (selectedAttachment is null)
         {
             return;
@@ -638,6 +658,9 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
         AttachmentActionTitle.Text = selectedAttachment.FileName;
         AttachmentActionSubtitle.Text = DescribeAttachment(selectedAttachment, attachments.Count);
+        AttachmentActionReplyRow.IsVisible = message is not null;
+        AttachmentActionDeleteRow.IsVisible = message is not null;
+        AttachmentActionSaveRow.IsVisible = true;
         AttachmentActionOverlay.IsVisible = true;
     }
 
@@ -645,6 +668,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     {
         AttachmentActionOverlay.IsVisible = false;
         selectedAttachment = null;
+        selectedAttachmentMessage = null;
     }
 
     private async void OnOpenAttachmentClicked(object? sender, TappedEventArgs e)
@@ -656,7 +680,28 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
         AttachmentActionOverlay.IsVisible = false;
         selectedAttachment = null;
+        selectedAttachmentMessage = null;
         await AttachmentOpenService.OpenAsync(this, [attachment], attachmentFiles);
+    }
+
+    private async void OnSaveAttachmentClicked(object? sender, TappedEventArgs e)
+    {
+        if (selectedAttachment is not { } attachment)
+        {
+            return;
+        }
+
+        AttachmentActionOverlay.IsVisible = false;
+        selectedAttachment = null;
+        selectedAttachmentMessage = null;
+        try
+        {
+            await AttachmentOpenService.SaveAsync(attachment, attachmentFiles);
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Вложение", ex.Message, "OK");
+        }
     }
 
     private async void OnShareAttachmentClicked(object? sender, TappedEventArgs e)
@@ -668,6 +713,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
         AttachmentActionOverlay.IsVisible = false;
         selectedAttachment = null;
+        selectedAttachmentMessage = null;
         try
         {
             await AttachmentOpenService.ShareAsync(attachment, attachmentFiles);
@@ -687,7 +733,46 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
         AttachmentActionOverlay.IsVisible = false;
         selectedAttachment = null;
+        selectedAttachmentMessage = null;
         await Clipboard.Default.SetTextAsync(attachment.FileName);
+    }
+
+    private void OnReplyFromAttachmentClicked(object? sender, TappedEventArgs e)
+    {
+        if (selectedAttachmentMessage is not { } message)
+        {
+            return;
+        }
+
+        AttachmentActionOverlay.IsVisible = false;
+        selectedAttachment = null;
+        selectedAttachmentMessage = null;
+        viewModel.BeginReply(message);
+        DraftEntry.Focus();
+    }
+
+    private async void OnDeleteFromAttachmentClicked(object? sender, TappedEventArgs e)
+    {
+        if (selectedAttachmentMessage is not { } message)
+        {
+            return;
+        }
+
+        AttachmentActionOverlay.IsVisible = false;
+        selectedAttachment = null;
+        selectedAttachmentMessage = null;
+        await DeleteMessageWithConfirmationAsync(message);
+    }
+
+    private void OnImageViewerMoreClicked(object? sender, TappedEventArgs e)
+    {
+        if (imageViewerAttachment is not { } attachment)
+        {
+            return;
+        }
+
+        var message = imageViewerMessage;
+        ShowAttachmentActionSheet(message, [attachment]);
     }
 
     private void ApplyAndroidSafeAreaCompensation()
@@ -715,12 +800,152 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
             return;
         }
 
+        ShowMessageMenu(item);
+    }
+
+    private void OnMessagePointerPressed(object? sender, PointerEventArgs e)
+    {
+        if ((sender as BindableObject)?.BindingContext is not GroupChatMessageItem item)
+        {
+            return;
+        }
+
+        pendingLongPressMessage = item;
+        messagePointerStart = e.GetPosition(PageLayout) ?? new Point(0, 0);
+        messageLongPressTimer ??= Dispatcher.CreateTimer();
+        messageLongPressTimer.Interval = MessageLongPressDelay;
+        messageLongPressTimer.Tick -= OnMessageLongPressTimerTick;
+        messageLongPressTimer.Tick += OnMessageLongPressTimerTick;
+        messageLongPressTimer.Start();
+    }
+
+    private void OnMessagePointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (pendingLongPressMessage is null)
+        {
+            return;
+        }
+
+        var point = e.GetPosition(PageLayout);
+        if (point is null)
+        {
+            return;
+        }
+
+        var dx = point.Value.X - messagePointerStart.X;
+        var dy = point.Value.Y - messagePointerStart.Y;
+        if (Math.Sqrt(dx * dx + dy * dy) > MessageLongPressMoveThreshold)
+        {
+            CancelMessageLongPress();
+        }
+    }
+
+    private void OnMessagePointerReleased(object? sender, PointerEventArgs e) =>
+        CancelMessageLongPress();
+
+    private void OnMessageLongPressTimerTick(object? sender, EventArgs e)
+    {
+        messageLongPressTimer?.Stop();
+        if (pendingLongPressMessage is not { } message)
+        {
+            return;
+        }
+
+        pendingLongPressMessage = null;
+        suppressNextAttachmentTap = message.HasAttachments;
+        ShowMessageMenu(message);
+    }
+
+    private void CancelMessageLongPress()
+    {
+        messageLongPressTimer?.Stop();
+        pendingLongPressMessage = null;
+    }
+
+    private void ShowMessageMenu(GroupChatMessageItem item)
+    {
         selectedMessage = item;
+        var attachment = PrimaryActionAttachment(item);
+        var hasAttachment = attachment is not null;
+        var hasText = item.HasVisibleBody;
+        MessageMenuOpenMediaRow.IsVisible = item.IsImageMessage;
+        MessageMenuSaveAttachmentRow.IsVisible = hasAttachment;
+        MessageMenuShareAttachmentRow.IsVisible = hasAttachment;
+        MessageMenuCopyAttachmentNameRow.IsVisible = hasAttachment;
+        MessageMenuCopyTextRow.IsVisible = hasText;
         MessageMenuOverlay.IsVisible = true;
     }
 
     private void OnCloseMessageMenu(object? sender, TappedEventArgs e)
     {
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+    }
+
+    private async void OnOpenSelectedMessageAttachment(object? sender, TappedEventArgs e)
+    {
+        if (selectedMessage is not { } message)
+        {
+            return;
+        }
+
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+        if (message.IsImageMessage)
+        {
+            await OpenInlineImageAsync(message);
+            return;
+        }
+
+        await AttachmentOpenService.OpenAsync(this, message.Attachments, attachmentFiles);
+    }
+
+    private async void OnSaveSelectedMessageAttachment(object? sender, TappedEventArgs e)
+    {
+        if (selectedMessage is not { } message || PrimaryActionAttachment(message) is not { } attachment)
+        {
+            return;
+        }
+
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+        try
+        {
+            await AttachmentOpenService.SaveAsync(attachment, attachmentFiles);
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Вложение", ex.Message, "OK");
+        }
+    }
+
+    private async void OnShareSelectedMessageAttachment(object? sender, TappedEventArgs e)
+    {
+        if (selectedMessage is not { } message || PrimaryActionAttachment(message) is not { } attachment)
+        {
+            return;
+        }
+
+        MessageMenuOverlay.IsVisible = false;
+        selectedMessage = null;
+        try
+        {
+            await AttachmentOpenService.ShareAsync(attachment, attachmentFiles);
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Вложение", ex.Message, "OK");
+        }
+    }
+
+    private async void OnCopySelectedAttachmentName(object? sender, TappedEventArgs e)
+    {
+        if (selectedMessage is not { } message || PrimaryActionAttachment(message) is not { } attachment)
+        {
+            return;
+        }
+
+        await Clipboard.Default.SetTextAsync(attachment.FileName);
         MessageMenuOverlay.IsVisible = false;
         selectedMessage = null;
     }
@@ -771,6 +996,11 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
         MessageMenuOverlay.IsVisible = false;
         selectedMessage = null;
+        await DeleteMessageWithConfirmationAsync(message);
+    }
+
+    private async Task DeleteMessageWithConfirmationAsync(GroupChatMessageItem message)
+    {
         if (!await DisplayAlertAsync("Удалить сообщение?", "Сообщение будет удалено с этого устройства.", "Удалить", "Отмена"))
         {
             return;
@@ -778,6 +1008,9 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
         await viewModel.DeleteMessageAsync(message);
     }
+
+    private static AttachmentMetadata? PrimaryActionAttachment(GroupChatMessageItem message) =>
+        message.PrimaryImageAttachment ?? (message.Attachments.Count == 0 ? null : message.Attachments[0]);
 
     private void ApplyComposerPreferences()
     {

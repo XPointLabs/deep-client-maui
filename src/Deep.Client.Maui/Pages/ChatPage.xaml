@@ -98,7 +98,7 @@
                     <Grid Padding="2,0,2,4">
                         <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
                             <Border.GestureRecognizers>
-                                <TapGestureRecognizer Tapped="OnMessageTapped" />
+                                <PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" />
                             </Border.GestureRecognizers>
                             <VerticalStackLayout Spacing="4">
                                 <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}">
@@ -315,7 +315,7 @@
             </Border>
         </Grid>
 
-        <Grid x:Name="AttachmentActionOverlay" Grid.RowSpan="5" IsVisible="False" ZIndex="108">
+        <Grid x:Name="AttachmentActionOverlay" Grid.RowSpan="5" IsVisible="False" ZIndex="120">
             <BoxView Color="#99000000"><BoxView.GestureRecognizers><TapGestureRecognizer Tapped="OnCloseAttachmentActionSheet" /></BoxView.GestureRecognizers></BoxView>
             <Border Style="{StaticResource AttachmentSheetBorder}" VerticalOptions="End">
                 <VerticalStackLayout Spacing="8">
@@ -337,6 +337,13 @@
                         <Label Grid.Column="1" Text="Открыть" FontSize="15" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnOpenAttachmentClicked" /></Grid.GestureRecognizers>
                     </Grid>
+                    <Grid x:Name="AttachmentActionSaveRow" Style="{StaticResource SheetActionRow}">
+                        <Border Style="{StaticResource SheetIconCircle}">
+                            <Path Data="M12,4 V16 M7,11 L12,16 L17,11 M6,20 H18" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <Label Grid.Column="1" Text="Сохранить на устройство" FontSize="15" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnSaveAttachmentClicked" /></Grid.GestureRecognizers>
+                    </Grid>
                     <Grid Style="{StaticResource SheetActionRow}">
                         <Border Style="{StaticResource SheetIconCircle}">
                             <Path Data="M12,5 V17 M7,10 L12,5 L17,10 M6,19 H18" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
@@ -351,18 +358,40 @@
                         <Label Grid.Column="1" Text="Копировать имя файла" FontSize="15" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnCopyAttachmentNameClicked" /></Grid.GestureRecognizers>
                     </Grid>
+                    <Grid x:Name="AttachmentActionReplyRow" Style="{StaticResource SheetActionRow}">
+                        <Border Style="{StaticResource SheetIconCircle}">
+                            <Path Data="M20,5 H10 C6,5 4,8 4,12 C4,16 7,19 11,19 H14 M9,14 L14,19 L9,24" Stroke="{StaticResource TextPrimary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <Label Grid.Column="1" Text="Ответить" FontSize="15" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnReplyFromAttachmentClicked" /></Grid.GestureRecognizers>
+                    </Grid>
+                    <Grid x:Name="AttachmentActionDeleteRow" Style="{StaticResource SheetActionRow}">
+                        <Border Style="{StaticResource SheetIconCircle}">
+                            <Path Data="M4,7 H20 M8,7 V4 H16 V7 M7,10 V20 H17 V10 M10,12 V18 M14,12 V18" Stroke="{StaticResource DangerColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <Label Grid.Column="1" Text="Удалить у меня" FontSize="15" TextColor="{StaticResource DangerColor}" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnDeleteFromAttachmentClicked" /></Grid.GestureRecognizers>
+                    </Grid>
                 </VerticalStackLayout>
             </Border>
         </Grid>
 
         <Grid x:Name="ImageViewerOverlay" Grid.RowSpan="5" IsVisible="False" ZIndex="112" BackgroundColor="#F2000000">
             <Grid RowDefinitions="56,*">
-                <Grid ColumnDefinitions="56,*" Padding="4,0,12,0" BackgroundColor="#66000000">
+                <Grid ColumnDefinitions="56,*,56" Padding="4,0,4,0" BackgroundColor="#66000000">
                     <Border WidthRequest="44" HeightRequest="44" Background="Transparent" StrokeThickness="0" VerticalOptions="Center">
                         <Path Data="M7,7 L17,17 M17,7 L7,17" Stroke="White" StrokeThickness="2.2" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                         <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnCloseImageViewer" /></Border.GestureRecognizers>
                     </Border>
                     <Label x:Name="ImageViewerTitle" Grid.Column="1" Text="Фото" FontSize="16" FontAttributes="Bold" TextColor="White" VerticalTextAlignment="Center" LineBreakMode="TailTruncation" />
+                    <Border Grid.Column="2" WidthRequest="44" HeightRequest="44" Background="Transparent" StrokeThickness="0" VerticalOptions="Center">
+                        <VerticalStackLayout Spacing="3" HorizontalOptions="Center" VerticalOptions="Center">
+                            <BoxView WidthRequest="4" HeightRequest="4" CornerRadius="2" Color="White" />
+                            <BoxView WidthRequest="4" HeightRequest="4" CornerRadius="2" Color="White" />
+                            <BoxView WidthRequest="4" HeightRequest="4" CornerRadius="2" Color="White" />
+                        </VerticalStackLayout>
+                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnImageViewerMoreClicked" /></Border.GestureRecognizers>
+                    </Border>
                 </Grid>
                 <Image x:Name="ImageViewerImage" Grid.Row="1" Aspect="AspectFit" Margin="0" />
             </Grid>
@@ -416,7 +445,27 @@
                         <Label Grid.Column="1" Text="Ответить" FontSize="15" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnReplySelectedMessage" /></Grid.GestureRecognizers>
                     </Grid>
-                    <Grid HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
+                    <Grid x:Name="MessageMenuOpenMediaRow" HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
+                        <Path Data="M5,7 H23 V21 H5 Z M8,18 L12,14 L15,17 L17,15 L22,20 M10,10 A2,2 0 1 0 10,14 A2,2 0 1 0 10,10" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="Открыть фото" FontSize="15" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnOpenSelectedMessageAttachment" /></Grid.GestureRecognizers>
+                    </Grid>
+                    <Grid x:Name="MessageMenuSaveAttachmentRow" HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
+                        <Path Data="M12,4 V16 M7,11 L12,16 L17,11 M6,20 H18" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="Сохранить на устройство" FontSize="15" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnSaveSelectedMessageAttachment" /></Grid.GestureRecognizers>
+                    </Grid>
+                    <Grid x:Name="MessageMenuShareAttachmentRow" HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
+                        <Path Data="M12,5 V17 M7,10 L12,5 L17,10 M6,19 H18" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="Поделиться" FontSize="15" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnShareSelectedMessageAttachment" /></Grid.GestureRecognizers>
+                    </Grid>
+                    <Grid x:Name="MessageMenuCopyAttachmentNameRow" HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
+                        <Path Data="M8,8 H19 V21 H8 Z M5,3 H16 V8" Stroke="{StaticResource TextSecondary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="Копировать имя файла" FontSize="15" VerticalTextAlignment="Center" />
+                        <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnCopySelectedAttachmentName" /></Grid.GestureRecognizers>
+                    </Grid>
+                    <Grid x:Name="MessageMenuCopyTextRow" HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
                         <Path Data="M8,8 H19 V21 H8 Z M5,3 H16 V8" Stroke="{StaticResource TextPrimary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
                         <Label Grid.Column="1" Text="Копировать" FontSize="15" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnCopySelectedMessage" /></Grid.GestureRecognizers>
