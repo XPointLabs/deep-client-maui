@@ -42,8 +42,8 @@ internal static class AndroidRealityTransport
                 EnsureSuccess(response);
             }
 
-            WaitForListenersAsync(bootstrap.Seeds).GetAwaiter().GetResult();
             routerBaseUrls = urls;
+            ProbeListenersInBackground(bootstrap.Seeds);
             return routerBaseUrls;
         }
     }
@@ -157,6 +157,22 @@ internal static class AndroidRealityTransport
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await Task.WhenAll(seeds.Select(seed => WaitForListenerAsync(seed, timeout.Token))).ConfigureAwait(false);
+    }
+
+    private static void ProbeListenersInBackground(IReadOnlyList<RealitySeed> seeds)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await WaitForListenersAsync(seeds).ConfigureAwait(false);
+                global::Android.Util.Log.Info("DeepXray", "Embedded Xray local listeners are ready.");
+            }
+            catch (Exception ex)
+            {
+                global::Android.Util.Log.Warn("DeepXray", $"Embedded Xray listener readiness probe failed: {ex.Message}");
+            }
+        });
     }
 
     private static async Task WaitForListenerAsync(RealitySeed seed, CancellationToken cancellationToken)
