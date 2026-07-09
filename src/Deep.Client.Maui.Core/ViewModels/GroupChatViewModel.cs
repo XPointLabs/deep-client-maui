@@ -241,7 +241,7 @@ public sealed record GroupMemberItem(SessionId SessionId, GroupMemberRole Role, 
 
 public sealed class GroupChatViewModel : ViewModelBase
 {
-    private const int InitialMessagePageSize = 60;
+    private const int InitialMessagePageSize = 30;
     private readonly ClientRuntime runtime;
     private readonly IContactRepository contacts;
     private readonly IAttachmentPickerService? attachmentPicker;
@@ -1159,6 +1159,20 @@ public sealed class GroupChatViewModel : ViewModelBase
             return;
         }
 
+        if (items.Count > 0 && Messages.Count > items.Count && HasSameSuffix(items, out var suffixOffset))
+        {
+            for (var index = 0; index < items.Count; index++)
+            {
+                var messageIndex = suffixOffset + index;
+                if (!SameMessageItem(Messages[messageIndex], items[index]))
+                {
+                    Messages[messageIndex] = items[index];
+                }
+            }
+
+            return;
+        }
+
         MessageItems.ReplaceRange(items);
     }
 
@@ -1174,6 +1188,25 @@ public sealed class GroupChatViewModel : ViewModelBase
         for (var index = 0; index < Messages.Count; index++)
         {
             if (Messages[index].Id != items[index].Id)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool HasSameSuffix(IReadOnlyList<GroupChatMessageItem> items, out int offset)
+    {
+        offset = Messages.Count - items.Count;
+        if (items.Count == 0 || offset < 0)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < items.Count; index++)
+        {
+            if (Messages[offset + index].Id != items[index].Id)
             {
                 return false;
             }

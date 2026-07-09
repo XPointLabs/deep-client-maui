@@ -59,6 +59,20 @@ public sealed class ConversationsViewModelTests
     }
 
     [Fact]
+    public async Task LoadCachedAsyncKeepsGlobalBusyStateOff()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        await runtime.Accounts.RegisterAsync("Owner");
+        await runtime.Conversations.GetOrCreateOneToOneAsync(SessionId.CreateNew(), "Alice");
+        var viewModel = new ConversationsViewModel(runtime);
+
+        await viewModel.LoadCachedAsync();
+
+        Assert.False(viewModel.IsBusy);
+        Assert.Single(viewModel.Conversations);
+    }
+
+    [Fact]
     public async Task SyncUpdatesUnreadCountFromReadCursorWithoutConversationUpdate()
     {
         var clock = new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z"));

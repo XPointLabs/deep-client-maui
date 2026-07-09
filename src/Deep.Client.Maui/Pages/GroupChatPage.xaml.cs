@@ -28,6 +28,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private readonly VoiceMessagePlaybackService voicePlayback = new();
     private CancellationTokenSource? pendingScrollToEnd;
     private CancellationTokenSource? routeLoadCancellation;
+    private CancellationTokenSource? pageActivityCancellation;
     private IDisposable? keyboardInsetSubscription;
     private IDispatcherTimer? voiceRecordingTimer;
     private IDispatcherTimer? voicePlaybackTimer;
@@ -50,6 +51,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private Point messagePointerStart;
     private GroupChatMessageItem? pendingLongPressMessage;
     private bool suppressNextAttachmentTap;
+    private bool refreshingMessages;
     private string? activeVoiceAttachmentId;
     private GroupChatMessageItem? selectedMessage;
     private readonly List<GroupChatMessageItem> messageSearchMatches = [];
@@ -79,6 +81,9 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        pageActivityCancellation?.Cancel();
+        pageActivityCancellation?.Dispose();
+        pageActivityCancellation = new CancellationTokenSource();
         SubscribePageEvents();
 #if ANDROID
         OnVoiceButtonHandlerChanged(VoiceButton, EventArgs.Empty);
@@ -106,6 +111,9 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         keyboardBottomInset = 0;
         ApplyAndroidSafeAreaCompensation();
         autoRefreshTimer?.Stop();
+        pageActivityCancellation?.Cancel();
+        pageActivityCancellation?.Dispose();
+        pageActivityCancellation = null;
         StopRecordingUiTimer();
         StopVoicePlaybackTimer();
         ClearActiveVoicePlayback();
@@ -436,7 +444,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         if (autoRefreshTimer is null)
         {
             autoRefreshTimer = Dispatcher.CreateTimer();
-            autoRefreshTimer.Interval = TimeSpan.FromSeconds(4);
+            autoRefreshTimer.Interval = TimeSpan.FromSeconds(10);
             autoRefreshTimer.Tick += OnAutoRefreshTick;
         }
 
@@ -445,23 +453,54 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     private async void OnAutoRefreshTick(object? sender, EventArgs e)
     {
-        if (viewModel.IsBusy || string.IsNullOrWhiteSpace(viewModel.GroupTitle))
+        if (pageActivityCancellation is not { } pageCancellation)
         {
             return;
         }
 
-        await viewModel.RefreshAsync();
+        var cancellationToken = pageCancellation.Token;
+        if (viewModel.IsBusy || string.IsNullOrWhiteSpace(viewModel.GroupTitle) || refreshingMessages || cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        await RefreshCurrentGroupAsync(cancellationToken);
     }
 
     private void OnBackgroundSyncScheduled()
     {
         MainThread.BeginInvokeOnMainThread(async () =>
         {
-            if (!viewModel.IsBusy && !string.IsNullOrWhiteSpace(viewModel.GroupTitle))
+            if (pageActivityCancellation is not { } pageCancellation)
             {
-                await viewModel.RefreshAsync();
+                return;
+            }
+
+            var cancellationToken = pageCancellation.Token;
+            if (!viewModel.IsBusy &&
+                !string.IsNullOrWhiteSpace(viewModel.GroupTitle) &&
+                !refreshingMessages &&
+                !cancellationToken.IsCancellationRequested)
+            {
+                await RefreshCurrentGroupAsync(cancellationToken);
             }
         });
+    }
+
+    private async Task RefreshCurrentGroupAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            refreshingMessages = true;
+            await viewModel.RefreshAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            refreshingMessages = false;
+        }
     }
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)

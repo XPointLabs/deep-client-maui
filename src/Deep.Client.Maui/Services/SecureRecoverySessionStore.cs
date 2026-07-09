@@ -7,7 +7,7 @@ using DomainContact = Deep.Client.Shared.Domain.Contact;
 
 namespace Deep.Client.Maui.Services;
 
-internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILocalSessionStore, IOneToOneConversationOpenRepository
+internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILocalSessionStore, IOneToOneConversationOpenRepository, IDisposable
 {
     private const string SecureRecoveryPhraseKey = "deep.account.recovery-phrase.v1";
 
@@ -116,9 +116,10 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILo
         string? displayName,
         int messageLimit,
         DateTimeOffset now,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        bool markAsRead = true) =>
         inner is IOneToOneConversationOpenRepository repository
-            ? repository.OpenOneToOneConversationAsync(recipient, displayName, messageLimit, now, cancellationToken)
+            ? repository.OpenOneToOneConversationAsync(recipient, displayName, messageLimit, now, cancellationToken, markAsRead)
             : Task.FromException<OneToOneConversationOpenSnapshot?>(
                 new NotSupportedException("The wrapped session store does not support optimized one-to-one conversation opening."));
 
@@ -192,4 +193,12 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILo
 
     private static bool IsRecoveryPhraseKey(string key) =>
         string.Equals(key, SessionAccountService.ActiveRecoveryPhraseKey, StringComparison.Ordinal);
+
+    public void Dispose()
+    {
+        if (inner is IDisposable disposableInner)
+        {
+            disposableInner.Dispose();
+        }
+    }
 }

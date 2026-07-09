@@ -56,6 +56,63 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task PrepareRouteHydratesRecentMessagesFromUiCacheBeforeDatabaseOpen()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var account = await runtime.Accounts.RegisterAsync("Alice");
+        var recipient = SessionId.CreateNew();
+        var cache = new ChatOpenUiCache();
+
+        var chat = new ChatViewModel(runtime, openCache: cache);
+        await chat.OpenOneToOneAsync(account, recipient, "Bob");
+        chat.Draft = "instant cache";
+        await chat.SendAsync();
+
+        var reopened = new ChatViewModel(runtime, openCache: cache);
+        reopened.PrepareRoute(recipient, "Bob");
+
+        var item = Assert.Single(reopened.Messages);
+        Assert.Equal("instant cache", item.Body);
+        Assert.Equal("Bob", reopened.ConversationTitle);
+        Assert.Equal(recipient, reopened.Counterpart);
+    }
+
+    [Fact]
+    public async Task OpenFromRouteClearsCachedMessagesWhenLocalSnapshotIsEmpty()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var account = await runtime.Accounts.RegisterAsync("Alice");
+        var recipient = SessionId.CreateNew();
+        var conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(recipient, "Bob");
+        var message = new Message(
+            MessageId.NewId(),
+            conversation.Id,
+            account.SessionId,
+            recipient,
+            "stale cache",
+            MessageDirection.Outgoing,
+            MessageDeliveryState.Sent,
+            DateTimeOffset.Parse("2026-05-28T00:00:01Z"),
+            []);
+        await ((IMessageRepository)runtime.Store).AppendAsync(message);
+
+        var cache = new ChatOpenUiCache();
+        var cached = new ChatViewModel(runtime, openCache: cache);
+        await cached.OpenFromRouteAsync(recipient.Value, "Bob");
+        Assert.Single(cached.Messages);
+
+        await ((IMessageRepository)runtime.Store).DeleteAsync(message.Id);
+
+        var reopened = new ChatViewModel(runtime, openCache: cache);
+        reopened.PrepareRoute(recipient, "Bob");
+        Assert.Single(reopened.Messages);
+
+        await reopened.OpenFromRouteAsync(recipient.Value, "Bob");
+
+        Assert.Empty(reopened.Messages);
+    }
+
+    [Fact]
     public void ImagePresentationSeparatesPhotosFromImageDocuments()
     {
         var photo = new ChatMessageItem(
@@ -398,9 +455,11 @@ public sealed class ChatViewModelTests
         var chat = new ChatViewModel(runtime);
         await chat.OpenOneToOneAsync(account, remote, "Remote");
 
-        Assert.Equal(60, chat.Messages.Count);
-        Assert.Equal("message-045", chat.Messages[0].Body);
+        Assert.Equal(30, chat.Messages.Count);
+        Assert.Equal("message-075", chat.Messages[0].Body);
 
+        await chat.LoadOlderMessagesAsync();
+        await chat.LoadOlderMessagesAsync();
         await chat.LoadOlderMessagesAsync();
 
         Assert.Equal(105, chat.Messages.Count);

@@ -7,7 +7,8 @@
     BackgroundColor="{StaticResource PageBackground}"
     FlyoutBehavior="Disabled"
     Shell.BackgroundColor="{StaticResource PageBackground}"
-    Shell.ForegroundColor="{StaticResource TextPrimary}">
+    Shell.ForegroundColor="{StaticResource TextPrimary}"
+    Shell.NavBarIsVisible="False">
     <ShellContent
         x:Name="OnboardingTab"
         AutomationId="Tab.Onboarding"

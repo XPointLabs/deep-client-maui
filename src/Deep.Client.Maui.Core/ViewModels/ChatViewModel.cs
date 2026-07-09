@@ -238,11 +238,12 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
 
 public sealed class ChatViewModel : ViewModelBase
 {
-    private const int InitialMessagePageSize = 60;
+    private const int InitialMessagePageSize = 30;
     private readonly ClientRuntime runtime;
     private readonly ICallService callService;
     private readonly IAttachmentPickerService? attachmentPicker;
     private readonly IVoiceMessageRecorder? voiceRecorder;
+    private readonly ChatOpenUiCache? openCache;
     private Conversation? conversation;
     private SessionAccount? account;
     private SessionId? counterpart;
@@ -260,12 +261,14 @@ public sealed class ChatViewModel : ViewModelBase
         ClientRuntime runtime,
         ICallService? callService = null,
         IAttachmentPickerService? attachmentPicker = null,
-        IVoiceMessageRecorder? voiceRecorder = null)
+        IVoiceMessageRecorder? voiceRecorder = null,
+        ChatOpenUiCache? openCache = null)
     {
         this.runtime = runtime;
         this.callService = callService ?? new UnavailableCallService();
         this.attachmentPicker = attachmentPicker;
         this.voiceRecorder = voiceRecorder;
+        this.openCache = openCache;
         Messages = new ObservableRangeCollection<ChatMessageItem>();
         StagedAttachments = [];
         StagedAttachments.CollectionChanged += OnStagedAttachmentsChanged;
@@ -474,6 +477,14 @@ public sealed class ChatViewModel : ViewModelBase
 
     public void PrepareRoute(SessionId recipient, string? displayName = null)
     {
+        ReplyingTo = null;
+        StagedAttachments.Clear();
+        if (openCache?.TryGet(recipient, out var cached) == true)
+        {
+            ApplyUiSnapshot(cached);
+            return;
+        }
+
         account = null;
         counterpart = recipient;
         oldestLoadedMessageAt = null;
@@ -481,8 +492,6 @@ public sealed class ChatViewModel : ViewModelBase
         Conversation = CreateRouteConversation(recipient, displayName);
         IsBlocked = false;
         IsMessageRequest = false;
-        ReplyingTo = null;
-        StagedAttachments.Clear();
         Messages.Clear();
 
         RaisePropertyChanged(nameof(Counterpart));
@@ -490,6 +499,24 @@ public sealed class ChatViewModel : ViewModelBase
         SendCommand.RaiseCanExecuteChanged();
         ReceiveCommand.RaiseCanExecuteChanged();
         RaiseComposerStateChanged();
+    }
+
+    private void ApplyUiSnapshot(ChatOpenUiSnapshot snapshot)
+    {
+        account = snapshot.ActiveAccount;
+        counterpart = snapshot.Counterpart;
+        oldestLoadedMessageAt = snapshot.OldestLoadedMessageAt;
+        hasOlderMessages = snapshot.HasOlderMessages;
+        Conversation = snapshot.Conversation;
+        IsBlocked = snapshot.IsBlocked;
+        IsMessageRequest = snapshot.IsMessageRequest;
+        SyncMessageItems(snapshot.Messages);
+        RaisePropertyChanged(nameof(Counterpart));
+        RaisePropertyChanged(nameof(IsSelfConversation));
+        SendCommand.RaiseCanExecuteChanged();
+        ReceiveCommand.RaiseCanExecuteChanged();
+        RaiseComposerStateChanged();
+        CacheCurrentConversation();
     }
 
     public async Task OpenOneToOneAsync(SessionAccount activeAccount, SessionId recipient, string? displayName = null, CancellationToken cancellationToken = default)
@@ -520,14 +547,6 @@ public sealed class ChatViewModel : ViewModelBase
         IsBlocked = contact?.IsBlocked == true;
         IsMessageRequest = recipient != activeAccount.SessionId
             && contact is { IsApproved: false, IsBlocked: false };
-        if (recipient == activeAccount.SessionId)
-        {
-            var repaired = await runtime.Messages.RepairSelfConversationAsync(activeAccount.SessionId, cancellationToken);
-            if (repaired > 0)
-            {
-                await ReloadMessagesAsync(cancellationToken);
-            }
-        }
 
         SendCommand.RaiseCanExecuteChanged();
         ReceiveCommand.RaiseCanExecuteChanged();
@@ -551,15 +570,6 @@ public sealed class ChatViewModel : ViewModelBase
             }
 
             ApplyOpenSnapshot(recipient, snapshot);
-            if (recipient == snapshot.ActiveAccount.SessionId)
-            {
-                var repaired = await runtime.Messages.RepairSelfConversationAsync(snapshot.ActiveAccount.SessionId, cancellationToken);
-                if (repaired > 0)
-                {
-                    await ReloadMessagesAsync(cancellationToken);
-                }
-            }
-
             return;
         }
 
@@ -723,6 +733,7 @@ public sealed class ChatViewModel : ViewModelBase
         IsMessageRequest = false;
 
         Messages.Add(ToItem(pending));
+        CacheCurrentConversation();
         ReplyingTo = null;
         _ = DispatchPendingMessageAsync(pending);
     }
@@ -747,6 +758,7 @@ public sealed class ChatViewModel : ViewModelBase
             Messages.Clear();
             oldestLoadedMessageAt = null;
             hasOlderMessages = false;
+            CacheCurrentConversation();
         }, cancellationToken);
 
     public Task DeleteConversationAsync(CancellationToken cancellationToken = default) =>
@@ -762,6 +774,10 @@ public sealed class ChatViewModel : ViewModelBase
             Messages.Clear();
             oldestLoadedMessageAt = null;
             hasOlderMessages = false;
+            if (counterpart is { } currentCounterpart)
+            {
+                openCache?.Remove(currentCounterpart);
+            }
         }, cancellationToken);
 
     public Task DeleteMessageAsync(ChatMessageItem message, CancellationToken cancellationToken = default) =>
@@ -1098,6 +1114,7 @@ public sealed class ChatViewModel : ViewModelBase
         SendCommand.RaiseCanExecuteChanged();
         ReceiveCommand.RaiseCanExecuteChanged();
         RaiseComposerStateChanged();
+        CacheCurrentConversation();
     }
 
     private async Task ReloadMessagesAsync(CancellationToken cancellationToken)
@@ -1111,7 +1128,6 @@ public sealed class ChatViewModel : ViewModelBase
             Conversation.Id,
             InitialMessagePageSize,
             cancellationToken);
-        SyncMessageItems(messages.Select(ToItem).ToList());
         oldestLoadedMessageAt = messages.Count == 0 ? null : messages[0].CreatedAt;
         hasOlderMessages = messages.Count == InitialMessagePageSize;
 
@@ -1126,6 +1142,7 @@ public sealed class ChatViewModel : ViewModelBase
         }
 
         SyncMessageItems(items);
+        CacheCurrentConversation();
     }
 
     private Conversation CreateRouteConversation(SessionId recipient, string? displayName)
@@ -1158,6 +1175,7 @@ public sealed class ChatViewModel : ViewModelBase
             if (Messages[index].Id == message.Id)
             {
                 Messages[index] = ToItem(message);
+                CacheCurrentConversation();
                 return;
             }
         }
@@ -1173,6 +1191,7 @@ public sealed class ChatViewModel : ViewModelBase
                 if (!SameMessageItem(Messages[index], item))
                 {
                     Messages[index] = item;
+                    CacheCurrentConversation();
                 }
 
                 return;
@@ -1181,11 +1200,13 @@ public sealed class ChatViewModel : ViewModelBase
             if (Messages[index].CreatedAt > item.CreatedAt)
             {
                 Messages.Insert(index, item);
+                CacheCurrentConversation();
                 return;
             }
         }
 
         Messages.Add(item);
+        CacheCurrentConversation();
     }
 
     private void RemoveMessageItem(MessageId messageId)
@@ -1195,6 +1216,7 @@ public sealed class ChatViewModel : ViewModelBase
             if (Messages[index].Id == messageId)
             {
                 Messages.RemoveAt(index);
+                CacheCurrentConversation();
                 return;
             }
         }
@@ -1246,6 +1268,20 @@ public sealed class ChatViewModel : ViewModelBase
             return;
         }
 
+        if (items.Count > 0 && Messages.Count > items.Count && HasSameSuffix(items, out var suffixOffset))
+        {
+            for (var index = 0; index < items.Count; index++)
+            {
+                var messageIndex = suffixOffset + index;
+                if (!SameMessageItem(Messages[messageIndex], items[index]))
+                {
+                    Messages[messageIndex] = items[index];
+                }
+            }
+
+            return;
+        }
+
         MessageItems.ReplaceRange(items);
     }
 
@@ -1254,6 +1290,26 @@ public sealed class ChatViewModel : ViewModelBase
     private void PrependMessageItems(IReadOnlyList<ChatMessageItem> items)
     {
         MessageItems.InsertRange(0, items);
+        CacheCurrentConversation();
+    }
+
+    private void CacheCurrentConversation()
+    {
+        if (openCache is null || account is null || counterpart is null || Conversation is null)
+        {
+            return;
+        }
+
+        openCache.Store(new ChatOpenUiSnapshot(
+            account,
+            counterpart.Value,
+            Conversation,
+            IsBlocked,
+            IsMessageRequest,
+            Messages.ToArray(),
+            oldestLoadedMessageAt,
+            hasOlderMessages,
+            runtime.Clock.UtcNow));
     }
 
     private bool HasSamePrefix(IReadOnlyList<ChatMessageItem> items)
@@ -1261,6 +1317,25 @@ public sealed class ChatViewModel : ViewModelBase
         for (var index = 0; index < Messages.Count; index++)
         {
             if (Messages[index].Id != items[index].Id)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool HasSameSuffix(IReadOnlyList<ChatMessageItem> items, out int offset)
+    {
+        offset = Messages.Count - items.Count;
+        if (items.Count == 0 || offset < 0)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < items.Count; index++)
+        {
+            if (Messages[offset + index].Id != items[index].Id)
             {
                 return false;
             }

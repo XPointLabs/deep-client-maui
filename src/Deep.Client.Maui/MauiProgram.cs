@@ -42,7 +42,7 @@ public static class MauiProgram
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>();
 #if ANDROID
-        ConfigureAndroidTextInputChrome();
+        ConfigureAndroidHandlers();
 #endif
 
         var featureFlags = BuildFeatureFlags();
@@ -205,6 +205,7 @@ public static class MauiProgram
         });
         builder.Services.AddSingleton<IPushRegistrationCoordinator, PushRegistrationCoordinator>();
         builder.Services.AddSingleton<SyncPollingPolicy>();
+        builder.Services.AddSingleton<ChatOpenUiCache>();
         builder.Services.AddSingleton<IMediaCodecService, MauiMediaCodecService>();
         builder.Services.AddSingleton<IPermissionsService, MauiPermissionsService>();
         builder.Services.AddSingleton<IBackgroundTaskService, MauiBackgroundTaskService>();
@@ -282,6 +283,30 @@ public static class MauiProgram
     }
 
 #if ANDROID
+    private static void ConfigureAndroidHandlers()
+    {
+        ConfigureAndroidShellToolbar();
+        ConfigureAndroidTextInputChrome();
+    }
+
+    private static void ConfigureAndroidShellToolbar()
+    {
+        ToolbarHandler.Mapper.ModifyMapping(
+            nameof(IToolbar.BackButtonVisible),
+            static (handler, toolbar, action) =>
+            {
+                try
+                {
+                    action?.Invoke(handler, toolbar);
+                }
+                catch (Resources.NotFoundException)
+                {
+                    // Deep renders custom in-page headers, so a missing native Shell toolbar
+                    // accessibility resource should not prevent the app from starting.
+                }
+            });
+    }
+
     private static void ConfigureAndroidTextInputChrome()
     {
         EntryHandler.Mapper.AppendToMapping("DeepBorderlessEntry", static (handler, _) =>

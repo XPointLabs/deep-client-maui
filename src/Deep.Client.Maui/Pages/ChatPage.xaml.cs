@@ -30,6 +30,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private readonly VoiceMessagePlaybackService voicePlayback = new();
     private CancellationTokenSource? pendingScrollToEnd;
     private CancellationTokenSource? routeLoadCancellation;
+    private CancellationTokenSource? pageActivityCancellation;
     private IDisposable? keyboardInsetSubscription;
     private IDispatcherTimer? voiceRecordingTimer;
     private IDispatcherTimer? voicePlaybackTimer;
@@ -52,6 +53,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private Point messagePointerStart;
     private ChatMessageItem? pendingLongPressMessage;
     private bool suppressNextAttachmentTap;
+    private bool receivingMessages;
     private string? activeVoiceAttachmentId;
     private ChatMessageItem? selectedMessage;
     private readonly List<ChatMessageItem> messageSearchMatches = [];
@@ -83,6 +85,9 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        pageActivityCancellation?.Cancel();
+        pageActivityCancellation?.Dispose();
+        pageActivityCancellation = new CancellationTokenSource();
         SubscribePageEvents();
 #if ANDROID
         OnVoiceButtonHandlerChanged(VoiceButton, EventArgs.Empty);
@@ -96,10 +101,6 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         ApplyComposerPreferences();
         UpdateNetworkUi();
-        if (viewModel.Conversation is not null)
-        {
-            _ = RefreshConversationChromeAsync();
-        }
 
         _ = EnsureImagePreviewsAsync();
         _ = ConfigureAutoReceiveAsync();
@@ -115,6 +116,9 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         keyboardBottomInset = 0;
         ApplyAndroidSafeAreaCompensation();
         autoReceiveTimer?.Stop();
+        pageActivityCancellation?.Cancel();
+        pageActivityCancellation?.Dispose();
+        pageActivityCancellation = null;
         StopRecordingUiTimer();
         StopVoicePlaybackTimer();
         ClearActiveVoicePlayback();
@@ -184,14 +188,33 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             shouldStickToEnd = true;
             didInitialScroll = false;
 
+            var totalStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var stepStopwatch = System.Diagnostics.Stopwatch.StartNew();
             viewModel.PrepareRoute(SessionId.Parse(sessionId), displayName);
             UpdateHeaderAvatarUi();
             MessagesCollection.Opacity = 1;
+            if (viewModel.Messages.Count > 0)
+            {
+                QueueScrollToEnd(animate: false, force: true);
+            }
 
+            CrashDiagnostics.LogInfo(
+                "Perf.Chat",
+                $"PrepareRoute messages={viewModel.Messages.Count} elapsedMs={stepStopwatch.ElapsedMilliseconds}");
+
+            stepStopwatch.Restart();
             await viewModel.OpenFromRouteAsync(sessionId, displayName, cancellationToken);
             UpdateHeaderAvatarUi();
             _ = EnsureImagePreviewsAsync();
+            CrashDiagnostics.LogInfo(
+                "Perf.Chat",
+                $"OpenFromRoute messages={viewModel.Messages.Count} elapsedMs={stepStopwatch.ElapsedMilliseconds}");
+
+            stepStopwatch.Restart();
             await RevealInitialMessagesAsync(cancellationToken);
+            CrashDiagnostics.LogInfo(
+                "Perf.Chat",
+                $"Reveal messages={viewModel.Messages.Count} elapsedMs={stepStopwatch.ElapsedMilliseconds} totalMs={totalStopwatch.ElapsedMilliseconds}");
         }
         catch (OperationCanceledException)
         {
@@ -462,7 +485,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         if (autoReceiveTimer is null)
         {
             autoReceiveTimer = Dispatcher.CreateTimer();
-            autoReceiveTimer.Interval = TimeSpan.FromSeconds(3);
+            autoReceiveTimer.Interval = TimeSpan.FromSeconds(10);
             autoReceiveTimer.Tick += OnAutoReceiveTick;
         }
 
@@ -471,23 +494,51 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private async void OnAutoReceiveTick(object? sender, EventArgs e)
     {
-        if (viewModel.IsBusy || viewModel.Conversation is null)
+        if (pageActivityCancellation is not { } pageCancellation)
         {
             return;
         }
 
-        await viewModel.ReceiveAsync();
+        var cancellationToken = pageCancellation.Token;
+        if (viewModel.IsBusy || viewModel.Conversation is null || receivingMessages || cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        await ReceiveCurrentConversationAsync(cancellationToken);
     }
 
     private void OnBackgroundSyncScheduled()
     {
         MainThread.BeginInvokeOnMainThread(async () =>
         {
-            if (!viewModel.IsBusy && viewModel.Conversation is not null)
+            if (pageActivityCancellation is not { } pageCancellation)
             {
-                await viewModel.ReceiveAsync();
+                return;
+            }
+
+            var cancellationToken = pageCancellation.Token;
+            if (!viewModel.IsBusy && viewModel.Conversation is not null && !receivingMessages && !cancellationToken.IsCancellationRequested)
+            {
+                await ReceiveCurrentConversationAsync(cancellationToken);
             }
         });
+    }
+
+    private async Task ReceiveCurrentConversationAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            receivingMessages = true;
+            await viewModel.ReceiveAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            receivingMessages = false;
+        }
     }
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)

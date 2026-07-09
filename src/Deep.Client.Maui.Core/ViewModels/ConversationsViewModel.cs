@@ -23,6 +23,7 @@ public sealed record ConversationListItem(
 public sealed class ConversationsViewModel : ViewModelBase
 {
     private readonly ClientRuntime runtime;
+    private readonly SemaphoreSlim loadGate = new(1, 1);
     private readonly List<ConversationListItem> allConversations = [];
     private readonly Dictionary<ConversationId, DateTimeOffset?> readCursors = [];
     private string searchQuery = string.Empty;
@@ -163,12 +164,7 @@ public sealed class ConversationsViewModel : ViewModelBase
         LoadAsync(forceMessageSummaries: true, cancellationToken);
 
     public Task LoadCachedAsync(CancellationToken cancellationToken = default) =>
-        RunBusyAsync(async ct =>
-        {
-            var activeAccount = await runtime.Accounts.GetActiveAccountAsync(ct);
-            AccountInitial = DeepDisplayName.AvatarInitial(activeAccount?.DisplayName, activeAccount?.SessionId.Value);
-            await RefreshLocalAsync(activeAccount, forceMessageSummaries: true, ct);
-        }, cancellationToken);
+        LoadLocalSnapshotAsync(forceMessageSummaries: true, cancellationToken);
 
     public Task SyncAsync(CancellationToken cancellationToken = default) =>
         LoadAsync(forceMessageSummaries: false, cancellationToken);
@@ -191,24 +187,62 @@ public sealed class ConversationsViewModel : ViewModelBase
         }
     }
 
-    private Task LoadAsync(bool forceMessageSummaries, CancellationToken cancellationToken) =>
-        RunBusyAsync(async ct =>
+    private async Task LoadAsync(bool forceMessageSummaries, CancellationToken cancellationToken)
+    {
+        if (!await loadGate.WaitAsync(0, cancellationToken))
         {
-            var activeAccount = await runtime.Accounts.GetActiveAccountAsync(ct);
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            ErrorMessage = null;
+            var activeAccount = await runtime.Accounts.GetActiveAccountAsync(cancellationToken);
             AccountInitial = DeepDisplayName.AvatarInitial(activeAccount?.DisplayName, activeAccount?.SessionId.Value);
-            await RefreshLocalAsync(activeAccount, forceMessageSummaries, ct);
+            await RefreshLocalAsync(activeAccount, forceMessageSummaries, cancellationToken);
 
             try
             {
-                await runtime.Inbox.SynchronizeAsync(ct);
+                await runtime.Inbox.SynchronizeAsync(cancellationToken);
             }
-            catch when (!ct.IsCancellationRequested)
+            catch when (!cancellationToken.IsCancellationRequested)
             {
                 // Keep the cached conversation list usable while the network is unavailable.
             }
 
-            await RefreshLocalAsync(activeAccount, forceMessageSummaries: false, ct);
-        }, cancellationToken);
+            await RefreshLocalAsync(activeAccount, forceMessageSummaries: false, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+            loadGate.Release();
+        }
+    }
+
+    private async Task LoadLocalSnapshotAsync(bool forceMessageSummaries, CancellationToken cancellationToken)
+    {
+        await loadGate.WaitAsync(cancellationToken);
+        try
+        {
+            ErrorMessage = null;
+            var activeAccount = await runtime.Accounts.GetActiveAccountAsync(cancellationToken);
+            AccountInitial = DeepDisplayName.AvatarInitial(activeAccount?.DisplayName, activeAccount?.SessionId.Value);
+            await RefreshLocalAsync(activeAccount, forceMessageSummaries, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            loadGate.Release();
+        }
+    }
 
     private async Task RefreshLocalAsync(
         SessionAccount? activeAccount,
