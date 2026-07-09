@@ -12,8 +12,8 @@
     <Nullable>enable</Nullable>
     <ApplicationTitle>Deep</ApplicationTitle>
     <ApplicationId>network.xpoint.deep</ApplicationId>
-    <ApplicationDisplayVersion>0.2.3</ApplicationDisplayVersion>
-    <ApplicationVersion>7</ApplicationVersion>
+    <ApplicationDisplayVersion>0.2.4</ApplicationDisplayVersion>
+    <ApplicationVersion>8</ApplicationVersion>
     <WindowsPackageType>None</WindowsPackageType>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
@@ -21,6 +21,7 @@
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.19041.0</SupportedOSPlatformVersion>
     <TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.19041.0</TargetPlatformMinVersion>
     <EmbedAssembliesIntoApk Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">true</EmbedAssembliesIntoApk>
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
     <NoWarn Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">$(NoWarn);BG8403</NoWarn>
   </PropertyGroup>
 
@@ -75,6 +76,10 @@
     <MauiImage Include="Resources\Images\deep_logo.png" Resize="True" BaseSize="512,512" />
     <MauiImage Include="Resources\Images\deep_mark.png" Resize="True" BaseSize="256,256" />
     <MauiImage Include="Resources\Images\app_icon_*.png" Resize="True" BaseSize="256,256" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
+    <PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.33" />
   </ItemGroup>
 
   <Target Name="EnsureGoogleServicesJson" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' and !Exists('Platforms\Android\google-services.json')">

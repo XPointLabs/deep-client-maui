@@ -7,6 +7,7 @@ using Android.Views;
 using Microsoft.Maui;
 using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Platform;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Storage;
 
 namespace Deep.Client.Maui;
@@ -53,14 +54,31 @@ public class MainActivity : MauiAppCompatActivity
     protected override void OnNewIntent(Intent? intent)
     {
         base.OnNewIntent(intent);
-        HandleIntent(intent);
+        _ = ResumeAfterUnlockAsync(intent);
     }
 
     protected override void OnResume()
     {
         base.OnResume();
         ApplyPrivacyScreenSetting();
-        HandleIntent(Intent);
+        _ = ResumeAfterUnlockAsync(Intent);
+    }
+
+    protected override void OnStop()
+    {
+        ResolveAppLock()?.MarkAppHidden();
+        base.OnStop();
+    }
+
+    protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
+    {
+        if (ResolveAppLock() is AndroidAppLockService appLock &&
+            appLock.HandleActivityResult(requestCode, resultCode))
+        {
+            return;
+        }
+
+        base.OnActivityResult(requestCode, resultCode, data);
     }
 
     private void ApplyPrivacyScreenSetting()
@@ -129,5 +147,19 @@ public class MainActivity : MauiAppCompatActivity
         return intent.GetParcelableExtra(Intent.ExtraStream)?.ToString();
 #pragma warning restore CA1422
     }
+
+    private static async Task ResumeAfterUnlockAsync(Intent? intent)
+    {
+        var appLock = ResolveAppLock();
+        if (appLock is not null && !await appLock.AuthenticateIfRequiredAsync().ConfigureAwait(false))
+        {
+            return;
+        }
+
+        HandleIntent(intent);
+    }
+
+    private static IAppLockService? ResolveAppLock() =>
+        App.Services?.GetService<IAppLockService>();
 }
 #endif

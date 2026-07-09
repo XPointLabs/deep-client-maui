@@ -202,6 +202,11 @@ public static class MauiProgram
         builder.Services.AddSingleton<IShareExtensionBridge, MauiShareExtensionBridge>();
         builder.Services.AddSingleton<INotificationScheduler, MauiNotificationScheduler>();
         builder.Services.AddSingleton<IPrivacyScreenService, MauiPrivacyScreenService>();
+#if ANDROID
+        builder.Services.AddSingleton<IAppLockService, AndroidAppLockService>();
+#else
+        builder.Services.AddSingleton<IAppLockService, AppLockService>();
+#endif
         builder.Services.AddSingleton<IAppearanceService, MauiAppearanceService>();
         builder.Services.AddSingleton<IAppIconService, AppIconService>();
         builder.Services.AddSingleton<ICallSignalingTransport>(services =>

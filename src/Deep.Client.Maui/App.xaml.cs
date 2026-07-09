@@ -6,10 +6,13 @@ public partial class App : Application
 {
     private readonly IServiceProvider services;
 
+    public static IServiceProvider? Services { get; private set; }
+
     public App(IServiceProvider services)
     {
         InitializeComponent();
         this.services = services;
+        Services = services;
 
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;

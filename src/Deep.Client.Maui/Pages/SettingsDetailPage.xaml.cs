@@ -25,6 +25,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
     private readonly ITransportRouteProvider routeProvider;
     private readonly RuntimeEnvironmentOptions environment;
     private readonly IPrivacyScreenService privacyScreen;
+    private readonly IAppLockService appLock;
     private readonly IAppearanceService appearance;
     private readonly IAppIconService appIcons;
     private readonly IIpCountryLookup ipCountryLookup;
@@ -37,6 +38,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         ITransportRouteProvider routeProvider,
         RuntimeEnvironmentOptions environment,
         IPrivacyScreenService privacyScreen,
+        IAppLockService appLock,
         IAppearanceService appearance,
         IAppIconService appIcons,
         IIpCountryLookup ipCountryLookup)
@@ -48,6 +50,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         this.routeProvider = routeProvider;
         this.environment = environment;
         this.privacyScreen = privacyScreen;
+        this.appLock = appLock;
         this.appearance = appearance;
         this.appIcons = appIcons;
         this.ipCountryLookup = ipCountryLookup;
@@ -251,20 +254,41 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
     private void BuildPrivacySection()
     {
         TitleLabel.Text = "Конфиденциальность";
-        ContentStack.Children.Add(CreateCategory(
-            "Защита экрана и клавиатуры",
+        var screenSecurityRows = new List<View>
+        {
             CreateSwitchRow(
                 "Защита снимков экрана",
                 "Не показывать содержимое Deep в системном списке приложений и на снимках экрана.",
                 ClientSettingKeys.PrivacyScreenSecurity,
                 true,
-                OnScreenSecurityToggledAsync),
+                OnScreenSecurityToggledAsync)
+        };
+
+        if (appLock.IsSupported)
+        {
+            var appLockSubtitle = appLock.IsDeviceSecure
+                ? "Требовать биометрию или PIN-код устройства при возвращении в Deep."
+                : appLock.UnavailableReason ?? "Сначала настройте системную блокировку Android.";
+            screenSecurityRows.Add(CreateSwitchRow(
+                "Блокировка Deep",
+                appLockSubtitle,
+                ClientSettingKeys.PrivacyAppLock,
+                false,
+                OnAppLockToggledAsync,
+                appLock.IsDeviceSecure));
+        }
+
+        screenSecurityRows.Add(
             CreateSwitchRow(
                 "Инкогнито-клавиатура",
                 "Попросить клавиатуру не сохранять ввод и не обучаться на тексте сообщений.",
                 ClientSettingKeys.PrivacyIncognitoKeyboard,
                 true,
-                _ => SetStatusAsync("Настройка применится к новым полям ввода."))));
+                _ => SetStatusAsync("Настройка применится к новым полям ввода.")));
+
+        ContentStack.Children.Add(CreateCategory(
+            "Защита экрана и клавиатуры",
+            screenSecurityRows.ToArray()));
 
         ContentStack.Children.Add(CreateCategory(
             "Контакты",
@@ -548,7 +572,13 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         return grid;
     }
 
-    private View CreateSwitchRow(string title, string subtitle, string key, bool defaultValue, Func<bool, Task>? toggled = null)
+    private View CreateSwitchRow(
+        string title,
+        string subtitle,
+        string key,
+        bool defaultValue,
+        Func<bool, Task>? toggled = null,
+        bool isEnabled = true)
     {
         var grid = new Grid
         {
@@ -583,8 +613,10 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         var toggle = new Switch
         {
             IsToggled = Preferences.Default.Get(key, defaultValue),
+            IsEnabled = isEnabled,
             VerticalOptions = LayoutOptions.Center
         };
+        grid.Opacity = isEnabled ? 1 : 0.55;
         Grid.SetColumn(toggle, 1);
         toggle.Toggled += async (_, args) =>
         {
@@ -757,6 +789,9 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 break;
             case ClientSettingKeys.AppearanceAppIcon:
                 StatusLabel.Text = "Иконка приложения обновлена.";
+                break;
+            case ClientSettingKeys.PrivacyAppLock:
+                StatusLabel.Text = "Блокировка Deep обновлена.";
                 break;
         }
     }
@@ -1054,6 +1089,38 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             ? "Защита снимков экрана включена."
             : "Защита снимков экрана отключена.";
         return Task.CompletedTask;
+    }
+
+    private async Task OnAppLockToggledAsync(bool enabled)
+    {
+        if (!enabled)
+        {
+            appLock.SetEnabled(false);
+            StatusLabel.Text = "Блокировка Deep отключена.";
+            return;
+        }
+
+        if (!appLock.IsDeviceSecure)
+        {
+            appLock.SetEnabled(false);
+            Preferences.Default.Set(ClientSettingKeys.PrivacyAppLock, false);
+            StatusLabel.Text = appLock.UnavailableReason ?? "Сначала настройте системную блокировку Android.";
+            BuildSection();
+            return;
+        }
+
+        var authenticated = await appLock.AuthenticateNowAsync();
+        if (!authenticated)
+        {
+            appLock.SetEnabled(false);
+            Preferences.Default.Set(ClientSettingKeys.PrivacyAppLock, false);
+            StatusLabel.Text = "Блокировка Deep не включена: подтверждение отменено.";
+            BuildSection();
+            return;
+        }
+
+        appLock.SetEnabled(true);
+        StatusLabel.Text = "Блокировка Deep включена.";
     }
 
     private Task OnAppearanceToggledAsync(bool enabled)

@@ -3,6 +3,7 @@
 public static class ClientSettingKeys
 {
     public const string PrivacyScreenSecurity = "settings.privacy.screen-security";
+    public const string PrivacyAppLock = "settings.privacy.app-lock";
     public const string PrivacyIncognitoKeyboard = "settings.privacy.incognito-keyboard";
     public const string NotificationsFastMode = "settings.notifications.fast-mode";
     public const string AppearanceFollowSystem = "settings.appearance.follow-system";
