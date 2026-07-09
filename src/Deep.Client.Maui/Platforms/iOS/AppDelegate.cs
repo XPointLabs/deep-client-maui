@@ -33,7 +33,7 @@ public class AppDelegate : MauiUIApplicationDelegate
             return base.OpenUrl(application, url, options);
         }
 
-        MauiShareExtensionBridge.EnqueueAsync(new SharePayload(url.AbsoluteString, Array.Empty<string>())).GetAwaiter().GetResult();
+        MauiShareExtensionBridge.EnqueueInBackground(new SharePayload(url.AbsoluteString, Array.Empty<string>()));
         return true;
     }
 

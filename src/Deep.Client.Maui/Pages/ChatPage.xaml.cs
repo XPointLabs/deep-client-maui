@@ -78,19 +78,12 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         this.callCoordinator = callCoordinator;
         this.syncPollingPolicy = syncPollingPolicy;
         BindingContext = viewModel;
-
-        networkStatusService.StatusChanged += OnNetworkStatusChanged;
-        ContactProfileUpdateBus.ContactChanged += OnContactProfileChanged;
-        viewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
-        SizeChanged += OnPageSizeChanged;
-#if ANDROID
-        VoiceButton.HandlerChanged += OnVoiceButtonHandlerChanged;
-#endif
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        SubscribePageEvents();
 #if ANDROID
         OnVoiceButtonHandlerChanged(VoiceButton, EventArgs.Empty);
         AndroidVoiceGestureRouter.Touch -= OnAndroidVoiceGesture;
@@ -115,6 +108,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        UnsubscribePageEvents();
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         keyboardInsetSubscription?.Dispose();
         keyboardInsetSubscription = null;
@@ -129,6 +123,29 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         CancelPendingScrollToEnd();
 #if ANDROID
         AndroidVoiceGestureRouter.Touch -= OnAndroidVoiceGesture;
+#endif
+    }
+
+    private void SubscribePageEvents()
+    {
+        UnsubscribePageEvents();
+        networkStatusService.StatusChanged += OnNetworkStatusChanged;
+        ContactProfileUpdateBus.ContactChanged += OnContactProfileChanged;
+        viewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
+        SizeChanged += OnPageSizeChanged;
+#if ANDROID
+        VoiceButton.HandlerChanged += OnVoiceButtonHandlerChanged;
+#endif
+    }
+
+    private void UnsubscribePageEvents()
+    {
+        networkStatusService.StatusChanged -= OnNetworkStatusChanged;
+        ContactProfileUpdateBus.ContactChanged -= OnContactProfileChanged;
+        viewModel.Messages.CollectionChanged -= OnMessagesCollectionChanged;
+        SizeChanged -= OnPageSizeChanged;
+#if ANDROID
+        VoiceButton.HandlerChanged -= OnVoiceButtonHandlerChanged;
 #endif
     }
 

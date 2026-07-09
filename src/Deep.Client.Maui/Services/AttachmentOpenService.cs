@@ -96,12 +96,20 @@ public static class AttachmentOpenService
                 "Файл не был загружен на сервер вложений и доступен только на устройстве отправителя.");
         }
 
-        var downloaded = await attachmentFiles.DownloadAsync(attachment, cancellationToken).ConfigureAwait(false);
         CleanupOldAttachmentCache();
         var cachePath = CachePathFor(attachment);
-
-        await File.WriteAllBytesAsync(cachePath, downloaded.Content, cancellationToken).ConfigureAwait(false);
-        return new PreparedAttachmentFile(downloaded.FileName, downloaded.ContentType, cachePath);
+        try
+        {
+            await using var output = File.Create(cachePath);
+            var downloaded = await attachmentFiles.DownloadToAsync(attachment, output, cancellationToken).ConfigureAwait(false);
+            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+            return new PreparedAttachmentFile(downloaded.FileName, downloaded.ContentType, cachePath);
+        }
+        catch
+        {
+            TryDelete(cachePath);
+            throw;
+        }
     }
 
     public static PreparedAttachmentFile? TryGetCachedFile(AttachmentMetadata attachment)
@@ -139,6 +147,20 @@ public static class AttachmentOpenService
         Path.Combine(
             FileSystem.CacheDirectory,
             $"attachment-{SafeFileName(attachment.AttachmentId)}-{SafeFileName(attachment.FileName)}");
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+        }
+    }
 
     private static async Task<string> SavePreparedFileAsync(
         PreparedAttachmentFile file,

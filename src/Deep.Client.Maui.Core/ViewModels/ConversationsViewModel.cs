@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using Deep.Client.Maui.Core.Commands;
 using Deep.Client.Maui.Core.Presentation;
 using Deep.Client.Shared.Domain;
@@ -215,62 +215,82 @@ public sealed class ConversationsViewModel : ViewModelBase
         bool forceMessageSummaries,
         CancellationToken cancellationToken)
     {
-            var conversations = await runtime.Conversations.ListAsync(cancellationToken);
-            var previousById = allConversations.ToDictionary(item => item.Id);
-            var nextConversations = new List<ConversationListItem>(conversations.Count);
-            foreach (var conversation in conversations.Where(static item => !item.IsHidden))
+        var conversations = await runtime.Conversations.ListAsync(cancellationToken);
+        var visibleConversations = conversations
+            .Where(static item => !item.IsHidden)
+            .ToArray();
+        var summaries = await runtime.Store.GetConversationSummariesAsync(
+            visibleConversations.Select(static conversation => conversation.Id).ToArray(),
+            runtime.Clock.UtcNow,
+            cancellationToken);
+        var previousById = allConversations.ToDictionary(item => item.Id);
+        var nextConversations = new List<ConversationListItem>(visibleConversations.Length);
+        foreach (var conversation in visibleConversations)
+        {
+            var resolvedTitle = ResolveConversationTitle(conversation);
+            summaries.TryGetValue(conversation.Id, out var summary);
+            if (!forceMessageSummaries
+                && previousById.TryGetValue(conversation.Id, out var previous)
+                && previous.UpdatedAt == conversation.UpdatedAt
+                && string.Equals(previous.Title, resolvedTitle, StringComparison.Ordinal)
+                && previous.IsMuted == conversation.Settings.IsMuted
+                && previous.Kind == conversation.Kind)
             {
-                var resolvedTitle = ResolveConversationTitle(conversation);
-                if (!forceMessageSummaries
-                    && previousById.TryGetValue(conversation.Id, out var previous)
-                    && previous.UpdatedAt == conversation.UpdatedAt
-                    && string.Equals(previous.Title, resolvedTitle, StringComparison.Ordinal)
-                    && previous.IsMuted == conversation.Settings.IsMuted
-                    && previous.Kind == conversation.Kind)
+                var readCursor = summary?.ReadCursor
+                    ?? await runtime.Messages.GetReadCursorAsync(conversation.Id, cancellationToken);
+                var cursorChanged = !readCursors.TryGetValue(conversation.Id, out var previousCursor)
+                    || previousCursor != readCursor;
+                readCursors[conversation.Id] = readCursor;
+
+                if (cursorChanged && readCursor is not null)
                 {
-                    var readCursor = await runtime.Messages.GetReadCursorAsync(conversation.Id, cancellationToken);
-                    var cursorChanged = !readCursors.TryGetValue(conversation.Id, out var previousCursor)
-                        || previousCursor != readCursor;
-                    readCursors[conversation.Id] = readCursor;
-
-                    if (cursorChanged && readCursor is not null)
-                    {
-                        nextConversations.Add(previous with { UnreadCount = 0, IsUnread = false, IsSelected = false });
-                        continue;
-                    }
-
-                    nextConversations.Add(previous with { IsSelected = false });
+                    nextConversations.Add(previous with { UnreadCount = 0, IsUnread = false, IsSelected = false });
                     continue;
                 }
 
-                nextConversations.Add(await BuildListItemAsync(conversation, activeAccount?.SessionId, cancellationToken));
+                nextConversations.Add(previous with { IsSelected = false });
+                continue;
             }
 
-            if (allConversations.SequenceEqual(nextConversations))
-            {
-                return;
-            }
+            nextConversations.Add(await BuildListItemAsync(
+                conversation,
+                activeAccount?.SessionId,
+                summary,
+                cancellationToken));
+        }
 
-            allConversations.Clear();
-            allConversations.AddRange(nextConversations);
+        if (allConversations.SequenceEqual(nextConversations))
+        {
+            return;
+        }
 
-            ApplyFilter();
+        allConversations.Clear();
+        allConversations.AddRange(nextConversations);
 
-            if (SelectedConversation is not null && !Conversations.Any(item => item.Id == SelectedConversation.Id))
-            {
-                SelectedConversation = null;
-            }
+        ApplyFilter();
+
+        if (SelectedConversation is not null && !Conversations.Any(item => item.Id == SelectedConversation.Id))
+        {
+            SelectedConversation = null;
+        }
     }
 
     private async Task<ConversationListItem> BuildListItemAsync(
         Conversation conversation,
         SessionId? activeSessionId,
+        ConversationListSummary? summary,
         CancellationToken cancellationToken)
     {
-        var readCursor = await runtime.Messages.GetReadCursorAsync(conversation.Id, cancellationToken);
+        var readCursor = summary?.ReadCursor
+            ?? await runtime.Messages.GetReadCursorAsync(conversation.Id, cancellationToken);
         readCursors[conversation.Id] = readCursor;
-        var recentMessages = await runtime.Messages.ListRecentConversationMessagesAsync(conversation.Id, 1, cancellationToken);
-        var lastMessage = recentMessages.LastOrDefault();
+        var lastMessage = summary?.LastMessage;
+        if (lastMessage is null)
+        {
+            var recentMessages = await runtime.Messages.ListRecentConversationMessagesAsync(conversation.Id, 1, cancellationToken);
+            lastMessage = recentMessages.LastOrDefault();
+        }
+
         var preview = lastMessage?.Body;
         if (string.IsNullOrWhiteSpace(preview))
         {
@@ -294,18 +314,20 @@ public sealed class ConversationsViewModel : ViewModelBase
                 : $"{lastMessage.Attachments.Count} вложения · {preview}";
         }
 
-        var unreadCount = await runtime.Messages.CountUnreadConversationMessagesAsync(
-            conversation.Id,
-            readCursor,
-            cancellationToken);
+        var unreadCount = summary?.UnreadCount
+            ?? await runtime.Messages.CountUnreadConversationMessagesAsync(
+                conversation.Id,
+                readCursor,
+                cancellationToken);
 
         var isMessageRequest = false;
         if (conversation.Kind == ConversationKind.OneToOne
             && activeSessionId is not null
             && !string.Equals(conversation.Id.Value, activeSessionId.Value.Value, StringComparison.Ordinal))
         {
-            var contact = await ((IContactRepository)runtime.Store)
-                .GetAsync(SessionId.Parse(conversation.Id.Value), cancellationToken);
+            var contact = summary?.Contact
+                ?? await ((IContactRepository)runtime.Store)
+                    .GetAsync(SessionId.Parse(conversation.Id.Value), cancellationToken);
             isMessageRequest = contact is { IsApproved: false, IsBlocked: false };
         }
 

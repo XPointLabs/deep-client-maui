@@ -25,10 +25,17 @@ public partial class SettingsPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        viewModel.Activate();
         await viewModel.LoadAsync();
         UpdateProfileAvatarUi();
         SessionIdLabel.Text = FormatSessionIdForDisplay(viewModel.SessionId);
         VersionLabel.Text = $"Deep {AppInfo.Current.VersionString}";
+    }
+
+    protected override void OnDisappearing()
+    {
+        viewModel.Deactivate();
+        base.OnDisappearing();
     }
 
     protected override bool OnBackButtonPressed()

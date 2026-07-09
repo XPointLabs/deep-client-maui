@@ -12,6 +12,7 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
 {
     private static readonly TimeSpan MinimumVoiceDuration = TimeSpan.FromMilliseconds(700);
     private static readonly TimeSpan StopRecorderTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan CancelRecorderTimeout = TimeSpan.FromSeconds(2);
 
     private readonly IAttachmentFileTransport attachmentFiles;
 
@@ -295,7 +296,7 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
     }
 #endif
 
-    public Task CancelAsync(CancellationToken cancellationToken = default)
+    public async Task CancelAsync(CancellationToken cancellationToken = default)
     {
 #if ANDROID
         var path = recordingPath;
@@ -318,12 +319,22 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
         finally
         {
             activeCancellation?.Cancel();
-            try
+            if (activeTask is not null)
             {
-                activeTask?.Wait(TimeSpan.FromSeconds(2));
-            }
-            catch
-            {
+                try
+                {
+                    var completed = await Task.WhenAny(
+                            activeTask,
+                            Task.Delay(CancelRecorderTimeout, cancellationToken))
+                        .ConfigureAwait(false);
+                    if (completed == activeTask)
+                    {
+                        await activeTask.ConfigureAwait(false);
+                    }
+                }
+                catch
+                {
+                }
             }
 
             activeCancellation?.Dispose();
@@ -335,9 +346,8 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
         }
 #else
         IsRecording = false;
+        await Task.CompletedTask;
 #endif
-
-        return Task.CompletedTask;
     }
 
     private static async Task EnsureMicrophonePermissionAsync()

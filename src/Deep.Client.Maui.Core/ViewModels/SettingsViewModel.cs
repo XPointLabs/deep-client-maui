@@ -29,8 +29,6 @@ public sealed class SettingsViewModel : ViewModelBase
         LogoutCommand = new AsyncCommand(LogoutAsync, () => authNavigationState.IsAuthenticated);
 
         connectionStatus = networkStatusService.ConnectionLabel;
-        networkStatusService.StatusChanged += OnNetworkStatusChanged;
-        authNavigationState.AuthenticationChanged += OnAuthenticationChanged;
     }
 
     public string AccountDisplayName
@@ -77,6 +75,22 @@ public sealed class SettingsViewModel : ViewModelBase
     {
         get => wipeLocalDataOnLogout;
         set => SetProperty(ref wipeLocalDataOnLogout, value);
+    }
+
+    public void Activate()
+    {
+        Deactivate();
+        networkStatusService.StatusChanged += OnNetworkStatusChanged;
+        authNavigationState.AuthenticationChanged += OnAuthenticationChanged;
+        ConnectionStatus = networkStatusService.ConnectionLabel;
+        RaisePropertyChanged(nameof(IsNetworkConnected));
+        LogoutCommand.RaiseCanExecuteChanged();
+    }
+
+    public void Deactivate()
+    {
+        networkStatusService.StatusChanged -= OnNetworkStatusChanged;
+        authNavigationState.AuthenticationChanged -= OnAuthenticationChanged;
     }
 
     public Task LoadAsync(CancellationToken cancellationToken = default) =>

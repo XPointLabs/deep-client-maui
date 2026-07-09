@@ -117,7 +117,7 @@ public class MainActivity : MauiAppCompatActivity
             var stream = GetShareStream(intent);
             var files = string.IsNullOrWhiteSpace(stream) ? Array.Empty<string>() : new[] { stream };
 
-            MauiShareExtensionBridge.EnqueueAsync(new SharePayload(text, files)).GetAwaiter().GetResult();
+            MauiShareExtensionBridge.EnqueueInBackground(new SharePayload(text, files));
         }
 
         var notificationAction = intent.GetStringExtra("notification_action");

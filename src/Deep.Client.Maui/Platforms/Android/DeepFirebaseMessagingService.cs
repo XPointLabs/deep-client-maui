@@ -27,15 +27,20 @@ public sealed class DeepFirebaseMessagingService : FirebaseMessagingService
 
         var data = message.Data;
         var notification = message.GetNotification();
-        var title = notification?.Title ?? Get(data, "title") ?? "Deep";
-        var body = notification?.Body ?? Get(data, "body") ?? "Новое сообщение";
+        var showPreview = Microsoft.Maui.Storage.Preferences.Default.Get(ClientSettingKeys.NotificationsShowPreviews, false);
+        var title = showPreview
+            ? notification?.Title ?? Get(data, "title") ?? "Deep"
+            : "Deep";
+        var body = showPreview
+            ? notification?.Body ?? Get(data, "body") ?? "Новое сообщение"
+            : "Новое сообщение";
         var conversationId = Get(data, "conversation_id") ?? string.Empty;
         var notificationId = Get(data, "notification_id") ?? message.MessageId ?? Guid.NewGuid().ToString("N");
 
-        ShowNotification(title, body, conversationId, notificationId);
+        ShowNotification(title, body, conversationId, notificationId, showPreview);
     }
 
-    private void ShowNotification(string title, string body, string conversationId, string notificationId)
+    private void ShowNotification(string title, string body, string conversationId, string notificationId, bool showPreview)
     {
         var manager = NotificationManagerCompat.From(this);
         EnsureChannel();
@@ -58,8 +63,23 @@ public sealed class DeepFirebaseMessagingService : FirebaseMessagingService
         builder.SetContentText(body);
         builder.SetStyle(new NotificationCompat.BigTextStyle().BigText(body));
         builder.SetPriority(NotificationCompat.PriorityHigh);
+        builder.SetVisibility(showPreview ? NotificationCompat.VisibilityPrivate : NotificationCompat.VisibilitySecret);
         builder.SetAutoCancel(true);
-        builder.SetContentIntent(pendingIntent);
+        if (pendingIntent is not null)
+        {
+            builder.SetContentIntent(pendingIntent);
+        }
+
+        var publicBuilder = new NotificationCompat.Builder(this, ChannelId);
+        publicBuilder.SetSmallIcon(Resource.Mipmap.appicon);
+        publicBuilder.SetContentTitle("Deep");
+        publicBuilder.SetContentText("Новое сообщение");
+        publicBuilder.SetVisibility(NotificationCompat.VisibilitySecret);
+        var publicVersion = publicBuilder.Build();
+        if (publicVersion is not null)
+        {
+            builder.SetPublicVersion(publicVersion);
+        }
 
         var notification = builder.Build();
         if (notification is not null)

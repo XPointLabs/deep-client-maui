@@ -36,13 +36,13 @@ public partial class ConversationsPage : ContentPage
         this.callCoordinator = callCoordinator;
         this.syncPollingPolicy = syncPollingPolicy;
         BindingContext = viewModel;
-
-        networkStatusService.StatusChanged += OnNetworkStatusChanged;
     }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        networkStatusService.StatusChanged -= OnNetworkStatusChanged;
+        networkStatusService.StatusChanged += OnNetworkStatusChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         UpdateProfileAvatarUi();
@@ -89,6 +89,7 @@ public partial class ConversationsPage : ContentPage
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        networkStatusService.StatusChanged -= OnNetworkStatusChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         autoSyncTimer?.Stop();
         incomingCallTimer?.Stop();

@@ -40,7 +40,7 @@ public partial class App : MauiWinUIApplication
             {
                 var values = ParseKeyValuePairs(launchArgs);
                 values.TryGetValue("share_text", out var text);
-                MauiShareExtensionBridge.EnqueueAsync(new SharePayload(text, Array.Empty<string>())).GetAwaiter().GetResult();
+                MauiShareExtensionBridge.EnqueueInBackground(new SharePayload(text, Array.Empty<string>()));
             }
         }
         catch (Exception ex)

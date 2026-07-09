@@ -5,6 +5,7 @@ using Deep.Client.Maui.Pages;
 using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Features;
 using Deep.Client.Shared.Platform;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
 using Microsoft.Maui.Storage;
@@ -34,6 +35,7 @@ public static class MauiProgram
     internal const string StakingPortalBaseUrlEnv = "DEEP_STAKING_PORTAL_URL";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
     internal const string WipeLocalDataOnNextLaunchKey = "session.wipe-local-on-next-launch";
+    private const string LocalStateDatabaseKey = "client-state.sqlcipher-key.v1";
 
     public static MauiApp CreateMauiApp()
     {
@@ -167,14 +169,20 @@ public static class MauiProgram
         {
             var stateDbPath = Path.Combine(FileSystem.AppDataDirectory, "client-state.db");
             var legacyStatePath = Path.Combine(FileSystem.AppDataDirectory, "client-state.json");
+            var stateDbKey = ResolveLocalStateDatabaseKey();
 
             if (Preferences.Default.Get(WipeLocalDataOnNextLaunchKey, false))
             {
                 TryDeleteFile(stateDbPath);
+                TryDeleteFile(stateDbPath + "-wal");
+                TryDeleteFile(stateDbPath + "-shm");
                 TryDeleteFile(legacyStatePath);
+                SecureStorage.Remove(LocalStateDatabaseKey);
                 Preferences.Default.Remove(WipeLocalDataOnNextLaunchKey);
+                stateDbKey = ResolveLocalStateDatabaseKey();
             }
 
+            SqliteSessionStore.EnsureEncryptedDatabase(stateDbPath, stateDbKey);
             return ClientRuntime.CreatePersistent(
                 stateDbPath,
                 sp.GetRequiredService<ClientFeatureFlags>(),
@@ -183,6 +191,7 @@ public static class MauiProgram
                 sp.GetRequiredService<IGroupSyncTransport>(),
                 sp.GetRequiredService<IAvatarProfileTransport>(),
                 legacyStatePath,
+                stateDbKey,
                 storeDecorator: store => new SecureRecoverySessionStore(store));
         });
 
@@ -331,12 +340,32 @@ public static class MauiProgram
         }
     }
 
+    private static string ResolveLocalStateDatabaseKey()
+    {
+        try
+        {
+            var existing = SecureStorage.GetAsync(LocalStateDatabaseKey).GetAwaiter().GetResult();
+            if (!string.IsNullOrWhiteSpace(existing))
+            {
+                return existing;
+            }
+
+            var key = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            SecureStorage.SetAsync(LocalStateDatabaseKey, key).GetAwaiter().GetResult();
+            return key;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Secure local database key storage is unavailable.", ex);
+        }
+    }
+
     internal static string? ResolveRuntimeSetting(string key)
     {
         var value = Environment.GetEnvironmentVariable(key);
         if (!string.IsNullOrWhiteSpace(value))
         {
-            return value;
+            return ValidateRuntimeSetting(key, value);
         }
 
         var filePath = Path.Combine(AppContext.BaseDirectory, ReleaseRuntimeEnvFile);
@@ -345,7 +374,7 @@ public static class MauiProgram
             var fileValue = ResolveRuntimeSettingFromLines(key, File.ReadLines(filePath));
             if (!string.IsNullOrWhiteSpace(fileValue))
             {
-                return fileValue;
+                return ValidateRuntimeSetting(key, fileValue);
             }
         }
 
@@ -356,7 +385,7 @@ public static class MauiProgram
         }
 
         using var reader = new StreamReader(embeddedStream);
-        return ResolveRuntimeSettingFromLines(key, ReadLines(reader));
+        return ValidateRuntimeSetting(key, ResolveRuntimeSettingFromLines(key, ReadLines(reader)));
     }
 
     private static IReadOnlyList<string> ResolveRouterBaseUrls()
@@ -465,8 +494,7 @@ public static class MauiProgram
             return [];
         }
 
-        return raw
-            .Split([';', ',', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        return SplitRuntimeValues(raw)
             .Select(static value => System.Net.IPAddress.TryParse(value, out var address) ? address : null)
             .Where(static address => address is not null)
             .Cast<System.Net.IPAddress>()
@@ -474,15 +502,79 @@ public static class MauiProgram
             .ToArray();
     }
 
+    private static string? ValidateRuntimeSetting(string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+#if DEBUG
+        return value;
+#else
+        if (string.Equals(key, FileConnectIpsEnv, StringComparison.Ordinal))
+        {
+            return value;
+        }
+
+        if (string.Equals(key, RouterBaseUrlsEnv, StringComparison.Ordinal))
+        {
+            foreach (var url in SplitRuntimeValues(value))
+            {
+                ValidateRuntimeUrl(key, url);
+            }
+
+            return value;
+        }
+
+        if (IsRuntimeUrlKey(key))
+        {
+            ValidateRuntimeUrl(key, value);
+        }
+
+        return value;
+#endif
+    }
+
+    private static bool IsRuntimeUrlKey(string key) =>
+        string.Equals(key, TransportBaseUrlEnv, StringComparison.Ordinal)
+        || string.Equals(key, StorageBaseUrlEnv, StringComparison.Ordinal)
+        || string.Equals(key, CallSignalingBaseUrlEnv, StringComparison.Ordinal)
+        || string.Equals(key, FileBaseUrlEnv, StringComparison.Ordinal)
+        || string.Equals(key, PushBaseUrlEnv, StringComparison.Ordinal)
+        || string.Equals(key, RegistryBaseUrlEnv, StringComparison.Ordinal)
+        || string.Equals(key, StakingBackendBaseUrlEnv, StringComparison.Ordinal)
+        || string.Equals(key, StakingPortalBaseUrlEnv, StringComparison.Ordinal);
+
+    private static void ValidateRuntimeUrl(string key, string value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            throw new InvalidOperationException($"{key} must be an absolute URL.");
+        }
+
+        if (uri.Scheme == Uri.UriSchemeHttps || IsExplicitLoopbackHttp(uri))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"{key} must use HTTPS in non-Debug builds.");
+    }
+
+    private static bool IsExplicitLoopbackHttp(Uri uri) =>
+        uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback;
+
     private static IReadOnlyList<string> ParseRouterBaseUrls(string raw)
     {
-        return raw
-            .Split([';', ',', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        return SplitRuntimeValues(raw)
             .Where(static value => Uri.TryCreate(value, UriKind.Absolute, out var uri)
                                    && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
+
+    private static string[] SplitRuntimeValues(string raw) =>
+        raw.Split([';', ',', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private static string? ResolveRuntimeSettingFromLines(string key, IEnumerable<string> lines)
     {

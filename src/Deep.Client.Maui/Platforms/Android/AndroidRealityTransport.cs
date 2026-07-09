@@ -42,7 +42,7 @@ internal static class AndroidRealityTransport
                 EnsureSuccess(response);
             }
 
-            WaitForListeners(bootstrap.Seeds);
+            WaitForListenersAsync(bootstrap.Seeds).GetAwaiter().GetResult();
             routerBaseUrls = urls;
             return routerBaseUrls;
         }
@@ -153,37 +153,50 @@ internal static class AndroidRealityTransport
         }
     }
 
-    private static void WaitForListeners(IReadOnlyList<RealitySeed> seeds)
+    private static async Task WaitForListenersAsync(IReadOnlyList<RealitySeed> seeds)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        foreach (var seed in seeds)
-        {
-            while (DateTime.UtcNow < deadline)
-            {
-                try
-                {
-                    using var socket = new TcpClient();
-                    if (socket.ConnectAsync("127.0.0.1", seed.LocalPort).Wait(TimeSpan.FromMilliseconds(250)))
-                    {
-                        break;
-                    }
-                }
-                catch (SocketException)
-                {
-                }
-                Thread.Sleep(100);
-            }
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(seeds.Select(seed => WaitForListenerAsync(seed, timeout.Token))).ConfigureAwait(false);
+    }
 
-            using var verificationSocket = new TcpClient();
+    private static async Task WaitForListenerAsync(RealitySeed seed, CancellationToken cancellationToken)
+    {
+        Exception? lastError = null;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            using var socket = new TcpClient();
+            using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            attemptTimeout.CancelAfter(TimeSpan.FromMilliseconds(250));
             try
             {
-                verificationSocket.Connect("127.0.0.1", seed.LocalPort);
+                await socket.ConnectAsync("127.0.0.1", seed.LocalPort, attemptTimeout.Token).ConfigureAwait(false);
+                return;
             }
-            catch (SocketException exception)
+            catch (OperationCanceledException ex)
             {
-                throw new InvalidOperationException($"Embedded Xray did not open local seed port {seed.LocalPort}.", exception);
+                lastError = ex;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
+            catch (SocketException ex)
+            {
+                lastError = ex;
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex)
+            {
+                lastError = ex;
+                break;
             }
         }
+
+        throw new InvalidOperationException($"Embedded Xray did not open local seed port {seed.LocalPort}.", lastError);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);

@@ -22,13 +22,13 @@ public partial class GroupsPage : ContentPage
         this.networkStatusService = networkStatusService;
         this.syncPollingPolicy = syncPollingPolicy;
         BindingContext = viewModel;
-
-        networkStatusService.StatusChanged += OnNetworkStatusChanged;
     }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        networkStatusService.StatusChanged -= OnNetworkStatusChanged;
+        networkStatusService.StatusChanged += OnNetworkStatusChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         UpdateNetworkUi();
@@ -39,6 +39,7 @@ public partial class GroupsPage : ContentPage
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        networkStatusService.StatusChanged -= OnNetworkStatusChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         autoRefreshTimer?.Stop();
     }

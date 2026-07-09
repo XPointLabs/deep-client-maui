@@ -225,32 +225,64 @@ public static class BackgroundSyncBridge
 public sealed class MauiShareExtensionBridge : IShareExtensionBridge
 {
     private static readonly string ShareQueuePath = Path.Combine(FileSystem.AppDataDirectory, "pending-shares.json");
+    private static readonly SemaphoreSlim ShareQueueLock = new(1, 1);
 
     public async Task<IReadOnlyList<SharePayload>> DrainPendingSharesAsync(CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(ShareQueuePath))
+        await ShareQueueLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return [];
-        }
+            if (!File.Exists(ShareQueuePath))
+            {
+                return [];
+            }
 
-        var json = await File.ReadAllTextAsync(ShareQueuePath, cancellationToken).ConfigureAwait(false);
-        var payload = JsonSerializer.Deserialize<List<SharePayload>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
-        File.Delete(ShareQueuePath);
-        return payload;
+            var json = await File.ReadAllTextAsync(ShareQueuePath, cancellationToken).ConfigureAwait(false);
+            var payload = JsonSerializer.Deserialize<List<SharePayload>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
+            File.Delete(ShareQueuePath);
+            return payload;
+        }
+        finally
+        {
+            ShareQueueLock.Release();
+        }
     }
 
     public static async Task EnqueueAsync(SharePayload payload, CancellationToken cancellationToken = default)
     {
-        var queue = new List<SharePayload>();
-        if (File.Exists(ShareQueuePath))
+        await ShareQueueLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            var existing = await File.ReadAllTextAsync(ShareQueuePath, cancellationToken).ConfigureAwait(false);
-            queue = JsonSerializer.Deserialize<List<SharePayload>>(existing, new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
-        }
+            var queue = new List<SharePayload>();
+            if (File.Exists(ShareQueuePath))
+            {
+                var existing = await File.ReadAllTextAsync(ShareQueuePath, cancellationToken).ConfigureAwait(false);
+                queue = JsonSerializer.Deserialize<List<SharePayload>>(existing, new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
+            }
 
-        queue.Add(payload);
-        var json = JsonSerializer.Serialize(queue, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        await File.WriteAllTextAsync(ShareQueuePath, json, cancellationToken).ConfigureAwait(false);
+            queue.Add(payload);
+            var json = JsonSerializer.Serialize(queue, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            await File.WriteAllTextAsync(ShareQueuePath, json, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ShareQueueLock.Release();
+        }
+    }
+
+    public static void EnqueueInBackground(SharePayload payload) =>
+        _ = EnqueueInBackgroundAsync(payload);
+
+    private static async Task EnqueueInBackgroundAsync(SharePayload payload)
+    {
+        try
+        {
+            await EnqueueAsync(payload).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Deep.Client.Maui.CrashDiagnostics.LogException("Share.Enqueue", ex);
+        }
     }
 }
 

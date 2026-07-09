@@ -206,6 +206,13 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         ContentStack.Children.Add(CreateCategory(
             "Сервисные ноды",
             CreateRow("Состояние сети", "Загружаем данные из реестра...")));
+        ContentStack.Children.Add(CreateCategory(
+            "Транспорт",
+            CreateSwitchRow(
+                "Обход системного VPN",
+                "Разрешить встроенному Xray подключаться к нодам напрямую, если внешний VPN мешает работе Deep.",
+                ClientSettingKeys.NetworkBypassSystemVpn,
+                false)));
 
         _ = LoadNetworkSectionAsync();
     }
@@ -232,6 +239,13 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 "Сервисные ноды",
                 CreateRow("Зарегистрировано", $"{nodes.Count} нод"),
                 CreateRow("Готовы принимать транспорт", $"{healthy} из {withTransport} нод")));
+            ContentStack.Children.Add(CreateCategory(
+                "Транспорт",
+                CreateSwitchRow(
+                    "Обход системного VPN",
+                    "Разрешить встроенному Xray подключаться к нодам напрямую, если внешний VPN мешает работе Deep.",
+                    ClientSettingKeys.NetworkBypassSystemVpn,
+                    false)));
         }
         catch (Exception ex)
         {
@@ -248,6 +262,13 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             ContentStack.Children.Add(CreateCategory(
                 "Сервисные ноды",
                 CreateRow("Реестр временно недоступен", ex.Message)));
+            ContentStack.Children.Add(CreateCategory(
+                "Транспорт",
+                CreateSwitchRow(
+                    "Обход системного VPN",
+                    "Разрешить встроенному Xray подключаться к нодам напрямую, если внешний VPN мешает работе Deep.",
+                    ClientSettingKeys.NetworkBypassSystemVpn,
+                    false)));
         }
     }
 
@@ -306,7 +327,12 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 "Получать уведомления о новых сообщениях и звонках, когда Deep работает в фоне.",
                 ClientSettingKeys.NotificationsFastMode,
                 true,
-                OnFastModeToggledAsync)));
+                OnFastModeToggledAsync),
+            CreateSwitchRow(
+                "Текст уведомлений",
+                "Показывать имя отправителя и текст сообщения в системных уведомлениях. По умолчанию Deep скрывает содержимое.",
+                ClientSettingKeys.NotificationsShowPreviews,
+                false)));
 
         ContentStack.Children.Add(CreateCategory(
             "Системные каналы",

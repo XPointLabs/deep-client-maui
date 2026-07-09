@@ -27,6 +27,12 @@ internal sealed class AndroidXrayDialerController : Object, global::LibXray.IDia
 
         try
         {
+            if (!Microsoft.Maui.Storage.Preferences.Default.Get(Services.ClientSettingKeys.NetworkBypassSystemVpn, false))
+            {
+                LogStatusOnce("Embedded Xray respects the active Android VPN.");
+                return true;
+            }
+
             var socketFd = (int)fd;
             if (!protectFromVpnUnavailable && TryProtectFromVpn(socketFd))
             {

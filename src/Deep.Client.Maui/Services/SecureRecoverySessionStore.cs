@@ -105,6 +105,12 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILo
         CancellationToken cancellationToken) =>
         ((IMessageRepository)inner).CountUnreadForConversationAsync(conversationId, readCursor, now, cancellationToken);
 
+    public Task<IReadOnlyDictionary<ConversationId, ConversationListSummary>> GetConversationSummariesAsync(
+        IReadOnlyCollection<ConversationId> conversationIds,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        ((IConversationListSummaryRepository)inner).GetConversationSummariesAsync(conversationIds, now, cancellationToken);
+
     public async Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)
     {
         if (!IsRecoveryPhraseKey(key))
