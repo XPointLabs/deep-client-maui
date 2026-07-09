@@ -11,8 +11,79 @@
 
   <application
     android:allowBackup="false"
-    android:icon="@mipmap/appicon"
-    android:roundIcon="@mipmap/appicon_round"
+    android:icon="@mipmap/deep_launcher_deep"
+    android:roundIcon="@mipmap/deep_launcher_deep"
     android:networkSecurityConfig="@xml/network_security_config"
-    android:supportsRtl="true" />
+    android:supportsRtl="true">
+
+    <activity-alias
+      android:name="network.xpoint.deep.DeepLauncher"
+      android:label="@string/app_name_deep"
+      android:icon="@mipmap/deep_launcher_deep"
+      android:roundIcon="@mipmap/deep_launcher_deep"
+      android:targetActivity="network.xpoint.deep.MainActivity"
+      android:enabled="true"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity-alias>
+
+    <activity-alias
+      android:name="network.xpoint.deep.DeepDarkLauncher"
+      android:label="@string/app_name_deep"
+      android:icon="@mipmap/deep_launcher_deep_dark"
+      android:roundIcon="@mipmap/deep_launcher_deep_dark"
+      android:targetActivity="network.xpoint.deep.MainActivity"
+      android:enabled="false"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity-alias>
+
+    <activity-alias
+      android:name="network.xpoint.deep.DeepLightLauncher"
+      android:label="@string/app_name_deep"
+      android:icon="@mipmap/deep_launcher_deep_light"
+      android:roundIcon="@mipmap/deep_launcher_deep_light"
+      android:targetActivity="network.xpoint.deep.MainActivity"
+      android:enabled="false"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity-alias>
+
+    <activity-alias
+      android:name="network.xpoint.deep.NotesLauncher"
+      android:label="@string/app_name_notes"
+      android:icon="@mipmap/deep_launcher_notes"
+      android:roundIcon="@mipmap/deep_launcher_notes"
+      android:targetActivity="network.xpoint.deep.MainActivity"
+      android:enabled="false"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity-alias>
+
+    <activity-alias
+      android:name="network.xpoint.deep.CalculatorLauncher"
+      android:label="@string/app_name_calculator"
+      android:icon="@mipmap/deep_launcher_calculator"
+      android:roundIcon="@mipmap/deep_launcher_calculator"
+      android:targetActivity="network.xpoint.deep.MainActivity"
+      android:enabled="false"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity-alias>
+  </application>
 </manifest>

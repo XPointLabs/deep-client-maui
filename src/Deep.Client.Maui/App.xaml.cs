@@ -15,6 +15,7 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         CrashDiagnostics.LogInfo("Startup", $"Crash log file: {CrashDiagnostics.LogPath}");
         services.GetService<IAppearanceService>()?.ApplyFromPreferences();
+        _ = services.GetService<IAppIconService>()?.ApplyFromPreferencesAsync();
         services.GetService<IPrivacyScreenService>()?.ApplyFromPreferences();
     }
 

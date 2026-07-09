@@ -26,6 +26,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
     private readonly RuntimeEnvironmentOptions environment;
     private readonly IPrivacyScreenService privacyScreen;
     private readonly IAppearanceService appearance;
+    private readonly IAppIconService appIcons;
     private readonly IIpCountryLookup ipCountryLookup;
     private string section = "help";
 
@@ -37,6 +38,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         RuntimeEnvironmentOptions environment,
         IPrivacyScreenService privacyScreen,
         IAppearanceService appearance,
+        IAppIconService appIcons,
         IIpCountryLookup ipCountryLookup)
     {
         InitializeComponent();
@@ -47,6 +49,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         this.environment = environment;
         this.privacyScreen = privacyScreen;
         this.appearance = appearance;
+        this.appIcons = appIcons;
         this.ipCountryLookup = ipCountryLookup;
     }
 
@@ -320,6 +323,16 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             CreateAccentRow("Голубой", "#18C8FF", ClientSettingKeys.AppearanceAccent, "Голубой"),
             CreateAccentRow("Синий", "#126DFF", ClientSettingKeys.AppearanceAccent, "Синий"),
             CreateAccentRow("Фиолетовый", "#8A5AFF", ClientSettingKeys.AppearanceAccent, "Фиолетовый")));
+
+        if (appIcons.IsSupported)
+        {
+            ContentStack.Children.Add(CreateCategory(
+                "Иконка приложения",
+                appIcons.Options
+                    .Select(CreateAppIconRow)
+                    .ToArray()));
+            ContentStack.Children.Add(CreateDescription("При смене иконки Android может закрыть Deep и на несколько секунд обновить ярлык на рабочем столе."));
+        }
     }
 
     private void BuildMessageRequestsSection()
@@ -661,6 +674,77 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         return grid;
     }
 
+    private View CreateAppIconRow(AppIconOption option)
+    {
+        var selected = string.Equals(appIcons.SelectedIconId, option.Id, StringComparison.Ordinal);
+        var grid = new Grid
+        {
+            ColumnDefinitions =
+            [
+                new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = GridLength.Star },
+                new ColumnDefinition { Width = GridLength.Auto }
+            ],
+            Padding = new Thickness(14, 10),
+            ColumnSpacing = 12,
+            MinimumHeightRequest = 64
+        };
+
+        grid.Children.Add(new Border
+        {
+            WidthRequest = 42,
+            HeightRequest = 42,
+            StrokeThickness = selected ? 2 : 0,
+            Stroke = new SolidColorBrush(ColorResource("PrimaryColor", Colors.Cyan)),
+            StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(12) },
+            Background = Colors.Transparent,
+            Padding = selected ? 2 : 0,
+            VerticalOptions = LayoutOptions.Center,
+            Content = new Image
+            {
+                Source = option.PreviewImage,
+                Aspect = Aspect.AspectFit
+            }
+        });
+
+        var labels = new VerticalStackLayout { Spacing = 3, VerticalOptions = LayoutOptions.Center };
+        labels.Children.Add(new Label
+        {
+            Text = option.Title,
+            FontSize = 16,
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1
+        });
+        labels.Children.Add(new Label
+        {
+            Text = option.Subtitle,
+            FontSize = 13,
+            TextColor = ColorResource("TextSecondary", Colors.Gray),
+            LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 2
+        });
+        Grid.SetColumn(labels, 1);
+        grid.Children.Add(labels);
+
+        if (selected)
+        {
+            var check = new Label
+            {
+                Text = "✓",
+                FontSize = 17,
+                TextColor = ColorResource("PrimaryColor", Colors.Cyan),
+                VerticalOptions = LayoutOptions.Center
+            };
+            Grid.SetColumn(check, 2);
+            grid.Children.Add(check);
+        }
+
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += async (_, _) => await SelectAppIconAsync(option);
+        grid.GestureRecognizers.Add(tap);
+        return grid;
+    }
+
     private void ApplySettingSideEffects(string key)
     {
         switch (key)
@@ -670,6 +754,9 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             case ClientSettingKeys.AppearanceAccent:
                 appearance.ApplyFromPreferences();
                 StatusLabel.Text = "Оформление применено.";
+                break;
+            case ClientSettingKeys.AppearanceAppIcon:
+                StatusLabel.Text = "Иконка приложения обновлена.";
                 break;
         }
     }
@@ -974,6 +1061,28 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         appearance.ApplyFromPreferences();
         StatusLabel.Text = "Оформление применено.";
         return Task.CompletedTask;
+    }
+
+    private async Task SelectAppIconAsync(AppIconOption option)
+    {
+        if (string.Equals(appIcons.SelectedIconId, option.Id, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var confirmed = await DisplayAlertAsync(
+            "Сменить иконку?",
+            "Android обновит ярлык Deep. Приложение может закрыться на несколько секунд, как при смене иконки в Session.",
+            "Сменить и закрыть",
+            "Отмена");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        await appIcons.SelectAsync(option.Id);
+        ApplySettingSideEffects(ClientSettingKeys.AppearanceAppIcon);
+        BuildSection();
     }
 
     private Task SetStatusAsync(string message)

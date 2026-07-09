@@ -203,6 +203,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<INotificationScheduler, MauiNotificationScheduler>();
         builder.Services.AddSingleton<IPrivacyScreenService, MauiPrivacyScreenService>();
         builder.Services.AddSingleton<IAppearanceService, MauiAppearanceService>();
+        builder.Services.AddSingleton<IAppIconService, AppIconService>();
         builder.Services.AddSingleton<ICallSignalingTransport>(services =>
         {
             var baseUrl = ResolveRuntimeSetting(CallSignalingBaseUrlEnv);

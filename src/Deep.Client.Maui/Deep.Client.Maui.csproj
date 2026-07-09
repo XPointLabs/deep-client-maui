@@ -12,8 +12,8 @@
     <Nullable>enable</Nullable>
     <ApplicationTitle>Deep</ApplicationTitle>
     <ApplicationId>network.xpoint.deep</ApplicationId>
-    <ApplicationDisplayVersion>0.2.2</ApplicationDisplayVersion>
-    <ApplicationVersion>6</ApplicationVersion>
+    <ApplicationDisplayVersion>0.2.3</ApplicationDisplayVersion>
+    <ApplicationVersion>7</ApplicationVersion>
     <WindowsPackageType>None</WindowsPackageType>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
@@ -74,6 +74,7 @@
     <MauiImage Include="Resources\Images\xpoint_logo.png" Resize="True" BaseSize="256,256" />
     <MauiImage Include="Resources\Images\deep_logo.png" Resize="True" BaseSize="512,512" />
     <MauiImage Include="Resources\Images\deep_mark.png" Resize="True" BaseSize="256,256" />
+    <MauiImage Include="Resources\Images\app_icon_*.png" Resize="True" BaseSize="256,256" />
   </ItemGroup>
 
   <Target Name="EnsureGoogleServicesJson" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' and !Exists('Platforms\Android\google-services.json')">
