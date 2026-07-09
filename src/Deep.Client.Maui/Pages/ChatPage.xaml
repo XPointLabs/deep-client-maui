@@ -99,6 +99,7 @@
                         <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
                             <Border.GestureRecognizers>
                                 <PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" />
+                                <TapGestureRecognizer Tapped="OnMessageTapped" />
                             </Border.GestureRecognizers>
                             <VerticalStackLayout Spacing="4">
                                 <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}">

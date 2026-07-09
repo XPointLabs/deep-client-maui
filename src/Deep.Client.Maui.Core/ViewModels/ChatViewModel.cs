@@ -471,14 +471,46 @@ public sealed class ChatViewModel : ViewModelBase
 
     public AsyncCommand CancelReplyCommand { get; }
 
+    public void PrepareRoute(SessionId recipient, string? displayName = null)
+    {
+        account = null;
+        counterpart = recipient;
+        oldestLoadedMessageAt = null;
+        hasOlderMessages = false;
+        Conversation = CreateRouteConversation(recipient, displayName);
+        IsBlocked = false;
+        IsMessageRequest = false;
+        ReplyingTo = null;
+        StagedAttachments.Clear();
+        Messages.Clear();
+
+        RaisePropertyChanged(nameof(Counterpart));
+        RaisePropertyChanged(nameof(IsSelfConversation));
+        SendCommand.RaiseCanExecuteChanged();
+        ReceiveCommand.RaiseCanExecuteChanged();
+        RaiseComposerStateChanged();
+    }
+
     public async Task OpenOneToOneAsync(SessionAccount activeAccount, SessionId recipient, string? displayName = null, CancellationToken cancellationToken = default)
     {
+        var conversationId = ConversationId.ForOneToOne(recipient);
         account = activeAccount;
         counterpart = recipient;
         RaisePropertyChanged(nameof(Counterpart));
         RaisePropertyChanged(nameof(IsSelfConversation));
         oldestLoadedMessageAt = null;
         hasOlderMessages = false;
+        if (Conversation?.Id != conversationId)
+        {
+            Messages.Clear();
+        }
+
+        Conversation = CreateRouteConversation(recipient, displayName);
+        SendCommand.RaiseCanExecuteChanged();
+        ReceiveCommand.RaiseCanExecuteChanged();
+        RaiseComposerStateChanged();
+        await ReloadMessagesAsync(cancellationToken);
+
         Conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(
             recipient,
             displayName,
@@ -489,13 +521,16 @@ public sealed class ChatViewModel : ViewModelBase
             && contact is { IsApproved: false, IsBlocked: false };
         if (recipient == activeAccount.SessionId)
         {
-            await runtime.Messages.RepairSelfConversationAsync(activeAccount.SessionId, cancellationToken);
+            var repaired = await runtime.Messages.RepairSelfConversationAsync(activeAccount.SessionId, cancellationToken);
+            if (repaired > 0)
+            {
+                await ReloadMessagesAsync(cancellationToken);
+            }
         }
 
         SendCommand.RaiseCanExecuteChanged();
         ReceiveCommand.RaiseCanExecuteChanged();
         RaiseComposerStateChanged();
-        await ReloadMessagesAsync(cancellationToken);
     }
 
     public async Task OpenFromRouteAsync(string sessionId, string? displayName = null, CancellationToken cancellationToken = default)
@@ -1021,6 +1056,10 @@ public sealed class ChatViewModel : ViewModelBase
             Conversation.Id,
             InitialMessagePageSize,
             cancellationToken);
+        SyncMessageItems(messages.Select(ToItem).ToList());
+        oldestLoadedMessageAt = messages.Count == 0 ? null : messages[0].CreatedAt;
+        hasOlderMessages = messages.Count == InitialMessagePageSize;
+
         var readAt = await runtime.Messages.MarkConversationAsReadAsync(
             Conversation.Id,
             LatestIncomingOrNow(messages),
@@ -1032,8 +1071,18 @@ public sealed class ChatViewModel : ViewModelBase
         }
 
         SyncMessageItems(items);
-        oldestLoadedMessageAt = messages.Count == 0 ? null : messages[0].CreatedAt;
-        hasOlderMessages = messages.Count == InitialMessagePageSize;
+    }
+
+    private Conversation CreateRouteConversation(SessionId recipient, string? displayName)
+    {
+        var now = runtime.Clock.UtcNow;
+        return new Conversation(
+            ConversationId.ForOneToOne(recipient),
+            ConversationKind.OneToOne,
+            string.IsNullOrWhiteSpace(displayName) ? recipient.Value : displayName.Trim(),
+            ConversationSettings.Default(ConversationKind.OneToOne),
+            now,
+            now);
     }
 
     private static ChatMessageItem ToItem(Message message) =>

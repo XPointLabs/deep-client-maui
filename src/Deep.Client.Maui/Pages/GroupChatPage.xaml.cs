@@ -533,6 +533,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     private async void OnAttachmentTapped(object? sender, TappedEventArgs e)
     {
+        CancelMessageLongPress();
         if (suppressNextAttachmentTap)
         {
             suppressNextAttachmentTap = false;
@@ -654,6 +655,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     private async void OnVoiceMessageTapped(object? sender, TappedEventArgs e)
     {
+        CancelMessageLongPress();
         if ((sender as BindableObject)?.BindingContext is not GroupChatMessageItem item || item.Attachments.Count == 0)
         {
             return;
@@ -833,12 +835,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     private void OnMessageTapped(object? sender, TappedEventArgs e)
     {
-        if ((sender as BindableObject)?.BindingContext is not GroupChatMessageItem item)
-        {
-            return;
-        }
-
-        ShowMessageMenu(item);
+        CancelMessageLongPress();
     }
 
     private void OnMessagePointerPressed(object? sender, PointerEventArgs e)

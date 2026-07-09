@@ -9,7 +9,7 @@
     BackgroundColor="{StaticResource PageBackground}"
     Shell.NavBarIsVisible="False"
     Title="Диалоги">
-    <Grid AutomationId="Conversations.Root" RowDefinitions="Auto,Auto,Auto,*" BackgroundColor="{StaticResource PageBackground}">
+    <Grid x:Name="RootLayout" AutomationId="Conversations.Root" RowDefinitions="Auto,Auto,Auto,*" BackgroundColor="{StaticResource PageBackground}">
         <Border x:Name="NetworkBanner" Grid.Row="0" Padding="12,7" IsVisible="False" Background="{StaticResource PanelBackground}" StrokeThickness="0">
             <HorizontalStackLayout Spacing="8" HorizontalOptions="Center">
                 <Border WidthRequest="7" HeightRequest="7" StrokeThickness="0" Background="{StaticResource DangerColor}" StrokeShape="RoundRectangle 4" VerticalOptions="Center" />
@@ -17,7 +17,7 @@
             </HorizontalStackLayout>
         </Border>
 
-        <Grid Grid.Row="1" Style="{StaticResource CompactHeader}" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+        <Grid x:Name="HeaderBar" Grid.Row="1" Style="{StaticResource CompactHeader}" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
             <Grid WidthRequest="42" HeightRequest="42" VerticalOptions="Center">
                 <Border WidthRequest="40" HeightRequest="40" Padding="0" StrokeThickness="0" Background="{StaticResource AvatarAccentColor}" HorizontalOptions="Center" VerticalOptions="Center" StrokeShape="RoundRectangle 20">
                     <Grid>

@@ -100,6 +100,7 @@
                         <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
                             <Border.GestureRecognizers>
                                 <PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" />
+                                <TapGestureRecognizer Tapped="OnMessageTapped" />
                             </Border.GestureRecognizers>
                             <VerticalStackLayout Spacing="4">
                                 <Label Text="{Binding SenderLabel}" IsVisible="{Binding ShowSenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation" />

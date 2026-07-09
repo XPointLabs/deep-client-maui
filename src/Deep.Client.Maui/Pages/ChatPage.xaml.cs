@@ -184,6 +184,10 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             shouldStickToEnd = true;
             didInitialScroll = false;
 
+            viewModel.PrepareRoute(SessionId.Parse(sessionId), displayName);
+            UpdateHeaderAvatarUi();
+            MessagesCollection.Opacity = 1;
+
             await viewModel.OpenFromRouteAsync(sessionId, displayName, cancellationToken);
             UpdateHeaderAvatarUi();
             _ = EnsureImagePreviewsAsync();
@@ -555,6 +559,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private async void OnAttachmentTapped(object? sender, TappedEventArgs e)
     {
+        CancelMessageLongPress();
         if (suppressNextAttachmentTap)
         {
             suppressNextAttachmentTap = false;
@@ -676,6 +681,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private async void OnVoiceMessageTapped(object? sender, TappedEventArgs e)
     {
+        CancelMessageLongPress();
         if ((sender as BindableObject)?.BindingContext is not ChatMessageItem item || item.Attachments.Count == 0)
         {
             return;
@@ -888,12 +894,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private void OnMessageTapped(object? sender, TappedEventArgs e)
     {
-        if ((sender as BindableObject)?.BindingContext is not ChatMessageItem item)
-        {
-            return;
-        }
-
-        ShowMessageMenu(item);
+        CancelMessageLongPress();
     }
 
     private void OnMessagePointerPressed(object? sender, PointerEventArgs e)

@@ -68,6 +68,31 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public void PrepareRouteShowsTitleAndClearsStaleChatState()
+    {
+        var runtime = ClientRuntime.CreateStubbed();
+        var chat = new ChatViewModel(runtime);
+        chat.Messages.Add(new ChatMessageItem(
+            MessageId.NewId(),
+            "stale",
+            MessageDirection.Incoming,
+            MessageDeliveryState.Delivered,
+            DateTimeOffset.UnixEpoch,
+            [],
+            replyTo: null,
+            reactions: []));
+        chat.StageAttachment(AttachmentMetadata.Local("old.txt", "text/plain", 12));
+
+        chat.PrepareRoute(SessionId.CreateNew(), "Мария");
+
+        Assert.Equal("Мария", chat.ConversationTitle);
+        Assert.Empty(chat.Messages);
+        Assert.Empty(chat.StagedAttachments);
+        Assert.False(chat.SendCommand.CanExecute(null));
+        Assert.False(chat.ReceiveCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task UnknownSenderCanBeAcceptedOrBlockedFromChat()
     {
         var backend = new StubSessionBackend();

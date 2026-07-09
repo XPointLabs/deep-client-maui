@@ -45,6 +45,8 @@ public partial class ConversationsPage : ContentPage
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
+        ApplyAndroidSafeAreaCompensation();
+        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(120), ApplyAndroidSafeAreaCompensation);
         UpdateProfileAvatarUi();
         UpdateNetworkUi();
         await viewModel.LoadCachedAsync();
@@ -169,6 +171,23 @@ public partial class ConversationsPage : ContentPage
     }
 
     private static string GetAvatarPath() => Path.Combine(FileSystem.Current.AppDataDirectory, AvatarFileName);
+
+    private void ApplyAndroidSafeAreaCompensation()
+    {
+#if ANDROID
+        var missingTop = AndroidSafeArea.GetTopOverlap(HeaderBar);
+        if (missingTop <= 0.5)
+        {
+            return;
+        }
+
+        RootLayout.Padding = new Thickness(
+            RootLayout.Padding.Left,
+            RootLayout.Padding.Top + missingTop,
+            RootLayout.Padding.Right,
+            RootLayout.Padding.Bottom);
+#endif
+    }
 
     private static Task OpenConversationAsync(ConversationListItem selected)
     {
