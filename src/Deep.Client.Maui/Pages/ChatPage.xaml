@@ -148,6 +148,7 @@
                                         </Border>
                                     </Grid>
                                     <Border.GestureRecognizers>
+                                        <PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" />
                                         <TapGestureRecognizer Tapped="OnAttachmentTapped" />
                                     </Border.GestureRecognizers>
                                 </Border>
@@ -163,6 +164,7 @@
                                         <Path Grid.Column="2" Data="M9,5 L16,12 L9,19" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
                                     </Grid>
                                     <Border.GestureRecognizers>
+                                        <PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" />
                                         <TapGestureRecognizer Tapped="OnAttachmentTapped" />
                                     </Border.GestureRecognizers>
                                 </Border>
