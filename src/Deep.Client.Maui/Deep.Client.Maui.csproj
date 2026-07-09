@@ -12,8 +12,8 @@
     <Nullable>enable</Nullable>
     <ApplicationTitle>Deep</ApplicationTitle>
     <ApplicationId>network.xpoint.deep</ApplicationId>
-    <ApplicationDisplayVersion>0.2.5</ApplicationDisplayVersion>
-    <ApplicationVersion>10</ApplicationVersion>
+    <ApplicationDisplayVersion>0.2.7</ApplicationDisplayVersion>
+    <ApplicationVersion>12</ApplicationVersion>
     <WindowsPackageType>None</WindowsPackageType>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>

@@ -35,6 +35,27 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task OpenFromRouteHydratesRecentMessagesFromLocalStore()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var account = await runtime.Accounts.RegisterAsync("Alice");
+        var recipient = SessionId.CreateNew();
+
+        var chat = new ChatViewModel(runtime);
+        await chat.OpenOneToOneAsync(account, recipient, "Bob");
+        chat.Draft = "cached open";
+        await chat.SendAsync();
+
+        var reopened = new ChatViewModel(runtime);
+        await reopened.OpenFromRouteAsync(recipient.Value, "Bob");
+
+        Assert.Equal("Bob", reopened.ConversationTitle);
+        var item = Assert.Single(reopened.Messages);
+        Assert.Equal("cached open", item.Body);
+        Assert.Equal(recipient, reopened.Counterpart);
+    }
+
+    [Fact]
     public void ImagePresentationSeparatesPhotosFromImageDocuments()
     {
         var photo = new ChatMessageItem(

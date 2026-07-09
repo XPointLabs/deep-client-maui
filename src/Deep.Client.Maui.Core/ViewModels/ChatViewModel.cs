@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using Deep.Client.Maui.Core.Commands;
 using Deep.Client.Maui.Core.Presentation;
 using Deep.Client.Shared.Domain;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Platform;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
@@ -535,10 +536,37 @@ public sealed class ChatViewModel : ViewModelBase
 
     public async Task OpenFromRouteAsync(string sessionId, string? displayName = null, CancellationToken cancellationToken = default)
     {
+        var recipient = SessionId.Parse(sessionId);
+        if (runtime.Store is IOneToOneConversationOpenRepository fastOpenStore)
+        {
+            var snapshot = await fastOpenStore.OpenOneToOneConversationAsync(
+                recipient,
+                displayName,
+                InitialMessagePageSize,
+                runtime.Clock.UtcNow,
+                cancellationToken);
+            if (snapshot is null)
+            {
+                throw new InvalidOperationException("Войдите в аккаунт перед открытием чата.");
+            }
+
+            ApplyOpenSnapshot(recipient, snapshot);
+            if (recipient == snapshot.ActiveAccount.SessionId)
+            {
+                var repaired = await runtime.Messages.RepairSelfConversationAsync(snapshot.ActiveAccount.SessionId, cancellationToken);
+                if (repaired > 0)
+                {
+                    await ReloadMessagesAsync(cancellationToken);
+                }
+            }
+
+            return;
+        }
+
         var active = await runtime.Accounts.GetActiveAccountAsync(cancellationToken)
             ?? throw new InvalidOperationException("Войдите в аккаунт перед открытием чата.");
 
-        await OpenOneToOneAsync(active, SessionId.Parse(sessionId), displayName, cancellationToken);
+        await OpenOneToOneAsync(active, recipient, displayName, cancellationToken);
     }
 
     public async Task RefreshConversationMetadataAsync(CancellationToken cancellationToken = default)
@@ -1043,6 +1071,33 @@ public sealed class ChatViewModel : ViewModelBase
         }, cancellationToken);
 
         return updated;
+    }
+
+    private void ApplyOpenSnapshot(SessionId recipient, OneToOneConversationOpenSnapshot snapshot)
+    {
+        account = snapshot.ActiveAccount;
+        counterpart = recipient;
+        oldestLoadedMessageAt = null;
+        hasOlderMessages = false;
+        Conversation = snapshot.Conversation;
+        IsBlocked = snapshot.Contact?.IsBlocked == true;
+        IsMessageRequest = counterpart != snapshot.ActiveAccount.SessionId
+            && snapshot.Contact is { IsApproved: false, IsBlocked: false };
+
+        var items = new List<ChatMessageItem>(snapshot.RecentMessages.Count);
+        foreach (var message in snapshot.RecentMessages)
+        {
+            items.Add(ToItem(ApplyReadCursor(message, snapshot.ReadAt)));
+        }
+
+        SyncMessageItems(items);
+        oldestLoadedMessageAt = snapshot.RecentMessages.Count == 0 ? null : snapshot.RecentMessages[0].CreatedAt;
+        hasOlderMessages = snapshot.RecentMessages.Count == InitialMessagePageSize;
+        RaisePropertyChanged(nameof(Counterpart));
+        RaisePropertyChanged(nameof(IsSelfConversation));
+        SendCommand.RaiseCanExecuteChanged();
+        ReceiveCommand.RaiseCanExecuteChanged();
+        RaiseComposerStateChanged();
     }
 
     private async Task ReloadMessagesAsync(CancellationToken cancellationToken)
