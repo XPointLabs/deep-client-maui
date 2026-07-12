@@ -249,7 +249,7 @@ jobs:
       - working-directory: deep-client-maui
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
       - working-directory: deep-client-maui
-        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 --configuration Release -p:RuntimeIdentifier=win-x64
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 --configuration Release -p:RuntimeIdentifierOverride=win-x64
       - name: Write Windows build evidence
         shell: pwsh
         working-directory: deep-client-maui

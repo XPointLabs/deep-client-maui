@@ -55,6 +55,20 @@ public sealed class WindowsPackagingContractSmokeTests
         Assert.DoesNotContain("[IO.Path]::GetRelativePath", script, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void WindowsRidIsScopedToTheWindowsTargetDuringRestore()
+    {
+        var project = ReadWorkspaceFile("src", "Deep.Client.Maui", "Deep.Client.Maui.csproj");
+        var script = ReadWorkspaceFile("eng", "build-windows-msix.ps1");
+        var workflow = ReadWorkspaceFile(".github", "workflows", "ci.yml");
+
+        Assert.DoesNotContain("<RuntimeIdentifiers", project, StringComparison.Ordinal);
+        Assert.Contains("'$(RuntimeIdentifierOverride)' != ''", project, StringComparison.Ordinal);
+        Assert.Contains("-p:RuntimeIdentifierOverride=win-x64", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("-p:RuntimeIdentifier=win-x64", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("-p:RuntimeIdentifier=$RuntimeIdentifier", script, StringComparison.Ordinal);
+    }
+
     private static string ReadWorkspaceFile(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

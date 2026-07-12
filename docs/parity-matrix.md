@@ -32,7 +32,7 @@ $env:DEEP_CALL_SIGNALING_BASE_URL = "http://127.0.0.1:18103"
 dotnet test ..\deep-client-shared\Deep.Client.Shared.slnx --configuration Release
 dotnet test tests\Deep.Client.Maui.ViewModels.Tests\Deep.Client.Maui.ViewModels.Tests.csproj --configuration Release
 dotnet test tests\Deep.Client.Maui.SmokeTests\Deep.Client.Maui.SmokeTests.csproj --configuration Release
-dotnet build src\Deep.Client.Maui\Deep.Client.Maui.csproj --configuration Release -f net10.0-windows10.0.19041.0 -p:RuntimeIdentifier=win-arm64 -nr:false
+dotnet build src\Deep.Client.Maui\Deep.Client.Maui.csproj --configuration Release -f net10.0-windows10.0.19041.0 -p:RuntimeIdentifierOverride=win-arm64 -nr:false
 dotnet build src\Deep.Client.Maui\Deep.Client.Maui.csproj --configuration Release -f net10.0-android -nr:false -m:1
 ```
 

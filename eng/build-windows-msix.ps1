@@ -60,7 +60,6 @@ function Resolve-ProjectTargetName {
         '-getProperty:TargetName,TargetFramework',
         "-p:TargetFramework=$targetFramework",
         '-p:Configuration=Release',
-        "-p:RuntimeIdentifier=$RuntimeIdentifier",
         "-p:RuntimeIdentifierOverride=$RuntimeIdentifier",
         '-p:WindowsPackageType=MSIX'
     )
