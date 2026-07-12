@@ -105,6 +105,42 @@ public sealed class GroupsViewModelTests
     }
 
     [Fact]
+    public async Task DraftMembersUseKnownDisplayNameAndShortUnknownFallback()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var knownMember = SessionId.Parse("05" + new string('1', 64));
+        var unknownMember = SessionId.Parse("05" + new string('2', 64));
+        await runtime.Conversations.GetOrCreateOneToOneAsync(knownMember, "Alice", approve: true);
+        var viewModel = new GroupsViewModel(runtime);
+
+        viewModel.MemberSessionId = knownMember.Value;
+        await viewModel.AddDraftMemberAsync();
+        viewModel.MemberSessionId = unknownMember.Value;
+        await viewModel.AddDraftMemberAsync();
+
+        Assert.Equal("Alice", viewModel.DraftMembers.Single(item => item.SessionId == knownMember).DisplayName);
+        Assert.Equal("052222...2222", viewModel.DraftMembers.Single(item => item.SessionId == unknownMember).DisplayName);
+    }
+
+    [Fact]
+    public async Task DraftMemberDisplayNameRefreshAppliesRepeatedRenames()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var member = SessionId.Parse("05" + new string('3', 64));
+        await runtime.Conversations.GetOrCreateOneToOneAsync(member, "Initial", approve: true);
+        var viewModel = new GroupsViewModel(runtime) { MemberSessionId = member.Value };
+        await viewModel.AddDraftMemberAsync();
+
+        await runtime.Conversations.UpdateContactDisplayNameAsync(member, "Renamed Once");
+        await viewModel.RefreshContactDisplayNamesAsync();
+        Assert.Equal("Renamed Once", Assert.Single(viewModel.DraftMembers).DisplayName);
+
+        await runtime.Conversations.UpdateContactDisplayNameAsync(member, "Renamed Twice");
+        await viewModel.RefreshAsync();
+        Assert.Equal("Renamed Twice", Assert.Single(viewModel.DraftMembers).DisplayName);
+    }
+
+    [Fact]
     public async Task RefreshCommandLoadsPersistedGroups()
     {
         var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));

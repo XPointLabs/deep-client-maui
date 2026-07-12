@@ -29,6 +29,8 @@ public partial class GroupsPage : ContentPage
         base.OnAppearing();
         networkStatusService.StatusChanged -= OnNetworkStatusChanged;
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
+        ContactProfileUpdateBus.ContactChanged -= OnContactProfileChanged;
+        ContactProfileUpdateBus.ContactChanged += OnContactProfileChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         UpdateNetworkUi();
@@ -40,6 +42,7 @@ public partial class GroupsPage : ContentPage
     {
         base.OnDisappearing();
         networkStatusService.StatusChanged -= OnNetworkStatusChanged;
+        ContactProfileUpdateBus.ContactChanged -= OnContactProfileChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         if (autoRefreshTimer is not null)
         {
@@ -109,6 +112,17 @@ public partial class GroupsPage : ContentPage
     private void OnNetworkStatusChanged(object? sender, EventArgs e)
     {
         MainThread.BeginInvokeOnMainThread(UpdateNetworkUi);
+    }
+
+    private void OnContactProfileChanged(object? sender, Deep.Client.Shared.Domain.SessionId contactId)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            if (!viewModel.IsBusy)
+            {
+                await viewModel.RefreshContactDisplayNamesAsync();
+            }
+        });
     }
 
     private void UpdateNetworkUi()

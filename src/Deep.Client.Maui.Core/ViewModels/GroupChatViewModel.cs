@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Deep.Client.Maui.Core.Commands;
+using Deep.Client.Maui.Core.Presentation;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.State;
@@ -239,7 +240,11 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
 
-public sealed record GroupMemberItem(SessionId SessionId, GroupMemberRole Role, bool IsPendingRemoval);
+public sealed record GroupMemberItem(
+    SessionId SessionId,
+    string DisplayName,
+    GroupMemberRole Role,
+    bool IsPendingRemoval);
 
 public sealed class GroupChatViewModel : ViewModelBase
 {
@@ -250,6 +255,7 @@ public sealed class GroupChatViewModel : ViewModelBase
     private readonly IAttachmentPickerService? attachmentPicker;
     private readonly IVoiceMessageRecorder? voiceRecorder;
     private readonly Dictionary<string, string> senderLabels = new(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, string> contactDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
     private SessionAccount? account;
     private Group? group;
     private string groupTitle = string.Empty;
@@ -448,6 +454,7 @@ public sealed class GroupChatViewModel : ViewModelBase
     public async Task OpenFromRouteAsync(string groupId, string? displayName = null, CancellationToken cancellationToken = default)
     {
         var id = ConversationId.Parse(groupId);
+        senderLabels.Clear();
         if (runtime.Store is IGroupConversationOpenRepository openRepository)
         {
             var snapshot = await openRepository.OpenGroupConversationAsync(
@@ -463,10 +470,11 @@ public sealed class GroupChatViewModel : ViewModelBase
             account = snapshot.ActiveAccount;
             group = snapshot.Group;
             SeedSenderLabels(snapshot.RecentMessages, snapshot.SenderContacts);
+            await ReloadContactDisplayNamesAsync(cancellationToken);
             var items = new List<GroupChatMessageItem>(snapshot.RecentMessages.Count);
             foreach (var message in snapshot.RecentMessages)
             {
-                items.Add(await ToItemAsync(message, cancellationToken));
+                items.Add(ToItem(message));
             }
 
             SyncMessageItems(items);
@@ -485,6 +493,7 @@ public sealed class GroupChatViewModel : ViewModelBase
             oldestLoadedMessageAt = null;
             oldestLoadedMessageId = null;
             hasOlderMessages = false;
+            await ReloadContactDisplayNamesAsync(cancellationToken);
             await LoadMessagesAsync(cancellationToken);
         }
 
@@ -498,6 +507,13 @@ public sealed class GroupChatViewModel : ViewModelBase
         RaiseMemberCommandCanExecuteChanged();
         RaiseComposerStateChanged();
     }
+
+    public Task RefreshContactDisplayNamesAsync(CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            await ReloadContactDisplayNamesAsync(ct);
+            SyncMembers();
+        }, cancellationToken);
 
     public Task RefreshAsync(CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
@@ -516,11 +532,13 @@ public sealed class GroupChatViewModel : ViewModelBase
             if (latest is not null)
             {
                 group = latest;
-                UpdateGroupSummary();
-                SyncMembers();
-                UpdateMemberPermissions();
-                RaiseMemberCommandCanExecuteChanged();
             }
+
+            await ReloadContactDisplayNamesAsync(ct);
+            UpdateGroupSummary();
+            SyncMembers();
+            UpdateMemberPermissions();
+            RaiseMemberCommandCanExecuteChanged();
 
             var activeGroup = group ?? throw new InvalidOperationException("Откройте группу перед обновлением.");
             var received = account is not null
@@ -539,7 +557,7 @@ public sealed class GroupChatViewModel : ViewModelBase
                     ct);
                 foreach (var message in received.OrderBy(message => message.CreatedAt))
                 {
-                    await UpsertMessageItemAsync(MarkIncomingRead(message, readAt), ct);
+                    UpsertMessageItem(MarkIncomingRead(message, readAt));
                 }
             }
 
@@ -683,7 +701,7 @@ public sealed class GroupChatViewModel : ViewModelBase
                 ct);
             if (updated is not null)
             {
-                await ReplaceMessageItemAsync(updated);
+                ReplaceMessageItem(updated);
             }
         }, cancellationToken);
 
@@ -692,12 +710,12 @@ public sealed class GroupChatViewModel : ViewModelBase
         try
         {
             var sent = await runtime.Messages.DispatchGroupAsync(pending);
-            await ReplaceMessageItemAsync(sent);
+            ReplaceMessageItem(sent);
             SetStatus("Сообщение отправлено.");
         }
         catch (Exception ex)
         {
-            await ReplaceMessageItemAsync(pending.Mark(MessageDeliveryState.Failed));
+            ReplaceMessageItem(pending.Mark(MessageDeliveryState.Failed));
             ErrorMessage = $"Не удалось отправить сообщение: {ex.Message}";
             SetStatus(ErrorMessage, isError: true);
         }
@@ -769,7 +787,7 @@ public sealed class GroupChatViewModel : ViewModelBase
             var items = new List<GroupChatMessageItem>(messages.Count);
             foreach (var message in messages)
             {
-                items.Add(await ToItemAsync(ApplyReadCursor(message, readCursor), ct));
+                items.Add(ToItem(ApplyReadCursor(message, readCursor)));
             }
 
             PrependMessageItems(items);
@@ -1016,12 +1034,50 @@ public sealed class GroupChatViewModel : ViewModelBase
         var members = group.Members
             .OrderByDescending(item => item.Role)
             .ThenBy(item => item.SessionId.Value, StringComparer.Ordinal)
-            .Select(member => new GroupMemberItem(member.SessionId, member.Role, member.IsPendingRemoval))
+            .Select(member => new GroupMemberItem(
+                member.SessionId,
+                ResolveContactDisplayName(member.SessionId),
+                member.Role,
+                member.IsPendingRemoval))
             .ToArray();
 
         SyncMemberItems(Members, members);
         SyncMemberItems(PendingRemovalMembers, members.Where(member => member.IsPendingRemoval).ToArray());
     }
+
+    private async Task ReloadContactDisplayNamesAsync(CancellationToken cancellationToken)
+    {
+        contactDisplayNames = await LoadContactDisplayNamesAsync(cancellationToken);
+        foreach (var senderId in senderLabels.Keys.ToArray())
+        {
+            senderLabels[senderId] = ResolveSenderDisplayName(senderId);
+        }
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> LoadContactDisplayNamesAsync(CancellationToken cancellationToken)
+    {
+        var displayNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        await foreach (var contact in contacts.ListAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var displayName = DeepDisplayName.ContactTitle(contact.Id, contact.DisplayName);
+            if (!string.IsNullOrWhiteSpace(displayName))
+            {
+                displayNames[contact.Id.Value] = displayName;
+            }
+        }
+
+        return displayNames;
+    }
+
+    private string ResolveContactDisplayName(SessionId sessionId) =>
+        contactDisplayNames.TryGetValue(sessionId.Value, out var displayName)
+            ? displayName
+            : DeepDisplayName.ShortId(sessionId.Value);
+
+    private string ResolveSenderDisplayName(string sessionId) =>
+        contactDisplayNames.TryGetValue(sessionId, out var displayName)
+            ? displayName
+            : AbbreviateSessionId(sessionId);
 
     private void UpdateMemberPermissions()
     {
@@ -1033,17 +1089,14 @@ public sealed class GroupChatViewModel : ViewModelBase
         && account is not null
         && (!string.IsNullOrWhiteSpace(Draft) || StagedAttachments.Count > 0);
 
-    private async Task<GroupChatMessageItem> ToItemAsync(Message message, CancellationToken cancellationToken)
+    private GroupChatMessageItem ToItem(Message message)
     {
         var senderLabel = string.Empty;
         if (message.Direction == MessageDirection.Incoming)
         {
             if (!senderLabels.TryGetValue(message.Sender.Value, out senderLabel))
             {
-                var contact = await contacts.GetAsync(message.Sender, cancellationToken).ConfigureAwait(false);
-                senderLabel = string.IsNullOrWhiteSpace(contact?.DisplayName)
-                    ? AbbreviateSessionId(message.Sender.Value)
-                    : contact.DisplayName.Trim();
+                senderLabel = ResolveSenderDisplayName(message.Sender.Value);
                 senderLabels[message.Sender.Value] = senderLabel;
             }
         }
@@ -1060,21 +1113,21 @@ public sealed class GroupChatViewModel : ViewModelBase
             message.ReactionItems);
     }
 
-    private async Task ReplaceMessageItemAsync(Message message)
+    private void ReplaceMessageItem(Message message)
     {
         for (var index = 0; index < Messages.Count; index++)
         {
             if (Messages[index].Id == message.Id)
             {
-                Messages[index] = await ToItemAsync(message, CancellationToken.None);
+                Messages[index] = ToItem(message);
                 return;
             }
         }
     }
 
-    private async Task UpsertMessageItemAsync(Message message, CancellationToken cancellationToken)
+    private void UpsertMessageItem(Message message)
     {
-        var item = await ToItemAsync(message, cancellationToken);
+        var item = ToItem(message);
         for (var index = 0; index < Messages.Count; index++)
         {
             if (Messages[index].Id == item.Id)
@@ -1164,7 +1217,7 @@ public sealed class GroupChatViewModel : ViewModelBase
                 messageId,
                 createdAt,
                 cancellationToken);
-            await ReplaceMessageItemAsync(pending);
+            ReplaceMessageItem(pending);
             ReplyingTo = null;
             _ = DispatchPendingMessageAsync(pending);
         }
@@ -1193,7 +1246,7 @@ public sealed class GroupChatViewModel : ViewModelBase
         var items = new List<GroupChatMessageItem>(messages.Count);
         foreach (var message in messages)
         {
-            items.Add(await ToItemAsync(MarkIncomingRead(message, readAt), cancellationToken));
+            items.Add(ToItem(MarkIncomingRead(message, readAt)));
         }
 
         SyncMessageItems(items);
@@ -1225,10 +1278,12 @@ public sealed class GroupChatViewModel : ViewModelBase
                      .Select(static message => message.Sender)
                      .Distinct())
         {
-            senderLabels[sender.Value] = contactsBySender.TryGetValue(sender, out var contact)
-                && !string.IsNullOrWhiteSpace(contact.DisplayName)
-                    ? contact.DisplayName.Trim()
-                    : AbbreviateSessionId(sender.Value);
+            var displayName = contactsBySender.TryGetValue(sender, out var contact)
+                ? DeepDisplayName.ContactTitle(sender, contact.DisplayName)
+                : string.Empty;
+            senderLabels[sender.Value] = string.IsNullOrWhiteSpace(displayName)
+                ? AbbreviateSessionId(sender.Value)
+                : displayName;
         }
     }
 

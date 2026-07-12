@@ -265,7 +265,7 @@
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="vm:GroupMemberItem">
                                 <Grid ColumnDefinitions="*,Auto,Auto" Padding="0,0,0,4" ColumnSpacing="6">
-                                    <Label Text="{Binding SessionId.Value}" FontSize="11" LineBreakMode="TailTruncation" />
+                                    <Label Text="{Binding DisplayName}" FontSize="11" LineBreakMode="TailTruncation" />
                                     <Border Grid.Column="1" StrokeThickness="0" Padding="6,2" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 8"><Label Text="{Binding Role}" FontSize="10" TextColor="{StaticResource TextSecondary}" /></Border>
                                     <Border Grid.Column="2" StrokeThickness="0" Padding="6,2" Background="{StaticResource DangerColor}" StrokeShape="RoundRectangle 8" IsVisible="{Binding IsPendingRemoval}"><Label Text="Ожидает" FontSize="10" TextColor="#050705" /></Border>
                                 </Grid>

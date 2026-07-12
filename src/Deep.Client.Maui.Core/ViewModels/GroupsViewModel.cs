@@ -1,18 +1,23 @@
 ﻿using System.Collections.ObjectModel;
 using Deep.Client.Maui.Core.Commands;
+using Deep.Client.Maui.Core.Presentation;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Features;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Core.ViewModels;
 
 public sealed record GroupListItem(ConversationId Id, string Name, int MemberCount, int AdminCount, bool IsDestroyed);
 
-public sealed record GroupDraftMemberItem(SessionId SessionId);
+public sealed record GroupDraftMemberItem(SessionId SessionId, string DisplayName);
 
 public sealed class GroupsViewModel : ViewModelBase
 {
     private readonly ClientRuntime runtime;
+    private readonly IContactRepository contacts;
+    private IReadOnlyDictionary<string, string> contactDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
+    private bool contactDisplayNamesLoaded;
     private string groupName = string.Empty;
     private string memberSessionId = string.Empty;
     private GroupDraftMemberItem? selectedDraftMember;
@@ -21,6 +26,7 @@ public sealed class GroupsViewModel : ViewModelBase
     public GroupsViewModel(ClientRuntime runtime)
     {
         this.runtime = runtime;
+        contacts = (IContactRepository)runtime.Store;
         Groups = [];
         DraftMembers = [];
         CreateCommand = new AsyncCommand(CreateFromUiAsync, () => runtime.FeatureFlags.GroupsV2Enabled && !string.IsNullOrWhiteSpace(GroupName));
@@ -90,6 +96,9 @@ public sealed class GroupsViewModel : ViewModelBase
     public Task<IReadOnlyList<GroupListItem>> RefreshAsync(CancellationToken cancellationToken = default) =>
         RunRefreshAsync(cancellationToken);
 
+    public Task RefreshContactDisplayNamesAsync(CancellationToken cancellationToken = default) =>
+        RunBusyAsync(ReloadContactDisplayNamesAsync, cancellationToken);
+
     public async Task<Group?> CreateGroupFromComposerAsync(CancellationToken cancellationToken = default)
     {
         var account = await runtime.Accounts.GetActiveAccountAsync(cancellationToken)
@@ -107,26 +116,26 @@ public sealed class GroupsViewModel : ViewModelBase
         return created;
     }
 
-    public Task AddDraftMemberAsync(CancellationToken cancellationToken = default)
+    public async Task AddDraftMemberAsync(CancellationToken cancellationToken = default)
     {
         if (!TryParseMemberSessionId(out var member))
         {
             ErrorMessage = "Введите корректный ID аккаунта.";
-            return Task.CompletedTask;
+            return;
         }
 
         if (DraftMembers.Any(item => item.SessionId == member))
         {
             MemberSessionId = string.Empty;
             ErrorMessage = null;
-            return Task.CompletedTask;
+            return;
         }
 
-        DraftMembers.Add(new GroupDraftMemberItem(member));
+        await EnsureContactDisplayNamesLoadedAsync(cancellationToken);
+        DraftMembers.Add(ToDraftMemberItem(member));
         MemberSessionId = string.Empty;
         ErrorMessage = null;
         RaiseDraftMemberPropertiesChanged();
-        return Task.CompletedTask;
     }
 
     public void RemoveDraftMember(GroupDraftMemberItem member)
@@ -242,6 +251,7 @@ public sealed class GroupsViewModel : ViewModelBase
                 .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
+            await ReloadContactDisplayNamesAsync(ct);
             SyncGroupItems(items);
         }, cancellationToken);
 
@@ -299,6 +309,57 @@ public sealed class GroupsViewModel : ViewModelBase
         foreach (var item in items)
         {
             Groups.Add(item);
+        }
+    }
+
+    private async Task EnsureContactDisplayNamesLoadedAsync(CancellationToken cancellationToken)
+    {
+        if (!contactDisplayNamesLoaded)
+        {
+            await ReloadContactDisplayNamesAsync(cancellationToken);
+        }
+    }
+
+    private async Task ReloadContactDisplayNamesAsync(CancellationToken cancellationToken)
+    {
+        contactDisplayNames = await LoadContactDisplayNamesAsync(cancellationToken);
+        contactDisplayNamesLoaded = true;
+        RefreshDraftMemberDisplayNames();
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> LoadContactDisplayNamesAsync(CancellationToken cancellationToken)
+    {
+        var displayNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        await foreach (var contact in contacts.ListAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var displayName = DeepDisplayName.ContactTitle(contact.Id, contact.DisplayName);
+            if (!string.IsNullOrWhiteSpace(displayName))
+            {
+                displayNames[contact.Id.Value] = displayName;
+            }
+        }
+
+        return displayNames;
+    }
+
+    private GroupDraftMemberItem ToDraftMemberItem(SessionId sessionId) =>
+        new(sessionId, ResolveContactDisplayName(sessionId));
+
+    private string ResolveContactDisplayName(SessionId sessionId) =>
+        contactDisplayNames.TryGetValue(sessionId.Value, out var displayName)
+            ? displayName
+            : DeepDisplayName.ShortId(sessionId.Value);
+
+    private void RefreshDraftMemberDisplayNames()
+    {
+        for (var index = 0; index < DraftMembers.Count; index++)
+        {
+            var current = DraftMembers[index];
+            var updated = ToDraftMemberItem(current.SessionId);
+            if (current != updated)
+            {
+                DraftMembers[index] = updated;
+            }
         }
     }
 

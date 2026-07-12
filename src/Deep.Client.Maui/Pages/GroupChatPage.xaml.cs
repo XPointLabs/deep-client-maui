@@ -171,6 +171,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     {
         UnsubscribePageEvents();
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
+        ContactProfileUpdateBus.ContactChanged += OnContactProfileChanged;
         viewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
         MessagesCollection.HandlerChanged += OnMessagesCollectionHandlerChanged;
         SizeChanged += OnPageSizeChanged;
@@ -182,6 +183,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private void UnsubscribePageEvents()
     {
         networkStatusService.StatusChanged -= OnNetworkStatusChanged;
+        ContactProfileUpdateBus.ContactChanged -= OnContactProfileChanged;
         viewModel.Messages.CollectionChanged -= OnMessagesCollectionChanged;
         MessagesCollection.HandlerChanged -= OnMessagesCollectionHandlerChanged;
         SizeChanged -= OnPageSizeChanged;
@@ -354,6 +356,17 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private void OnNetworkStatusChanged(object? sender, EventArgs e)
     {
         MainThread.BeginInvokeOnMainThread(UpdateNetworkUi);
+    }
+
+    private void OnContactProfileChanged(object? sender, SessionId contactId)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            if (!viewModel.IsBusy)
+            {
+                await viewModel.RefreshContactDisplayNamesAsync();
+            }
+        });
     }
 
     private void UpdateNetworkUi()

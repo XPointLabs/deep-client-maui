@@ -77,7 +77,7 @@
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:GroupDraftMemberItem">
                             <Grid ColumnDefinitions="*,Auto" Padding="0,3" ColumnSpacing="8">
-                                <Label Text="{Binding SessionId.Value}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="MiddleTruncation" VerticalOptions="Center" />
+                                <Label Text="{Binding DisplayName}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" VerticalOptions="Center" />
                                 <Border Grid.Column="1" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" Padding="10,4" StrokeShape="RoundRectangle 12">
                                     <Label Text="Удалить" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
                                 </Border>
