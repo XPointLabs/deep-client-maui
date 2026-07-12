@@ -210,7 +210,7 @@ internal static class ProfileAvatarSync
             throw new InvalidOperationException("Selected file is not a supported JPEG, PNG, or WebP image.");
         }
 
-        var orientation = ReadAndroidOrientation(content);
+        var orientation = AndroidExifOrientationNormalizer.ReadOrientation(content);
         var dimensions = CreateDimensions(bounds.OutWidth, bounds.OutHeight, orientation);
         ValidateInputDimensions(dimensions);
 
@@ -226,12 +226,8 @@ internal static class ProfileAvatarSync
         AndroidBitmap? resized = null;
         try
         {
-            var working = decoded;
-            if (orientation != 1)
-            {
-                oriented = ApplyAndroidOrientation(decoded, orientation);
-                working = oriented;
-            }
+            oriented = AndroidExifOrientationNormalizer.ApplyIfNeeded(decoded, orientation);
+            var working = oriented ?? decoded;
 
             var target = CalculateTargetDimensions(dimensions);
             if (working.Width != target.Width || working.Height != target.Height)
@@ -249,63 +245,6 @@ internal static class ProfileAvatarSync
             resized?.Dispose();
             oriented?.Dispose();
         }
-    }
-
-    private static int ReadAndroidOrientation(byte[] content)
-    {
-        using var input = new MemoryStream(content, writable: false);
-        using var exif = new AndroidX.ExifInterface.Media.ExifInterface(input);
-        var orientation = exif.GetAttributeInt(
-            AndroidX.ExifInterface.Media.ExifInterface.TagOrientation,
-            AndroidX.ExifInterface.Media.ExifInterface.OrientationNormal);
-        if (orientation == AndroidX.ExifInterface.Media.ExifInterface.OrientationUndefined)
-        {
-            return AndroidX.ExifInterface.Media.ExifInterface.OrientationNormal;
-        }
-
-        if (orientation is < 1 or > 8)
-        {
-            throw new InvalidOperationException("Selected image has invalid orientation metadata.");
-        }
-
-        return orientation;
-    }
-
-    private static AndroidBitmap ApplyAndroidOrientation(AndroidBitmap source, int orientation)
-    {
-        using var matrix = new Android.Graphics.Matrix();
-        switch (orientation)
-        {
-            case 2:
-                matrix.PostScale(-1, 1);
-                break;
-            case 3:
-                matrix.PostRotate(180);
-                break;
-            case 4:
-                matrix.PostRotate(180);
-                matrix.PostScale(-1, 1);
-                break;
-            case 5:
-                matrix.PostRotate(90);
-                matrix.PostScale(-1, 1);
-                break;
-            case 6:
-                matrix.PostRotate(90);
-                break;
-            case 7:
-                matrix.PostRotate(-90);
-                matrix.PostScale(-1, 1);
-                break;
-            case 8:
-                matrix.PostRotate(-90);
-                break;
-            default:
-                throw new InvalidOperationException("Selected image has invalid orientation metadata.");
-        }
-
-        return AndroidBitmap.CreateBitmap(source, 0, 0, source.Width, source.Height, matrix, true)
-            ?? throw new InvalidOperationException("Selected image orientation could not be applied.");
     }
 
     private static byte[] EncodeAndroidJpeg(AndroidBitmap bitmap)

@@ -1,4 +1,5 @@
 #if WINDOWS
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Services;
 using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
@@ -317,14 +318,30 @@ internal static class WindowsPushNotificationService
                 return;
             }
 
-            if (authentication.Status == PushAuthenticationStatus.Accepted)
-            {
-                ShowGenericNotification();
-            }
-
-            await MauiBackgroundSyncRunner
+            var synchronized = await MauiBackgroundSyncRunner
                 .TrySynchronizeAsync(services, cancellationToken)
                 .ConfigureAwait(false);
+            if (!synchronized)
+            {
+                return;
+            }
+
+            services ??= IPlatformApplication.Current?.Services ?? App.Services;
+            var activeConversationTracker = services?.GetService<IActiveConversationTracker>()
+                ?? throw new InvalidOperationException("The active conversation tracker is unavailable.");
+            var coordinator = new IncomingMessageNotificationCoordinator(
+                (limit, token) => MauiBackgroundSyncRunner
+                    .ListPendingIncomingMessageNotificationIdsAsync(services, limit, token),
+                (messageIds, token) => MauiBackgroundSyncRunner
+                    .MarkIncomingMessageNotificationsPresentedAsync(services, messageIds, token),
+                activeConversationTracker,
+                (notificationId, _) =>
+                {
+                    ShowGenericNotification(notificationId);
+                    return Task.CompletedTask;
+                },
+                BackgroundSyncBridge.PublishScheduledSync);
+            await coordinator.PresentPendingAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -332,7 +349,7 @@ internal static class WindowsPushNotificationService
         }
     }
 
-    private static void ShowGenericNotification()
+    private static void ShowGenericNotification(string notificationId)
     {
         try
         {
@@ -340,6 +357,7 @@ internal static class WindowsPushNotificationService
                 .AddText("Deep")
                 .AddText("Новое сообщение")
                 .BuildNotification();
+            notification.Tag = notificationId[..Math.Min(notificationId.Length, 16)];
             notification.ExpiresOnReboot = true;
             AppNotificationManager.Default.Show(notification);
         }

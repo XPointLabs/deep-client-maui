@@ -23,6 +23,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Deep.Client.Maui.Core\Deep.Client.Maui.Core.csproj" />
+    <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\IncomingMessageNotificationCoordinator.cs"
+             Link="Services\IncomingMessageNotificationCoordinator.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsAppLockService.cs"
              Link="Platform\WindowsAppLockService.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsPushNotificationService.cs"

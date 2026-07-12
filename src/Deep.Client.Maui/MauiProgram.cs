@@ -175,6 +175,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<SyncPollingPolicy>();
         builder.Services.AddSingleton<PushRegistrationLifecycleCoordinator>();
         builder.Services.AddSingleton<ChatOpenUiCache>();
+        builder.Services.AddSingleton<IActiveConversationTracker, ActiveConversationTracker>();
         builder.Services.AddSingleton<IAccountLogoutCoordinator, MauiAccountLogoutCoordinator>();
         builder.Services.AddSingleton<IMediaCodecService, MauiMediaCodecService>();
         builder.Services.AddSingleton<IPermissionsService, MauiPermissionsService>();

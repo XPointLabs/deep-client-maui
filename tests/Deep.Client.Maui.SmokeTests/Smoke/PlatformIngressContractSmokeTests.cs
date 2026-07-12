@@ -35,12 +35,50 @@ public sealed class PlatformIngressContractSmokeTests
     }
 
     [Fact]
+    public void AndroidOutgoingPhotosUseOneMetadataFreeExifOrientationPipeline()
+    {
+        var transform = ReadWorkspaceFile("src", "Deep.Client.Maui", "Services", "ExifOrientationTransform.cs");
+        var orientation = ReadWorkspaceFile("src", "Deep.Client.Maui", "Services", "AndroidExifOrientationNormalizer.cs");
+        var transcoder = ReadWorkspaceFile("src", "Deep.Client.Maui", "Services", "AndroidImageTranscoder.cs");
+        var avatar = ReadWorkspaceFile("src", "Deep.Client.Maui", "Services", "ProfileAvatarSync.cs");
+        var codec = ReadWorkspaceFile("src", "Deep.Client.Maui", "Services", "PlatformBoundaryImplementations.cs");
+        var share = ReadWorkspaceFile("src", "Deep.Client.Maui", "Platforms", "Android", "ShareIngressActivity.cs");
+
+        for (var exifValue = 2; exifValue <= 8; exifValue++)
+        {
+            Assert.Contains($"{exifValue} => new ExifOrientationTransform", transform, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("matrix.PostRotate(transform.RotationDegrees)", orientation, StringComparison.Ordinal);
+        Assert.Contains("matrix.PostScale(-1, 1)", orientation, StringComparison.Ordinal);
+        Assert.Contains("AndroidExifOrientationNormalizer.ReadOrientation(content)", avatar, StringComparison.Ordinal);
+        Assert.Contains("AndroidExifOrientationNormalizer.ApplyIfNeeded(decoded, orientation)", avatar, StringComparison.Ordinal);
+        Assert.True(
+            transcoder.IndexOf("ReadOrientation(sourcePath", StringComparison.Ordinal) <
+            transcoder.IndexOf("ApplyIfNeeded(decoded, orientation)", StringComparison.Ordinal));
+        Assert.True(
+            transcoder.IndexOf("ApplyIfNeeded(decoded, orientation)", StringComparison.Ordinal) <
+            transcoder.IndexOf("EncodeMetadataFreeJpeg", StringComparison.Ordinal));
+        Assert.Contains("AndroidImageTranscoder.TranscodeToMetadataFreeJpeg", codec, StringComparison.Ordinal);
+        Assert.Contains("MauiMediaCodecService.TranscodeImageAndroid", share, StringComparison.Ordinal);
+        Assert.Contains("ShouldTranscodeImage(actualMime)", share, StringComparison.Ordinal);
+        Assert.Contains("\"image/heic\"", share, StringComparison.Ordinal);
+        Assert.DoesNotContain("actualMime!.StartsWith(\"image/\"", share, StringComparison.Ordinal);
+        Assert.Contains("WithJpegExtension(fileName)", share, StringComparison.Ordinal);
+        Assert.Contains("new MediaTranscodeRequest(temporaryPath, \"image/jpeg\"", share, StringComparison.Ordinal);
+        Assert.Contains("bitmap.Compress", transcoder, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetAttribute", transcoder, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PushIngressPersistsEncryptedWorkBeforeAsyncAuthenticationAndAuthenticatesBeforeSync()
     {
         var android = ReadWorkspaceFile("src", "Deep.Client.Maui", "Platforms", "Android", "DeepFirebaseMessagingService.cs");
         var job = ReadWorkspaceFile("src", "Deep.Client.Maui", "Platforms", "Android", "DeepSyncJobService.cs");
         var notificationCoordinator = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "Services", "IncomingMessageNotificationCoordinator.cs");
+        var windowsPush = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Platforms", "Windows", "WindowsPushNotificationService.cs");
         var ios = ReadWorkspaceFile("src", "Deep.Client.Maui", "Platforms", "iOS", "AppDelegate.cs");
         var handler = ReadWorkspaceFile("src", "Deep.Client.Maui", "Services", "MauiPushNotificationService.cs");
         var replayCache = ReadWorkspaceFile("src", "Deep.Client.Maui", "Services", "PushNotificationReplayCache.cs");
@@ -64,15 +102,21 @@ public sealed class PlatformIngressContractSmokeTests
         Assert.Contains("IncomingMessageNotificationCoordinator", job, StringComparison.Ordinal);
         Assert.Contains("CreateNotificationBatchId", notificationCoordinator, StringComparison.Ordinal);
         Assert.Contains("catch", job[job.IndexOf("MauiBackgroundSyncRunner.SynchronizeDeferredCompletionAsync", StringComparison.Ordinal)..], StringComparison.Ordinal);
-        Assert.True(notificationCoordinator.IndexOf("presentAsync(CreateNotificationBatchId", StringComparison.Ordinal) <
-                    notificationCoordinator.IndexOf("markPresentedAsync(messageIds", StringComparison.Ordinal));
-        Assert.Contains("while (messageIds.Count > 0)", notificationCoordinator, StringComparison.Ordinal);
+        Assert.True(notificationCoordinator.IndexOf("await presentAsync(", StringComparison.Ordinal) <
+                    notificationCoordinator.IndexOf("acknowledgeAsync(presentationIds", StringComparison.Ordinal));
+        Assert.Contains("while (pending.Count > 0)", notificationCoordinator, StringComparison.Ordinal);
+        Assert.Contains("state.ShouldSuppressNotification(item.ConversationId)", notificationCoordinator, StringComparison.Ordinal);
+        Assert.Contains("acknowledgeAsync(suppressedIds", notificationCoordinator, StringComparison.Ordinal);
         Assert.Contains("rearmPendingWork();", notificationCoordinator, StringComparison.Ordinal);
         Assert.DoesNotContain("shouldPresentMessageNotification", job, StringComparison.Ordinal);
         Assert.True(job.IndexOf("await PresentPendingIncomingMessageNotificationAsync(cancellationToken)", StringComparison.Ordinal) <
                     job.IndexOf("BackgroundSyncBridge.MarkHandled();", StringComparison.Ordinal));
         Assert.Contains("StableNotificationId", android, StringComparison.Ordinal);
         Assert.DoesNotContain("GetHashCode(StringComparison.Ordinal)", android, StringComparison.Ordinal);
+        Assert.True(windowsPush.IndexOf(".TrySynchronizeAsync(services", StringComparison.Ordinal) <
+                    windowsPush.IndexOf("new IncomingMessageNotificationCoordinator", StringComparison.Ordinal));
+        Assert.True(windowsPush.IndexOf("new IncomingMessageNotificationCoordinator", StringComparison.Ordinal) <
+                    windowsPush.IndexOf("ShowGenericNotification(notificationId)", StringComparison.Ordinal));
 
         Assert.Contains("completionHandler(UIBackgroundFetchResult.NoData)", ios, StringComparison.Ordinal);
         Assert.Contains("authentication.Status == PushAuthenticationStatus.Rejected", ios, StringComparison.Ordinal);
@@ -80,6 +124,35 @@ public sealed class PlatformIngressContractSmokeTests
         Assert.Contains("MauiPushNotificationReplayStore.TryAccept", handler, StringComparison.Ordinal);
         Assert.True(replayCache.IndexOf("beforePersistAcceptance?.Invoke();", StringComparison.Ordinal) <
                     replayCache.IndexOf("entries.Add(new ReplayEntry", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ActiveConversationSuppressionUsesSingletonTrackerAndPlatformForegroundLifecycle()
+    {
+        var tracker = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui.Core", "Services", "IActiveConversationTracker.cs");
+        var program = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
+        var androidActivity = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Platforms", "Android", "MainActivity.cs");
+        var windowsApp = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Platforms", "Windows", "App.xaml.cs");
+        var chatPage = ReadWorkspaceFile("src", "Deep.Client.Maui", "Pages", "ChatPage.xaml.cs");
+        var groupChatPage = ReadWorkspaceFile("src", "Deep.Client.Maui", "Pages", "GroupChatPage.xaml.cs");
+
+        Assert.Contains("AddSingleton<IActiveConversationTracker, ActiveConversationTracker>()", program, StringComparison.Ordinal);
+        Assert.Contains("lock (gate)", tracker, StringComparison.Ordinal);
+        Assert.Contains("activeRegistrationId", tracker, StringComparison.Ordinal);
+        Assert.Contains("SetApplicationForeground(true)", androidActivity, StringComparison.Ordinal);
+        Assert.Contains("SetApplicationForeground(false)", androidActivity, StringComparison.Ordinal);
+        Assert.Contains("WindowActivationState.Deactivated", windowsApp, StringComparison.Ordinal);
+        Assert.Contains("SetApplicationForeground(false)", windowsApp, StringComparison.Ordinal);
+        Assert.Contains("SetApplicationForeground(true)", windowsApp, StringComparison.Ordinal);
+        Assert.Contains("activeConversationTracker.ActivateConversation(conversationId)", chatPage, StringComparison.Ordinal);
+        Assert.Contains("ConversationId.ForOneToOne(SessionId.Parse", chatPage, StringComparison.Ordinal);
+        Assert.Contains("activeConversationLease?.Dispose()", chatPage, StringComparison.Ordinal);
+        Assert.Contains("activeConversationTracker.ActivateConversation(conversationId)", groupChatPage, StringComparison.Ordinal);
+        Assert.Contains("ConversationId.Parse(raw.ToString()!)", groupChatPage, StringComparison.Ordinal);
+        Assert.Contains("activeConversationLease?.Dispose()", groupChatPage, StringComparison.Ordinal);
     }
 
     [Fact]

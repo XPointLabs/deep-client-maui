@@ -168,11 +168,17 @@ public sealed class ShareIngressActivity : Activity
                 }
 
                 var fileName = SafeFileName(QueryDisplayName(resolver, uri) ?? $"shared-{index + 1}");
+                var transcodeImage = ShouldTranscodeImage(actualMime);
+                if (transcodeImage)
+                {
+                    fileName = WithJpegExtension(fileName);
+                }
+
                 var path = Path.Combine(
                     FileSystem.AppDataDirectory,
                     "share-ingress",
                     $"{fingerprint}-{index}-{fileName}");
-                var length = PersistUri(resolver, uri, path);
+                var length = PersistUri(resolver, uri, path, transcodeImage);
                 if (length <= 0 || length > MaxFileBytes || checked(totalBytes + length) > MaxFileBytes)
                 {
                     throw new InvalidOperationException("Shared files exceed the ingress limit.");
@@ -282,7 +288,7 @@ public sealed class ShareIngressActivity : Activity
         }
     }
 
-    private static long PersistUri(ContentResolver resolver, Uri uri, string path)
+    private static long PersistUri(ContentResolver resolver, Uri uri, string path, bool transcodeImage)
     {
         if (File.Exists(path))
         {
@@ -296,25 +302,39 @@ public sealed class ShareIngressActivity : Activity
         }
 
         var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        string? transcodedPath = null;
         try
         {
-            using var source = resolver.OpenInputStream(uri) ?? throw new InvalidOperationException("Shared URI cannot be opened.");
-            using var destination = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, FileOptions.WriteThrough);
-            var buffer = new byte[64 * 1024];
             long total = 0;
-            int read;
-            while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+            using (var source = resolver.OpenInputStream(uri) ?? throw new InvalidOperationException("Shared URI cannot be opened."))
+            using (var destination = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, FileOptions.WriteThrough))
             {
-                total = checked(total + read);
-                if (total > MaxFileBytes)
+                var buffer = new byte[64 * 1024];
+                int read;
+                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    throw new InvalidOperationException("Shared file exceeds the ingress limit.");
+                    total = checked(total + read);
+                    if (total > MaxFileBytes)
+                    {
+                        throw new InvalidOperationException("Shared file exceeds the ingress limit.");
+                    }
+
+                    destination.Write(buffer, 0, read);
                 }
 
-                destination.Write(buffer, 0, read);
+                destination.Flush(flushToDisk: true);
             }
 
-            destination.Flush(flushToDisk: true);
+            if (transcodeImage)
+            {
+                var transcoded = MauiMediaCodecService.TranscodeImageAndroid(
+                    new MediaTranscodeRequest(temporaryPath, "image/jpeg", MaxFileBytes));
+                transcodedPath = transcoded.OutputPath;
+                File.Move(transcodedPath, path, overwrite: true);
+                transcodedPath = null;
+                return transcoded.SizeBytes;
+            }
+
             File.Move(temporaryPath, path, overwrite: true);
             return total;
         }
@@ -323,6 +343,11 @@ public sealed class ShareIngressActivity : Activity
             if (File.Exists(temporaryPath))
             {
                 File.Delete(temporaryPath);
+            }
+
+            if (!string.IsNullOrWhiteSpace(transcodedPath) && File.Exists(transcodedPath))
+            {
+                File.Delete(transcodedPath);
             }
         }
     }
@@ -354,6 +379,15 @@ public sealed class ShareIngressActivity : Activity
             || (requested?.EndsWith("/*", StringComparison.Ordinal) == true
                 && actual?.StartsWith(requested[..^1], StringComparison.OrdinalIgnoreCase) == true));
 
+    private static bool ShouldTranscodeImage(string? mimeType) =>
+        mimeType?.ToLowerInvariant() is
+            "image/jpeg"
+            or "image/png"
+            or "image/webp"
+            or "image/heif"
+            or "image/heic"
+            or "image/avif";
+
     private static string Fingerprint(ShareIngressWorkItem workItem)
     {
         var value = $"{workItem.Action}\u001f{workItem.MimeType}\u001f{workItem.Text}\u001f{string.Join("\u001f", workItem.Uris)}";
@@ -369,6 +403,12 @@ public sealed class ShareIngressActivity : Activity
         }
 
         return name.Length > 160 ? name[..160] : name;
+    }
+
+    private static string WithJpegExtension(string fileName)
+    {
+        var name = Path.GetFileNameWithoutExtension(fileName);
+        return $"{(string.IsNullOrWhiteSpace(name) ? "shared-photo" : name)}.jpg";
     }
 
     internal static void DeletePersistedFiles(SharePayload payload)

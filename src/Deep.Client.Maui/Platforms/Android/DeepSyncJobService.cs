@@ -2,6 +2,7 @@
 using Android.App;
 using Android.App.Job;
 using Android.Content;
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Services;
 using PersistableBundle = Android.OS.PersistableBundle;
@@ -135,9 +136,13 @@ public sealed class DeepSyncJobService : JobService
 
     private async Task PresentPendingIncomingMessageNotificationAsync(CancellationToken cancellationToken)
     {
+        var services = IPlatformApplication.Current?.Services ?? App.Services;
+        var activeConversationTracker = services?.GetService<IActiveConversationTracker>()
+            ?? throw new InvalidOperationException("The active conversation tracker is unavailable.");
         var coordinator = new IncomingMessageNotificationCoordinator(
             MauiBackgroundSyncRunner.ListPendingIncomingMessageNotificationIdsAsync,
             MauiBackgroundSyncRunner.MarkIncomingMessageNotificationsPresentedAsync,
+            activeConversationTracker,
             (notificationId, _) =>
             {
                 AndroidPushNotificationPresenter.Show(this, notificationId);

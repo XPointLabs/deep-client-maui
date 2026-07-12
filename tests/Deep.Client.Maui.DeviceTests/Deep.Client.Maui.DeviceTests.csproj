@@ -43,4 +43,10 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ExifOrientationTransform.cs" Link="Services\ExifOrientationTransform.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\AndroidExifOrientationNormalizer.cs" Link="Services\AndroidExifOrientationNormalizer.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\AndroidImageTranscoder.cs" Link="Services\AndroidImageTranscoder.cs" />
+  </ItemGroup>
+
 </Project>

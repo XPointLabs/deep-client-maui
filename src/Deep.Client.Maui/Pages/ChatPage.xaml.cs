@@ -27,10 +27,14 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private readonly IAttachmentFileTransport attachmentFiles;
     private readonly CallSessionCoordinator callCoordinator;
     private readonly SyncPollingPolicy syncPollingPolicy;
+    private readonly IActiveConversationTracker activeConversationTracker;
     private readonly VoiceMessagePlaybackService voicePlayback = new();
     private CancellationTokenSource? pendingScrollToEnd;
     private CancellationTokenSource? routeLoadCancellation;
     private CancellationTokenSource? pageActivityCancellation;
+    private IDisposable? activeConversationLease;
+    private ConversationId? pageConversationId;
+    private bool isPageActive;
     private IDisposable? keyboardInsetSubscription;
     private IDispatcherTimer? voiceRecordingTimer;
     private IDispatcherTimer? voicePlaybackTimer;
@@ -72,7 +76,8 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         INetworkStatusService networkStatusService,
         IAttachmentFileTransport attachmentFiles,
         CallSessionCoordinator callCoordinator,
-        SyncPollingPolicy syncPollingPolicy)
+        SyncPollingPolicy syncPollingPolicy,
+        IActiveConversationTracker activeConversationTracker)
     {
         var constructionStopwatch = System.Diagnostics.Stopwatch.StartNew();
         InitializeComponent();
@@ -82,12 +87,15 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         this.attachmentFiles = attachmentFiles;
         this.callCoordinator = callCoordinator;
         this.syncPollingPolicy = syncPollingPolicy;
+        this.activeConversationTracker = activeConversationTracker;
         BindingContext = viewModel;
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        isPageActive = true;
+        RefreshActiveConversationLease();
         pageActivityCancellation?.Cancel();
         pageActivityCancellation?.Dispose();
         pageActivityCancellation = new CancellationTokenSource();
@@ -112,6 +120,9 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     protected override void OnDisappearing()
     {
+        isPageActive = false;
+        activeConversationLease?.Dispose();
+        activeConversationLease = null;
         base.OnDisappearing();
         voiceCancelBySwipe = true;
         _ = FinishVoiceRecordingGestureAsync(forceCancel: true);
@@ -205,9 +216,36 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     public void ApplyQueryAttributes(IDictionary<string, object> query)
     {
+        pageConversationId = TryGetOneToOneConversationId(query);
+        RefreshActiveConversationLease();
         CancelRouteLoad();
         routeLoadCancellation = new CancellationTokenSource();
         _ = LoadFromRouteAsync(query, routeLoadCancellation.Token);
+    }
+
+    private static ConversationId? TryGetOneToOneConversationId(IDictionary<string, object> query)
+    {
+        if (!query.TryGetValue("sessionId", out var raw) || string.IsNullOrWhiteSpace(raw?.ToString()))
+        {
+            return null;
+        }
+
+        try
+        {
+            return ConversationId.ForOneToOne(SessionId.Parse(raw.ToString()!));
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    private void RefreshActiveConversationLease()
+    {
+        activeConversationLease?.Dispose();
+        activeConversationLease = isPageActive && pageConversationId is { } conversationId
+            ? activeConversationTracker.ActivateConversation(conversationId)
+            : null;
     }
 
     private async Task LoadFromRouteAsync(IDictionary<string, object> query, CancellationToken cancellationToken)

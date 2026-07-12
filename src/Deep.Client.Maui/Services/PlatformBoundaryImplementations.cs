@@ -1,5 +1,6 @@
 ﻿using Deep.Client.Shared.Platform;
 using Deep.Client.Shared.Domain;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
 using System.Security.Cryptography;
@@ -7,11 +8,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Maui.Storage;
 using Microsoft.Maui;
-
-#if ANDROID
-using AndroidBitmap = Android.Graphics.Bitmap;
-using AndroidBitmapFactory = Android.Graphics.BitmapFactory;
-#endif
 
 namespace Deep.Client.Maui.Services;
 
@@ -59,76 +55,22 @@ public sealed class MauiMediaCodecService : IMediaCodecService
     }
 
 #if ANDROID
-    private static MediaTranscodeResult TranscodeImageAndroid(MediaTranscodeRequest request)
+    internal static MediaTranscodeResult TranscodeImageAndroid(MediaTranscodeRequest request)
     {
-        var bounds = new AndroidBitmapFactory.Options { InJustDecodeBounds = true };
-        AndroidBitmapFactory.DecodeFile(request.SourcePath, bounds);
-        if (bounds.OutWidth <= 0 || bounds.OutHeight <= 0)
-        {
-            throw new InvalidOperationException("Selected image could not be decoded.");
-        }
-
-        var options = new AndroidBitmapFactory.Options
-        {
-            InSampleSize = CalculateSampleSize(bounds.OutWidth, bounds.OutHeight, MaxPhotoDimension),
-            InPreferredConfig = AndroidBitmap.Config.Argb8888
-        };
-
-        using var decoded = AndroidBitmapFactory.DecodeFile(request.SourcePath, options)
-            ?? throw new InvalidOperationException("Selected image could not be decoded.");
-        AndroidBitmap? scaled = null;
-        var bitmap = decoded;
-        var longestSide = Math.Max(decoded.Width, decoded.Height);
-        if (longestSide > MaxPhotoDimension)
-        {
-            var scale = MaxPhotoDimension / (double)longestSide;
-            var width = Math.Max(1, (int)Math.Round(decoded.Width * scale));
-            var height = Math.Max(1, (int)Math.Round(decoded.Height * scale));
-            scaled = AndroidBitmap.CreateScaledBitmap(decoded, width, height, true);
-            bitmap = scaled;
-        }
-
-        try
-        {
-            var jpegFormat = AndroidBitmap.CompressFormat.Jpeg
-                ?? throw new InvalidOperationException("Android JPEG encoder is not available.");
-            for (var quality = InitialPhotoQuality; quality >= MinPhotoQuality; quality -= 8)
-            {
-                var outputPath = Path.Combine(FileSystem.CacheDirectory, $"media-{Guid.NewGuid():N}.jpg");
-                using (var output = File.Create(outputPath))
-                {
-                    if (!bitmap.Compress(jpegFormat, quality, output))
-                    {
-                        throw new InvalidOperationException("Selected image could not be compressed.");
-                    }
-                }
-
-                var size = new FileInfo(outputPath).Length;
-                if (request.MaxBytes <= 0 || size <= request.MaxBytes)
-                {
-                    return new MediaTranscodeResult(outputPath, "image/jpeg", size, bitmap.Width, bitmap.Height);
-                }
-
-                File.Delete(outputPath);
-            }
-        }
-        finally
-        {
-            scaled?.Dispose();
-        }
-
-        throw new InvalidOperationException($"Compressed image exceeds limit {request.MaxBytes} bytes.");
-    }
-
-    private static int CalculateSampleSize(int width, int height, int maxDimension)
-    {
-        var sampleSize = 1;
-        while ((width / (sampleSize * 2)) >= maxDimension || (height / (sampleSize * 2)) >= maxDimension)
-        {
-            sampleSize *= 2;
-        }
-
-        return sampleSize;
+        var transcoded = AndroidImageTranscoder.TranscodeToMetadataFreeJpeg(
+            request.SourcePath,
+            FileSystem.CacheDirectory,
+            MaxPhotoDimension,
+            InitialPhotoQuality,
+            MinPhotoQuality,
+            qualityStep: 8,
+            request.MaxBytes);
+        return new MediaTranscodeResult(
+            transcoded.OutputPath,
+            "image/jpeg",
+            transcoded.Size,
+            transcoded.Width,
+            transcoded.Height);
     }
 #endif
 
@@ -375,11 +317,17 @@ public static class MauiBackgroundSyncRunner
         return new Result(true, inbox);
     }
 
-    public static async Task<IReadOnlyList<MessageId>> ListPendingIncomingMessageNotificationIdsAsync(
+    public static Task<IReadOnlyList<PendingIncomingMessageNotification>> ListPendingIncomingMessageNotificationIdsAsync(
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        ListPendingIncomingMessageNotificationIdsAsync(services: null, limit, cancellationToken);
+
+    public static async Task<IReadOnlyList<PendingIncomingMessageNotification>> ListPendingIncomingMessageNotificationIdsAsync(
+        IServiceProvider? services,
         int limit,
         CancellationToken cancellationToken = default)
     {
-        var runtime = await InitializeRuntimeAsync(services: null, cancellationToken).ConfigureAwait(false);
+        var runtime = await InitializeRuntimeAsync(services, cancellationToken).ConfigureAwait(false);
         return runtime is null
             ? []
             : await runtime.Messages
@@ -389,6 +337,15 @@ public static class MauiBackgroundSyncRunner
 
     public static async Task MarkIncomingMessageNotificationsPresentedAsync(
         IReadOnlyCollection<MessageId> messageIds,
+        CancellationToken cancellationToken = default) =>
+        await MarkIncomingMessageNotificationsPresentedAsync(
+            services: null,
+            messageIds,
+            cancellationToken).ConfigureAwait(false);
+
+    public static async Task MarkIncomingMessageNotificationsPresentedAsync(
+        IServiceProvider? services,
+        IReadOnlyCollection<MessageId> messageIds,
         CancellationToken cancellationToken = default)
     {
         if (messageIds.Count == 0)
@@ -396,7 +353,7 @@ public static class MauiBackgroundSyncRunner
             return;
         }
 
-        var runtime = await InitializeRuntimeAsync(services: null, cancellationToken).ConfigureAwait(false);
+        var runtime = await InitializeRuntimeAsync(services, cancellationToken).ConfigureAwait(false);
         if (runtime is null)
         {
             throw new InvalidOperationException("The client runtime is unavailable while acknowledging message notifications.");

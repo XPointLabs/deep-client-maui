@@ -2,6 +2,11 @@ using System.Reflection;
 
 namespace Deep.Client.Maui
 {
+    internal static class App
+    {
+        public static IServiceProvider? Services => null;
+    }
+
     internal static class CrashDiagnostics
     {
         public static void LogException(string area, Exception exception)
@@ -136,6 +141,18 @@ namespace Deep.Client.Maui.Services
         public static Task<bool> TrySynchronizeAsync(
             IServiceProvider? services,
             CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+        public static Task<IReadOnlyList<Deep.Client.Shared.Persistence.PendingIncomingMessageNotification>>
+            ListPendingIncomingMessageNotificationIdsAsync(
+                IServiceProvider? services,
+                int limit,
+                CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<Deep.Client.Shared.Persistence.PendingIncomingMessageNotification>>([]);
+
+        public static Task MarkIncomingMessageNotificationsPresentedAsync(
+            IServiceProvider? services,
+            IReadOnlyCollection<Deep.Client.Shared.Domain.MessageId> messageIds,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     public enum PushAuthenticationStatus
@@ -182,14 +199,4 @@ namespace Deep.Client.Maui.Services
         public const long MaxShareFileBytes = 25L * 1024 * 1024;
         public const long MaxShareTotalBytes = 25L * 1024 * 1024;
     }
-}
-
-namespace Deep.Client.Shared.Services
-{
-    public sealed record PinnedRouterEndpoint(string BaseUrl, string ExpectedRouterId);
-}
-
-namespace Deep.Client.Shared.Platform
-{
-    public sealed record SharePayload(string? Text, IReadOnlyList<string> FilePaths);
 }

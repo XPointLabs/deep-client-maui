@@ -178,7 +178,7 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) :
             conversation,
             cancellationToken);
 
-    public Task<IReadOnlyList<MessageId>> ListPendingIncomingMessageNotificationIdsAsync(
+    public Task<IReadOnlyList<PendingIncomingMessageNotification>> ListPendingIncomingMessageNotificationIdsAsync(
         int limit,
         CancellationToken cancellationToken = default) =>
         inner.ListPendingIncomingMessageNotificationIdsAsync(limit, cancellationToken);

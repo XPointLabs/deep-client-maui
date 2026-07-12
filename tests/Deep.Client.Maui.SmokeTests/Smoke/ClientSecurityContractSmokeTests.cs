@@ -74,7 +74,7 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("bounds.OutMimeType", source, StringComparison.Ordinal);
         Assert.Contains("source.TypeIdentifier", source, StringComparison.Ordinal);
         Assert.Contains("decoder.DecoderInformation.CodecId", source, StringComparison.Ordinal);
-        Assert.Contains("ApplyAndroidOrientation", source, StringComparison.Ordinal);
+        Assert.Contains("AndroidExifOrientationNormalizer.ApplyIfNeeded", source, StringComparison.Ordinal);
         Assert.Contains("CreateThumbnailWithTransform = true", source, StringComparison.Ordinal);
         Assert.Contains("ExifOrientationMode.RespectExifOrientation", source, StringComparison.Ordinal);
         Assert.Contains("ValidateNormalizedJpeg", source, StringComparison.Ordinal);

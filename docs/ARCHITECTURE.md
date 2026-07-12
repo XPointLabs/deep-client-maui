@@ -69,6 +69,11 @@ Raw background activation creates a headless service graph and does not create a
 MAUI window or invoke Windows Hello. Invalid, expired, replayed, or undecryptable
 payloads are dropped.
 
+Local message notifications are decided only after inbox synchronization. The
+durable queue carries both message and conversation IDs; a foreground notification
+is acknowledged without presentation only when that conversation is actively open,
+while background delivery and other conversations are always presented.
+
 ## Platform Work
 
 Android uses JobService-backed retry/catch-up, Firebase callbacks, biometric or

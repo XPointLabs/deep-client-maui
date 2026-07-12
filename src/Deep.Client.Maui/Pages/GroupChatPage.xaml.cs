@@ -25,10 +25,14 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private readonly INetworkStatusService networkStatusService;
     private readonly IAttachmentFileTransport attachmentFiles;
     private readonly SyncPollingPolicy syncPollingPolicy;
+    private readonly IActiveConversationTracker activeConversationTracker;
     private readonly VoiceMessagePlaybackService voicePlayback = new();
     private CancellationTokenSource? pendingScrollToEnd;
     private CancellationTokenSource? routeLoadCancellation;
     private CancellationTokenSource? pageActivityCancellation;
+    private IDisposable? activeConversationLease;
+    private ConversationId? pageConversationId;
+    private bool isPageActive;
     private IDisposable? keyboardInsetSubscription;
     private IDispatcherTimer? voiceRecordingTimer;
     private IDispatcherTimer? voicePlaybackTimer;
@@ -69,7 +73,8 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         GroupChatViewModel viewModel,
         INetworkStatusService networkStatusService,
         IAttachmentFileTransport attachmentFiles,
-        SyncPollingPolicy syncPollingPolicy)
+        SyncPollingPolicy syncPollingPolicy,
+        IActiveConversationTracker activeConversationTracker)
     {
         var constructionStopwatch = System.Diagnostics.Stopwatch.StartNew();
         InitializeComponent();
@@ -78,12 +83,15 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         this.networkStatusService = networkStatusService;
         this.attachmentFiles = attachmentFiles;
         this.syncPollingPolicy = syncPollingPolicy;
+        this.activeConversationTracker = activeConversationTracker;
         BindingContext = viewModel;
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        isPageActive = true;
+        RefreshActiveConversationLease();
         pageActivityCancellation?.Cancel();
         pageActivityCancellation?.Dispose();
         pageActivityCancellation = new CancellationTokenSource();
@@ -107,6 +115,9 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     protected override void OnDisappearing()
     {
+        isPageActive = false;
+        activeConversationLease?.Dispose();
+        activeConversationLease = null;
         base.OnDisappearing();
         voiceCancelBySwipe = true;
         _ = FinishVoiceRecordingGestureAsync(forceCancel: true);
@@ -200,9 +211,36 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     public void ApplyQueryAttributes(IDictionary<string, object> query)
     {
+        pageConversationId = TryGetGroupConversationId(query);
+        RefreshActiveConversationLease();
         CancelRouteLoad();
         routeLoadCancellation = new CancellationTokenSource();
         _ = LoadFromRouteAsync(query, routeLoadCancellation.Token);
+    }
+
+    private static ConversationId? TryGetGroupConversationId(IDictionary<string, object> query)
+    {
+        if (!query.TryGetValue("groupId", out var raw) || string.IsNullOrWhiteSpace(raw?.ToString()))
+        {
+            return null;
+        }
+
+        try
+        {
+            return ConversationId.Parse(raw.ToString()!);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    private void RefreshActiveConversationLease()
+    {
+        activeConversationLease?.Dispose();
+        activeConversationLease = isPageActive && pageConversationId is { } conversationId
+            ? activeConversationTracker.ActivateConversation(conversationId)
+            : null;
     }
 
     private async Task LoadFromRouteAsync(IDictionary<string, object> query, CancellationToken cancellationToken)

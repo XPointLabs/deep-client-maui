@@ -5,6 +5,7 @@ using Android.Content;
 using Android.OS;
 using Android.Views;
 using Microsoft.Maui;
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Platform;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,6 +63,7 @@ public class MainActivity : MauiAppCompatActivity
     protected override void OnResume()
     {
         base.OnResume();
+        ResolveActiveConversationTracker()?.SetApplicationForeground(true);
         ApplyPrivacyScreenSetting();
         _ = ResumeAfterUnlockAsync(Intent);
     }
@@ -70,6 +72,12 @@ public class MainActivity : MauiAppCompatActivity
     {
         ResolveAppLock()?.MarkAppHidden();
         base.OnStop();
+    }
+
+    protected override void OnPause()
+    {
+        ResolveActiveConversationTracker()?.SetApplicationForeground(false);
+        base.OnPause();
     }
 
     protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
@@ -141,5 +149,8 @@ public class MainActivity : MauiAppCompatActivity
 
     private static IAppLockService? ResolveAppLock() =>
         App.Services?.GetService<IAppLockService>();
+
+    private static IActiveConversationTracker? ResolveActiveConversationTracker() =>
+        App.Services?.GetService<IActiveConversationTracker>();
 }
 #endif

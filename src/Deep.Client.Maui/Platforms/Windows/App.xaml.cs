@@ -1,4 +1,5 @@
 #if WINDOWS
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Platform;
 using Microsoft.UI.Dispatching;
@@ -140,6 +141,7 @@ public partial class App : MauiWinUIApplication
 
         appLockWindow = platformWindow;
         appLockWindow.Activated += OnWindowActivated;
+        SetApplicationForeground(true);
         Deep.Client.Maui.App.Services?.GetService<IPrivacyScreenService>()?.ApplyFromPreferences();
         _ = RunForegroundMaintenanceAsync();
     }
@@ -149,12 +151,19 @@ public partial class App : MauiWinUIApplication
         var appLock = Deep.Client.Maui.App.Services?.GetService<IAppLockService>();
         if (args.WindowActivationState == WindowActivationState.Deactivated)
         {
+            SetApplicationForeground(false);
             appLock?.MarkAppHidden();
             return;
         }
 
+        SetApplicationForeground(true);
         _ = RunForegroundMaintenanceAsync();
     }
+
+    private static void SetApplicationForeground(bool isForeground) =>
+        Deep.Client.Maui.App.Services?
+            .GetService<IActiveConversationTracker>()?
+            .SetApplicationForeground(isForeground);
 
     private static void OnConnectivityChanged(object? sender, ConnectivityChangedEventArgs args)
     {
