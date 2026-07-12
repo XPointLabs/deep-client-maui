@@ -97,7 +97,7 @@ public sealed class GroupsViewModel : ViewModelBase
         RunRefreshAsync(cancellationToken);
 
     public Task RefreshContactDisplayNamesAsync(CancellationToken cancellationToken = default) =>
-        RunBusyAsync(ReloadContactDisplayNamesAsync, cancellationToken);
+        RunBusyAsync(ct => ReloadContactDisplayNamesAsync(ct), cancellationToken);
 
     public async Task<Group?> CreateGroupFromComposerAsync(CancellationToken cancellationToken = default)
     {
@@ -131,7 +131,7 @@ public sealed class GroupsViewModel : ViewModelBase
             return;
         }
 
-        await EnsureContactDisplayNamesLoadedAsync(cancellationToken);
+        await EnsureContactDisplayNamesLoadedAsync(cancellationToken, member);
         DraftMembers.Add(ToDraftMemberItem(member));
         MemberSessionId = string.Empty;
         ErrorMessage = null;
@@ -312,26 +312,45 @@ public sealed class GroupsViewModel : ViewModelBase
         }
     }
 
-    private async Task EnsureContactDisplayNamesLoadedAsync(CancellationToken cancellationToken)
+    private async Task EnsureContactDisplayNamesLoadedAsync(
+        CancellationToken cancellationToken,
+        SessionId? additionalContactId = null)
     {
-        if (!contactDisplayNamesLoaded)
+        if (!contactDisplayNamesLoaded
+            || additionalContactId is { } id && !contactDisplayNames.ContainsKey(id.Value))
         {
-            await ReloadContactDisplayNamesAsync(cancellationToken);
+            await ReloadContactDisplayNamesAsync(cancellationToken, additionalContactId);
         }
     }
 
-    private async Task ReloadContactDisplayNamesAsync(CancellationToken cancellationToken)
+    private async Task ReloadContactDisplayNamesAsync(
+        CancellationToken cancellationToken,
+        SessionId? additionalContactId = null)
     {
-        contactDisplayNames = await LoadContactDisplayNamesAsync(cancellationToken);
+        var ids = DraftMembers.Select(static item => item.SessionId);
+        if (additionalContactId is { } id)
+        {
+            ids = ids.Append(id);
+        }
+
+        contactDisplayNames = await LoadContactDisplayNamesAsync(ids, cancellationToken);
         contactDisplayNamesLoaded = true;
         RefreshDraftMemberDisplayNames();
     }
 
-    private async Task<IReadOnlyDictionary<string, string>> LoadContactDisplayNamesAsync(CancellationToken cancellationToken)
+    private async Task<IReadOnlyDictionary<string, string>> LoadContactDisplayNamesAsync(
+        IEnumerable<SessionId> contactIds,
+        CancellationToken cancellationToken)
     {
         var displayNames = new Dictionary<string, string>(StringComparer.Ordinal);
-        await foreach (var contact in contacts.ListAsync(cancellationToken).ConfigureAwait(false))
+        foreach (var contactId in contactIds.Distinct())
         {
+            var contact = await contacts.GetAsync(contactId, cancellationToken).ConfigureAwait(false);
+            if (contact is null)
+            {
+                continue;
+            }
+
             var displayName = DeepDisplayName.ContactTitle(contact.Id, contact.DisplayName);
             if (!string.IsNullOrWhiteSpace(displayName))
             {

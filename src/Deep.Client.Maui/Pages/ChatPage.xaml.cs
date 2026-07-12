@@ -110,6 +110,8 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         Dispatcher.Dispatch(ApplyAndroidSafeAreaCompensation);
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
+        BackgroundSyncBridge.SyncCompleted -= OnBackgroundSyncScheduled;
+        BackgroundSyncBridge.SyncCompleted += OnBackgroundSyncScheduled;
         ApplyComposerPreferences();
         UpdateNetworkUi();
 
@@ -128,6 +130,7 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         _ = FinishVoiceRecordingGestureAsync(forceCancel: true);
         UnsubscribePageEvents();
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
+        BackgroundSyncBridge.SyncCompleted -= OnBackgroundSyncScheduled;
         keyboardInsetSubscription?.Dispose();
         keyboardInsetSubscription = null;
         keyboardBottomInset = 0;

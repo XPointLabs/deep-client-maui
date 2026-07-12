@@ -251,6 +251,7 @@ public static class BackgroundSyncBridge
 {
     private const string PendingSyncKey = "bg.sync-pending";
     public static event Action? SyncScheduled;
+    public static event Action? SyncCompleted;
 
     public static void PublishScheduledSync()
     {
@@ -259,6 +260,8 @@ public static class BackgroundSyncBridge
     }
 
     public static bool HasPendingSync() => Preferences.Default.Get(PendingSyncKey, false);
+
+    public static void PublishCompletedSync() => SyncCompleted?.Invoke();
 
     public static void MarkHandled() => Preferences.Default.Remove(PendingSyncKey);
 
@@ -309,6 +312,8 @@ public static class MauiBackgroundSyncRunner
             inbox = await runtime.Inbox.SynchronizeAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        BackgroundSyncBridge.PublishCompletedSync();
+
         if (markBackgroundWorkHandled)
         {
             BackgroundSyncBridge.MarkHandled();
@@ -320,18 +325,32 @@ public static class MauiBackgroundSyncRunner
     public static Task<IReadOnlyList<PendingIncomingMessageNotification>> ListPendingIncomingMessageNotificationIdsAsync(
         int limit,
         CancellationToken cancellationToken = default) =>
-        ListPendingIncomingMessageNotificationIdsAsync(services: null, limit, cancellationToken);
+        ListPendingIncomingMessageNotificationIdsAsync(services: null, limit, [], cancellationToken);
+
+    public static Task<IReadOnlyList<PendingIncomingMessageNotification>> ListPendingIncomingMessageNotificationIdsAsync(
+        int limit,
+        IReadOnlyCollection<ConversationId> excludedConversationIds,
+        CancellationToken cancellationToken = default) =>
+        ListPendingIncomingMessageNotificationIdsAsync(
+            services: null,
+            limit,
+            excludedConversationIds,
+            cancellationToken);
 
     public static async Task<IReadOnlyList<PendingIncomingMessageNotification>> ListPendingIncomingMessageNotificationIdsAsync(
         IServiceProvider? services,
         int limit,
+        IReadOnlyCollection<ConversationId> excludedConversationIds,
         CancellationToken cancellationToken = default)
     {
         var runtime = await InitializeRuntimeAsync(services, cancellationToken).ConfigureAwait(false);
         return runtime is null
             ? []
             : await runtime.Messages
-                .ListPendingIncomingMessageNotificationIdsAsync(limit, cancellationToken)
+                .ListPendingIncomingMessageNotificationIdsAsync(
+                    limit,
+                    excludedConversationIds,
+                    cancellationToken)
                 .ConfigureAwait(false);
     }
 

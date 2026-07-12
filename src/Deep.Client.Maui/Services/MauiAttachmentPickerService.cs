@@ -90,7 +90,7 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
             await using (var stream = await result.OpenReadAsync().ConfigureAwait(false))
             await using (var output = File.Create(tempPath))
             {
-                await stream.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+                await CopyInputWithLimitAsync(stream, output, cancellationToken).ConfigureAwait(false);
             }
 
             var contentType = ResolveContentType(result.ContentType, fileName);
@@ -138,6 +138,36 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
             {
                 TryDelete(transcodedPath);
             }
+        }
+    }
+
+    private static async Task CopyInputWithLimitAsync(
+        Stream source,
+        Stream destination,
+        CancellationToken cancellationToken)
+    {
+        if (source.CanSeek && source.Length > MaxAttachmentBytes)
+        {
+            throw new InvalidOperationException($"Вложение превышает лимит {MaxAttachmentBytes} байт.");
+        }
+
+        var buffer = new byte[64 * 1024];
+        long copied = 0;
+        while (true)
+        {
+            var read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                return;
+            }
+
+            copied = checked(copied + read);
+            if (copied > MaxAttachmentBytes)
+            {
+                throw new InvalidOperationException($"Вложение превышает лимит {MaxAttachmentBytes} байт.");
+            }
+
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
         }
     }
 

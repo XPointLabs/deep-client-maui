@@ -6,6 +6,7 @@ using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Platform;
 using Deep.Client.Shared.State;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Deep.Client.Maui;
 
@@ -14,18 +15,25 @@ public partial class AppShell : Shell
     private readonly AuthNavigationState authNavigationState;
     private readonly ClientRuntime runtime;
     private readonly IShareExtensionBridge shareBridge;
+    private readonly IServiceProvider services;
     private readonly SemaphoreSlim rootNavigationGate = new(1, 1);
     private readonly SemaphoreSlim ingressGate = new(1, 1);
 
     public AppShell(
         AuthNavigationState authNavigationState,
         ClientRuntime runtime,
-        IShareExtensionBridge shareBridge)
+        IShareExtensionBridge shareBridge,
+        IServiceProvider services)
     {
         InitializeComponent();
         this.authNavigationState = authNavigationState;
         this.runtime = runtime;
         this.shareBridge = shareBridge;
+        this.services = services;
+#if WINDOWS
+        ConversationsTab.ContentTemplate = new DataTemplate(
+            () => services.GetRequiredService<DesktopWorkspacePage>());
+#endif
 
         Routing.RegisterRoute(ShellRouteCatalog.Restore, typeof(OnboardingPage));
         Routing.RegisterRoute(ShellRouteCatalog.Chat, typeof(ChatPage));
@@ -87,6 +95,12 @@ public partial class AppShell : Shell
         try
         {
             var authenticated = authNavigationState.IsAuthenticated;
+#if WINDOWS
+            if (!authenticated)
+            {
+                services.GetRequiredService<DesktopWorkspaceViewModel>().ResetSession();
+            }
+#endif
             var targetItem = authenticated ? ConversationsTab : OnboardingTab;
             var targetRoute = authenticated
                 ? $"//{ShellRouteCatalog.Conversations}"
@@ -191,6 +205,13 @@ public partial class AppShell : Shell
             return false;
         }
 
+        var activationTarget = await ResolveConversationActivationTargetAsync();
+        if (activationTarget is not null
+            && await activationTarget.ActivateConversationAsync(id))
+        {
+            return true;
+        }
+
         var route = conversation.Kind switch
         {
             ConversationKind.OneToOne => CreateOneToOneRoute(id, conversation.DisplayName),
@@ -288,6 +309,19 @@ public partial class AppShell : Shell
     {
         chat = null;
         group = null;
+        if (CurrentPage is IActiveComposerProvider currentProvider
+            && currentProvider.TryGetActiveComposer(out chat, out group))
+        {
+            return true;
+        }
+
+        if (ConversationsTab?.Content is IActiveComposerProvider rootProvider
+            && ReferenceEquals(CurrentPage, ConversationsTab.Content)
+            && rootProvider.TryGetActiveComposer(out chat, out group))
+        {
+            return true;
+        }
+
         var bindingContext = CurrentPage?.BindingContext;
         if (bindingContext is ChatViewModel chatViewModel && chatViewModel.Conversation is not null)
         {
@@ -302,6 +336,38 @@ public partial class AppShell : Shell
         }
 
         return false;
+    }
+
+    private async Task<IConversationActivationTarget?> ResolveConversationActivationTargetAsync()
+    {
+        if (CurrentPage is IConversationActivationTarget currentTarget)
+        {
+            return currentTarget;
+        }
+
+#if WINDOWS
+        await GoToAsync($"//{ShellRouteCatalog.Conversations}", animate: false);
+        for (var attempt = 0; attempt < 30; attempt++)
+        {
+            if (CurrentPage is IConversationActivationTarget navigatedTarget)
+            {
+                return navigatedTarget;
+            }
+
+            if (ConversationsTab?.Content is IConversationActivationTarget contentTarget)
+            {
+                return contentTarget;
+            }
+
+            await Task.Delay(50);
+        }
+#else
+        if (ConversationsTab?.Content is IConversationActivationTarget rootTarget)
+        {
+            return rootTarget;
+        }
+#endif
+        return null;
     }
 
     private static string CreateOneToOneRoute(ConversationId id, string displayName)

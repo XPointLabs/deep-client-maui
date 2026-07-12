@@ -8,7 +8,7 @@ namespace Deep.Client.Maui.Services;
 
 public sealed class IncomingMessageNotificationCoordinator
 {
-    private readonly Func<int, CancellationToken, Task<IReadOnlyList<PendingIncomingMessageNotification>>> listPendingAsync;
+    private readonly Func<int, IReadOnlyCollection<ConversationId>, CancellationToken, Task<IReadOnlyList<PendingIncomingMessageNotification>>> listPendingAsync;
     private readonly Func<IReadOnlyCollection<MessageId>, CancellationToken, Task> acknowledgeAsync;
     private readonly IActiveConversationTracker activeConversationTracker;
     private readonly Func<string, CancellationToken, Task> presentAsync;
@@ -16,7 +16,7 @@ public sealed class IncomingMessageNotificationCoordinator
     private readonly int batchLimit;
 
     public IncomingMessageNotificationCoordinator(
-        Func<int, CancellationToken, Task<IReadOnlyList<PendingIncomingMessageNotification>>> listPendingAsync,
+        Func<int, IReadOnlyCollection<ConversationId>, CancellationToken, Task<IReadOnlyList<PendingIncomingMessageNotification>>> listPendingAsync,
         Func<IReadOnlyCollection<MessageId>, CancellationToken, Task> acknowledgeAsync,
         IActiveConversationTracker activeConversationTracker,
         Func<string, CancellationToken, Task> presentAsync,
@@ -41,7 +41,11 @@ public sealed class IncomingMessageNotificationCoordinator
     {
         try
         {
-            var pending = await listPendingAsync(batchLimit, cancellationToken).ConfigureAwait(false);
+            var state = activeConversationTracker.Snapshot;
+            var pending = await listPendingAsync(
+                batchLimit,
+                ExcludedConversations(state),
+                cancellationToken).ConfigureAwait(false);
             if (pending.Count == 0)
             {
                 return 0;
@@ -51,11 +55,7 @@ public sealed class IncomingMessageNotificationCoordinator
             var notificationPresented = false;
             while (pending.Count > 0)
             {
-                var state = activeConversationTracker.Snapshot;
-                var suppressedIds = pending
-                    .Where(item => state.ShouldSuppressNotification(item.ConversationId))
-                    .Select(static item => item.MessageId)
-                    .ToArray();
+                state = activeConversationTracker.Snapshot;
                 var presentationIds = pending
                     .Where(item => !state.ShouldSuppressNotification(item.ConversationId))
                     .Select(static item => item.MessageId)
@@ -80,14 +80,10 @@ public sealed class IncomingMessageNotificationCoordinator
                     break;
                 }
 
-                // Active-chat messages stay durable until MarkConversationAsRead removes them.
-                // Re-listing a full batch containing those entries would otherwise spin forever.
-                if (suppressedIds.Length > 0)
-                {
-                    break;
-                }
-
-                pending = await listPendingAsync(batchLimit, cancellationToken).ConfigureAwait(false);
+                pending = await listPendingAsync(
+                    batchLimit,
+                    ExcludedConversations(activeConversationTracker.Snapshot),
+                    cancellationToken).ConfigureAwait(false);
             }
 
             return presentedCount;
@@ -98,6 +94,11 @@ public sealed class IncomingMessageNotificationCoordinator
             throw;
         }
     }
+
+    private static IReadOnlyCollection<ConversationId> ExcludedConversations(ActiveConversationState state) =>
+        state.IsApplicationForeground && state.ConversationId is { } conversationId
+            ? [conversationId]
+            : [];
 
     internal static string CreateNotificationBatchId(IEnumerable<MessageId> messageIds)
     {

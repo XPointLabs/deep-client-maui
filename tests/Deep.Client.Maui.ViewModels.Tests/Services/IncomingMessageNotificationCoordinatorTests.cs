@@ -14,7 +14,7 @@ public sealed class IncomingMessageNotificationCoordinatorTests
         var acknowledged = 0;
         var rearmed = 0;
         var coordinator = new IncomingMessageNotificationCoordinator(
-            (_, _) => Task.FromResult<IReadOnlyList<PendingIncomingMessageNotification>>([]),
+            (_, _, _) => Task.FromResult<IReadOnlyList<PendingIncomingMessageNotification>>([]),
             (_, _) =>
             {
                 acknowledged++;
@@ -69,7 +69,7 @@ public sealed class IncomingMessageNotificationCoordinatorTests
         var presentations = 0;
         var acknowledged = new List<MessageId>();
         var coordinator = new IncomingMessageNotificationCoordinator(
-            async (_, _) =>
+            async (_, _, _) =>
             {
                 listStarted.SetResult();
                 await releaseList.Task;
@@ -156,6 +156,27 @@ public sealed class IncomingMessageNotificationCoordinatorTests
     }
 
     [Fact]
+    public async Task FullSuppressedBatchDoesNotStarveAnotherConversation()
+    {
+        var activeConversation = NewConversationId();
+        var otherConversation = NewConversationId();
+        var queue = Enumerable.Range(0, IncomingMessageNotificationLimits.MaxBatchCount)
+            .Select(index => Notification($"active-{index}", activeConversation))
+            .Append(Notification("other", otherConversation))
+            .ToList();
+        var tracker = new ActiveConversationTracker();
+        tracker.SetApplicationForeground(true);
+        using var active = tracker.ActivateConversation(activeConversation);
+        var presentations = 0;
+        var coordinator = CreateQueueCoordinator(queue, tracker, _ => presentations++);
+
+        Assert.Equal(1, await coordinator.PresentPendingAsync());
+        Assert.Equal(1, presentations);
+        Assert.Equal(IncomingMessageNotificationLimits.MaxBatchCount, queue.Count);
+        Assert.All(queue, item => Assert.Equal(activeConversation, item.ConversationId));
+    }
+
+    [Fact]
     public async Task PresentsOnceAndAcknowledgesEveryDurableBatch()
     {
         var conversationId = NewConversationId();
@@ -180,7 +201,7 @@ public sealed class IncomingMessageNotificationCoordinatorTests
     }
 
     [Fact]
-    public async Task PresentationFailureLeavesVisibleMessagesPendingButKeepsSuppressionAcknowledged()
+    public async Task PresentationFailureLeavesVisibleAndSuppressedMessagesPending()
     {
         var activeConversation = NewConversationId();
         var otherConversation = NewConversationId();
@@ -216,7 +237,8 @@ public sealed class IncomingMessageNotificationCoordinatorTests
         var rearmed = 0;
         var failAcknowledgement = true;
         IncomingMessageNotificationCoordinator CreateCoordinator() => new(
-            (_, _) => Task.FromResult<IReadOnlyList<PendingIncomingMessageNotification>>(queue.ToArray()),
+            (_, excluded, _) => Task.FromResult<IReadOnlyList<PendingIncomingMessageNotification>>(
+                queue.Where(item => !excluded.Contains(item.ConversationId)).ToArray()),
             (ids, _) =>
             {
                 if (failAcknowledgement)
@@ -256,8 +278,8 @@ public sealed class IncomingMessageNotificationCoordinatorTests
         Action? rearm = null,
         int batchLimit = IncomingMessageNotificationLimits.MaxBatchCount) =>
         new(
-            (limit, _) => Task.FromResult<IReadOnlyList<PendingIncomingMessageNotification>>(
-                queue.Take(limit).ToArray()),
+            (limit, excluded, _) => Task.FromResult<IReadOnlyList<PendingIncomingMessageNotification>>(
+                queue.Where(item => !excluded.Contains(item.ConversationId)).Take(limit).ToArray()),
             (ids, _) =>
             {
                 var batch = ids.ToArray();

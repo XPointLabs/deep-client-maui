@@ -330,8 +330,12 @@ internal static class WindowsPushNotificationService
             var activeConversationTracker = services?.GetService<IActiveConversationTracker>()
                 ?? throw new InvalidOperationException("The active conversation tracker is unavailable.");
             var coordinator = new IncomingMessageNotificationCoordinator(
-                (limit, token) => MauiBackgroundSyncRunner
-                    .ListPendingIncomingMessageNotificationIdsAsync(services, limit, token),
+                (limit, excludedConversationIds, token) => MauiBackgroundSyncRunner
+                    .ListPendingIncomingMessageNotificationIdsAsync(
+                        services,
+                        limit,
+                        excludedConversationIds,
+                        token),
                 (messageIds, token) => MauiBackgroundSyncRunner
                     .MarkIncomingMessageNotificationsPresentedAsync(services, messageIds, token),
                 activeConversationTracker,

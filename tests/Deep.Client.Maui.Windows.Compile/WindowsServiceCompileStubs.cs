@@ -146,6 +146,7 @@ namespace Deep.Client.Maui.Services
             ListPendingIncomingMessageNotificationIdsAsync(
                 IServiceProvider? services,
                 int limit,
+                IReadOnlyCollection<Deep.Client.Shared.Domain.ConversationId> excludedConversationIds,
                 CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<Deep.Client.Shared.Persistence.PendingIncomingMessageNotification>>([]);
 

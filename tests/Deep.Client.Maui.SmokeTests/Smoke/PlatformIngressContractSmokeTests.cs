@@ -53,12 +53,16 @@ public sealed class PlatformIngressContractSmokeTests
         Assert.Contains("matrix.PostScale(-1, 1)", orientation, StringComparison.Ordinal);
         Assert.Contains("AndroidExifOrientationNormalizer.ReadOrientation(content)", avatar, StringComparison.Ordinal);
         Assert.Contains("AndroidExifOrientationNormalizer.ApplyIfNeeded(decoded, orientation)", avatar, StringComparison.Ordinal);
-        Assert.True(
-            transcoder.IndexOf("ReadOrientation(sourcePath", StringComparison.Ordinal) <
-            transcoder.IndexOf("ApplyIfNeeded(decoded, orientation)", StringComparison.Ordinal));
-        Assert.True(
-            transcoder.IndexOf("ApplyIfNeeded(decoded, orientation)", StringComparison.Ordinal) <
-            transcoder.IndexOf("EncodeMetadataFreeJpeg", StringComparison.Ordinal));
+        var resizeIndex = transcoder.IndexOf("AndroidBitmap.CreateScaledBitmap", StringComparison.Ordinal);
+        var decodedDisposeIndex = transcoder.IndexOf("decoded.Dispose()", StringComparison.Ordinal);
+        var orientationIndex = transcoder.IndexOf("ApplyIfNeeded(working, orientation)", StringComparison.Ordinal);
+        var workingDisposeIndex = transcoder.IndexOf("working.Dispose()", StringComparison.Ordinal);
+        var encodeIndex = transcoder.IndexOf("EncodeMetadataFreeJpeg", StringComparison.Ordinal);
+        Assert.True(transcoder.IndexOf("ReadOrientation(sourcePath", StringComparison.Ordinal) < resizeIndex);
+        Assert.True(resizeIndex < decodedDisposeIndex);
+        Assert.True(decodedDisposeIndex < orientationIndex);
+        Assert.True(orientationIndex < workingDisposeIndex);
+        Assert.True(workingDisposeIndex < encodeIndex);
         Assert.Contains("AndroidImageTranscoder.TranscodeToMetadataFreeJpeg", codec, StringComparison.Ordinal);
         Assert.Contains("MauiMediaCodecService.TranscodeImageAndroid", share, StringComparison.Ordinal);
         Assert.Contains("ShouldTranscodeImage(actualMime)", share, StringComparison.Ordinal);
@@ -107,7 +111,7 @@ public sealed class PlatformIngressContractSmokeTests
         Assert.Contains("while (pending.Count > 0)", notificationCoordinator, StringComparison.Ordinal);
         Assert.Contains("state.ShouldSuppressNotification(item.ConversationId)", notificationCoordinator, StringComparison.Ordinal);
         Assert.DoesNotContain("acknowledgeAsync(suppressedIds", notificationCoordinator, StringComparison.Ordinal);
-        Assert.Contains("MarkConversationAsRead removes them", notificationCoordinator, StringComparison.Ordinal);
+        Assert.Contains("ExcludedConversations", notificationCoordinator, StringComparison.Ordinal);
         Assert.Contains("rearmPendingWork();", notificationCoordinator, StringComparison.Ordinal);
         Assert.DoesNotContain("shouldPresentMessageNotification", job, StringComparison.Ordinal);
         Assert.True(job.IndexOf("await PresentPendingIncomingMessageNotificationAsync(cancellationToken)", StringComparison.Ordinal) <

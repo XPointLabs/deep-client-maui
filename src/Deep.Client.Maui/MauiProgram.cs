@@ -239,6 +239,13 @@ public static class MauiProgram
         builder.Services.AddTransient<AttachmentPickerViewModel>();
         builder.Services.AddTransient<NotificationRegistrationViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
+#if WINDOWS
+        builder.Services.AddSingleton(services => new DesktopWorkspaceViewModel(
+            services.GetRequiredService<ClientRuntime>(),
+            () => services.GetRequiredService<ConversationsViewModel>(),
+            () => services.GetRequiredService<ChatViewModel>(),
+            () => services.GetRequiredService<GroupChatViewModel>()));
+#endif
 
         builder.Services.AddSingleton<AppShell>();
         builder.Services.AddTransient<WelcomePage>();
@@ -253,6 +260,9 @@ public static class MauiProgram
         builder.Services.AddTransient<SettingsPage>();
         builder.Services.AddTransient<SettingsDetailPage>();
         builder.Services.AddTransient<CallPage>();
+#if WINDOWS
+        builder.Services.AddSingleton<DesktopWorkspacePage>();
+#endif
 
         return builder.Build();
     }

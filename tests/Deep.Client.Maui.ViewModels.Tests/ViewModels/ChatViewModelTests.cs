@@ -10,6 +10,67 @@ namespace Deep.Client.Maui.ViewModels.Tests.ViewModels;
 public sealed class ChatViewModelTests
 {
     [Fact]
+    public async Task ReceiveReconcilesMessageAlreadyPersistedByBackgroundSync()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-07-13T00:00:00Z")));
+        var account = await runtime.Accounts.RegisterAsync("Owner");
+        var remote = SessionId.CreateNew();
+        var conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(remote, "Remote");
+        var chat = new ChatViewModel(runtime);
+        await chat.OpenOneToOneAsync(account, remote, "Remote");
+        var incoming = new Message(
+            MessageId.NewId(),
+            conversation.Id,
+            remote,
+            account.SessionId,
+            "background persisted",
+            MessageDirection.Incoming,
+            MessageDeliveryState.Delivered,
+            runtime.Clock.UtcNow,
+            []);
+        await ((IMessageRepository)runtime.Store).AppendAsync(incoming);
+
+        await chat.ReceiveAsync();
+
+        var visible = Assert.Single(chat.Messages);
+        Assert.Equal(incoming.Id, visible.Id);
+        Assert.Equal(MessageDeliveryState.Read, visible.State);
+    }
+
+    [Fact]
+    public async Task ReceiveKeepsOlderPersistedMessagesReachableAfterEmptyOpen()
+    {
+        var start = DateTimeOffset.Parse("2026-07-13T00:00:00Z");
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(start.AddHours(1)));
+        var account = await runtime.Accounts.RegisterAsync("Owner");
+        var remote = SessionId.CreateNew();
+        var conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(remote, "Remote");
+        var chat = new ChatViewModel(runtime);
+        await chat.OpenOneToOneAsync(account, remote, "Remote");
+        for (var index = 0; index < 21; index++)
+        {
+            await ((IMessageRepository)runtime.Store).AppendAsync(new Message(
+                MessageId.NewId(),
+                conversation.Id,
+                remote,
+                account.SessionId,
+                $"persisted {index}",
+                MessageDirection.Incoming,
+                MessageDeliveryState.Delivered,
+                start.AddMinutes(index),
+                []));
+        }
+
+        await chat.ReceiveAsync();
+        Assert.Equal(20, chat.Messages.Count);
+
+        await chat.LoadOlderMessagesAsync();
+
+        Assert.Equal(21, chat.Messages.Count);
+        Assert.Contains(chat.Messages, message => message.Body == "persisted 0");
+    }
+
+    [Fact]
     public async Task SendReceiveFlowWorksThroughSharedStubBackend()
     {
         var backend = new StubSessionBackend();

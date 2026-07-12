@@ -85,6 +85,21 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.DoesNotContain("ResolveContentType(photo)", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AttachmentPickerBoundsProviderStreamsBeforeWritingTheCacheFile()
+    {
+        var source = ReadWorkspaceFile(
+            "src",
+            "Deep.Client.Maui",
+            "Services",
+            "MauiAttachmentPickerService.cs");
+
+        Assert.Contains("CopyInputWithLimitAsync", source, StringComparison.Ordinal);
+        Assert.Contains("source.CanSeek && source.Length > MaxAttachmentBytes", source, StringComparison.Ordinal);
+        Assert.Contains("copied > MaxAttachmentBytes", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("stream.CopyToAsync(output", source, StringComparison.Ordinal);
+    }
+
     private static string ReadWorkspaceFile(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

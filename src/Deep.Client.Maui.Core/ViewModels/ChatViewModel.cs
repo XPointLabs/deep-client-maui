@@ -923,21 +923,27 @@ public sealed class ChatViewModel : ViewModelBase
                 throw new InvalidOperationException("Откройте чат перед получением сообщений.");
             }
 
-            var received = await runtime.Messages.ReceiveAsync(account.SessionId, ct);
-            var visibleMessages = received
-                .Where(message => message.ConversationId == Conversation.Id)
-                .OrderBy(message => message.CreatedAt)
-                .ToArray();
-            if (visibleMessages.Length > 0)
+            var activeConversation = Conversation;
+            var hadLoadedMessages = Messages.Count > 0;
+            _ = await runtime.Messages.ReceiveAsync(account.SessionId, ct);
+            var persistedMessages = await runtime.Messages.ListRecentConversationMessagesAsync(
+                activeConversation.Id,
+                InitialMessagePageSize,
+                ct);
+            var readAt = await runtime.Messages.MarkConversationAsReadAsync(
+                activeConversation.Id,
+                runtime.Clock.UtcNow,
+                ct);
+            foreach (var message in persistedMessages.OrderBy(message => message.CreatedAt))
             {
-                var readAt = await runtime.Messages.MarkConversationAsReadAsync(
-                    Conversation.Id,
-                    runtime.Clock.UtcNow,
-                    ct);
-                foreach (var message in visibleMessages)
-                {
-                    UpsertMessageItem(MarkIncomingRead(message, readAt));
-                }
+                UpsertMessageItem(MarkIncomingRead(message, readAt));
+            }
+
+            if (!hadLoadedMessages && persistedMessages.Count > 0)
+            {
+                oldestLoadedMessageAt = persistedMessages[0].CreatedAt;
+                oldestLoadedMessageId = persistedMessages[0].Id;
+                hasOlderMessages = persistedMessages.Count == InitialMessagePageSize;
             }
         }, cancellationToken);
 

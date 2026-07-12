@@ -257,7 +257,14 @@ public sealed record GroupMemberItem(
     SessionId SessionId,
     string DisplayName,
     GroupMemberRole Role,
-    bool IsPendingRemoval);
+    bool IsPendingRemoval)
+{
+    public string AvatarInitial => DeepDisplayName.AvatarInitial(DisplayName, SessionId.Value);
+
+    public string RoleLabel => Role == GroupMemberRole.Admin ? "Администратор" : "Участник";
+
+    public string PendingRemovalLabel => IsPendingRemoval ? "Ожидает удаления" : string.Empty;
+}
 
 public sealed class GroupChatViewModel : ViewModelBase
 {
@@ -554,23 +561,36 @@ public sealed class GroupChatViewModel : ViewModelBase
             RaiseMemberCommandCanExecuteChanged();
 
             var activeGroup = group ?? throw new InvalidOperationException("Откройте группу перед обновлением.");
-            var received = account is not null
-                ? await runtime.Messages.ReceiveGroupAsync(account.SessionId, activeGroup.Id, ct)
-                : [];
+            if (account is not null)
+            {
+                _ = await runtime.Messages.ReceiveGroupAsync(account.SessionId, activeGroup.Id, ct);
+            }
 
             if (!messagesLoaded)
             {
                 await LoadMessagesAsync(ct);
             }
-            else if (received.Count > 0)
+            else
             {
+                var hadLoadedMessages = Messages.Count > 0;
+                var persistedMessages = await runtime.Messages.ListRecentConversationMessagesAsync(
+                    activeGroup.Id,
+                    InitialMessagePageSize,
+                    ct);
                 var readAt = await runtime.Messages.MarkConversationAsReadAsync(
                     activeGroup.Id,
                     runtime.Clock.UtcNow,
                     ct);
-                foreach (var message in received.OrderBy(message => message.CreatedAt))
+                foreach (var message in persistedMessages.OrderBy(message => message.CreatedAt))
                 {
                     UpsertMessageItem(MarkIncomingRead(message, readAt));
+                }
+
+                if (!hadLoadedMessages && persistedMessages.Count > 0)
+                {
+                    oldestLoadedMessageAt = persistedMessages[0].CreatedAt;
+                    oldestLoadedMessageId = persistedMessages[0].Id;
+                    hasOlderMessages = persistedMessages.Count == InitialMessagePageSize;
                 }
             }
 
@@ -1060,7 +1080,8 @@ public sealed class GroupChatViewModel : ViewModelBase
 
     private async Task ReloadContactDisplayNamesAsync(CancellationToken cancellationToken)
     {
-        contactDisplayNames = await LoadContactDisplayNamesAsync(cancellationToken);
+        var contactIds = CollectVisibleContactIds();
+        contactDisplayNames = await LoadContactDisplayNamesAsync(contactIds, cancellationToken);
         foreach (var senderId in senderLabels.Keys.ToArray())
         {
             senderLabels[senderId] = ResolveSenderDisplayName(senderId);
@@ -1075,11 +1096,43 @@ public sealed class GroupChatViewModel : ViewModelBase
         }
     }
 
-    private async Task<IReadOnlyDictionary<string, string>> LoadContactDisplayNamesAsync(CancellationToken cancellationToken)
+    private HashSet<SessionId> CollectVisibleContactIds()
+    {
+        var contactIds = new HashSet<SessionId>();
+        if (group is not null)
+        {
+            contactIds.UnionWith(group.Members.Select(static member => member.SessionId));
+        }
+
+        foreach (var senderId in senderLabels.Keys)
+        {
+            contactIds.Add(SessionId.Parse(senderId));
+        }
+
+        foreach (var message in Messages)
+        {
+            if (message.SenderId is { } senderId)
+            {
+                contactIds.Add(senderId);
+            }
+        }
+
+        return contactIds;
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> LoadContactDisplayNamesAsync(
+        IEnumerable<SessionId> contactIds,
+        CancellationToken cancellationToken)
     {
         var displayNames = new Dictionary<string, string>(StringComparer.Ordinal);
-        await foreach (var contact in contacts.ListAsync(cancellationToken).ConfigureAwait(false))
+        foreach (var contactId in contactIds)
         {
+            var contact = await contacts.GetAsync(contactId, cancellationToken).ConfigureAwait(false);
+            if (contact is null)
+            {
+                continue;
+            }
+
             var displayName = DeepDisplayName.ContactTitle(contact.Id, contact.DisplayName);
             if (!string.IsNullOrWhiteSpace(displayName))
             {
