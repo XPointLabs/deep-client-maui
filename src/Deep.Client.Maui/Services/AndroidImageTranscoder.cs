@@ -44,24 +44,39 @@ internal static class AndroidImageTranscoder
             InSampleSize = CalculateSampleSize(bounds.OutWidth, bounds.OutHeight, maxDimension),
             InPreferredConfig = AndroidBitmap.Config.Argb8888
         };
-        using var decoded = AndroidBitmapFactory.DecodeFile(sourcePath, options)
+        AndroidBitmap? decoded = AndroidBitmapFactory.DecodeFile(sourcePath, options)
             ?? throw new InvalidOperationException("Selected image could not be decoded.");
 
         AndroidBitmap? oriented = null;
-        AndroidBitmap? scaled = null;
+        AndroidBitmap? resized = null;
         try
         {
-            oriented = AndroidExifOrientationNormalizer.ApplyIfNeeded(decoded, orientation);
-            var working = oriented ?? decoded;
-            var longestSide = Math.Max(working.Width, working.Height);
-            if (longestSide > maxDimension)
+            var resizePlan = CalculateResizePlan(
+                decoded.Width,
+                decoded.Height,
+                maxDimension,
+                orientation);
+            AndroidBitmap working = decoded;
+            if (resizePlan.RequiresResize)
             {
-                var scale = maxDimension / (double)longestSide;
-                var width = Math.Max(1, (int)Math.Round(working.Width * scale));
-                var height = Math.Max(1, (int)Math.Round(working.Height * scale));
-                scaled = AndroidBitmap.CreateScaledBitmap(working, width, height, true)
+                resized = AndroidBitmap.CreateScaledBitmap(
+                    decoded,
+                    resizePlan.PreOrientationWidth,
+                    resizePlan.PreOrientationHeight,
+                    true)
                     ?? throw new InvalidOperationException("Selected image could not be resized.");
-                working = scaled;
+                decoded.Dispose();
+                decoded = null;
+                working = resized;
+            }
+
+            oriented = AndroidExifOrientationNormalizer.ApplyIfNeeded(working, orientation);
+            if (oriented is not null)
+            {
+                working.Dispose();
+                decoded = null;
+                resized = null;
+                working = oriented;
             }
 
             return EncodeMetadataFreeJpeg(
@@ -74,8 +89,9 @@ internal static class AndroidImageTranscoder
         }
         finally
         {
-            scaled?.Dispose();
             oriented?.Dispose();
+            resized?.Dispose();
+            decoded?.Dispose();
         }
     }
 
@@ -130,18 +146,92 @@ internal static class AndroidImageTranscoder
         throw new InvalidOperationException($"Compressed image exceeds limit {maxBytes} bytes.");
     }
 
-    private static int CalculateSampleSize(int width, int height, int maxDimension)
+    internal static int CalculateSampleSize(int width, int height, int maxDimension)
     {
-        var sampleSize = 1L;
-        var longestSide = Math.Max(width, height);
-        while (longestSide / (sampleSize * 2) >= maxDimension && sampleSize <= int.MaxValue / 2)
+        ValidateDimensions(width, height, maxDimension);
+
+        var requiredScale = Math.Max(width, height) / (long)maxDimension;
+        var sampleSize = 1;
+        while (sampleSize <= requiredScale / 2)
         {
             sampleSize *= 2;
         }
 
-        return (int)sampleSize;
+        return sampleSize;
+    }
+
+    internal static AndroidImageResizePlan CalculateResizePlan(
+        int decodedWidth,
+        int decodedHeight,
+        int maxDimension,
+        int orientation)
+    {
+        ValidateDimensions(decodedWidth, decodedHeight, maxDimension);
+
+        var transform = ExifOrientationTransform.FromExifValue(orientation);
+        var orientedWidth = transform.SwapsDimensions ? decodedHeight : decodedWidth;
+        var orientedHeight = transform.SwapsDimensions ? decodedWidth : decodedHeight;
+        var longestSide = Math.Max(orientedWidth, orientedHeight);
+        if (longestSide <= maxDimension)
+        {
+            return new AndroidImageResizePlan(
+                decodedWidth,
+                decodedHeight,
+                orientedWidth,
+                orientedHeight,
+                RequiresResize: false);
+        }
+
+        var outputWidth = RoundScaledDimension(orientedWidth, maxDimension, longestSide);
+        var outputHeight = RoundScaledDimension(orientedHeight, maxDimension, longestSide);
+        return new AndroidImageResizePlan(
+            transform.SwapsDimensions ? outputHeight : outputWidth,
+            transform.SwapsDimensions ? outputWidth : outputHeight,
+            outputWidth,
+            outputHeight,
+            RequiresResize: true);
+    }
+
+    private static int RoundScaledDimension(int dimension, int maxDimension, int longestSide)
+    {
+        var numerator = (long)dimension * maxDimension;
+        var result = numerator / longestSide;
+        var remainder = numerator % longestSide;
+        var doubledRemainder = remainder * 2;
+        if (doubledRemainder > longestSide
+            || (doubledRemainder == longestSide && result % 2 != 0))
+        {
+            result++;
+        }
+
+        return Math.Max(1, (int)result);
+    }
+
+    private static void ValidateDimensions(int width, int height, int maxDimension)
+    {
+        if (width <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(width));
+        }
+
+        if (height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(height));
+        }
+
+        if (maxDimension <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxDimension));
+        }
     }
 }
+
+internal readonly record struct AndroidImageResizePlan(
+    int PreOrientationWidth,
+    int PreOrientationHeight,
+    int OutputWidth,
+    int OutputHeight,
+    bool RequiresResize);
 
 internal readonly record struct AndroidImageTranscodeResult(
     string OutputPath,

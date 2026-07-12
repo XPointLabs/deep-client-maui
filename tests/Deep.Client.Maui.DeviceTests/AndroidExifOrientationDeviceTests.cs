@@ -14,6 +14,7 @@ public sealed class AndroidExifOrientationDeviceTests
     private const int SourceHeight = 64;
 
     [Theory]
+    [InlineData(1, "ABCD")]
     [InlineData(2, "BADC")]
     [InlineData(3, "DCBA")]
     [InlineData(4, "CDAB")]
@@ -55,6 +56,123 @@ public sealed class AndroidExifOrientationDeviceTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData(1, "ABCD")]
+    [InlineData(2, "BADC")]
+    [InlineData(3, "DCBA")]
+    [InlineData(4, "CDAB")]
+    [InlineData(5, "ACBD")]
+    [InlineData(6, "CADB")]
+    [InlineData(7, "DBCA")]
+    [InlineData(8, "BDAC")]
+    [Trait("Category", "AndroidDevice")]
+    public void TranscodePreservesPhysicalOrientationWhenResizedBeforeExif(
+        int orientation,
+        string expectedQuadrants)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"deep-exif-scaled-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var sourcePath = Path.Combine(directory, "source.jpg");
+            WriteSourceJpeg(sourcePath, orientation);
+
+            var result = AndroidImageTranscoder.TranscodeToMetadataFreeJpeg(
+                sourcePath,
+                directory,
+                maxDimension: 50,
+                initialJpegQuality: 100,
+                minimumJpegQuality: 100,
+                qualityStep: 1,
+                maxBytes: 1_000_000);
+
+            var swapsDimensions = orientation is >= 5 and <= 8;
+            Assert.Equal(swapsDimensions ? 33 : 50, result.Width);
+            Assert.Equal(swapsDimensions ? 50 : 33, result.Height);
+            Assert.Equal(expectedQuadrants, ReadQuadrants(result.OutputPath));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(4_000, 3_000, 1_000, 4)]
+    [InlineData(4_001, 3_000, 1_000, 4)]
+    [InlineData(3_999, 3_000, 1_000, 2)]
+    [InlineData(1_999, 1_000, 1_000, 1)]
+    [InlineData(int.MaxValue, 1, 1, 1_073_741_824)]
+    [InlineData(int.MaxValue, int.MaxValue, int.MaxValue, 1)]
+    public void CalculateSampleSizeIsBoundedAndDoesNotOverflow(
+        int width,
+        int height,
+        int maxDimension,
+        int expectedSampleSize)
+    {
+        var sampleSize = AndroidImageTranscoder.CalculateSampleSize(width, height, maxDimension);
+
+        Assert.Equal(expectedSampleSize, sampleSize);
+        Assert.Equal(0, sampleSize & (sampleSize - 1));
+        var decodedLongestSideUpperBound =
+            ((long)Math.Max(width, height) + sampleSize - 1) / sampleSize;
+        Assert.InRange(decodedLongestSideUpperBound, 1, 2L * maxDimension);
+    }
+
+    [Theory]
+    [InlineData(1, 96, 64)]
+    [InlineData(2, 96, 64)]
+    [InlineData(3, 96, 64)]
+    [InlineData(4, 96, 64)]
+    [InlineData(5, 64, 96)]
+    [InlineData(6, 64, 96)]
+    [InlineData(7, 64, 96)]
+    [InlineData(8, 64, 96)]
+    public void CalculateResizePlanUsesOrientedDimensions(
+        int orientation,
+        int outputWidth,
+        int outputHeight)
+    {
+        var plan = AndroidImageTranscoder.CalculateResizePlan(
+            SourceWidth,
+            SourceHeight,
+            maxDimension: 1_024,
+            orientation);
+
+        Assert.False(plan.RequiresResize);
+        Assert.Equal(SourceWidth, plan.PreOrientationWidth);
+        Assert.Equal(SourceHeight, plan.PreOrientationHeight);
+        Assert.Equal(outputWidth, plan.OutputWidth);
+        Assert.Equal(outputHeight, plan.OutputHeight);
+    }
+
+    [Theory]
+    [InlineData(1, 48, 32)]
+    [InlineData(2, 48, 32)]
+    [InlineData(3, 48, 32)]
+    [InlineData(4, 48, 32)]
+    [InlineData(5, 32, 48)]
+    [InlineData(6, 32, 48)]
+    [InlineData(7, 32, 48)]
+    [InlineData(8, 32, 48)]
+    public void CalculateResizePlanScalesBeforeOrientationAndSwapsOutput(
+        int orientation,
+        int outputWidth,
+        int outputHeight)
+    {
+        var plan = AndroidImageTranscoder.CalculateResizePlan(
+            SourceWidth,
+            SourceHeight,
+            maxDimension: 48,
+            orientation);
+
+        Assert.True(plan.RequiresResize);
+        Assert.Equal(48, plan.PreOrientationWidth);
+        Assert.Equal(32, plan.PreOrientationHeight);
+        Assert.Equal(outputWidth, plan.OutputWidth);
+        Assert.Equal(outputHeight, plan.OutputHeight);
     }
 
     private static void WriteSourceJpeg(string path, int orientation)
