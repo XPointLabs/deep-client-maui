@@ -351,20 +351,13 @@ internal static class WindowsPushNotificationService
 
     private static void ShowGenericNotification(string notificationId)
     {
-        try
-        {
-            var notification = new AppNotificationBuilder()
-                .AddText("Deep")
-                .AddText("Новое сообщение")
-                .BuildNotification();
-            notification.Tag = notificationId[..Math.Min(notificationId.Length, 16)];
-            notification.ExpiresOnReboot = true;
-            AppNotificationManager.Default.Show(notification);
-        }
-        catch (Exception exception)
-        {
-            CrashDiagnostics.LogException("Windows.Push.Notification", exception);
-        }
+        var notification = new AppNotificationBuilder()
+            .AddText("Deep")
+            .AddText("Новое сообщение")
+            .BuildNotification();
+        notification.Tag = notificationId[..Math.Min(notificationId.Length, 16)];
+        notification.ExpiresOnReboot = true;
+        AppNotificationManager.Default.Show(notification);
     }
 
     private static void TryClose(PushNotificationChannel candidate)

@@ -106,7 +106,8 @@ public sealed class PlatformIngressContractSmokeTests
                     notificationCoordinator.IndexOf("acknowledgeAsync(presentationIds", StringComparison.Ordinal));
         Assert.Contains("while (pending.Count > 0)", notificationCoordinator, StringComparison.Ordinal);
         Assert.Contains("state.ShouldSuppressNotification(item.ConversationId)", notificationCoordinator, StringComparison.Ordinal);
-        Assert.Contains("acknowledgeAsync(suppressedIds", notificationCoordinator, StringComparison.Ordinal);
+        Assert.DoesNotContain("acknowledgeAsync(suppressedIds", notificationCoordinator, StringComparison.Ordinal);
+        Assert.Contains("MarkConversationAsRead removes them", notificationCoordinator, StringComparison.Ordinal);
         Assert.Contains("rearmPendingWork();", notificationCoordinator, StringComparison.Ordinal);
         Assert.DoesNotContain("shouldPresentMessageNotification", job, StringComparison.Ordinal);
         Assert.True(job.IndexOf("await PresentPendingIncomingMessageNotificationAsync(cancellationToken)", StringComparison.Ordinal) <

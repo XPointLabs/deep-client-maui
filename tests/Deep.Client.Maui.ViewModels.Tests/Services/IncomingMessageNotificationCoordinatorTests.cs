@@ -99,7 +99,7 @@ public sealed class IncomingMessageNotificationCoordinatorTests
     }
 
     [Fact]
-    public async Task ForegroundActiveConversationIsAcknowledgedWithoutPresentation()
+    public async Task ForegroundActiveConversationStaysDurableUntilItCanBePresentedOrMarkedRead()
     {
         var conversationId = NewConversationId();
         var tracker = new ActiveConversationTracker();
@@ -116,6 +116,11 @@ public sealed class IncomingMessageNotificationCoordinatorTests
 
         Assert.Equal(0, count);
         Assert.Equal(0, presentations);
+        Assert.Equal([Notification("incoming", conversationId)], queue);
+
+        tracker.SetApplicationForeground(false);
+        Assert.Equal(1, await coordinator.PresentPendingAsync());
+        Assert.Equal(1, presentations);
         Assert.Empty(queue);
     }
 
@@ -141,9 +146,9 @@ public sealed class IncomingMessageNotificationCoordinatorTests
         var count = await coordinator.PresentPendingAsync();
 
         Assert.Equal(1, count);
-        Assert.Empty(queue);
+        Assert.Equal([activeMessage], queue);
         Assert.Equal(
-            [[activeMessage.MessageId], [otherMessage.MessageId]],
+            [[otherMessage.MessageId]],
             acknowledgedBatches);
         Assert.Equal(
             [IncomingMessageNotificationCoordinator.CreateNotificationBatchId([otherMessage.MessageId])],
@@ -194,7 +199,7 @@ public sealed class IncomingMessageNotificationCoordinatorTests
 
         await Assert.ThrowsAsync<IOException>(() => coordinator.PresentPendingAsync());
 
-        Assert.Equal([visible], queue);
+        Assert.Equal([suppressed, visible], queue);
         Assert.Equal(1, rearmed);
     }
 

@@ -61,11 +61,6 @@ public sealed class IncomingMessageNotificationCoordinator
                     .Select(static item => item.MessageId)
                     .ToArray();
 
-                if (suppressedIds.Length > 0)
-                {
-                    await acknowledgeAsync(suppressedIds, cancellationToken).ConfigureAwait(false);
-                }
-
                 if (presentationIds.Length > 0)
                 {
                     if (!notificationPresented)
@@ -81,6 +76,13 @@ public sealed class IncomingMessageNotificationCoordinator
                 }
 
                 if (pending.Count < batchLimit)
+                {
+                    break;
+                }
+
+                // Active-chat messages stay durable until MarkConversationAsRead removes them.
+                // Re-listing a full batch containing those entries would otherwise spin forever.
+                if (suppressedIds.Length > 0)
                 {
                     break;
                 }

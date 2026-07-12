@@ -12,6 +12,7 @@ namespace Deep.Client.Maui.Core.ViewModels;
 
 public sealed class GroupChatMessageItem : INotifyPropertyChanged
 {
+    private string senderLabel;
     private bool isVoicePlaying;
     private double voicePlaybackProgress;
     private string? voicePlaybackPositionLabel;
@@ -42,7 +43,8 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
         IReadOnlyList<AttachmentMetadata> attachments,
         string senderLabel,
         MessageReply? replyTo,
-        IReadOnlyList<MessageReaction> reactions)
+        IReadOnlyList<MessageReaction> reactions,
+        SessionId? senderId = null)
     {
         Id = id;
         Body = body;
@@ -50,7 +52,8 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
         State = state;
         CreatedAt = createdAt;
         Attachments = attachments;
-        SenderLabel = senderLabel;
+        this.senderLabel = senderLabel;
+        SenderId = senderId;
         ReplyTo = replyTo;
         Reactions = reactions;
         hasVisibleBody = MessageAttachmentPresentation.HasVisibleBody(body);
@@ -93,7 +96,9 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
 
     public IReadOnlyList<AttachmentMetadata> Attachments { get; }
 
-    public string SenderLabel { get; }
+    public SessionId? SenderId { get; }
+
+    public string SenderLabel => senderLabel;
 
     public MessageReply? ReplyTo { get; }
 
@@ -215,6 +220,14 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
         if (!string.IsNullOrWhiteSpace(path))
         {
             ImagePreviewPath = path;
+        }
+    }
+
+    public void UpdateSenderLabel(string value)
+    {
+        if (SetProperty(ref senderLabel, value, nameof(SenderLabel)))
+        {
+            RaisePropertyChanged(nameof(ShowSenderLabel));
         }
     }
 
@@ -1052,6 +1065,14 @@ public sealed class GroupChatViewModel : ViewModelBase
         {
             senderLabels[senderId] = ResolveSenderDisplayName(senderId);
         }
+
+        foreach (var message in Messages)
+        {
+            if (message.Direction == MessageDirection.Incoming && message.SenderId is { } senderId)
+            {
+                message.UpdateSenderLabel(ResolveSenderDisplayName(senderId.Value));
+            }
+        }
     }
 
     private async Task<IReadOnlyDictionary<string, string>> LoadContactDisplayNamesAsync(CancellationToken cancellationToken)
@@ -1110,7 +1131,8 @@ public sealed class GroupChatViewModel : ViewModelBase
             message.Attachments,
             senderLabel,
             message.ReplyTo,
-            message.ReactionItems);
+            message.ReactionItems,
+            message.Sender);
     }
 
     private void ReplaceMessageItem(Message message)

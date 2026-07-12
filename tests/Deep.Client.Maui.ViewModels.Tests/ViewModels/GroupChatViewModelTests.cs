@@ -1,5 +1,6 @@
 ﻿using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Shared.Domain;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
 
@@ -155,6 +156,36 @@ public sealed class GroupChatViewModelTests
         await runtime.Conversations.UpdateContactDisplayNameAsync(member, "Renamed Twice");
         await viewModel.RefreshAsync();
         Assert.Equal("Renamed Twice", viewModel.Members.Single(item => item.SessionId == member).DisplayName);
+    }
+
+    [Fact]
+    public async Task VisibleIncomingSenderLabelRefreshesAfterContactRename()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var owner = await runtime.Accounts.RegisterAsync("Owner");
+        var member = SessionId.Parse("05" + new string('7', 64));
+        await runtime.Conversations.GetOrCreateOneToOneAsync(member, "Initial", approve: true);
+        var group = await runtime.Conversations.CreateGroupScaffoldAsync(owner.SessionId, "Sender labels", [member]);
+        await ((IMessageRepository)runtime.Store).AppendAsync(new Message(
+            MessageId.NewId(),
+            group.Id,
+            member,
+            Recipient: null,
+            "hello",
+            MessageDirection.Incoming,
+            MessageDeliveryState.Delivered,
+            runtime.Clock.UtcNow,
+            []));
+        var viewModel = new GroupChatViewModel(runtime);
+        await viewModel.OpenFromRouteAsync(group.Id.Value, group.Name);
+        var visibleMessage = Assert.Single(viewModel.Messages);
+        Assert.Equal("Initial", visibleMessage.SenderLabel);
+
+        await runtime.Conversations.UpdateContactDisplayNameAsync(member, "Renamed");
+        await viewModel.RefreshContactDisplayNamesAsync();
+
+        Assert.Same(visibleMessage, Assert.Single(viewModel.Messages));
+        Assert.Equal("Renamed", visibleMessage.SenderLabel);
     }
 
     [Fact]
