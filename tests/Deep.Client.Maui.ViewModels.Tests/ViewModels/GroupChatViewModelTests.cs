@@ -175,8 +175,11 @@ public sealed class GroupChatViewModelTests
 
         Assert.Equal(original.Id, updatedReply.ReplyTo?.MessageId);
         var reaction = Assert.Single(updatedReply.ReactionChips);
+        Assert.Equal(reply.Id, reaction.MessageId);
         Assert.Equal("❤️", reaction.Emoji);
         Assert.Equal(1, reaction.Count);
+        await viewModel.ToggleReactionAsync(reply, "❤️");
+        Assert.Empty(viewModel.Messages.Single(message => message.Body == "reply").ReactionChips);
         Assert.False(viewModel.IsReplying);
     }
 

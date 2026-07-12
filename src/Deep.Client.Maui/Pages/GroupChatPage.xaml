@@ -15,10 +15,9 @@
         <DataTemplate x:Key="GroupChatPlainTextMessageTemplate" x:DataType="vm:GroupChatMessageItem">
             <Grid Padding="2,0,2,4">
                 <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
-                    <Border.GestureRecognizers>
-                        <PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" />
-                        <TapGestureRecognizer Tapped="OnMessageTapped" />
-                    </Border.GestureRecognizers>
+                    <Border.Behaviors>
+                        <controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" />
+                    </Border.Behaviors>
                     <VerticalStackLayout Spacing="2">
                         <Label Text="{Binding SenderLabel}" IsVisible="{Binding ShowSenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation" />
                         <Label AutomationId="GroupChat.MessageBody" Text="{Binding Body}" FontSize="15" LineBreakMode="WordWrap" />
@@ -42,10 +41,9 @@
         <DataTemplate x:Key="GroupChatTextMessageTemplate" x:DataType="vm:GroupChatMessageItem">
             <Grid Padding="2,0,2,4">
                 <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
-                    <Border.GestureRecognizers>
-                        <PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" />
-                        <TapGestureRecognizer Tapped="OnMessageTapped" />
-                    </Border.GestureRecognizers>
+                    <Border.Behaviors>
+                        <controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" />
+                    </Border.Behaviors>
                     <VerticalStackLayout Spacing="4">
                         <Label Text="{Binding SenderLabel}" IsVisible="{Binding ShowSenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation" />
                         <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}">
@@ -59,6 +57,7 @@
                             <BindableLayout.ItemTemplate>
                                 <DataTemplate x:DataType="vm:MessageReactionChip">
                                     <Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2">
+                                        <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnReactionChipTapped" /></Border.GestureRecognizers>
                                         <HorizontalStackLayout Spacing="4">
                                             <Label Text="{Binding Emoji}" FontSize="14" />
                                             <Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" VerticalTextAlignment="Center" />
@@ -90,9 +89,9 @@
         <DataTemplate x:Key="GroupChatImageMessageTemplate" x:DataType="vm:GroupChatMessageItem">
             <Grid Padding="2,0,2,4">
                 <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="6" HorizontalOptions="Start" MaximumWidthRequest="318">
-                    <Border.GestureRecognizers>
-                        <PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" />
-                    </Border.GestureRecognizers>
+                    <Border.Behaviors>
+                        <controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" />
+                    </Border.Behaviors>
                     <VerticalStackLayout Spacing="4">
                         <Label Text="{Binding SenderLabel}" IsVisible="{Binding ShowSenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation" />
                         <Border Padding="8,5" Margin="5,1" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}">
@@ -111,8 +110,10 @@
                                     <Label Text="{Binding ImageCountLabel}" FontSize="11" FontAttributes="Bold" TextColor="White" />
                                 </Border>
                             </Grid>
+                            <Border.Behaviors>
+                                <controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" />
+                            </Border.Behaviors>
                             <Border.GestureRecognizers>
-                                <PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" />
                                 <TapGestureRecognizer Tapped="OnAttachmentTapped" />
                             </Border.GestureRecognizers>
                         </Border>
@@ -120,7 +121,7 @@
                         <FlexLayout Margin="5,0" Direction="Row" Wrap="Wrap" AlignItems="Center" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}">
                             <BindableLayout.ItemTemplate>
                                 <DataTemplate x:DataType="vm:MessageReactionChip">
-                                    <Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2"><HorizontalStackLayout Spacing="4"><Label Text="{Binding Emoji}" FontSize="14" /><Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" /></HorizontalStackLayout></Border>
+                                    <Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2"><Border.GestureRecognizers><TapGestureRecognizer Tapped="OnReactionChipTapped" /></Border.GestureRecognizers><HorizontalStackLayout Spacing="4"><Label Text="{Binding Emoji}" FontSize="14" /><Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" /></HorizontalStackLayout></Border>
                                 </DataTemplate>
                             </BindableLayout.ItemTemplate>
                         </FlexLayout>
@@ -144,7 +145,7 @@
         <DataTemplate x:Key="GroupChatVoiceMessageTemplate" x:DataType="vm:GroupChatMessageItem">
             <Grid Padding="2,0,2,4">
                 <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
-                    <Border.GestureRecognizers><PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" /></Border.GestureRecognizers>
+                    <Border.Behaviors><controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" /></Border.Behaviors>
                     <VerticalStackLayout Spacing="4">
                         <Label Text="{Binding SenderLabel}" IsVisible="{Binding ShowSenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation" />
                         <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}"><VerticalStackLayout Spacing="2"><Label Text="Ответ" FontSize="10" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" /><Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="2" /></VerticalStackLayout></Border>
@@ -163,7 +164,7 @@
                             </Grid>
                         </Border>
                         <Label Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" FontSize="15" LineBreakMode="WordWrap" />
-                        <FlexLayout Direction="Row" Wrap="Wrap" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}"><BindableLayout.ItemTemplate><DataTemplate x:DataType="vm:MessageReactionChip"><Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2"><HorizontalStackLayout Spacing="4"><Label Text="{Binding Emoji}" FontSize="14" /><Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" /></HorizontalStackLayout></Border></DataTemplate></BindableLayout.ItemTemplate></FlexLayout>
+                        <FlexLayout Direction="Row" Wrap="Wrap" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}"><BindableLayout.ItemTemplate><DataTemplate x:DataType="vm:MessageReactionChip"><Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2"><Border.GestureRecognizers><TapGestureRecognizer Tapped="OnReactionChipTapped" /></Border.GestureRecognizers><HorizontalStackLayout Spacing="4"><Label Text="{Binding Emoji}" FontSize="14" /><Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" /></HorizontalStackLayout></Border></DataTemplate></BindableLayout.ItemTemplate></FlexLayout>
                         <HorizontalStackLayout Spacing="6" HorizontalOptions="End"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}"><Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger><DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger></Label.Triggers></Label></HorizontalStackLayout>
                     </VerticalStackLayout>
                     <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /></DataTrigger></Border.Triggers>
@@ -174,16 +175,17 @@
         <DataTemplate x:Key="GroupChatAttachmentMessageTemplate" x:DataType="vm:GroupChatMessageItem">
             <Grid Padding="2,0,2,4">
                 <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
-                    <Border.GestureRecognizers><PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" /></Border.GestureRecognizers>
+                    <Border.Behaviors><controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" /></Border.Behaviors>
                     <VerticalStackLayout Spacing="4">
                         <Label Text="{Binding SenderLabel}" IsVisible="{Binding ShowSenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation" />
                         <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}"><VerticalStackLayout Spacing="2"><Label Text="Ответ" FontSize="10" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" /><Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="2" /></VerticalStackLayout></Border>
                         <Border Style="{StaticResource AttachmentCard}">
                             <Grid ColumnDefinitions="42,*,Auto" ColumnSpacing="9"><Border WidthRequest="38" HeightRequest="38" Background="{StaticResource PrimaryColorMuted}" StrokeThickness="0" StrokeShape="RoundRectangle 19"><Path Data="M8,5 H19 L24,10 V27 H8 Z M19,5 V10 H24 M11,18 H21 M11,22 H18" Stroke="White" StrokeThickness="1.8" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" /></Border><VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center"><Label Text="{Binding AttachmentTitle}" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" /><Label Text="{Binding AttachmentSubtitle}" FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" /></VerticalStackLayout><Path Grid.Column="2" Data="M9,5 L16,12 L9,19" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" /></Grid>
-                            <Border.GestureRecognizers><PointerGestureRecognizer PointerPressed="OnMessagePointerPressed" PointerMoved="OnMessagePointerMoved" PointerReleased="OnMessagePointerReleased" /><TapGestureRecognizer Tapped="OnAttachmentTapped" /></Border.GestureRecognizers>
+                            <Border.Behaviors><controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" /></Border.Behaviors>
+                            <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnAttachmentTapped" /></Border.GestureRecognizers>
                         </Border>
                         <Label Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" FontSize="15" LineBreakMode="WordWrap" />
-                        <FlexLayout Direction="Row" Wrap="Wrap" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}"><BindableLayout.ItemTemplate><DataTemplate x:DataType="vm:MessageReactionChip"><Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2"><HorizontalStackLayout Spacing="4"><Label Text="{Binding Emoji}" FontSize="14" /><Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" /></HorizontalStackLayout></Border></DataTemplate></BindableLayout.ItemTemplate></FlexLayout>
+                        <FlexLayout Direction="Row" Wrap="Wrap" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}"><BindableLayout.ItemTemplate><DataTemplate x:DataType="vm:MessageReactionChip"><Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2"><Border.GestureRecognizers><TapGestureRecognizer Tapped="OnReactionChipTapped" /></Border.GestureRecognizers><HorizontalStackLayout Spacing="4"><Label Text="{Binding Emoji}" FontSize="14" /><Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" /></HorizontalStackLayout></Border></DataTemplate></BindableLayout.ItemTemplate></FlexLayout>
                         <HorizontalStackLayout Spacing="6" HorizontalOptions="End"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}"><Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger><DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger></Label.Triggers></Label></HorizontalStackLayout>
                     </VerticalStackLayout>
                     <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /></DataTrigger></Border.Triggers>

@@ -12,7 +12,7 @@ using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Core.ViewModels;
 
-public sealed record MessageReactionChip(string Emoji, int Count);
+public sealed record MessageReactionChip(MessageId MessageId, string Emoji, int Count);
 
 public sealed class ChatMessageItem : INotifyPropertyChanged
 {
@@ -77,7 +77,7 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
             ? []
             : reactions
                 .GroupBy(static reaction => reaction.Emoji, StringComparer.Ordinal)
-                .Select(static group => new MessageReactionChip(group.Key, group.Count()))
+                .Select(group => new MessageReactionChip(Id, group.Key, group.Count()))
                 .ToArray();
     }
 
@@ -843,9 +843,18 @@ public sealed class ChatViewModel : ViewModelBase
         }, cancellationToken);
 
     public Task ToggleReactionAsync(ChatMessageItem message, string emoji, CancellationToken cancellationToken = default) =>
+        ToggleReactionAsync(message.Id, emoji, cancellationToken);
+
+    public Task ToggleReactionAsync(MessageId messageId, string emoji, CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
         {
             if (account is null || counterpart is null)
+            {
+                return;
+            }
+
+            var message = Messages.FirstOrDefault(item => item.Id == messageId);
+            if (message is null)
             {
                 return;
             }

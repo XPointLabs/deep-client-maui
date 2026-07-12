@@ -242,8 +242,11 @@ public sealed class ChatViewModelTests
 
         Assert.Equal(original.Id, chat.Messages.Single(message => message.Body == "reply").ReplyTo?.MessageId);
         var reaction = Assert.Single(chat.Messages.Single(message => message.Body == "reply").ReactionChips);
+        Assert.Equal(reply.Id, reaction.MessageId);
         Assert.Equal("👍", reaction.Emoji);
         Assert.Equal(1, reaction.Count);
+        await chat.ToggleReactionAsync(reply, "👍");
+        Assert.Empty(chat.Messages.Single(message => message.Body == "reply").ReactionChips);
         Assert.False(chat.IsReplying);
     }
 

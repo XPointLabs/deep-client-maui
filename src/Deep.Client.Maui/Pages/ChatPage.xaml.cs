@@ -20,8 +20,6 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 {
     private const double VoiceCancelSwipeThreshold = 84;
     private const double VoiceCancelPanelTranslation = 36;
-    private const double MessageLongPressMoveThreshold = 14;
-    private static readonly TimeSpan MessageLongPressDelay = TimeSpan.FromMilliseconds(420);
     private static readonly TimeSpan InitialMessageLayoutDelay = TimeSpan.FromMilliseconds(80);
     private IDispatcherTimer? autoReceiveTimer;
     private readonly ChatViewModel viewModel;
@@ -53,10 +51,6 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private Task? voiceGestureStartTask;
     private readonly SemaphoreSlim voiceGestureCompletionGate = new(1, 1);
     private int voicePageExitCancellationRequested;
-    private IDispatcherTimer? messageLongPressTimer;
-    private Point messagePointerStart;
-    private ChatMessageItem? pendingLongPressMessage;
-    private bool suppressNextAttachmentTap;
     private bool receivingMessages;
     private bool hasLoadedImageMessages;
     private int pendingPreviewFirstVisibleIndex = -1;
@@ -175,12 +169,6 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             voicePlaybackTimer.Stop();
             voicePlaybackTimer.Tick -= OnVoicePlaybackTick;
             voicePlaybackTimer = null;
-        }
-        if (messageLongPressTimer is not null)
-        {
-            messageLongPressTimer.Stop();
-            messageLongPressTimer.Tick -= OnMessageLongPressTimerTick;
-            messageLongPressTimer = null;
         }
     }
 
@@ -768,13 +756,6 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private async void OnAttachmentTapped(object? sender, TappedEventArgs e)
     {
-        CancelMessageLongPress();
-        if (suppressNextAttachmentTap)
-        {
-            suppressNextAttachmentTap = false;
-            return;
-        }
-
         if ((sender as BindableObject)?.BindingContext is not ChatMessageItem item)
         {
             return;
@@ -955,7 +936,6 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private async void OnVoiceMessageTapped(object? sender, TappedEventArgs e)
     {
-        CancelMessageLongPress();
         if ((sender as BindableObject)?.BindingContext is not ChatMessageItem item || item.Attachments.Count == 0)
         {
             return;
@@ -1166,68 +1146,14 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         }
     }
 
-    private void OnMessageTapped(object? sender, TappedEventArgs e)
+    private void OnMessageContextRequested(object? sender, EventArgs e)
     {
-        CancelMessageLongPress();
-    }
-
-    private void OnMessagePointerPressed(object? sender, PointerEventArgs e)
-    {
-        if ((sender as BindableObject)?.BindingContext is not ChatMessageItem item)
+        if ((sender as BindableObject)?.BindingContext is not ChatMessageItem message)
         {
             return;
         }
 
-        pendingLongPressMessage = item;
-        messagePointerStart = e.GetPosition(PageLayout) ?? new Point(0, 0);
-        messageLongPressTimer ??= Dispatcher.CreateTimer();
-        messageLongPressTimer.Interval = MessageLongPressDelay;
-        messageLongPressTimer.Tick -= OnMessageLongPressTimerTick;
-        messageLongPressTimer.Tick += OnMessageLongPressTimerTick;
-        messageLongPressTimer.Start();
-    }
-
-    private void OnMessagePointerMoved(object? sender, PointerEventArgs e)
-    {
-        if (pendingLongPressMessage is null)
-        {
-            return;
-        }
-
-        var point = e.GetPosition(PageLayout);
-        if (point is null)
-        {
-            return;
-        }
-
-        var dx = point.Value.X - messagePointerStart.X;
-        var dy = point.Value.Y - messagePointerStart.Y;
-        if (Math.Sqrt(dx * dx + dy * dy) > MessageLongPressMoveThreshold)
-        {
-            CancelMessageLongPress();
-        }
-    }
-
-    private void OnMessagePointerReleased(object? sender, PointerEventArgs e) =>
-        CancelMessageLongPress();
-
-    private void OnMessageLongPressTimerTick(object? sender, EventArgs e)
-    {
-        messageLongPressTimer?.Stop();
-        if (pendingLongPressMessage is not { } message)
-        {
-            return;
-        }
-
-        pendingLongPressMessage = null;
-        suppressNextAttachmentTap = message.HasAttachments;
         ShowMessageMenu(message);
-    }
-
-    private void CancelMessageLongPress()
-    {
-        messageLongPressTimer?.Stop();
-        pendingLongPressMessage = null;
     }
 
     private void ShowMessageMenu(ChatMessageItem item)
@@ -1257,10 +1183,18 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             return;
         }
 
-        var message = selectedMessage;
+        var messageId = selectedMessage.Id;
         MessageMenuOverlay.IsVisible = false;
         selectedMessage = null;
-        await viewModel.ToggleReactionAsync(message, emoji);
+        await viewModel.ToggleReactionAsync(messageId, emoji);
+    }
+
+    private async void OnReactionChipTapped(object? sender, TappedEventArgs e)
+    {
+        if ((sender as BindableObject)?.BindingContext is MessageReactionChip chip)
+        {
+            await viewModel.ToggleReactionAsync(chip.MessageId, chip.Emoji);
+        }
     }
 
     private void OnReplySelectedMessage(object? sender, TappedEventArgs e)
