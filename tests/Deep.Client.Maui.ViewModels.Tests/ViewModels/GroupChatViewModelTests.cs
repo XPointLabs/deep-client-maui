@@ -70,6 +70,36 @@ public sealed class GroupChatViewModelTests
     }
 
     [Fact]
+    public async Task RefreshRebuildsDisjointRecentGroupWindowWithoutLosingHistory()
+    {
+        var start = DateTimeOffset.Parse("2026-07-13T00:00:00Z");
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(start.AddHours(2)));
+        var owner = await runtime.Accounts.RegisterAsync("Owner");
+        var member = SessionId.CreateNew();
+        var group = await runtime.Conversations.CreateGroupScaffoldAsync(owner.SessionId, "Background", [member]);
+        await ((IMessageRepository)runtime.Store).AppendAsync(new Message(
+            MessageId.NewId(), group.Id, member, Recipient: null, "loaded group old",
+            MessageDirection.Incoming, MessageDeliveryState.Delivered, start, []));
+        var chat = new GroupChatViewModel(runtime);
+        await chat.OpenFromRouteAsync(group.Id.Value, group.Name);
+        for (var index = 1; index <= 21; index++)
+        {
+            await ((IMessageRepository)runtime.Store).AppendAsync(new Message(
+                MessageId.NewId(), group.Id, member, Recipient: null, $"group burst {index}",
+                MessageDirection.Incoming, MessageDeliveryState.Delivered, start.AddMinutes(index), []));
+        }
+
+        await chat.RefreshAsync();
+        Assert.Equal(20, chat.Messages.Count);
+
+        await chat.LoadOlderMessagesAsync();
+
+        Assert.Equal(22, chat.Messages.Count);
+        Assert.Contains(chat.Messages, message => message.Body == "loaded group old");
+        Assert.Contains(chat.Messages, message => message.Body == "group burst 1");
+    }
+
+    [Fact]
     public async Task SendCommandAppendsGroupMessage()
     {
         var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));

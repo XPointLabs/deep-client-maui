@@ -925,6 +925,9 @@ public sealed class ChatViewModel : ViewModelBase
 
             var activeConversation = Conversation;
             var hadLoadedMessages = Messages.Count > 0;
+            var loadedMessageIds = hadLoadedMessages
+                ? Messages.Select(static message => message.Id).ToHashSet()
+                : [];
             _ = await runtime.Messages.ReceiveAsync(account.SessionId, ct);
             var persistedMessages = await runtime.Messages.ListRecentConversationMessagesAsync(
                 activeConversation.Id,
@@ -934,16 +937,31 @@ public sealed class ChatViewModel : ViewModelBase
                 activeConversation.Id,
                 runtime.Clock.UtcNow,
                 ct);
-            foreach (var message in persistedMessages.OrderBy(message => message.CreatedAt))
+            var reconciledMessages = persistedMessages
+                .OrderBy(message => message.CreatedAt)
+                .ThenBy(message => message.Id.Value, StringComparer.Ordinal)
+                .Select(message => MarkIncomingRead(message, readAt))
+                .ToArray();
+            var replaceRecentWindow = hadLoadedMessages
+                && reconciledMessages.Length == InitialMessagePageSize
+                && !reconciledMessages.Any(message => loadedMessageIds.Contains(message.Id));
+            if (replaceRecentWindow)
             {
-                UpsertMessageItem(MarkIncomingRead(message, readAt));
+                SyncMessageItems(reconciledMessages.Select(ToItem).ToArray());
+            }
+            else
+            {
+                foreach (var message in reconciledMessages)
+                {
+                    UpsertMessageItem(message);
+                }
             }
 
-            if (!hadLoadedMessages && persistedMessages.Count > 0)
+            if ((!hadLoadedMessages || replaceRecentWindow) && reconciledMessages.Length > 0)
             {
-                oldestLoadedMessageAt = persistedMessages[0].CreatedAt;
-                oldestLoadedMessageId = persistedMessages[0].Id;
-                hasOlderMessages = persistedMessages.Count == InitialMessagePageSize;
+                oldestLoadedMessageAt = reconciledMessages[0].CreatedAt;
+                oldestLoadedMessageId = reconciledMessages[0].Id;
+                hasOlderMessages = reconciledMessages.Length == InitialMessagePageSize;
             }
         }, cancellationToken);
 

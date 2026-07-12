@@ -71,6 +71,36 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task ReceiveRebuildsDisjointRecentWindowWithoutLosingHistory()
+    {
+        var start = DateTimeOffset.Parse("2026-07-13T00:00:00Z");
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(start.AddHours(2)));
+        var account = await runtime.Accounts.RegisterAsync("Owner");
+        var remote = SessionId.CreateNew();
+        var conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(remote, "Remote");
+        await ((IMessageRepository)runtime.Store).AppendAsync(new Message(
+            MessageId.NewId(), conversation.Id, remote, account.SessionId, "loaded old",
+            MessageDirection.Incoming, MessageDeliveryState.Delivered, start, []));
+        var chat = new ChatViewModel(runtime);
+        await chat.OpenOneToOneAsync(account, remote, "Remote");
+        for (var index = 1; index <= 21; index++)
+        {
+            await ((IMessageRepository)runtime.Store).AppendAsync(new Message(
+                MessageId.NewId(), conversation.Id, remote, account.SessionId, $"burst {index}",
+                MessageDirection.Incoming, MessageDeliveryState.Delivered, start.AddMinutes(index), []));
+        }
+
+        await chat.ReceiveAsync();
+        Assert.Equal(20, chat.Messages.Count);
+
+        await chat.LoadOlderMessagesAsync();
+
+        Assert.Equal(22, chat.Messages.Count);
+        Assert.Contains(chat.Messages, message => message.Body == "loaded old");
+        Assert.Contains(chat.Messages, message => message.Body == "burst 1");
+    }
+
+    [Fact]
     public async Task SendReceiveFlowWorksThroughSharedStubBackend()
     {
         var backend = new StubSessionBackend();
