@@ -19,7 +19,6 @@
     <ShellContent
         x:Name="ConversationsTab"
         AutomationId="Root.Conversations"
-        IsVisible="False"
         Title="Диалоги"
         Route="conversations"
         ContentTemplate="{DataTemplate pages:ConversationsPage}" />

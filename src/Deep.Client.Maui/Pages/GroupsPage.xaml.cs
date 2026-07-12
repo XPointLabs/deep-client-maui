@@ -41,7 +41,12 @@ public partial class GroupsPage : ContentPage
         base.OnDisappearing();
         networkStatusService.StatusChanged -= OnNetworkStatusChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
-        autoRefreshTimer?.Stop();
+        if (autoRefreshTimer is not null)
+        {
+            autoRefreshTimer.Stop();
+            autoRefreshTimer.Tick -= OnAutoRefreshTick;
+            autoRefreshTimer = null;
+        }
     }
 
     protected override bool OnBackButtonPressed()
@@ -99,7 +104,7 @@ public partial class GroupsPage : ContentPage
     }
 
     private static Task NavigateBackToConversationsAsync() =>
-        Shell.Current.GoToAsync($"//{ShellRouteCatalog.Conversations}", animate: false);
+        Shell.Current.GoToAsync("..", animate: false);
 
     private void OnNetworkStatusChanged(object? sender, EventArgs e)
     {

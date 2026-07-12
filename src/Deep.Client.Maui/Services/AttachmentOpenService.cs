@@ -1,4 +1,7 @@
 ﻿using Deep.Client.Shared.Domain;
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using Deep.Client.Shared.Services;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
@@ -19,7 +22,22 @@ public sealed record PreparedAttachmentFile(string FileName, string ContentType,
 
 public static class AttachmentOpenService
 {
+    internal const long AttachmentCacheByteQuota = 256L * 1024 * 1024;
+    private const int MaxConcurrentAttachmentIo = 3;
     private static readonly TimeSpan AttachmentCacheMaxAge = TimeSpan.FromDays(1);
+    private static readonly SemaphoreSlim AttachmentIoConcurrency = new(MaxConcurrentAttachmentIo, MaxConcurrentAttachmentIo);
+    private static readonly SemaphoreSlim CacheWriteGate = new(1, 1);
+    private static readonly ConcurrentDictionary<string, Lazy<Task<PreparedAttachmentFile>>> InFlightDownloads = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, byte> ActiveTemporaryFiles = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object CachePurgeGate = new();
+    private static readonly object AccountScopeGate = new();
+    private const string AccountScopePreferenceKey = "attachments.account-scope.v1";
+    private static int cacheCleanupQueued;
+    private static int cacheEpoch;
+    private static CancellationTokenSource cacheEpochCancellation = new();
+    private static CachePurgeOperation? activeCachePurge;
+    private static string? accountScopeHash;
+    private static bool accountScopeLoaded;
 
     public static async Task OpenAsync(
         Page page,
@@ -96,25 +114,62 @@ public static class AttachmentOpenService
                 "Файл не был загружен на сервер вложений и доступен только на устройстве отправителя.");
         }
 
-        CleanupOldAttachmentCache();
+        QueueCacheCleanup();
         var cachePath = CachePathFor(attachment);
+        var (expectedCacheEpoch, cacheCancellationToken) = GetCacheEpoch();
+        var operation = InFlightDownloads.GetOrAdd(
+            cachePath,
+            _ => new Lazy<Task<PreparedAttachmentFile>>(
+                () => DownloadToCacheCoreAsync(
+                    attachment,
+                    attachmentFiles,
+                    cachePath,
+                    expectedCacheEpoch,
+                    cacheCancellationToken),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+        Task<PreparedAttachmentFile> sharedTask;
         try
         {
-            await using var output = File.Create(cachePath);
-            var downloaded = await attachmentFiles.DownloadToAsync(attachment, output, cancellationToken).ConfigureAwait(false);
-            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
-            return new PreparedAttachmentFile(downloaded.FileName, downloaded.ContentType, cachePath);
+            sharedTask = operation.Value;
         }
         catch
         {
-            TryDelete(cachePath);
+            RemoveInFlightDownload(cachePath, operation);
             throw;
         }
+
+        _ = sharedTask.ContinueWith(
+            _ => RemoveInFlightDownload(cachePath, operation),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+        return await sharedTask.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public static PreparedAttachmentFile? TryGetCachedFile(AttachmentMetadata attachment)
     {
         var cachePath = CachePathFor(attachment);
+        if (!File.Exists(cachePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (new FileInfo(cachePath).Length > AttachmentCacheByteQuota)
+            {
+                TryDelete(cachePath);
+                return null;
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        QueueCacheCleanup();
+        TouchCacheFile(cachePath);
         return File.Exists(cachePath)
             ? new PreparedAttachmentFile(attachment.FileName, attachment.ContentType, cachePath)
             : null;
@@ -130,25 +185,366 @@ public static class AttachmentOpenService
             throw new FileNotFoundException("Attachment source file was not found.", sourcePath);
         }
 
-        CleanupOldAttachmentCache();
+        if (new FileInfo(sourcePath).Length > AttachmentCacheByteQuota)
+        {
+            throw new IOException("Attachment exceeds the preview cache byte quota.");
+        }
+
+        QueueCacheCleanup();
         var cachePath = CachePathFor(attachment);
+        var (expectedCacheEpoch, _) = GetCacheEpoch();
         if (!string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(cachePath), StringComparison.OrdinalIgnoreCase))
         {
-            await using var source = File.OpenRead(sourcePath);
-            await using var destination = File.Create(cachePath);
-            await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
-            await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await AcquireAttachmentIoAsync(cancellationToken).ConfigureAwait(false);
+            string? temporaryPath = null;
+            try
+            {
+                temporaryPath = CreateTemporaryCachePath();
+                await using (var source = File.OpenRead(sourcePath))
+                await using (var destination = new FileStream(
+                    temporaryPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 64 * 1024,
+                    options: FileOptions.Asynchronous | FileOptions.SequentialScan))
+                {
+                    var quotaDestination = new CacheQuotaWriteStream(destination, AttachmentCacheByteQuota);
+                    await source.CopyToAsync(quotaDestination, cancellationToken).ConfigureAwait(false);
+                    await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                await CommitTemporaryCacheFileAsync(
+                    temporaryPath,
+                    cachePath,
+                    expectedCacheEpoch,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (temporaryPath is not null)
+                {
+                    TryDelete(temporaryPath);
+                    ActiveTemporaryFiles.TryRemove(temporaryPath, out _);
+                }
+
+                AttachmentIoConcurrency.Release();
+            }
+        }
+        else
+        {
+            TouchCacheFile(cachePath);
         }
 
         return new PreparedAttachmentFile(attachment.FileName, attachment.ContentType, cachePath);
     }
 
-    private static string CachePathFor(AttachmentMetadata attachment) =>
-        Path.Combine(
-            FileSystem.CacheDirectory,
-            $"attachment-{SafeFileName(attachment.AttachmentId)}-{SafeFileName(attachment.FileName)}");
+    public static void SetAccountScope(string sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        var scope = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sessionId.Trim())));
+        lock (AccountScopeGate)
+        {
+            accountScopeHash = scope;
+            accountScopeLoaded = true;
+            Preferences.Default.Set(AccountScopePreferenceKey, scope);
+        }
+    }
 
-    private static void TryDelete(string path)
+    internal static void ClearAccountScope()
+    {
+        lock (AccountScopeGate)
+        {
+            accountScopeHash = null;
+            accountScopeLoaded = true;
+            Preferences.Default.Remove(AccountScopePreferenceKey);
+        }
+    }
+
+    private static string CachePathFor(AttachmentMetadata attachment)
+    {
+        var material = string.Join(
+            '\n',
+            "deep.attachment-cache/v2",
+            GetAccountScopeHash(),
+            attachment.AttachmentId,
+            attachment.FileName,
+            attachment.ContentType,
+            attachment.SizeBytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            attachment.RemoteUri?.AbsoluteUri ?? string.Empty,
+            attachment.DigestBase64 ?? string.Empty,
+            attachment.EncryptionKeyBase64 ?? string.Empty);
+        var cacheId = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
+        var extension = Path.GetExtension(SafeFileName(attachment.FileName));
+        if (extension.Length > 16 || extension.Any(static character => !char.IsLetterOrDigit(character) && character != '.'))
+        {
+            extension = string.Empty;
+        }
+
+        return Path.Combine(FileSystem.CacheDirectory, $"attachment-{cacheId}{extension.ToLowerInvariant()}");
+    }
+
+    private static async Task<PreparedAttachmentFile> DownloadToCacheCoreAsync(
+        AttachmentMetadata attachment,
+        IAttachmentFileTransport attachmentFiles,
+        string cachePath,
+        int expectedCacheEpoch,
+        CancellationToken cacheCancellationToken)
+    {
+        cacheCancellationToken.ThrowIfCancellationRequested();
+        await AcquireAttachmentIoAsync(cacheCancellationToken).ConfigureAwait(false);
+        string? temporaryPath = null;
+        try
+        {
+            temporaryPath = CreateTemporaryCachePath();
+            AttachmentFileDownloadInfo downloaded;
+            await using (var output = new FileStream(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 64 * 1024,
+                options: FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                var quotaOutput = new CacheQuotaWriteStream(output, AttachmentCacheByteQuota);
+                downloaded = await attachmentFiles.DownloadToAsync(attachment, quotaOutput, cacheCancellationToken)
+                    .ConfigureAwait(false);
+                await output.FlushAsync(cacheCancellationToken).ConfigureAwait(false);
+            }
+
+            await CommitTemporaryCacheFileAsync(
+                temporaryPath,
+                cachePath,
+                expectedCacheEpoch,
+                cacheCancellationToken).ConfigureAwait(false);
+
+            return new PreparedAttachmentFile(downloaded.FileName, downloaded.ContentType, cachePath);
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                TryDelete(temporaryPath);
+                ActiveTemporaryFiles.TryRemove(temporaryPath, out _);
+            }
+
+            AttachmentIoConcurrency.Release();
+        }
+    }
+
+    private static string GetAccountScopeHash()
+    {
+        lock (AccountScopeGate)
+        {
+            if (!accountScopeLoaded)
+            {
+                var stored = Preferences.Default.Get(AccountScopePreferenceKey, string.Empty);
+                accountScopeHash = stored.Length == 64 &&
+                                   stored.All(static character => character is >= '0' and <= '9' or >= 'a' and <= 'f')
+                    ? stored
+                    : null;
+                accountScopeLoaded = true;
+            }
+
+            return accountScopeHash ?? "unscoped";
+        }
+    }
+
+    private static string CreateTemporaryCachePath()
+    {
+        Directory.CreateDirectory(FileSystem.CacheDirectory);
+        while (true)
+        {
+            var path = Path.Combine(FileSystem.CacheDirectory, $".attachment-{Guid.NewGuid():N}.tmp");
+            if (ActiveTemporaryFiles.TryAdd(path, 0))
+            {
+                return path;
+            }
+        }
+    }
+
+    private static async Task CommitTemporaryCacheFileAsync(
+        string temporaryPath,
+        string cachePath,
+        int expectedCacheEpoch,
+        CancellationToken cancellationToken)
+    {
+        var incomingBytes = new FileInfo(temporaryPath).Length;
+        if (incomingBytes > AttachmentCacheByteQuota)
+        {
+            throw new IOException("Attachment exceeds the preview cache byte quota.");
+        }
+
+        await CacheWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfCachePurged(expectedCacheEpoch);
+            CleanupOrphanTemporaryFilesLocked();
+            EnsureCapacityForWriteLocked(cachePath, incomingBytes, AttachmentCacheByteQuota);
+            File.Move(temporaryPath, cachePath, overwrite: true);
+            TouchCacheFile(cachePath);
+        }
+        finally
+        {
+            CacheWriteGate.Release();
+        }
+    }
+
+    private static void EnsureCapacityForWriteLocked(string cachePath, long incomingBytes, long byteQuota)
+    {
+        if (incomingBytes > byteQuota)
+        {
+            throw new IOException("Attachment exceeds the preview cache byte quota.");
+        }
+
+        var destination = Path.GetFullPath(cachePath);
+        var entries = GetCacheEntries()
+            .Where(entry => !string.Equals(Path.GetFullPath(entry.Path), destination, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(static entry => entry.LastAccessTimeUtc)
+            .ThenBy(static entry => entry.LastWriteTimeUtc)
+            .ThenBy(static entry => entry.Path, StringComparer.Ordinal)
+            .ToArray();
+        var existingBytes = SaturatingSum(entries.Select(static entry => entry.Length));
+        foreach (var entry in entries)
+        {
+            if (existingBytes <= byteQuota - incomingBytes)
+            {
+                break;
+            }
+
+            if (TryDelete(entry.Path))
+            {
+                existingBytes = Math.Max(0, existingBytes - entry.Length);
+            }
+        }
+
+        if (existingBytes > byteQuota - incomingBytes)
+        {
+            throw new IOException("Attachment preview cache quota could not be reserved.");
+        }
+    }
+
+    private static long TrimFinalCacheLocked(long byteQuota)
+    {
+        var entries = GetCacheEntries()
+            .OrderBy(static entry => entry.LastAccessTimeUtc)
+            .ThenBy(static entry => entry.LastWriteTimeUtc)
+            .ThenBy(static entry => entry.Path, StringComparer.Ordinal)
+            .ToArray();
+        var totalBytes = SaturatingSum(entries.Select(static entry => entry.Length));
+        foreach (var entry in entries)
+        {
+            if (totalBytes <= byteQuota)
+            {
+                break;
+            }
+
+            if (TryDelete(entry.Path))
+            {
+                totalBytes = Math.Max(0, totalBytes - entry.Length);
+            }
+        }
+
+        return totalBytes;
+    }
+
+    private static IReadOnlyList<CacheFileEntry> GetCacheEntries()
+    {
+        if (!Directory.Exists(FileSystem.CacheDirectory))
+        {
+            return [];
+        }
+
+        string[] paths;
+        try
+        {
+            paths = Directory.EnumerateFiles(FileSystem.CacheDirectory, "attachment-*").ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+
+        var entries = new List<CacheFileEntry>(paths.Length);
+        foreach (var path in paths)
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                if (info.Exists)
+                {
+                    entries.Add(new CacheFileEntry(
+                        path,
+                        info.Length,
+                        info.LastAccessTimeUtc,
+                        info.LastWriteTimeUtc));
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return entries;
+    }
+
+    private static long SaturatingSum(IEnumerable<long> values)
+    {
+        var total = 0L;
+        foreach (var value in values)
+        {
+            total = value > long.MaxValue - total ? long.MaxValue : total + value;
+        }
+
+        return total;
+    }
+
+    private static void CleanupOrphanTemporaryFilesLocked()
+    {
+        if (!Directory.Exists(FileSystem.CacheDirectory))
+        {
+            return;
+        }
+
+        string[] paths;
+        try
+        {
+            paths = Directory.EnumerateFiles(FileSystem.CacheDirectory, ".attachment-*.tmp").ToArray();
+        }
+        catch
+        {
+            return;
+        }
+
+        foreach (var path in paths)
+        {
+            if (!ActiveTemporaryFiles.ContainsKey(path))
+            {
+                TryDelete(path);
+            }
+        }
+    }
+
+    private static void TouchCacheFile(string path)
+    {
+        try
+        {
+            File.SetLastAccessTimeUtc(path, DateTime.UtcNow);
+        }
+        catch
+        {
+        }
+    }
+
+    private static void RemoveInFlightDownload(
+        string cachePath,
+        Lazy<Task<PreparedAttachmentFile>> operation)
+    {
+        ((ICollection<KeyValuePair<string, Lazy<Task<PreparedAttachmentFile>>>>)InFlightDownloads)
+            .Remove(new KeyValuePair<string, Lazy<Task<PreparedAttachmentFile>>>(cachePath, operation));
+    }
+
+    private static bool TryDelete(string path)
     {
         try
         {
@@ -156,9 +552,113 @@ public static class AttachmentOpenService
             {
                 File.Delete(path);
             }
+
+            return !File.Exists(path);
         }
         catch
         {
+            return false;
+        }
+    }
+
+    private sealed record CacheFileEntry(
+        string Path,
+        long Length,
+        DateTime LastAccessTimeUtc,
+        DateTime LastWriteTimeUtc);
+
+    private sealed class CacheQuotaWriteStream(Stream inner, long byteQuota) : Stream
+    {
+        public override bool CanRead => false;
+
+        public override bool CanSeek => inner.CanSeek;
+
+        public override bool CanWrite => inner.CanWrite;
+
+        public override long Length => inner.Length;
+
+        public override long Position
+        {
+            get => inner.Position;
+            set
+            {
+                EnsurePosition(value);
+                inner.Position = value;
+            }
+        }
+
+        public override void Flush() => inner.Flush();
+
+        public override Task FlushAsync(CancellationToken cancellationToken) =>
+            inner.FlushAsync(cancellationToken);
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            var position = inner.Seek(offset, origin);
+            EnsurePosition(position);
+            return position;
+        }
+
+        public override void SetLength(long value)
+        {
+            EnsurePosition(value);
+            inner.SetLength(value);
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            EnsureWrite(count);
+            inner.Write(buffer, offset, count);
+        }
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            EnsureWrite(buffer.Length);
+            inner.Write(buffer);
+        }
+
+        public override Task WriteAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            EnsureWrite(count);
+            return inner.WriteAsync(buffer, offset, count, cancellationToken);
+        }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureWrite(buffer.Length);
+            return inner.WriteAsync(buffer, cancellationToken);
+        }
+
+        public override void WriteByte(byte value)
+        {
+            EnsureWrite(1);
+            inner.WriteByte(value);
+        }
+
+        private void EnsureWrite(int count)
+        {
+            var finalPosition = checked(inner.Position + count);
+            if (Math.Max(inner.Length, finalPosition) > byteQuota)
+            {
+                throw new IOException("Attachment exceeds the preview cache byte quota.");
+            }
+        }
+
+        private void EnsurePosition(long position)
+        {
+            if (position < 0 || position > byteQuota)
+            {
+                throw new IOException("Attachment exceeds the preview cache byte quota.");
+            }
         }
     }
 
@@ -182,6 +682,24 @@ public static class AttachmentOpenService
         var destination = UniqueFilePath(destinationDirectory, file.FileName);
         await CopyFileAsync(file.Path, destination, cancellationToken).ConfigureAwait(false);
         return destination;
+#elif WINDOWS
+        var destinationDirectory = await Windows.Storage.DownloadsFolder
+            .CreateFolderAsync("Deep", Windows.Storage.CreationCollisionOption.OpenIfExists)
+            .AsTask(cancellationToken)
+            .ConfigureAwait(false);
+        var destination = await destinationDirectory
+            .CreateFileAsync(file.FileName, Windows.Storage.CreationCollisionOption.GenerateUniqueName)
+            .AsTask(cancellationToken)
+            .ConfigureAwait(false);
+        await using (var source = File.OpenRead(file.Path))
+        await using (var output = await destination.OpenStreamForWriteAsync().ConfigureAwait(false))
+        {
+            output.SetLength(0);
+            await source.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return destination.Path;
 #else
         var downloads = Path.Combine(
             System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile),
@@ -311,23 +829,229 @@ public static class AttachmentOpenService
         return safe;
     }
 
-    private static void CleanupOldAttachmentCache()
+    private static async Task AcquireAttachmentIoAsync(CancellationToken cancellationToken)
     {
-        try
+        while (true)
         {
-            var cutoff = DateTimeOffset.UtcNow - AttachmentCacheMaxAge;
-            foreach (var file in Directory.EnumerateFiles(FileSystem.CacheDirectory, "attachment-*"))
+            Task? purgeTask;
+            lock (CachePurgeGate)
             {
-                var info = new FileInfo(file);
-                if (info.LastWriteTimeUtc < cutoff.UtcDateTime)
+                purgeTask = activeCachePurge?.Completion.Task;
+            }
+
+            if (purgeTask is not null)
+            {
+                await purgeTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await AttachmentIoConcurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+            lock (CachePurgeGate)
+            {
+                if (activeCachePurge is null)
                 {
-                    info.Delete();
+                    return;
                 }
             }
-        }
-        catch
-        {
-            // Cache cleanup is opportunistic.
+
+            AttachmentIoConcurrency.Release();
         }
     }
+
+    private static void QueueCacheCleanup()
+    {
+        if (Interlocked.Exchange(ref cacheCleanupQueued, 1) != 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await CacheWriteGate.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    CleanupOldAttachmentCacheLocked();
+                }
+                finally
+                {
+                    CacheWriteGate.Release();
+                }
+            }
+            catch
+            {
+                // Cache cleanup is opportunistic.
+            }
+            finally
+            {
+                Volatile.Write(ref cacheCleanupQueued, 0);
+            }
+        });
+    }
+
+    private static void CleanupOldAttachmentCacheLocked()
+    {
+        CleanupOrphanTemporaryFilesLocked();
+        var cutoff = DateTime.UtcNow - AttachmentCacheMaxAge;
+        foreach (var entry in GetCacheEntries())
+        {
+            if (entry.LastAccessTimeUtc < cutoff && entry.LastWriteTimeUtc < cutoff)
+            {
+                TryDelete(entry.Path);
+            }
+        }
+
+        _ = TrimFinalCacheLocked(AttachmentCacheByteQuota);
+    }
+
+    internal static async Task<long> EnforceCacheQuotaAsync(
+        long byteQuota,
+        CancellationToken cancellationToken = default)
+    {
+        if (byteQuota < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(byteQuota));
+        }
+
+        await CacheWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            CleanupOrphanTemporaryFilesLocked();
+            return TrimFinalCacheLocked(byteQuota);
+        }
+        finally
+        {
+            CacheWriteGate.Release();
+        }
+    }
+
+    internal static Task PurgeCacheAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        CachePurgeOperation operation;
+        var runOperation = false;
+        lock (CachePurgeGate)
+        {
+            if (activeCachePurge is null)
+            {
+                Interlocked.Increment(ref cacheEpoch);
+                var previousCancellation = cacheEpochCancellation;
+                cacheEpochCancellation = new CancellationTokenSource();
+                InFlightDownloads.Clear();
+                activeCachePurge = new CachePurgeOperation(
+                    previousCancellation,
+                    new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+                runOperation = true;
+            }
+
+            operation = activeCachePurge;
+        }
+
+        if (runOperation)
+        {
+            _ = RunCachePurgeAsync(operation);
+        }
+
+        return cancellationToken.CanBeCanceled
+            ? operation.Completion.Task.WaitAsync(cancellationToken)
+            : operation.Completion.Task;
+    }
+
+    private static async Task RunCachePurgeAsync(CachePurgeOperation operation)
+    {
+        var acquiredPermits = 0;
+        Exception? error = null;
+        try
+        {
+            operation.PreviousCancellation.Cancel();
+            for (; acquiredPermits < MaxConcurrentAttachmentIo; acquiredPermits++)
+            {
+                await AttachmentIoConcurrency.WaitAsync().ConfigureAwait(false);
+            }
+
+            await CacheWriteGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (Directory.Exists(FileSystem.CacheDirectory))
+                {
+                    string[] paths;
+                    try
+                    {
+                        paths = Directory.EnumerateFiles(FileSystem.CacheDirectory).ToArray();
+                    }
+                    catch
+                    {
+                        paths = [];
+                    }
+
+                    foreach (var path in paths.Where(static path =>
+                             {
+                                 var name = Path.GetFileName(path);
+                                 return name.StartsWith("attachment-", StringComparison.Ordinal)
+                                     || name.StartsWith(".attachment-", StringComparison.Ordinal)
+                                     || name.StartsWith("media-", StringComparison.Ordinal);
+                             }))
+                    {
+                        TryDelete(path);
+                    }
+                }
+
+                ActiveTemporaryFiles.Clear();
+            }
+            finally
+            {
+                CacheWriteGate.Release();
+            }
+        }
+        catch (Exception exception)
+        {
+            error = exception;
+        }
+        finally
+        {
+            if (acquiredPermits != 0)
+            {
+                AttachmentIoConcurrency.Release(acquiredPermits);
+            }
+
+            operation.PreviousCancellation.Dispose();
+            lock (CachePurgeGate)
+            {
+                if (ReferenceEquals(activeCachePurge, operation))
+                {
+                    activeCachePurge = null;
+                }
+            }
+
+            if (error is null)
+            {
+                operation.Completion.TrySetResult();
+            }
+            else
+            {
+                operation.Completion.TrySetException(error);
+            }
+        }
+    }
+
+    private static (int Epoch, CancellationToken CancellationToken) GetCacheEpoch()
+    {
+        lock (CachePurgeGate)
+        {
+            return (cacheEpoch, cacheEpochCancellation.Token);
+        }
+    }
+
+    private static void ThrowIfCachePurged(int expectedCacheEpoch)
+    {
+        if (expectedCacheEpoch != Volatile.Read(ref cacheEpoch))
+        {
+            throw new OperationCanceledException("Attachment cache was cleared during logout.");
+        }
+    }
+
+    private sealed record CachePurgeOperation(
+        CancellationTokenSource PreviousCancellation,
+        TaskCompletionSource Completion);
 }

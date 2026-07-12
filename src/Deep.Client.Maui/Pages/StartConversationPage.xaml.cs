@@ -45,7 +45,7 @@ public partial class StartConversationPage : ContentPage
     }
 
     private static Task NavigateBackToConversationsAsync() =>
-        Shell.Current.GoToAsync($"//{ShellRouteCatalog.Conversations}");
+        Shell.Current.GoToAsync("..", animate: false);
 
     private async void OnNewMessageClicked(object? sender, EventArgs e)
     {

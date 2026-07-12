@@ -1,6 +1,6 @@
 ﻿# Deep MAUI Parity Matrix
 
-Last updated: 2026-07-02.
+Last updated: 2026-07-12.
 
 This file tracks the MAUI client slice of the repository-level parity matrix in `../docs/parity-matrix.md`.
 Statuses are intentionally conservative: a flow is `done` only when local runtime behavior and the relevant platform/UI gate are both proven.
@@ -32,7 +32,7 @@ $env:DEEP_CALL_SIGNALING_BASE_URL = "http://127.0.0.1:18103"
 dotnet test ..\deep-client-shared\Deep.Client.Shared.slnx --configuration Release
 dotnet test tests\Deep.Client.Maui.ViewModels.Tests\Deep.Client.Maui.ViewModels.Tests.csproj --configuration Release
 dotnet test tests\Deep.Client.Maui.SmokeTests\Deep.Client.Maui.SmokeTests.csproj --configuration Release
-dotnet build src\Deep.Client.Maui\Deep.Client.Maui.csproj --configuration Release -f net10.0-windows10.0.19041.0 -nr:false
+dotnet build src\Deep.Client.Maui\Deep.Client.Maui.csproj --configuration Release -f net10.0-windows10.0.19041.0 -p:RuntimeIdentifier=win-arm64 -nr:false
 dotnet build src\Deep.Client.Maui\Deep.Client.Maui.csproj --configuration Release -f net10.0-android -nr:false -m:1
 ```
 
@@ -40,11 +40,22 @@ The signed Android Release APK was installed on a physical SM-G970F as
 `network.xpoint.deep`: cold start completed in 1.5 seconds, the crash buffer
 remained empty, Firebase initialized, and embedded Xray 26.3.27 started.
 
+The native Windows ARM64 Release executable rendered the onboarding surface,
+reached `RuntimeReady` in 1,949 ms, started the pinned ARM64 Xray process, and
+closed without leaving a child process or crash entry. Both x64 and ARM64
+Release builds pass with zero warnings. The generated MSIX manifest and signing
+pipeline validate WNS, toast, and Share Target activation metadata.
+
 ## Release-Blocking Evidence Still Needed
 
-- Rendered Windows UI automation for onboarding -> chat -> send/receive -> settings/sign-out.
-- Android and iOS device-lab acceptance with real app lifecycle, notification permission, background/resume, and local persistence.
+- Rendered Windows UI automation for chat send/receive, settings, share ingress,
+  Windows Hello, and sign-out after a trusted production MSIX can be installed.
+- Android device-lab acceptance for notification background/resume and long-running persistence soak.
 - Rendered attachment send acceptance from the chat composer with picker/progress/retry UX.
 - Group management rendered acceptance for add/remove/member-role/destructive paths.
-- Credentialed push provider canary evidence for APNs/FCM/Huawei.
-- Native call media/WebRTC acceptance once the platform media stack is implemented.
+- Credentialed WNS canary evidence after Entra/PFN mapping; Android FCM production
+  delivery is already operational.
+- Two-device Windows call media acceptance.
+
+iOS/APNs signing and device acceptance are deferred to a later product phase and
+are not part of the current Android/Windows gate.

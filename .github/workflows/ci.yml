@@ -3,6 +3,7 @@
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,7 +27,7 @@ jobs:
           path: deep-client-shared
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.301
       - name: ViewModel tests
         working-directory: deep-client-maui
         run: dotnet test tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj --configuration Release --logger "trx;LogFileName=viewmodels-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/viewmodels
@@ -114,7 +115,22 @@ jobs:
           path: deep-client-shared
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.301
+      - name: Materialize production Firebase configuration
+        working-directory: deep-client-maui
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.XPOINT_GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GOOGLE_SERVICES_JSON_BASE64}" ]]; then
+            echo "XPOINT_GOOGLE_SERVICES_JSON_BASE64 is required for the Android Release build." >&2
+            exit 1
+          fi
+          target="src/Deep.Client.Maui/Platforms/Android/google-services.json"
+          mkdir -p "$(dirname "${target}")"
+          printf '%s' "${GOOGLE_SERVICES_JSON_BASE64}" | base64 --decode > "${target}"
+          jq -e '.client[]?.client_info.android_client_info.package_name == "network.xpoint.deep"' "${target}" >/dev/null
       - working-directory: deep-client-maui
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
       - working-directory: deep-client-maui
@@ -143,9 +159,15 @@ jobs:
           name: maui-platform-android
           path: deep-client-maui/artifacts/platform-matrix/android.json
           if-no-files-found: error
+      - name: Remove production Firebase configuration
+        if: always()
+        working-directory: deep-client-maui
+        shell: bash
+        run: rm -f src/Deep.Client.Maui/Platforms/Android/google-services.json
 
   apple-build:
     name: build-ios-maccatalyst
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -159,7 +181,7 @@ jobs:
           path: deep-client-shared
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.301
       - name: Select Xcode 26.5
         shell: bash
         run: |
@@ -223,11 +245,11 @@ jobs:
           path: deep-client-shared
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.301
       - working-directory: deep-client-maui
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
       - working-directory: deep-client-maui
-        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 --configuration Release
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 --configuration Release -p:RuntimeIdentifier=win-x64
       - name: Write Windows build evidence
         shell: pwsh
         working-directory: deep-client-maui
@@ -264,19 +286,27 @@ jobs:
             'unit-tests',
             'release-transport-guard',
             'android-build',
-            'apple-build',
             'windows-build'
           )
-          $legs = foreach ($job in $requiredJobs)
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch')
+          {
+            $requiredJobs += 'apple-build'
+          }
+          $reportedJobs = @($requiredJobs)
+          if ($reportedJobs -notcontains 'apple-build')
+          {
+            $reportedJobs += 'apple-build'
+          }
+          $legs = foreach ($job in $reportedJobs)
           {
             $result = $needs.PSObject.Properties[$job].Value.result
             [pscustomobject]@{
               job = $job
               result = $result
-              required = $true
+              required = $requiredJobs -contains $job
             }
           }
-          $failed = @($legs | Where-Object { $_.result -ne 'success' })
+          $failed = @($legs | Where-Object { $_.required -and $_.result -ne 'success' })
           New-Item -ItemType Directory -Force -Path artifacts/platform-matrix | Out-Null
           [pscustomobject]@{
             status = if ($failed.Count -eq 0) { 'passed' } else { 'failed' }

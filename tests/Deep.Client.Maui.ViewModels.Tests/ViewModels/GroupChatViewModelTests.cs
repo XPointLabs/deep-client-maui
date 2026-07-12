@@ -73,6 +73,24 @@ public sealed class GroupChatViewModelTests
         Assert.Equal("00:03", message.VoiceDurationLabel);
     }
 
+    [Fact]
+    public async Task CancelVoiceRecordingStopsRecorderWithoutQueueingGroupMessage()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var owner = await runtime.Accounts.RegisterAsync("Owner");
+        var group = await runtime.Conversations.CreateGroupScaffoldAsync(owner.SessionId, "Voice", [], CancellationToken.None);
+        var recorder = new FakeVoiceMessageRecorder();
+        var viewModel = new GroupChatViewModel(runtime, voiceRecorder: recorder);
+        await viewModel.OpenFromRouteAsync(group.Id.Value, group.Name);
+
+        await viewModel.StartVoiceRecordingAsync();
+        await viewModel.CancelVoiceRecordingAsync();
+
+        Assert.False(viewModel.IsRecordingVoice);
+        Assert.False(recorder.IsRecording);
+        Assert.Empty(viewModel.Messages);
+    }
+
 
     [Fact]
     public async Task AddPromoteAndRemoveMemberUpdatesGroupMembers()

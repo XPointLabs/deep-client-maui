@@ -89,15 +89,27 @@ public sealed class OnboardingViewModel : ViewModelBase
             authNavigationState?.MarkAuthenticated();
         }, cancellationToken);
 
-    public Task LoginAsync(CancellationToken cancellationToken = default) =>
-        RunBusyAsync(async ct =>
+    public async Task LoginAsync(CancellationToken cancellationToken = default)
+    {
+        var phraseForAttempt = RecoveryPhrase;
+        try
         {
-            Account = await runtime.Accounts.LoginAsync(RecoveryPhrase, DisplayName, ct);
-            DisplayName = Account.DisplayName;
-            SessionId = Account.SessionId.Value;
-            IsLoggedIn = true;
-            authNavigationState?.MarkAuthenticated();
-        }, cancellationToken);
+            await RunBusyAsync(async ct =>
+            {
+                Account = await runtime.Accounts.LoginAsync(phraseForAttempt, DisplayName, ct);
+                DisplayName = Account.DisplayName;
+                SessionId = Account.SessionId.Value;
+                IsLoggedIn = true;
+                authNavigationState?.MarkAuthenticated();
+            }, cancellationToken);
+        }
+        finally
+        {
+            ClearRecoveryPhrase();
+        }
+    }
+
+    public void ClearRecoveryPhrase() => RecoveryPhrase = string.Empty;
 
     private static string? FormatRecoveryPhrase(string? phrase)
     {

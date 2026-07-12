@@ -34,6 +34,8 @@ public sealed class OnboardingViewModelTests
         await viewModel.LoginAsync();
 
         Assert.True(viewModel.IsLoggedIn);
+        Assert.Empty(viewModel.RecoveryPhrase);
+        Assert.False(viewModel.LoginCommand.CanExecute(null));
         var active = await runtime.Accounts.GetActiveAccountAsync();
         Assert.NotNull(active);
         Assert.True(active!.IsRestoredAccount);
@@ -52,7 +54,9 @@ public sealed class OnboardingViewModelTests
         await viewModel.LoginAsync();
 
         Assert.False(viewModel.IsLoggedIn);
-        Assert.Contains("Recovery phrase must contain exactly 12 words", viewModel.ErrorMessage);
+        Assert.Contains("Recovery phrase must contain 13 words", viewModel.ErrorMessage);
+        Assert.Empty(viewModel.RecoveryPhrase);
+        Assert.False(viewModel.LoginCommand.CanExecute(null));
     }
 
     [Fact]
@@ -82,5 +86,38 @@ public sealed class OnboardingViewModelTests
 
         Assert.False(viewModel.IsLoggedIn);
         Assert.Contains("Unable to recover profile display name from network", viewModel.ErrorMessage);
+        Assert.Empty(viewModel.RecoveryPhrase);
+    }
+
+    [Fact]
+    public async Task CancelledLoginAttemptClearsRecoveryPhrase()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var viewModel = new OnboardingViewModel(runtime)
+        {
+            RecoveryPhrase = "sensitive recovery phrase"
+        };
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => viewModel.LoginAsync(cancellation.Token));
+
+        Assert.Empty(viewModel.RecoveryPhrase);
+        Assert.False(viewModel.LoginCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void ClearRecoveryPhraseDisablesLoginCommand()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var viewModel = new OnboardingViewModel(runtime)
+        {
+            RecoveryPhrase = "sensitive recovery phrase"
+        };
+
+        viewModel.ClearRecoveryPhrase();
+
+        Assert.Empty(viewModel.RecoveryPhrase);
+        Assert.False(viewModel.LoginCommand.CanExecute(null));
     }
 }

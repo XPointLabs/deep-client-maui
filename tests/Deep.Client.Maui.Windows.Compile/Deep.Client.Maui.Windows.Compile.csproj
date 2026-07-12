@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseMaui>true</UseMaui>
+    <EnableDefaultMauiItems>false</EnableDefaultMauiItems>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsAppLockService.cs"
+             Link="Platform\WindowsAppLockService.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsPushNotificationService.cs"
+             Link="Platform\WindowsPushNotificationService.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsRealityTransport.cs"
+             Link="Platform\WindowsRealityTransport.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsShareTargetService.cs"
+             Link="Platform\WindowsShareTargetService.cs" />
+  </ItemGroup>
+
+</Project>

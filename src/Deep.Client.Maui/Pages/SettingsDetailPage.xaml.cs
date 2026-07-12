@@ -289,14 +289,14 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         {
             var appLockSubtitle = appLock.IsDeviceSecure
                 ? "Требовать биометрию или PIN-код устройства при возвращении в Deep."
-                : appLock.UnavailableReason ?? "Сначала настройте системную блокировку Android.";
+                : appLock.UnavailableReason ?? "Сначала настройте системную блокировку устройства.";
             screenSecurityRows.Add(CreateSwitchRow(
                 "Блокировка Deep",
                 appLockSubtitle,
                 ClientSettingKeys.PrivacyAppLock,
                 false,
                 OnAppLockToggledAsync,
-                appLock.IsDeviceSecure));
+                isEnabled: true));
         }
 
         screenSecurityRows.Add(
@@ -1126,15 +1126,6 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             return;
         }
 
-        if (!appLock.IsDeviceSecure)
-        {
-            appLock.SetEnabled(false);
-            Preferences.Default.Set(ClientSettingKeys.PrivacyAppLock, false);
-            StatusLabel.Text = appLock.UnavailableReason ?? "Сначала настройте системную блокировку Android.";
-            BuildSection();
-            return;
-        }
-
         var authenticated = await appLock.AuthenticateNowAsync();
         if (!authenticated)
         {
@@ -1165,7 +1156,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
 
         var confirmed = await DisplayAlertAsync(
             "Сменить иконку?",
-            "Android обновит ярлык Deep. Приложение может закрыться на несколько секунд, как при смене иконки в Session.",
+            "Android обновит ярлык Deep. Приложение может закрыться на несколько секунд при смене иконки.",
             "Сменить и закрыть",
             "Отмена");
         if (!confirmed)

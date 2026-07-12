@@ -27,13 +27,17 @@ public sealed record VoicePlaybackSnapshot(
 
 public sealed class VoiceMessagePlaybackService : IDisposable
 {
+    private readonly object playbackGate = new();
 #if ANDROID
     private AndroidMediaPlayer? player;
+    private AndroidPlaybackSession? playbackSession;
+    private CancellationTokenSource? playbackCancellation;
 #elif WINDOWS
     private WindowsMediaPlayer? player;
 #endif
     private string? playingAttachmentId;
     private TimeSpan playingDuration;
+    private int playbackGeneration;
 
     public VoicePlaybackSnapshot Snapshot => GetSnapshot();
 
@@ -42,34 +46,48 @@ public sealed class VoiceMessagePlaybackService : IDisposable
         IAttachmentFileTransport attachmentFiles,
         CancellationToken cancellationToken = default)
     {
-        if (string.Equals(playingAttachmentId, attachment.AttachmentId, StringComparison.Ordinal))
+        bool stopCurrent;
+        lock (playbackGate)
+        {
+            stopCurrent = string.Equals(playingAttachmentId, attachment.AttachmentId, StringComparison.Ordinal);
+        }
+
+        if (stopCurrent)
         {
             Stop();
             return;
         }
 
         Stop();
+        var generation = Interlocked.Increment(ref playbackGeneration);
         var file = await AttachmentOpenService.DownloadToCacheAsync(attachment, attachmentFiles, cancellationToken)
             .ConfigureAwait(false);
 
+        if (generation != Volatile.Read(ref playbackGeneration))
+        {
+            return;
+        }
+
 #if ANDROID
-        var next = new AndroidMediaPlayer();
-        next.SetDataSource(file.Path);
-        next.Completion += (_, _) => Stop();
-        next.Prepare();
-        playingDuration = TimeSpan.FromMilliseconds(Math.Max(0, next.Duration));
-        player = next;
-        playingAttachmentId = attachment.AttachmentId;
-        next.Start();
+        await StartAndroidPlaybackAsync(file, attachment, generation, cancellationToken).ConfigureAwait(false);
 #elif WINDOWS
         var next = new WindowsMediaPlayer();
         var storageFile = await WindowsStorageFile.GetFileFromPathAsync(file.Path);
         next.Source = WindowsMediaSource.CreateFromStorageFile(storageFile);
         next.MediaEnded += (_, _) => Stop();
-        player = next;
-        playingAttachmentId = attachment.AttachmentId;
-        playingDuration = attachment.Duration ?? TimeSpan.Zero;
-        next.Play();
+        lock (playbackGate)
+        {
+            if (generation != Volatile.Read(ref playbackGeneration))
+            {
+                next.Dispose();
+                return;
+            }
+
+            player = next;
+            playingAttachmentId = attachment.AttachmentId;
+            playingDuration = attachment.Duration ?? TimeSpan.Zero;
+            next.Play();
+        }
 #else
         playingDuration = attachment.Duration ?? TimeSpan.Zero;
         await Launcher.Default.OpenAsync(new OpenFileRequest(
@@ -81,35 +99,58 @@ public sealed class VoiceMessagePlaybackService : IDisposable
     public void Stop()
     {
 #if ANDROID
-        var active = player;
-        player = null;
-        playingAttachmentId = null;
-        playingDuration = TimeSpan.Zero;
-        if (active is null)
+        AndroidPlaybackSession? activeSession;
+        AndroidMediaPlayer? active;
+        CancellationTokenSource? activeCancellation;
+        lock (playbackGate)
         {
-            return;
+            Interlocked.Increment(ref playbackGeneration);
+            activeSession = playbackSession;
+            active = player;
+            activeCancellation = playbackCancellation;
+            playbackSession = null;
+            playbackCancellation = null;
+            player = null;
+            playingAttachmentId = null;
+            playingDuration = TimeSpan.Zero;
         }
 
         try
         {
-            if (active.IsPlaying)
-            {
-                active.Stop();
-            }
+            activeCancellation?.Cancel();
         }
         catch (ObjectDisposedException)
         {
         }
-        finally
+        if (activeSession is not null)
         {
-            active.Release();
-            active.Dispose();
+            activeSession.Dispose();
+        }
+        else if (active is not null)
+        {
+            try
+            {
+                active.Release();
+            }
+            catch (Exception)
+            {
+            }
+            finally
+            {
+                active.Dispose();
+            }
         }
 #elif WINDOWS
-        var active = player;
-        player = null;
-        playingAttachmentId = null;
-        playingDuration = TimeSpan.Zero;
+        WindowsMediaPlayer? active;
+        lock (playbackGate)
+        {
+            Interlocked.Increment(ref playbackGeneration);
+            active = player;
+            player = null;
+            playingAttachmentId = null;
+            playingDuration = TimeSpan.Zero;
+        }
+
         if (active is null)
         {
             return;
@@ -119,31 +160,278 @@ public sealed class VoiceMessagePlaybackService : IDisposable
         active.Source = null;
         active.Dispose();
 #else
-        playingAttachmentId = null;
-        playingDuration = TimeSpan.Zero;
+        lock (playbackGate)
+        {
+            Interlocked.Increment(ref playbackGeneration);
+            playingAttachmentId = null;
+            playingDuration = TimeSpan.Zero;
+        }
 #endif
     }
 
     public void Dispose() => Stop();
 
-    private VoicePlaybackSnapshot GetSnapshot()
-    {
-        var attachmentId = playingAttachmentId;
-        if (string.IsNullOrWhiteSpace(attachmentId))
-        {
-            return VoicePlaybackSnapshot.Stopped;
-        }
-
 #if ANDROID
-        var active = player;
-        if (active is null)
-        {
-            return VoicePlaybackSnapshot.Stopped;
-        }
-
+    private async Task StartAndroidPlaybackAsync(
+        PreparedAttachmentFile file,
+        AttachmentMetadata attachment,
+        int generation,
+        CancellationToken cancellationToken)
+    {
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var session = new AndroidPlaybackSession();
         try
         {
-            var duration = TimeSpan.FromMilliseconds(Math.Max(0, active.Duration));
+            lock (playbackGate)
+            {
+                if (generation != Volatile.Read(ref playbackGeneration))
+                {
+                    return;
+                }
+
+                playbackSession = session;
+                playbackCancellation = linkedCancellation;
+                player = session.Player;
+                playingAttachmentId = attachment.AttachmentId;
+                playingDuration = TimeSpan.Zero;
+
+                session.Completed += (_, _) => CompleteAndroidPlayback(session, generation);
+                session.BeginPrepareAsync(file.Path);
+            }
+
+            await session.Prepared.Task.WaitAsync(linkedCancellation.Token).ConfigureAwait(false);
+
+            lock (playbackGate)
+            {
+                if (generation != Volatile.Read(ref playbackGeneration)
+                    || !ReferenceEquals(playbackSession, session))
+                {
+                    return;
+                }
+
+                playingDuration = TimeSpan.FromMilliseconds(Math.Max(0, session.Player.Duration));
+                session.Start();
+            }
+        }
+        catch
+        {
+            var invalidated = false;
+            var detached = false;
+            lock (playbackGate)
+            {
+                invalidated = generation != Volatile.Read(ref playbackGeneration)
+                    || !ReferenceEquals(playbackSession, session);
+                if (ReferenceEquals(playbackSession, session))
+                {
+                    playbackSession = null;
+                    playbackCancellation = null;
+                    player = null;
+                    playingAttachmentId = null;
+                    playingDuration = TimeSpan.Zero;
+                    detached = true;
+                }
+            }
+
+            if (detached)
+            {
+                session.Dispose();
+            }
+
+            if (invalidated)
+            {
+                return;
+            }
+
+            throw;
+        }
+        finally
+        {
+            var retained = false;
+            lock (playbackGate)
+            {
+                if (ReferenceEquals(playbackCancellation, linkedCancellation))
+                {
+                    playbackCancellation = null;
+                }
+
+                retained = ReferenceEquals(playbackSession, session);
+            }
+
+            if (!retained)
+            {
+                session.Dispose();
+            }
+        }
+    }
+
+    private void CompleteAndroidPlayback(AndroidPlaybackSession session, int generation)
+    {
+        var detached = false;
+        lock (playbackGate)
+        {
+            if (generation == Volatile.Read(ref playbackGeneration)
+                && ReferenceEquals(playbackSession, session))
+            {
+                playbackSession = null;
+                playbackCancellation = null;
+                player = null;
+                playingAttachmentId = null;
+                playingDuration = TimeSpan.Zero;
+                detached = true;
+            }
+        }
+
+        if (detached)
+        {
+            session.Dispose();
+        }
+    }
+
+    private sealed class AndroidPlaybackSession : IDisposable
+    {
+        private readonly EventHandler preparedHandler;
+        private readonly EventHandler<AndroidMediaPlayer.ErrorEventArgs> errorHandler;
+        private readonly EventHandler completionHandler;
+        private int disposed;
+        private int started;
+
+        public AndroidPlaybackSession()
+        {
+            Player = new AndroidMediaPlayer();
+            Prepared = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            preparedHandler = (_, _) => Prepared.TrySetResult(true);
+            errorHandler = (_, _) =>
+            {
+                Volatile.Write(ref started, 0);
+                Prepared.TrySetException(
+                    new InvalidOperationException("Android media playback preparation failed."));
+            };
+            completionHandler = (_, _) =>
+            {
+                Volatile.Write(ref started, 0);
+                Completed?.Invoke(this, EventArgs.Empty);
+            };
+            Player.Prepared += preparedHandler;
+            Player.Error += errorHandler;
+            Player.Completion += completionHandler;
+        }
+
+        public AndroidMediaPlayer Player { get; }
+
+        public TaskCompletionSource<bool> Prepared { get; }
+
+        public bool HasStarted => Volatile.Read(ref started) != 0;
+
+        public event EventHandler? Completed;
+
+        public void BeginPrepareAsync(string path)
+        {
+            Player.SetDataSource(path);
+            Player.PrepareAsync();
+        }
+
+        public void Start()
+        {
+            Volatile.Write(ref started, 1);
+            try
+            {
+                Player.Start();
+            }
+            catch
+            {
+                Volatile.Write(ref started, 0);
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+            {
+                return;
+            }
+
+            Volatile.Write(ref started, 0);
+
+            Player.Prepared -= preparedHandler;
+            Player.Error -= errorHandler;
+            Player.Completion -= completionHandler;
+            try
+            {
+                if (Player.IsPlaying)
+                {
+                    Player.Stop();
+                }
+            }
+            catch (Exception)
+            {
+            }
+            finally
+            {
+                try
+                {
+                    Player.Release();
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    Player.Dispose();
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+    }
+#endif
+
+    private VoicePlaybackSnapshot GetSnapshot()
+    {
+        lock (playbackGate)
+        {
+            var attachmentId = playingAttachmentId;
+            if (string.IsNullOrWhiteSpace(attachmentId))
+            {
+                return VoicePlaybackSnapshot.Stopped;
+            }
+
+#if ANDROID
+            var active = player;
+            var activeSession = playbackSession;
+            if (active is null || activeSession is null)
+            {
+                return VoicePlaybackSnapshot.Stopped;
+            }
+
+            try
+            {
+                var duration = TimeSpan.FromMilliseconds(Math.Max(0, active.Duration));
+                if (duration <= TimeSpan.Zero)
+                {
+                    duration = playingDuration;
+                }
+
+                return new VoicePlaybackSnapshot(
+                    attachmentId,
+                    activeSession.HasStarted,
+                    TimeSpan.FromMilliseconds(Math.Max(0, active.CurrentPosition)),
+                    duration);
+            }
+            catch (Exception)
+            {
+                return VoicePlaybackSnapshot.Stopped;
+            }
+#elif WINDOWS
+            var active = player;
+            if (active is null)
+            {
+                return VoicePlaybackSnapshot.Stopped;
+            }
+
+            var duration = active.PlaybackSession.NaturalDuration;
             if (duration <= TimeSpan.Zero)
             {
                 duration = playingDuration;
@@ -151,34 +439,12 @@ public sealed class VoiceMessagePlaybackService : IDisposable
 
             return new VoicePlaybackSnapshot(
                 attachmentId,
-                active.IsPlaying,
-                TimeSpan.FromMilliseconds(Math.Max(0, active.CurrentPosition)),
+                active.PlaybackSession.PlaybackState == Windows.Media.Playback.MediaPlaybackState.Playing,
+                active.PlaybackSession.Position,
                 duration);
-        }
-        catch (ObjectDisposedException)
-        {
-            return VoicePlaybackSnapshot.Stopped;
-        }
-#elif WINDOWS
-        var active = player;
-        if (active is null)
-        {
-            return VoicePlaybackSnapshot.Stopped;
-        }
-
-        var duration = active.PlaybackSession.NaturalDuration;
-        if (duration <= TimeSpan.Zero)
-        {
-            duration = playingDuration;
-        }
-
-        return new VoicePlaybackSnapshot(
-            attachmentId,
-            active.PlaybackSession.PlaybackState == Windows.Media.Playback.MediaPlaybackState.Playing,
-            active.PlaybackSession.Position,
-            duration);
 #else
-        return new VoicePlaybackSnapshot(attachmentId, false, TimeSpan.Zero, playingDuration);
+            return new VoicePlaybackSnapshot(attachmentId, false, TimeSpan.Zero, playingDuration);
 #endif
+        }
     }
 }

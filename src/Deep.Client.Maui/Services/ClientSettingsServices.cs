@@ -5,6 +5,10 @@ using Microsoft.Maui.Storage;
 #if ANDROID
 using Android.Views;
 using Microsoft.Maui.ApplicationModel;
+#elif WINDOWS
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using WinUiWindow = Microsoft.UI.Xaml.Window;
 #endif
 
 namespace Deep.Client.Maui.Services;
@@ -50,8 +54,42 @@ public sealed class MauiPrivacyScreenService : IPrivacyScreenService
         {
             window.ClearFlags(WindowManagerFlags.Secure);
         }
+#elif WINDOWS
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            var platformWindow = Microsoft.Maui.Controls.Application.Current?.Windows.FirstOrDefault()?.Handler?.PlatformView as WinUiWindow;
+            if (platformWindow is null)
+            {
+                return;
+            }
+
+            var handle = WinRT.Interop.WindowNative.GetWindowHandle(platformWindow);
+            if (handle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            var affinity = enabled ? WindowDisplayAffinity.ExcludeFromCapture : WindowDisplayAffinity.None;
+            if (!SetWindowDisplayAffinity(handle, affinity))
+            {
+                var error = new Win32Exception(Marshal.GetLastWin32Error());
+                Deep.Client.Maui.CrashDiagnostics.LogException("Windows.PrivacyScreen", error);
+            }
+        });
 #endif
     }
+
+#if WINDOWS
+    private enum WindowDisplayAffinity : uint
+    {
+        None = 0,
+        ExcludeFromCapture = 0x11
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowDisplayAffinity(IntPtr windowHandle, WindowDisplayAffinity affinity);
+#endif
 }
 
 public sealed class MauiAppearanceService : IAppearanceService

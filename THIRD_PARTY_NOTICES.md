@@ -1,12 +1,17 @@
 # Third-Party Notices
 
-## XTLS libXray
+## XTLS libXray and Xray-core
 
 The Android client embeds `XTLS/libXray` and Xray-core for the Reality
 transport. The included AAR was built from `XTLS/libXray` tag `v26.3.27` for
-Android ARM64 and x86_64. libXray is distributed under the MIT License.
+Android ARM64 and x86_64. The Windows client embeds reproducible Xray-core
+`v1.260327.0` binaries for x64 and ARM64, pinned to commit
+`d2758a023cd7f4174a5a5fa4ff66e487d4342ba0`. libXray is distributed under the
+MIT License; Xray-core is distributed under the Mozilla Public License 2.0.
 
 Source: https://github.com/XTLS/libXray
+Xray-core source: https://github.com/XTLS/Xray-core
+MPL 2.0: https://www.mozilla.org/MPL/2.0/
 
 Copyright (c) 2023-2025 XTLS
 

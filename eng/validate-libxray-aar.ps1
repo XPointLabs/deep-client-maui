@@ -5,6 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+$ExpectedAarSha256 = "3A8E15665C42A4A9385A04E9409B65F8368D775D872BE6FBB2F469393D6682F1"
 
 function Assert-Range([uint64]$Offset, [uint64]$Size, [uint64]$Length, [string]$Description) {
     if ($Offset -gt $Length -or $Size -gt ($Length - $Offset)) {
@@ -93,6 +94,11 @@ function Assert-Elf([byte[]]$Bytes, [string]$Name) {
 }
 
 $resolvedAar = (Resolve-Path -LiteralPath $AarPath).Path
+$actualAarSha256 = (Get-FileHash -LiteralPath $resolvedAar -Algorithm SHA256).Hash.ToUpperInvariant()
+if ($actualAarSha256 -ne $ExpectedAarSha256) {
+    throw "libXray AAR SHA-256 mismatch. Expected $ExpectedAarSha256, got $actualAarSha256."
+}
+
 $archive = [IO.Compression.ZipFile]::OpenRead($resolvedAar)
 try {
     if (@($archive.Entries | Where-Object { $_.FullName.Contains('\') }).Count -gt 0) {
@@ -124,4 +130,4 @@ finally {
     $archive.Dispose()
 }
 
-Write-Host "Validated libXray AAR and native ELF layout in $resolvedAar."
+Write-Host "Validated pinned libXray AAR ($actualAarSha256) and native ELF layout in $resolvedAar."

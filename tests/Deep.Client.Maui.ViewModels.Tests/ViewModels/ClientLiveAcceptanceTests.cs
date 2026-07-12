@@ -175,7 +175,7 @@ public sealed class ClientLiveAcceptanceTests
                 ClientFeatureFlags.ReleaseDefaults,
                 new SystemClock(),
                 new RoutedSessionStorageMessageTransport(router, new RoutedSessionStorageTransportOptions()),
-                new RoutedSessionStorageGroupSyncTransport(router, new RoutedSessionStorageGroupSyncTransportOptions()));
+                requireE2eeTransport: true);
         }
 
         return new ClientRuntime(
@@ -185,14 +185,16 @@ public sealed class ClientLiveAcceptanceTests
             new SessionStorageMessageTransport(
                 new HttpClient(),
                 new SessionStorageMessageTransportOptions(storageUrl!)),
-            new SessionStorageGroupSyncTransport(
-                new HttpClient(),
-                new SessionStorageGroupSyncTransportOptions(storageUrl!)));
+            requireE2eeTransport: true);
     }
 
-    private static IReadOnlyList<string> ParseRouterUrls(string routerUrls) =>
+    private static IReadOnlyList<PinnedRouterEndpoint> ParseRouterUrls(string routerUrls) =>
         routerUrls
             .Split([';', ',', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(static value => value.Split('|', 2, StringSplitOptions.TrimEntries))
+            .Select(static parts => parts.Length == 2
+                ? new PinnedRouterEndpoint(parts[1], parts[0])
+                : throw new InvalidOperationException("XNODE_URLS entries must use '<router-id>|<absolute-url>'."))
             .ToArray();
 
     private static RealtimeCallService CreateCallService(string callUrl, string? recoveryPhrase) =>

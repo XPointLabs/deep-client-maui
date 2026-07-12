@@ -88,6 +88,8 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
 
     public DateTimeOffset CreatedAt { get; }
 
+    public DateTimeOffset LocalCreatedAt => CreatedAt.ToLocalTime();
+
     public IReadOnlyList<AttachmentMetadata> Attachments { get; }
 
     public string SenderLabel { get; }
@@ -241,7 +243,8 @@ public sealed record GroupMemberItem(SessionId SessionId, GroupMemberRole Role, 
 
 public sealed class GroupChatViewModel : ViewModelBase
 {
-    private const int InitialMessagePageSize = 30;
+    private const int InitialMessagePageSize = 20;
+    private const int HistoryMessagePageSize = 20;
     private readonly ClientRuntime runtime;
     private readonly IContactRepository contacts;
     private readonly IAttachmentPickerService? attachmentPicker;
@@ -259,6 +262,7 @@ public sealed class GroupChatViewModel : ViewModelBase
     private bool isStatusError;
     private bool messagesLoaded;
     private DateTimeOffset? oldestLoadedMessageAt;
+    private MessageId? oldestLoadedMessageId;
     private bool hasOlderMessages;
     private bool isRecordingVoice;
     private GroupChatMessageItem? replyingTo;
@@ -443,27 +447,56 @@ public sealed class GroupChatViewModel : ViewModelBase
 
     public async Task OpenFromRouteAsync(string groupId, string? displayName = null, CancellationToken cancellationToken = default)
     {
-        account = await runtime.Accounts.GetActiveAccountAsync(cancellationToken)
-            ?? throw new InvalidOperationException("Войдите в аккаунт перед открытием групп.");
-
         var id = ConversationId.Parse(groupId);
-        group = await runtime.Conversations.GetGroupAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException("Группа не найдена.");
+        if (runtime.Store is IGroupConversationOpenRepository openRepository)
+        {
+            var snapshot = await openRepository.OpenGroupConversationAsync(
+                id,
+                InitialMessagePageSize,
+                runtime.Clock.UtcNow,
+                cancellationToken);
+            if (snapshot is null)
+            {
+                throw new InvalidOperationException("Группа не найдена или аккаунт не активен.");
+            }
+
+            account = snapshot.ActiveAccount;
+            group = snapshot.Group;
+            SeedSenderLabels(snapshot.RecentMessages, snapshot.SenderContacts);
+            var items = new List<GroupChatMessageItem>(snapshot.RecentMessages.Count);
+            foreach (var message in snapshot.RecentMessages)
+            {
+                items.Add(await ToItemAsync(message, cancellationToken));
+            }
+
+            SyncMessageItems(items);
+            messagesLoaded = true;
+            oldestLoadedMessageAt = snapshot.RecentMessages.Count == 0 ? null : snapshot.RecentMessages[0].CreatedAt;
+            oldestLoadedMessageId = snapshot.RecentMessages.Count == 0 ? null : snapshot.RecentMessages[0].Id;
+            hasOlderMessages = snapshot.RecentMessages.Count == InitialMessagePageSize;
+        }
+        else
+        {
+            account = await runtime.Accounts.GetActiveAccountAsync(cancellationToken)
+                ?? throw new InvalidOperationException("Войдите в аккаунт перед открытием групп.");
+            group = await runtime.Conversations.GetGroupAsync(id, cancellationToken)
+                ?? throw new InvalidOperationException("Группа не найдена.");
+            messagesLoaded = false;
+            oldestLoadedMessageAt = null;
+            oldestLoadedMessageId = null;
+            hasOlderMessages = false;
+            await LoadMessagesAsync(cancellationToken);
+        }
 
         GroupTitle = string.IsNullOrWhiteSpace(displayName) ? group.Name : displayName!;
         UpdateGroupSummary();
         SyncMembers();
         UpdateMemberPermissions();
         SetStatus("Группа загружена.");
-        messagesLoaded = false;
-        oldestLoadedMessageAt = null;
-        hasOlderMessages = false;
-
         RefreshCommand.RaiseCanExecuteChanged();
         SendCommand.RaiseCanExecuteChanged();
         RaiseMemberCommandCanExecuteChanged();
         RaiseComposerStateChanged();
-        await LoadMessagesAsync(cancellationToken);
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default) =>
@@ -502,11 +535,11 @@ public sealed class GroupChatViewModel : ViewModelBase
             {
                 var readAt = await runtime.Messages.MarkConversationAsReadAsync(
                     activeGroup.Id,
-                    LatestIncomingOrNow(received),
+                    runtime.Clock.UtcNow,
                     ct);
                 foreach (var message in received.OrderBy(message => message.CreatedAt))
                 {
-                    await UpsertMessageItemAsync(ApplyReadCursor(message, readAt), ct);
+                    await UpsertMessageItemAsync(MarkIncomingRead(message, readAt), ct);
                 }
             }
 
@@ -599,12 +632,17 @@ public sealed class GroupChatViewModel : ViewModelBase
 
     public async Task CancelVoiceRecordingAsync(CancellationToken cancellationToken = default)
     {
-        if (voiceRecorder is not null)
+        try
         {
-            await voiceRecorder.CancelAsync(cancellationToken);
+            if (voiceRecorder is not null)
+            {
+                await voiceRecorder.CancelAsync(cancellationToken);
+            }
         }
-
-        IsRecordingVoice = false;
+        finally
+        {
+            IsRecordingVoice = false;
+        }
         SetStatus("Запись отменена.");
     }
 
@@ -701,7 +739,7 @@ public sealed class GroupChatViewModel : ViewModelBase
     public Task LoadOlderMessagesAsync(CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
         {
-            if (group is null || !hasOlderMessages || oldestLoadedMessageAt is null)
+            if (group is null || !hasOlderMessages || oldestLoadedMessageAt is null || oldestLoadedMessageId is null)
             {
                 return;
             }
@@ -709,7 +747,8 @@ public sealed class GroupChatViewModel : ViewModelBase
             var messages = await runtime.Messages.ListConversationMessagesBeforeAsync(
                 group.Id,
                 oldestLoadedMessageAt.Value,
-                InitialMessagePageSize,
+                oldestLoadedMessageId.Value,
+                HistoryMessagePageSize,
                 ct);
             if (messages.Count == 0)
             {
@@ -726,7 +765,8 @@ public sealed class GroupChatViewModel : ViewModelBase
 
             PrependMessageItems(items);
             oldestLoadedMessageAt = messages[0].CreatedAt;
-            hasOlderMessages = messages.Count == InitialMessagePageSize;
+            oldestLoadedMessageId = messages[0].Id;
+            hasOlderMessages = messages.Count == HistoryMessagePageSize;
         }, cancellationToken);
 
     public Task AddMemberAsync(CancellationToken cancellationToken = default) =>
@@ -1074,16 +1114,56 @@ public sealed class GroupChatViewModel : ViewModelBase
             throw new InvalidOperationException("Откройте группу перед отправкой сообщений.");
         }
 
-        var pending = await runtime.Messages.QueueGroupAsync(
-            account.SessionId,
+        var messageId = MessageId.NewId();
+        var createdAt = runtime.Clock.UtcNow;
+        var reply = ReplyingTo is null
+            ? null
+            : new MessageReply(
+                ReplyingTo.Id,
+                account.SessionId,
+                ReplyingTo.Body);
+        var optimistic = new Message(
+            messageId,
             group.Id,
-            body,
+            account.SessionId,
+            Recipient: null,
+            body.Trim(),
+            MessageDirection.Outgoing,
+            MessageDeliveryState.Sending,
+            createdAt,
             attachments,
-            ReplyingTo?.Id,
-            cancellationToken);
-        Messages.Add(await ToItemAsync(pending, cancellationToken));
-        ReplyingTo = null;
-        _ = DispatchPendingMessageAsync(pending);
+            ReplyTo: reply);
+        Messages.Add(new GroupChatMessageItem(
+            optimistic.Id,
+            optimistic.Body,
+            optimistic.Direction,
+            optimistic.DeliveryState,
+            optimistic.CreatedAt,
+            optimistic.Attachments,
+            string.Empty,
+            optimistic.ReplyTo,
+            optimistic.ReactionItems));
+
+        try
+        {
+            var pending = await runtime.Messages.QueueGroupAsync(
+                account.SessionId,
+                group.Id,
+                body,
+                attachments,
+                ReplyingTo?.Id,
+                messageId,
+                createdAt,
+                cancellationToken);
+            await ReplaceMessageItemAsync(pending);
+            ReplyingTo = null;
+            _ = DispatchPendingMessageAsync(pending);
+        }
+        catch
+        {
+            RemoveMessageItem(messageId);
+            throw;
+        }
     }
 
     private async Task LoadMessagesAsync(CancellationToken cancellationToken)
@@ -1099,32 +1179,19 @@ public sealed class GroupChatViewModel : ViewModelBase
             cancellationToken);
         var readAt = await runtime.Messages.MarkConversationAsReadAsync(
             group.Id,
-            LatestIncomingOrNow(messages),
+            runtime.Clock.UtcNow,
             cancellationToken);
         var items = new List<GroupChatMessageItem>(messages.Count);
         foreach (var message in messages)
         {
-            items.Add(await ToItemAsync(ApplyReadCursor(message, readAt), cancellationToken));
+            items.Add(await ToItemAsync(MarkIncomingRead(message, readAt), cancellationToken));
         }
 
         SyncMessageItems(items);
         messagesLoaded = true;
         oldestLoadedMessageAt = messages.Count == 0 ? null : messages[0].CreatedAt;
+        oldestLoadedMessageId = messages.Count == 0 ? null : messages[0].Id;
         hasOlderMessages = messages.Count == InitialMessagePageSize;
-    }
-
-    private DateTimeOffset LatestIncomingOrNow(IReadOnlyList<Message> messages)
-    {
-        var readAt = runtime.Clock.UtcNow;
-        foreach (var message in messages)
-        {
-            if (message.Direction == MessageDirection.Incoming && message.CreatedAt > readAt)
-            {
-                readAt = message.CreatedAt;
-            }
-        }
-
-        return readAt;
     }
 
     private static Message ApplyReadCursor(Message message, DateTimeOffset? readAt) =>
@@ -1133,6 +1200,28 @@ public sealed class GroupChatViewModel : ViewModelBase
         && message.CreatedAt <= readAt.Value
             ? message.Mark(MessageDeliveryState.Read, readAt)
             : message;
+
+    private static Message MarkIncomingRead(Message message, DateTimeOffset readAt) =>
+        message.Direction == MessageDirection.Incoming
+            ? message.Mark(MessageDeliveryState.Read, readAt)
+            : message;
+
+    private void SeedSenderLabels(
+        IReadOnlyList<Message> messages,
+        IReadOnlyDictionary<SessionId, Contact> contactsBySender)
+    {
+        senderLabels.Clear();
+        foreach (var sender in messages
+                     .Where(static message => message.Direction == MessageDirection.Incoming)
+                     .Select(static message => message.Sender)
+                     .Distinct())
+        {
+            senderLabels[sender.Value] = contactsBySender.TryGetValue(sender, out var contact)
+                && !string.IsNullOrWhiteSpace(contact.DisplayName)
+                    ? contact.DisplayName.Trim()
+                    : AbbreviateSessionId(sender.Value);
+        }
+    }
 
     private void SyncMessageItems(IReadOnlyList<GroupChatMessageItem> items)
     {

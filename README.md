@@ -1,7 +1,10 @@
 ﻿# Deep Client MAUI
 
-`deep-client-maui` is a .NET MAUI shell over `deep-client-shared`.
-The UI is intentionally a new MAUI/MVVM surface over shared domain/state/services, not a line-by-line port of Session Desktop/Android/iOS views.
+`deep-client-maui` is the production .NET MAUI client for Deep over XPoint
+Network. Shared protocol, encrypted persistence, E2EE, onion routing, groups,
+attachments, push subscriptions, and call signaling live in
+`deep-client-shared`; this repository owns the MAUI UX and native platform
+integration.
 
 ## Agent Specs
 
@@ -23,7 +26,7 @@ The UI is intentionally a new MAUI/MVVM surface over shared domain/state/service
 Validated in this workspace:
 
 ```powershell
-dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0
+dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 -c Release -p:RuntimeIdentifier=win-x64
 dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android
 dotnet test tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj
 dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj
@@ -42,14 +45,15 @@ Implemented E2 platform contour coverage:
 - Android uses the official Firebase Messaging binding, obtains a real FCM token, refreshes it, and registers it with the push subscription API. Synthetic provider tokens are never used.
 - Background sync scheduling with retry backoff.
 - Media transcode + attachment staging pipeline.
-- Share/notification action ingestion bridges for Android/iOS/Windows activations.
+- Durable, bounded Share/notification activation ingestion for Android and Windows.
 
 Platform caveats/workarounds are documented in `docs/ARCHITECTURE.md`.
 
 Runtime transport behavior:
 
 - Debug builds can use local stub mode for deterministic UI behavior.
-- Non-Debug builds require real HTTP transport configuration and fail fast on startup if transport URL is missing.
+- Non-Debug builds require three authenticated XPoint onion routers and fail
+  closed when production trust/configuration is missing.
 - `DEEP_STORAGE_URL` is the preferred local-dev message transport for the root docker-compose stack.
 - The same `DEEP_STORAGE_URL` enables live group-state and group-message sync through `SessionStorageGroupSyncTransport`.
 - `DEEP_TRANSPORT_BASE_URL` remains available for a custom HTTP message API.
@@ -80,27 +84,22 @@ $env:DEEP_PUSH_URL = "http://127.0.0.1:18102"
 
 `DEEP_FILE_URL` is also used by the attachment picker to upload encrypted attachment payloads before message send.
 
-Release build fallback config:
+Release configuration is immutable at runtime. Release builds read only
+embedded `deep.release.env`, `deep.bootstrap.json`, and the generated embedded
+Windows environment resource. OS environment variables and loose config files
+are accepted only in Debug builds.
 
-- The app also reads `deep.release.env` from the executable directory when OS environment variables are not set, then falls back to the same file embedded in the application assembly.
-- Source file: `src/Deep.Client.Maui/deep.release.env`.
-- Build output location example: `src/Deep.Client.Maui/bin/Release/net10.0-windows10.0.19041.0/win-arm64/deep.release.env`.
-
-Default UAT LAN values in that file:
-
-```text
-XNODE_URLS=http://192.168.1.44:29281;http://192.168.1.44:29282;http://192.168.1.44:29283
-DEEP_CALL_SIGNALING_BASE_URL=http://192.168.1.44:28103
-DEEP_FILE_URL=http://192.168.1.44:28101
-DEEP_PUSH_URL=http://192.168.1.44:28102
-```
-
-Production Android builds do not use public HTTP(S) node URLs. They embed three
+Production Android and Windows builds do not use public HTTP(S) node URLs. They embed three
 signed bootstrap anchors from `deep.bootstrap.json`, start `XTLS/libXray`, and
 connect to each seed over VLESS Reality using the node origin IP. Session RPC is
 available to the managed client only through three loopback listeners. The seed
 then returns a dynamic three-hop route whose relay contacts are verified with
 the nodes' Ed25519 identities.
+
+Windows releases are signed MSIX packages with architecture-specific Xray,
+Windows Hello app lock, WNS background activation, native notifications,
+Windows Share Target, and known-folder downloads. See
+[`docs/WINDOWS_RELEASE.md`](docs/WINDOWS_RELEASE.md).
 
 The checked-in Android AAR is reproducible with:
 

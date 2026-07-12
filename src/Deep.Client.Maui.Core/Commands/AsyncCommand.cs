@@ -4,34 +4,44 @@ namespace Deep.Client.Maui.Core.Commands;
 
 public sealed class AsyncCommand(Func<CancellationToken, Task> execute, Func<bool>? canExecute = null) : ICommand
 {
-    private bool isExecuting;
+    private int isExecuting;
 
     public event EventHandler? CanExecuteChanged;
+    public event EventHandler<Exception>? ExecutionFailed;
 
-    public bool CanExecute(object? parameter) => !isExecuting && (canExecute?.Invoke() ?? true);
+    public bool CanExecute(object? parameter) => Volatile.Read(ref isExecuting) == 0 && (canExecute?.Invoke() ?? true);
 
     public async void Execute(object? parameter)
     {
-        if (!CanExecute(parameter))
+        try
+        {
+            await ExecuteAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            ExecutionFailed?.Invoke(this, exception);
+        }
+    }
+
+    public async Task ExecuteAsync(CancellationToken cancellationToken = default)
+    {
+        if (!(canExecute?.Invoke() ?? true)
+            || Interlocked.CompareExchange(ref isExecuting, 1, 0) != 0)
         {
             return;
         }
 
-        isExecuting = true;
         RaiseCanExecuteChanged();
-
         try
         {
-            await execute(CancellationToken.None);
+            await execute(cancellationToken);
         }
         finally
         {
-            isExecuting = false;
+            Volatile.Write(ref isExecuting, 0);
             RaiseCanExecuteChanged();
         }
     }
-
-    public Task ExecuteAsync(CancellationToken cancellationToken = default) => execute(cancellationToken);
 
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }

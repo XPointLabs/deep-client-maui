@@ -54,28 +54,52 @@ public partial class CallPage : ContentPage, IQueryAttributable
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
-        receiveTimer?.Stop();
-        durationTimer?.Stop();
+        if (receiveTimer is not null)
+        {
+            receiveTimer.Stop();
+            receiveTimer.Tick -= OnReceiveTimerTick;
+            receiveTimer = null;
+        }
+        if (durationTimer is not null)
+        {
+            durationTimer.Stop();
+            durationTimer.Tick -= OnDurationTimerTick;
+            durationTimer = null;
+        }
         lifetime?.Cancel();
         lifetime?.Dispose();
         lifetime = null;
-        if (!isEnding && call is not null)
+        if (call is { } descriptor)
         {
-            _ = SendByeSafelyAsync(call, "navigation");
+            if (!isEnding)
+            {
+                _ = SendByeSafelyAsync(descriptor, "navigation");
+            }
+
+            coordinator.ReleaseCall(descriptor.CallId);
         }
     }
 
     protected override bool OnBackButtonPressed()
     {
-        _ = EndAndCloseAsync("back");
+        _ = EndAndCloseSafelyAsync("back");
         return true;
     }
 
     private void OnWebViewHandlerChanged(object? sender, EventArgs e) =>
         CallWebViewPlatform.Configure(CallWebView);
 
-    private async void OnRawMessageReceived(object? sender, HybridWebViewRawMessageReceivedEventArgs e) =>
-        await HandleWebMessageAsync(e.Message);
+    private async void OnRawMessageReceived(object? sender, HybridWebViewRawMessageReceivedEventArgs e)
+    {
+        try
+        {
+            await HandleWebMessageAsync(e.Message);
+        }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("CallPage.RawMessageBoundary", exception);
+        }
+    }
 
     public Task OnWebMessage(string message) =>
         MainThread.InvokeOnMainThreadAsync(() => HandleWebMessageAsync(message));
@@ -123,6 +147,10 @@ public partial class CallPage : ContentPage, IQueryAttributable
         {
             CrashDiagnostics.LogException("CallPage.RawMessage", exception);
             StatusLabel.Text = "Не удалось установить звонок";
+        }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("CallPage.RawMessage", exception);
         }
     }
 
@@ -213,6 +241,10 @@ public partial class CallPage : ContentPage, IQueryAttributable
             CrashDiagnostics.LogException("CallPage.Initialize", exception);
             StatusLabel.Text = "Не удалось подключиться";
         }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("CallPage.Initialize", exception);
+        }
     }
 
     private async Task ForwardSignalAsync(JsonElement root)
@@ -267,6 +299,10 @@ public partial class CallPage : ContentPage, IQueryAttributable
         {
             CrashDiagnostics.LogInfo("CallPage.Signaling", exception.Message);
         }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("CallPage.SignalTimer", exception);
+        }
         finally
         {
             receivingSignals = false;
@@ -292,25 +328,13 @@ public partial class CallPage : ContentPage, IQueryAttributable
                 return;
             }
 
-            var signalType = signal.Type switch
+            if (!CallSessionCoordinator.TryCreateWebSignalMessage(signal, out var message))
             {
-                CallSignalType.Offer => "offer",
-                CallSignalType.Answer => "answer",
-                CallSignalType.IceCandidate => "ice",
-                _ => null
-            };
-            if (signalType is null)
-            {
+                CrashDiagnostics.LogInfo("CallPage.Signaling", "Dropped a malformed authenticated call signal.");
                 continue;
             }
 
-            using var payloadDocument = JsonDocument.Parse(signal.Payload);
-            await SendToWebAsync(JsonSerializer.Serialize(new
-            {
-                command = "signal",
-                signalType,
-                payload = payloadDocument.RootElement
-            }));
+            await SendToWebAsync(message);
         }
     }
 
@@ -328,6 +352,10 @@ public partial class CallPage : ContentPage, IQueryAttributable
         if (state == "connected" && connectedAt is null)
         {
             connectedAt = DateTimeOffset.UtcNow;
+        }
+        else if (state is "closed" or "failed" && call is { } descriptor)
+        {
+            coordinator.ReleaseCall(descriptor.CallId);
         }
     }
 
@@ -368,9 +396,9 @@ public partial class CallPage : ContentPage, IQueryAttributable
 
     private void OnSwitchCameraClicked(object? sender, EventArgs e) => SendCommand("switchCamera");
 
-    private async void OnHangupClicked(object? sender, EventArgs e) => await EndAndCloseAsync("hangup");
+    private async void OnHangupClicked(object? sender, EventArgs e) => await EndAndCloseSafelyAsync("hangup");
 
-    private async void OnBackClicked(object? sender, EventArgs e) => await EndAndCloseAsync("back");
+    private async void OnBackClicked(object? sender, EventArgs e) => await EndAndCloseSafelyAsync("back");
 
     private void SendCommand(string command, bool? enabled = null) =>
         _ = SendToWebAsync(JsonSerializer.Serialize(new { command, enabled }));
@@ -398,6 +426,25 @@ public partial class CallPage : ContentPage, IQueryAttributable
         await Shell.Current.GoToAsync("..");
     }
 
+    private async Task EndAndCloseSafelyAsync(string reason)
+    {
+        try
+        {
+            await EndAndCloseAsync(reason);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("CallPage.EndCall", exception);
+            if (call is { } descriptor)
+            {
+                coordinator.ReleaseCall(descriptor.CallId);
+            }
+        }
+    }
+
     private async Task SendByeSafelyAsync(CallDescriptor descriptor, string reason)
     {
         try
@@ -407,6 +454,14 @@ public partial class CallPage : ContentPage, IQueryAttributable
         catch (Exception exception) when (IsNetworkException(exception))
         {
             CrashDiagnostics.LogInfo("CallPage.Hangup", exception.Message);
+        }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("CallPage.Hangup", exception);
+        }
+        finally
+        {
+            coordinator.ReleaseCall(descriptor.CallId);
         }
     }
 

@@ -9,6 +9,7 @@ using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
 using Microsoft.Maui.Storage;
+using System.Security.Cryptography.X509Certificates;
 
 #if ANDROID
 using Android.Content.Res;
@@ -29,11 +30,15 @@ public static class MauiProgram
     internal const string CallSignalingBaseUrlEnv = "DEEP_CALL_SIGNALING_BASE_URL";
     internal const string FileBaseUrlEnv = "DEEP_FILE_URL";
     internal const string FileConnectIpsEnv = "DEEP_FILE_CONNECT_IPS";
+    internal const string FileTlsPublicKeyPinsEnv = "DEEP_FILE_TLS_PUBLIC_KEY_PINS";
     internal const string PushBaseUrlEnv = "DEEP_PUSH_URL";
+    internal const string WindowsPushRemoteIdEnv = "DEEP_WINDOWS_PUSH_REMOTE_ID";
     internal const string RegistryBaseUrlEnv = "DEEP_REGISTRY_URL";
     internal const string StakingBackendBaseUrlEnv = "DEEP_STAKING_BACKEND_URL";
     internal const string StakingPortalBaseUrlEnv = "DEEP_STAKING_PORTAL_URL";
+    internal const string TlsPublicKeyPinsEnv = "DEEP_TLS_PUBLIC_KEY_PINS";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
+    private const string WindowsReleaseRuntimeEnvFile = "deep.windows.release.env";
     internal const string WipeLocalDataOnNextLaunchKey = "session.wipe-local-on-next-launch";
     private const string LocalStateDatabaseKey = "client-state.sqlcipher-key.v1";
 
@@ -46,7 +51,22 @@ public static class MauiProgram
 #endif
 
         var featureFlags = BuildFeatureFlags();
+        var pushBaseUrl = ResolveRuntimeSetting(PushBaseUrlEnv);
+#if !DEBUG
+        if (featureFlags.PushNotificationsEnabled && string.IsNullOrWhiteSpace(pushBaseUrl))
+        {
+            throw new InvalidOperationException(
+                "DEEP_PUSH_URL is required when push notifications are enabled in non-Debug builds.");
+        }
+#endif
         var routerBaseUrls = ResolveRouterBaseUrls();
+#if !DEBUG
+        if (routerBaseUrls.Count < 3)
+        {
+            throw new InvalidOperationException(
+                "Production messaging requires at least three pinned XPoint onion routers. Direct storage fallback is disabled.");
+        }
+#endif
         var fileConnectIps = ParseIpAddresses(ResolveRuntimeSetting(FileConnectIpsEnv));
 
         builder.Services.AddSingleton(RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting));
@@ -120,35 +140,6 @@ public static class MauiProgram
                 "Remote avatar publication is not allowed to be disabled for release startup.");
 #endif
         });
-        builder.Services.AddSingleton<IGroupSyncTransport>(_ =>
-        {
-            if (routerBaseUrls.Count > 0)
-            {
-                return new RoutedSessionStorageGroupSyncTransport(
-                    _.GetRequiredService<XNodeRpcClient>(),
-                    new RoutedSessionStorageGroupSyncTransportOptions());
-            }
-
-            var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
-            if (!string.IsNullOrWhiteSpace(storageBaseUrl))
-            {
-                return new SessionStorageGroupSyncTransport(
-                    CreateServiceHttpClient(),
-                    new SessionStorageGroupSyncTransportOptions(storageBaseUrl));
-            }
-
-#if DEBUG
-            return new DisabledGroupSyncTransport();
-#else
-            if (featureFlags.GroupsV2Enabled)
-            {
-                throw new InvalidOperationException(
-                    "DEEP_STORAGE_URL is required when groups are enabled in non-Debug builds.");
-            }
-
-            return new DisabledGroupSyncTransport();
-#endif
-        });
         builder.Services.AddSingleton<IAttachmentFileTransport>(_ =>
         {
             var baseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
@@ -166,54 +157,37 @@ public static class MauiProgram
 #endif
         });
         builder.Services.AddSingleton(sp =>
-        {
-            var stateDbPath = Path.Combine(FileSystem.AppDataDirectory, "client-state.db");
-            var legacyStatePath = Path.Combine(FileSystem.AppDataDirectory, "client-state.json");
-            var stateDbKey = ResolveLocalStateDatabaseKey();
-
-            if (Preferences.Default.Get(WipeLocalDataOnNextLaunchKey, false))
-            {
-                TryDeleteFile(stateDbPath);
-                TryDeleteFile(stateDbPath + "-wal");
-                TryDeleteFile(stateDbPath + "-shm");
-                TryDeleteFile(legacyStatePath);
-                SecureStorage.Remove(LocalStateDatabaseKey);
-                Preferences.Default.Remove(WipeLocalDataOnNextLaunchKey);
-                stateDbKey = ResolveLocalStateDatabaseKey();
-            }
-
-            SqliteSessionStore.EnsureEncryptedDatabase(stateDbPath, stateDbKey);
-            return ClientRuntime.CreatePersistent(
-                stateDbPath,
-                sp.GetRequiredService<ClientFeatureFlags>(),
-                sp.GetRequiredService<IClock>(),
-                sp.GetRequiredService<ISessionMessageTransport>(),
-                sp.GetRequiredService<IGroupSyncTransport>(),
-                sp.GetRequiredService<IAvatarProfileTransport>(),
-                legacyStatePath,
-                stateDbKey,
-                storeDecorator: store => new SecureRecoverySessionStore(store));
-        });
+            new ClientRuntimeBootstrapper(cancellationToken => CreateClientRuntimeAsync(sp, cancellationToken)));
+        builder.Services.AddSingleton(sp =>
+            sp.GetRequiredService<ClientRuntimeBootstrapper>().GetRequiredRuntime());
 
         builder.Services.AddSingleton<IPushNotificationService, MauiPushNotificationService>();
+        builder.Services.AddSingleton(_ => new PushClientMetadata(
+            PushNotificationCrypto.PackageName,
+            AppInfo.Current.VersionString));
         builder.Services.AddSingleton<IPushSubscriptionTransport>(_ =>
         {
-            var baseUrl = ResolveRuntimeSetting(PushBaseUrlEnv);
-            return string.IsNullOrWhiteSpace(baseUrl)
+            return string.IsNullOrWhiteSpace(pushBaseUrl)
                 ? new DisabledPushSubscriptionTransport()
-                : new HttpPushSubscriptionTransport(CreateServiceHttpClient(), new HttpPushSubscriptionTransportOptions(baseUrl));
+                : new HttpPushSubscriptionTransport(CreateServiceHttpClient(), new HttpPushSubscriptionTransportOptions(pushBaseUrl));
         });
         builder.Services.AddSingleton<IPushRegistrationCoordinator, PushRegistrationCoordinator>();
         builder.Services.AddSingleton<SyncPollingPolicy>();
+        builder.Services.AddSingleton<PushRegistrationLifecycleCoordinator>();
         builder.Services.AddSingleton<ChatOpenUiCache>();
+        builder.Services.AddSingleton<IAccountLogoutCoordinator, MauiAccountLogoutCoordinator>();
         builder.Services.AddSingleton<IMediaCodecService, MauiMediaCodecService>();
         builder.Services.AddSingleton<IPermissionsService, MauiPermissionsService>();
         builder.Services.AddSingleton<IBackgroundTaskService, MauiBackgroundTaskService>();
+        builder.Services.AddSingleton<IRegularBackgroundSyncScheduler, MauiRegularBackgroundSyncScheduler>();
+        builder.Services.AddSingleton<BackgroundSyncSchedulingCoordinator>();
         builder.Services.AddSingleton<IShareExtensionBridge, MauiShareExtensionBridge>();
         builder.Services.AddSingleton<INotificationScheduler, MauiNotificationScheduler>();
         builder.Services.AddSingleton<IPrivacyScreenService, MauiPrivacyScreenService>();
 #if ANDROID
         builder.Services.AddSingleton<IAppLockService, AndroidAppLockService>();
+#elif WINDOWS
+        builder.Services.AddSingleton<IAppLockService, WindowsAppLockService>();
 #else
         builder.Services.AddSingleton<IAppLockService, AppLockService>();
 #endif
@@ -350,34 +324,33 @@ public static class MauiProgram
 #endif
     }
 
-    private static void TryDeleteFile(string path)
+    private static void DeleteFileForWipe(string path)
     {
-        try
+        if (File.Exists(path))
         {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch
-        {
-            // If file is locked, keep deferred wipe best-effort and continue startup.
+            File.Delete(path);
         }
     }
 
-    private static string ResolveLocalStateDatabaseKey()
+    private static async Task<string> ResolveLocalStateDatabaseKeyAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var existing = SecureStorage.GetAsync(LocalStateDatabaseKey).GetAwaiter().GetResult();
+            cancellationToken.ThrowIfCancellationRequested();
+            var existing = await SecureStorage.GetAsync(LocalStateDatabaseKey).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(existing))
             {
                 return existing;
             }
 
             var key = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-            SecureStorage.SetAsync(LocalStateDatabaseKey, key).GetAwaiter().GetResult();
+            await SecureStorage.SetAsync(LocalStateDatabaseKey, key).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             return key;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -387,6 +360,7 @@ public static class MauiProgram
 
     internal static string? ResolveRuntimeSetting(string key)
     {
+#if DEBUG
         var value = Environment.GetEnvironmentVariable(key);
         if (!string.IsNullOrWhiteSpace(value))
         {
@@ -402,27 +376,43 @@ public static class MauiProgram
                 return ValidateRuntimeSetting(key, fileValue);
             }
         }
+#endif
 
-        using var embeddedStream = typeof(MauiProgram).Assembly.GetManifestResourceStream(ReleaseRuntimeEnvFile);
+#if WINDOWS
+        var windowsValue = ResolveEmbeddedRuntimeSetting(WindowsReleaseRuntimeEnvFile, key);
+        if (!string.IsNullOrWhiteSpace(windowsValue))
+        {
+            return ValidateRuntimeSetting(key, windowsValue);
+        }
+#endif
+
+        return ValidateRuntimeSetting(key, ResolveEmbeddedRuntimeSetting(ReleaseRuntimeEnvFile, key));
+    }
+
+    private static string? ResolveEmbeddedRuntimeSetting(string resourceName, string key)
+    {
+        using var embeddedStream = typeof(MauiProgram).Assembly.GetManifestResourceStream(resourceName);
         if (embeddedStream is null)
         {
             return null;
         }
 
         using var reader = new StreamReader(embeddedStream);
-        return ValidateRuntimeSetting(key, ResolveRuntimeSettingFromLines(key, ReadLines(reader)));
+        return ResolveRuntimeSettingFromLines(key, ReadLines(reader));
     }
 
-    private static IReadOnlyList<string> ResolveRouterBaseUrls()
+    private static IReadOnlyList<PinnedRouterEndpoint> ResolveRouterBaseUrls()
     {
         var raw = ResolveRuntimeSetting(RouterBaseUrlsEnv);
         if (!string.IsNullOrWhiteSpace(raw))
         {
-            return ParseRouterBaseUrls(raw);
+            return ParseRouterEndpoints(raw);
         }
 
 #if ANDROID
         return AndroidRealityTransport.Start();
+#elif WINDOWS
+        return WindowsRealityTransport.Start();
 #else
         return [];
 #endif
@@ -432,19 +422,72 @@ public static class MauiProgram
         typeof(MauiProgram).Assembly.GetManifestResourceStream(name)
         ?? throw new FileNotFoundException($"Embedded resource '{name}' was not found.", name);
 
-    private static HttpClient CreateRouterHttpClient()
+    private static async Task<ClientRuntime> CreateClientRuntimeAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken)
     {
-        return CreateServiceHttpClient();
+        var stateDbPath = Path.Combine(FileSystem.AppDataDirectory, "client-state.db");
+        var legacyStatePath = Path.Combine(FileSystem.AppDataDirectory, "client-state.json");
+        var stateDbKey = await ResolveLocalStateDatabaseKeyAsync(cancellationToken).ConfigureAwait(false);
+
+        if (Preferences.Default.Get(WipeLocalDataOnNextLaunchKey, false))
+        {
+            DeleteFileForWipe(stateDbPath + "-wal");
+            DeleteFileForWipe(stateDbPath + "-shm");
+            DeleteFileForWipe(stateDbPath);
+            await FileSystemLegacyStateArtifacts.Instance
+                .PurgeAsync(legacyStatePath, cancellationToken)
+                .ConfigureAwait(false);
+            SecureStorage.Remove(LocalStateDatabaseKey);
+            Preferences.Default.Remove(WipeLocalDataOnNextLaunchKey);
+            stateDbKey = await ResolveLocalStateDatabaseKeyAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        SqliteSessionStore.EnsureEncryptedDatabase(stateDbPath, stateDbKey);
+        return ClientRuntime.CreatePersistent(
+            stateDbPath,
+            services.GetRequiredService<ClientFeatureFlags>(),
+            services.GetRequiredService<IClock>(),
+            services.GetRequiredService<ISessionMessageTransport>(),
+            groupSyncTransport: null,
+            avatarProfiles: services.GetRequiredService<IAvatarProfileTransport>(),
+            legacyInMemoryStatePath: legacyStatePath,
+            sqlCipherKey: stateDbKey,
+            storeDecorator: store => new SecureRecoverySessionStore(store),
+            requireE2eeTransport: true);
     }
 
-    private static HttpClient CreateServiceHttpClient()
+    private static HttpClient CreateRouterHttpClient()
     {
-        return new HttpClient(new SocketsHttpHandler
+        var socketsHandler = CreateServiceHttpHandler();
+        socketsHandler.UseProxy = false;
+        HttpMessageHandler handler = socketsHandler;
+#if ANDROID || WINDOWS
+        handler = new RealityReadinessHandler(handler);
+#endif
+        return CreateServiceHttpClient(handler);
+    }
+
+    private static SocketsHttpHandler CreateServiceHttpHandler()
+    {
+        var handler = new SocketsHttpHandler
         {
+            AllowAutoRedirect = false,
             ConnectTimeout = TimeSpan.FromSeconds(5),
             PooledConnectionIdleTimeout = TimeSpan.FromSeconds(15),
             PooledConnectionLifetime = TimeSpan.FromMinutes(2)
-        })
+        };
+        ConfigureCertificatePinning(handler);
+        return handler;
+    }
+
+    private static HttpClient CreateServiceHttpClient() =>
+        CreateServiceHttpClient(CreateServiceHttpHandler());
+
+    private static HttpClient CreateServiceHttpClient(HttpMessageHandler handler)
+    {
+        return new HttpClient(handler)
         {
             Timeout = TimeSpan.FromSeconds(15)
         };
@@ -454,24 +497,129 @@ public static class MauiProgram
     {
         var handler = new SocketsHttpHandler
         {
+            AllowAutoRedirect = false,
             ConnectTimeout = TimeSpan.FromSeconds(10),
             PooledConnectionIdleTimeout = TimeSpan.FromSeconds(30),
             PooledConnectionLifetime = TimeSpan.FromMinutes(5)
         };
-#if ANDROID
-        handler.ConnectCallback = (context, cancellationToken) =>
-            ConnectFileSocketAsync(context, preferredConnectIps, cancellationToken);
+        ConfigureCertificatePinning(handler, FileTlsPublicKeyPinsEnv);
+#if ANDROID || WINDOWS
+        if (preferredConnectIps.Count > 0)
+        {
+            handler.ConnectCallback = (context, cancellationToken) =>
+                ConnectFileSocketAsync(context, preferredConnectIps, cancellationToken);
+        }
 #endif
 
         var client = new HttpClient(handler)
         {
             Timeout = TimeSpan.FromMinutes(2)
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("Deep/0.2.0");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd($"Deep/{AppInfo.Current.VersionString}");
         return client;
     }
 
-#if ANDROID
+    private static void ConfigureCertificatePinning(
+        SocketsHttpHandler handler,
+        string pinSettingName = TlsPublicKeyPinsEnv)
+    {
+        var rawPins = ResolveRuntimeSetting(pinSettingName);
+        if (string.IsNullOrWhiteSpace(rawPins) &&
+            !string.Equals(pinSettingName, TlsPublicKeyPinsEnv, StringComparison.Ordinal))
+        {
+            rawPins = ResolveRuntimeSetting(TlsPublicKeyPinsEnv);
+        }
+
+        var pins = ParsePublicKeyPins(rawPins, pinSettingName);
+#if !DEBUG
+        if (pins.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"{pinSettingName} must contain at least one production certificate public-key pin.");
+        }
+#endif
+        if (pins.Count == 0)
+        {
+            return;
+        }
+
+        handler.SslOptions.RemoteCertificateValidationCallback = (_, certificate, _, policyErrors) =>
+        {
+            if (policyErrors != System.Net.Security.SslPolicyErrors.None || certificate is null)
+            {
+                return false;
+            }
+
+            using var x509 = new System.Security.Cryptography.X509Certificates.X509Certificate2(certificate);
+            var digest = System.Security.Cryptography.SHA256.HashData(ExportSubjectPublicKeyInfo(x509));
+            return pins.Any(pin =>
+                System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(pin, digest));
+        };
+    }
+
+    private static byte[] ExportSubjectPublicKeyInfo(
+        System.Security.Cryptography.X509Certificates.X509Certificate2 certificate)
+    {
+        using var rsa = certificate.GetRSAPublicKey();
+        if (rsa is not null)
+        {
+            return rsa.ExportSubjectPublicKeyInfo();
+        }
+
+        using var ecdsa = certificate.GetECDsaPublicKey();
+        if (ecdsa is not null)
+        {
+            return ecdsa.ExportSubjectPublicKeyInfo();
+        }
+
+        using var dsa = certificate.GetDSAPublicKey();
+        if (dsa is not null)
+        {
+            return dsa.ExportSubjectPublicKeyInfo();
+        }
+
+        throw new System.Security.Cryptography.CryptographicException(
+            "The TLS certificate uses an unsupported public-key algorithm.");
+    }
+
+    private static IReadOnlyList<byte[]> ParsePublicKeyPins(string? raw, string settingName)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return [];
+        }
+
+        var pins = new List<byte[]>();
+        foreach (var value in raw.Split([',', ';', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var encoded = value.StartsWith("sha256/", StringComparison.OrdinalIgnoreCase)
+                ? value["sha256/".Length..]
+                : value;
+            byte[] digest;
+            try
+            {
+                digest = Convert.FromBase64String(encoded);
+            }
+            catch (FormatException exception)
+            {
+                throw new InvalidOperationException($"{settingName} contains an invalid Base64 pin.", exception);
+            }
+
+            if (digest.Length != 32)
+            {
+                throw new InvalidOperationException($"{settingName} pins must be SHA-256 digests.");
+            }
+
+            pins.Add(digest);
+        }
+
+        return pins;
+    }
+
+#if ANDROID || WINDOWS
+    private static readonly TimeSpan FileConnectFallbackDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan FileConnectAttemptTimeout = TimeSpan.FromSeconds(5);
+
     private static async ValueTask<Stream> ConnectFileSocketAsync(
         SocketsHttpConnectionContext context,
         IReadOnlyList<System.Net.IPAddress> preferredConnectIps,
@@ -480,36 +628,116 @@ public static class MauiProgram
         var addresses = await System.Net.Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, cancellationToken)
             .ConfigureAwait(false);
         var orderedAddresses = preferredConnectIps
-            .Where(static address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-            .Concat(addresses.Where(static address => address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))
+            .Concat(addresses)
             .Distinct()
             .ToArray();
-        Exception? lastError = null;
-
-        foreach (var address in orderedAddresses)
+        if (orderedAddresses.Length == 0)
         {
-            var socket = new System.Net.Sockets.Socket(
+            throw new HttpRequestException($"DNS returned no addresses for {context.DnsEndPoint.Host}.");
+        }
+
+        using var raceCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var pending = orderedAddresses
+            .Select((address, index) => ConnectFileSocketCandidateAsync(
+                address,
+                context.DnsEndPoint.Port,
+                TimeSpan.FromMilliseconds(FileConnectFallbackDelay.TotalMilliseconds * index),
+                raceCancellation.Token))
+            .ToList();
+        Exception? lastError = null;
+        System.Net.Sockets.Socket? winner = null;
+
+        try
+        {
+            while (pending.Count > 0)
+            {
+                var completed = await Task.WhenAny(pending).ConfigureAwait(false);
+                pending.Remove(completed);
+                var result = await completed.ConfigureAwait(false);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    result.Socket?.Dispose();
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                if (result.Socket is not null)
+                {
+                    winner = result.Socket;
+                    break;
+                }
+
+                lastError = result.Error;
+            }
+        }
+        finally
+        {
+            raceCancellation.Cancel();
+            foreach (var attempt in pending)
+            {
+                try
+                {
+                    var result = await attempt.ConfigureAwait(false);
+                    result.Socket?.Dispose();
+                }
+                catch (OperationCanceledException)
+                {
+                    // The race winner or caller cancellation stopped this candidate.
+                }
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (winner is not null)
+        {
+            return new System.Net.Sockets.NetworkStream(winner, ownsSocket: true);
+        }
+
+        throw new HttpRequestException($"Unable to connect to {context.DnsEndPoint.Host}.", lastError);
+    }
+
+    private static async Task<FileSocketConnectResult> ConnectFileSocketCandidateAsync(
+        System.Net.IPAddress address,
+        int port,
+        TimeSpan startDelay,
+        CancellationToken cancellationToken)
+    {
+        System.Net.Sockets.Socket? socket = null;
+        try
+        {
+            if (startDelay > TimeSpan.Zero)
+            {
+                await Task.Delay(startDelay, cancellationToken).ConfigureAwait(false);
+            }
+
+            socket = new System.Net.Sockets.Socket(
+                address.AddressFamily,
                 System.Net.Sockets.SocketType.Stream,
                 System.Net.Sockets.ProtocolType.Tcp)
             {
                 NoDelay = true
             };
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(FileConnectAttemptTimeout);
+            await socket.ConnectAsync(new System.Net.IPEndPoint(address, port), timeout.Token)
+                .ConfigureAwait(false);
 
-            try
-            {
-                await socket.ConnectAsync(new System.Net.IPEndPoint(address, context.DnsEndPoint.Port), cancellationToken)
-                    .ConfigureAwait(false);
-                return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
-            }
-            catch (Exception ex) when (ex is System.Net.Sockets.SocketException or OperationCanceledException)
-            {
-                lastError = ex;
-                socket.Dispose();
-            }
+            var connected = socket;
+            socket = null;
+            return new FileSocketConnectResult(connected, null);
         }
-
-        throw new HttpRequestException($"Unable to connect to {context.DnsEndPoint.Host} over IPv4.", lastError);
+        catch (Exception exception) when (exception is System.Net.Sockets.SocketException or OperationCanceledException)
+        {
+            return new FileSocketConnectResult(null, exception);
+        }
+        finally
+        {
+            socket?.Dispose();
+        }
     }
+
+    private sealed record FileSocketConnectResult(
+        System.Net.Sockets.Socket? Socket,
+        Exception? Error);
 #endif
 
     private static IReadOnlyList<System.Net.IPAddress> ParseIpAddresses(string? raw)
@@ -537,16 +765,11 @@ public static class MauiProgram
 #if DEBUG
         return value;
 #else
-        if (string.Equals(key, FileConnectIpsEnv, StringComparison.Ordinal))
-        {
-            return value;
-        }
-
         if (string.Equals(key, RouterBaseUrlsEnv, StringComparison.Ordinal))
         {
-            foreach (var url in SplitRuntimeValues(value))
+            foreach (var endpoint in ParseRouterEndpoints(value))
             {
-                ValidateRuntimeUrl(key, url);
+                ValidateRuntimeUrl(key, endpoint.BaseUrl);
             }
 
             return value;
@@ -589,13 +812,42 @@ public static class MauiProgram
     private static bool IsExplicitLoopbackHttp(Uri uri) =>
         uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback;
 
-    private static IReadOnlyList<string> ParseRouterBaseUrls(string raw)
+    private static IReadOnlyList<PinnedRouterEndpoint> ParseRouterEndpoints(string raw)
     {
-        return SplitRuntimeValues(raw)
-            .Where(static value => Uri.TryCreate(value, UriKind.Absolute, out var uri)
-                                   && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var endpoints = new List<PinnedRouterEndpoint>();
+        foreach (var value in SplitRuntimeValues(raw))
+        {
+            var separator = value.IndexOf('|');
+            if (separator <= 0 || separator == value.Length - 1)
+            {
+                throw new InvalidOperationException(
+                    $"{RouterBaseUrlsEnv} entries must use '<router-id>|<absolute-url>'.");
+            }
+
+            var routerId = value[..separator].Trim();
+            var baseUrl = value[(separator + 1)..].Trim();
+            if (routerId.Length != 64 || !routerId.All(Uri.IsHexDigit))
+            {
+                throw new InvalidOperationException($"{RouterBaseUrlsEnv} contains an invalid 32-byte router ID.");
+            }
+
+            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                throw new InvalidOperationException($"{RouterBaseUrlsEnv} contains an invalid router URL.");
+            }
+
+            endpoints.Add(new PinnedRouterEndpoint(baseUrl, routerId.ToLowerInvariant()));
+        }
+
+        if (endpoints.Count == 0
+            || endpoints.Select(static endpoint => endpoint.ExpectedRouterId).Distinct(StringComparer.Ordinal).Count() != endpoints.Count
+            || endpoints.Select(static endpoint => endpoint.BaseUrl).Distinct(StringComparer.OrdinalIgnoreCase).Count() != endpoints.Count)
+        {
+            throw new InvalidOperationException($"{RouterBaseUrlsEnv} must contain unique pinned router IDs and URLs.");
+        }
+
+        return endpoints;
     }
 
     private static string[] SplitRuntimeValues(string raw) =>
@@ -637,4 +889,94 @@ public static class MauiProgram
             yield return line;
         }
     }
+
+#if ANDROID || WINDOWS
+    private sealed class RealityReadinessHandler(HttpMessageHandler innerHandler)
+        : DelegatingHandler(innerHandler)
+    {
+        private readonly object readinessSync = new();
+        private readonly HashSet<int> readyPorts = [];
+        private readonly SemaphoreSlim readinessGate = new(1, 1);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var localPort = LocalRealityPort(request.RequestUri);
+            if (localPort is not null)
+            {
+                await EnsureReadyAsync(request.RequestUri!, localPort.Value, cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                if (localPort is not null)
+                {
+                    lock (readinessSync)
+                    {
+                        readyPorts.Remove(localPort.Value);
+                    }
+                }
+
+                throw;
+            }
+        }
+
+        private async Task EnsureReadyAsync(Uri requestUri, int localPort, CancellationToken cancellationToken)
+        {
+            lock (readinessSync)
+            {
+                if (readyPorts.Contains(localPort))
+                {
+                    return;
+                }
+            }
+
+            await readinessGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                lock (readinessSync)
+                {
+                    if (readyPorts.Contains(localPort))
+                    {
+                        return;
+                    }
+                }
+
+#if ANDROID
+                await AndroidRealityTransport.WaitUntilReadyAsync(requestUri, cancellationToken).ConfigureAwait(false);
+#elif WINDOWS
+                await WindowsRealityTransport.WaitUntilReadyAsync(requestUri, cancellationToken).ConfigureAwait(false);
+#endif
+                lock (readinessSync)
+                {
+                    readyPorts.Add(localPort);
+                }
+            }
+            finally
+            {
+                readinessGate.Release();
+            }
+        }
+
+        private static int? LocalRealityPort(Uri? requestUri) =>
+            requestUri is { IsAbsoluteUri: true, IsLoopback: true, Scheme: "http" }
+                ? requestUri.Port
+                : null;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                readinessGate.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+    }
+#endif
 }

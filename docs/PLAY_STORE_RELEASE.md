@@ -29,9 +29,10 @@ ignored platform path for compilation.
 
 The script fails when signing material is missing and prints the resulting
 signed `.aab` and `.apk` paths only after both Release builds succeed. Final
-artifacts are named `network.xpoint.deep.aab` and `network.xpoint.deep.apk`
-under `artifacts/android-release`. Before compilation it validates the bundled
-Xray AAR, including arm64/x86_64 ELF metadata and Google Play 16 KB alignment.
+artifacts are named `network.xpoint.deep-<display-version>-v<version-code>.aab`
+and `network.xpoint.deep-<display-version>-v<version-code>.apk` under
+`artifacts/android-release`. Before compilation it validates the bundled Xray
+AAR, including arm64/x86_64 ELF metadata and Google Play 16 KB alignment.
 
 Before every upload, increment `ApplicationVersion` in
 `src/Deep.Client.Maui/Deep.Client.Maui.csproj`. Update

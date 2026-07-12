@@ -4,6 +4,10 @@ using Deep.Client.Shared.Services;
 
 #if ANDROID
 using Android.Media;
+#elif WINDOWS
+using Windows.Media.Capture;
+using Windows.Media.MediaProperties;
+using Windows.Storage;
 #endif
 
 namespace Deep.Client.Maui.Services;
@@ -27,6 +31,10 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
     private Task? recordingTask;
     private string? recordingPath;
     private DateTimeOffset startedAt;
+#elif WINDOWS
+    private MediaCapture? recorder;
+    private StorageFile? recordingFile;
+    private DateTimeOffset startedAt;
 #endif
 
     public MauiVoiceMessageRecorder(IAttachmentFileTransport attachmentFiles)
@@ -34,7 +42,9 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
         this.attachmentFiles = attachmentFiles;
     }
 
-    public bool IsSupported => DeviceInfo.Current.Platform == DevicePlatform.Android;
+    public bool IsSupported =>
+        DeviceInfo.Current.Platform == DevicePlatform.Android
+        || DeviceInfo.Current.Platform == DevicePlatform.WinUI;
 
     public bool IsRecording { get; private set; }
 
@@ -42,7 +52,7 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
     {
         if (!IsSupported)
         {
-            throw new InvalidOperationException("Голосовые сообщения пока доступны только на Android.");
+            throw new InvalidOperationException("Голосовые сообщения недоступны на этой платформе.");
         }
 
         if (IsRecording)
@@ -98,6 +108,51 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
             nextCancellation?.Dispose();
             ReleaseRecorder(nextRecorder);
             TryDelete(path);
+            throw;
+        }
+#elif WINDOWS
+        await EnsureMicrophonePermissionAsync().ConfigureAwait(false);
+
+        MediaCapture? nextRecorder = null;
+        StorageFile? nextFile = null;
+        try
+        {
+            var folder = await StorageFolder
+                .GetFolderFromPathAsync(FileSystem.CacheDirectory)
+                .AsTask(cancellationToken)
+                .ConfigureAwait(false);
+            nextFile = await folder
+                .CreateFileAsync($"voice-{Guid.NewGuid():N}.wav", CreationCollisionOption.ReplaceExisting)
+                .AsTask(cancellationToken)
+                .ConfigureAwait(false);
+            nextRecorder = new MediaCapture();
+            var settings = new MediaCaptureInitializationSettings
+            {
+                StreamingCaptureMode = StreamingCaptureMode.Audio,
+                MediaCategory = MediaCategory.Communications,
+                AudioProcessing = Windows.Media.AudioProcessing.Default
+            };
+            await nextRecorder.InitializeAsync(settings).AsTask(cancellationToken).ConfigureAwait(false);
+            await nextRecorder
+                .StartRecordToStorageFileAsync(
+                    MediaEncodingProfile.CreateWav(AudioEncodingQuality.Low),
+                    nextFile)
+                .AsTask(cancellationToken)
+                .ConfigureAwait(false);
+
+            recorder = nextRecorder;
+            recordingFile = nextFile;
+            startedAt = DateTimeOffset.UtcNow;
+            IsRecording = true;
+        }
+        catch
+        {
+            nextRecorder?.Dispose();
+            if (nextFile is not null)
+            {
+                TryDelete(nextFile.Path);
+            }
+
             throw;
         }
 #else
@@ -165,6 +220,65 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
         {
             TryDelete(path);
         }
+#elif WINDOWS
+        var activeRecorder = recorder;
+        var activeFile = recordingFile;
+        var duration = DateTimeOffset.UtcNow - startedAt;
+        recorder = null;
+        recordingFile = null;
+        IsRecording = false;
+        if (activeRecorder is null || activeFile is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            await activeRecorder
+                .StopRecordAsync()
+                .AsTask()
+                .WaitAsync(StopRecorderTimeout, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            activeRecorder.Dispose();
+        }
+
+        var path = activeFile.Path;
+        try
+        {
+            if (duration < MinimumVoiceDuration || !File.Exists(path))
+            {
+                return null;
+            }
+
+            var fileInfo = new FileInfo(path);
+            if (fileInfo.Length <= 0)
+            {
+                throw new InvalidOperationException("Не удалось записать звук с микрофона.");
+            }
+
+            await using var upload = File.OpenRead(path);
+            var fileName = $"voice-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.wav";
+            if (attachmentFiles.IsEnabled)
+            {
+                return await attachmentFiles.UploadAsync(
+                    new AttachmentFileUpload(fileName, "audio/wav", upload, Duration: duration),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            return new AttachmentMetadata(
+                Guid.NewGuid().ToString("n"),
+                fileName,
+                "audio/wav",
+                fileInfo.Length,
+                Duration: duration);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
 #else
         await Task.CompletedTask;
         IsRecording = false;
@@ -187,22 +301,23 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
 
         try
         {
+            // Cancel the capture loop before Stop unblocks AudioRecord.Read. Otherwise a normal
+            // Android stop can surface ERROR_INVALID_OPERATION while the loop still considers the
+            // recording active and the completed voice message is discarded.
+            activeCancellation.Cancel();
             try
             {
                 activeRecorder.Stop();
             }
             catch (Exception) when (duration < MinimumVoiceDuration)
             {
-                activeCancellation.Cancel();
                 return;
             }
             catch (Exception ex)
             {
-                activeCancellation.Cancel();
                 throw new InvalidOperationException("Не удалось сохранить голосовое сообщение.", ex);
             }
 
-            activeCancellation.Cancel();
             var completed = await Task.WhenAny(activeTask, Task.Delay(StopRecorderTimeout, cancellationToken))
                 .ConfigureAwait(false);
             if (completed != activeTask)
@@ -309,6 +424,7 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
         recordingPath = null;
         IsRecording = false;
 
+        activeCancellation?.Cancel();
         try
         {
             activeRecorder?.Stop();
@@ -318,7 +434,6 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
         }
         finally
         {
-            activeCancellation?.Cancel();
             if (activeTask is not null)
             {
                 try
@@ -342,6 +457,35 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
             if (!string.IsNullOrWhiteSpace(path))
             {
                 TryDelete(path);
+            }
+        }
+#elif WINDOWS
+        var activeRecorder = recorder;
+        var activeFile = recordingFile;
+        recorder = null;
+        recordingFile = null;
+        IsRecording = false;
+
+        try
+        {
+            if (activeRecorder is not null)
+            {
+                await activeRecorder
+                    .StopRecordAsync()
+                    .AsTask()
+                    .WaitAsync(CancelRecorderTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+        }
+        finally
+        {
+            activeRecorder?.Dispose();
+            if (activeFile is not null)
+            {
+                TryDelete(activeFile.Path);
             }
         }
 #else

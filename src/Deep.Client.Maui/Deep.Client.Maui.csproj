@@ -7,14 +7,16 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Deep.Client.Maui</RootNamespace>
     <UseMaui>true</UseMaui>
+    <MauiXamlInflator>SourceGen</MauiXamlInflator>
     <SingleProject>true</SingleProject>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationTitle>Deep</ApplicationTitle>
     <ApplicationId>network.xpoint.deep</ApplicationId>
-    <ApplicationDisplayVersion>0.2.7</ApplicationDisplayVersion>
-    <ApplicationVersion>12</ApplicationVersion>
+    <ApplicationDisplayVersion>0.2.8</ApplicationDisplayVersion>
+    <ApplicationVersion>14</ApplicationVersion>
     <WindowsPackageType>None</WindowsPackageType>
+    <RuntimeIdentifiers Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">win-x64;win-arm64</RuntimeIdentifiers>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">26.0</SupportedOSPlatformVersion>
@@ -32,6 +34,10 @@
     <AndroidLinkTool>r8</AndroidLinkTool>
   </PropertyGroup>
 
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(RuntimeIdentifierOverride)' != ''">
+    <RuntimeIdentifier>$(RuntimeIdentifierOverride)</RuntimeIdentifier>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
@@ -44,11 +50,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="deep.release.env">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <EmbeddedResource Include="deep.release.env">
       <LogicalName>deep.release.env</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(DeepWindowsReleaseEnv)" Condition="'$(DeepWindowsReleaseEnv)' != ''">
+      <LogicalName>deep.windows.release.env</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="deep.bootstrap.json">
       <LogicalName>deep.bootstrap.json</LogicalName>
@@ -69,6 +75,25 @@
     <ProguardConfiguration Include="Platforms\Android\proguard.cfg" />
   </ItemGroup>
 
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(RuntimeIdentifier)' == 'win-x64'">
+    <Content Include="Platforms\Windows\Tools\xray-windows-amd64.exe">
+      <Link>xray\xray-windows-amd64.exe</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(RuntimeIdentifier)' == 'win-arm64'">
+    <Content Include="Platforms\Windows\Tools\xray-windows-arm64.exe">
+      <Link>xray\xray-windows-arm64.exe</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(DeepWindowsAppxManifest)' != ''">
+    <AppxManifest Include="$(DeepWindowsAppxManifest)" />
+  </ItemGroup>
+
   <ItemGroup>
     <MauiIcon Include="Resources\AppIcon\appicon.png" BaseSize="512,512" />
     <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#020711" BaseSize="160,160" />
@@ -84,6 +109,10 @@
 
   <Target Name="EnsureGoogleServicesJson" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' and !Exists('Platforms\Android\google-services.json')">
     <Error Text="Production Android builds require Platforms\Android\google-services.json. Use eng/build-android-play.ps1 with XPOINT_GOOGLE_SERVICES_JSON." />
+  </Target>
+
+  <Target Name="EnsureWindowsRuntimeIdentifier" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(RuntimeIdentifier)' == ''">
+    <Error Text="Windows Release builds require -p:RuntimeIdentifier=win-x64 or win-arm64 so the matching pinned Xray binary is packaged." />
   </Target>
 
 </Project>

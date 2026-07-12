@@ -15,6 +15,8 @@ namespace Deep.Client.Maui;
 [Activity(Name = "network.xpoint.deep.MainActivity", Theme = "@style/Maui.SplashTheme", LaunchMode = LaunchMode.SingleTop, WindowSoftInputMode = SoftInput.AdjustResize, ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
 public class MainActivity : MauiAppCompatActivity
 {
+    internal const string TrustedNotificationAction = "network.xpoint.deep.action.OPEN_NOTIFICATION";
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
@@ -105,19 +107,11 @@ public class MainActivity : MauiAppCompatActivity
 
     private static void HandleIntent(Intent? intent)
     {
-        if (intent is null)
+        if (intent is null
+            || !string.Equals(intent.Action, TrustedNotificationAction, StringComparison.Ordinal)
+            || !string.Equals(intent.Component?.ClassName, "network.xpoint.deep.MainActivity", StringComparison.Ordinal))
         {
             return;
-        }
-
-        var action = intent.Action;
-        if (string.Equals(action, Intent.ActionSend, StringComparison.Ordinal))
-        {
-            var text = intent.GetStringExtra(Intent.ExtraText);
-            var stream = GetShareStream(intent);
-            var files = string.IsNullOrWhiteSpace(stream) ? Array.Empty<string>() : new[] { stream };
-
-            MauiShareExtensionBridge.EnqueueInBackground(new SharePayload(text, files));
         }
 
         var notificationAction = intent.GetStringExtra("notification_action");
@@ -132,20 +126,6 @@ public class MainActivity : MauiAppCompatActivity
                 notificationId ?? Guid.NewGuid().ToString("N"),
                 DateTimeOffset.UtcNow));
         }
-    }
-
-    private static string? GetShareStream(Intent intent)
-    {
-        if (OperatingSystem.IsAndroidVersionAtLeast(33))
-        {
-            return intent.GetParcelableExtra(
-                Intent.ExtraStream,
-                Java.Lang.Class.FromType(typeof(Android.Net.Uri)))?.ToString();
-        }
-
-#pragma warning disable CA1422
-        return intent.GetParcelableExtra(Intent.ExtraStream)?.ToString();
-#pragma warning restore CA1422
     }
 
     private static async Task ResumeAfterUnlockAsync(Intent? intent)

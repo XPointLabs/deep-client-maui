@@ -9,6 +9,7 @@ using Microsoft.Maui.Storage;
 
 #if ANDROID
 using Android.Views;
+using AndroidX.RecyclerView.Widget;
 using AndroidView = Android.Views.View;
 #endif
 
@@ -20,6 +21,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private const double VoiceCancelPanelTranslation = 36;
     private const double MessageLongPressMoveThreshold = 14;
     private static readonly TimeSpan MessageLongPressDelay = TimeSpan.FromMilliseconds(420);
+    private static readonly TimeSpan InitialMessageLayoutDelay = TimeSpan.FromMilliseconds(80);
     private IDispatcherTimer? autoRefreshTimer;
     private readonly GroupChatViewModel viewModel;
     private readonly INetworkStatusService networkStatusService;
@@ -32,14 +34,14 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private IDisposable? keyboardInsetSubscription;
     private IDispatcherTimer? voiceRecordingTimer;
     private IDispatcherTimer? voicePlaybackTimer;
+    private IDispatcherTimer? imagePreviewDebounceTimer;
     private bool pendingScrollAnimate;
     private bool pendingScrollForce;
     private bool isLoadingOlderMessages;
     private bool shouldStickToEnd = true;
     private bool didInitialScroll;
     private bool isLoadingImagePreviews;
-    private bool imagePreviewReloadRequested;
-    private readonly HashSet<string> loadingImagePreviewAttachmentIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, GroupChatMessageItem> pendingImagePreviews = new(StringComparer.Ordinal);
     private double expandedPageHeight;
     private double keyboardBottomInset;
     private DateTimeOffset voiceRecordingStartedAt;
@@ -47,11 +49,16 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private bool voicePointerActive;
     private bool voiceCancelBySwipe;
     private Task? voiceGestureStartTask;
+    private readonly SemaphoreSlim voiceGestureCompletionGate = new(1, 1);
+    private int voicePageExitCancellationRequested;
     private IDispatcherTimer? messageLongPressTimer;
     private Point messagePointerStart;
     private GroupChatMessageItem? pendingLongPressMessage;
     private bool suppressNextAttachmentTap;
     private bool refreshingMessages;
+    private bool hasLoadedImageMessages;
+    private int pendingPreviewFirstVisibleIndex = -1;
+    private int pendingPreviewLastVisibleIndex = -1;
     private string? activeVoiceAttachmentId;
     private GroupChatMessageItem? selectedMessage;
     private readonly List<GroupChatMessageItem> messageSearchMatches = [];
@@ -70,7 +77,9 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         IAttachmentFileTransport attachmentFiles,
         SyncPollingPolicy syncPollingPolicy)
     {
+        var constructionStopwatch = System.Diagnostics.Stopwatch.StartNew();
         InitializeComponent();
+        CrashDiagnostics.LogInfo("Perf.GroupChat", $"ConstructPage elapsedMs={constructionStopwatch.ElapsedMilliseconds}");
         this.viewModel = viewModel;
         this.networkStatusService = networkStatusService;
         this.attachmentFiles = attachmentFiles;
@@ -97,13 +106,16 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         ApplyComposerPreferences();
         UpdateNetworkUi();
-        _ = EnsureImagePreviewsAsync();
-        _ = ConfigureAutoRefreshAsync();
+        ConfigureMessageListPlatformView();
+        Dispatcher.Dispatch(() => QueueVisibleImagePreviews());
+        _ = ConfigureAutoRefreshAsync(pageActivityCancellation.Token);
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        voiceCancelBySwipe = true;
+        _ = FinishVoiceRecordingGestureAsync(forceCancel: true);
         UnsubscribePageEvents();
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         keyboardInsetSubscription?.Dispose();
@@ -111,18 +123,60 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         keyboardBottomInset = 0;
         ApplyAndroidSafeAreaCompensation();
         autoRefreshTimer?.Stop();
+        imagePreviewDebounceTimer?.Stop();
         pageActivityCancellation?.Cancel();
         pageActivityCancellation?.Dispose();
         pageActivityCancellation = null;
         StopRecordingUiTimer();
         StopVoicePlaybackTimer();
+        ReleaseDispatcherTimers();
         ClearActiveVoicePlayback();
         voicePlayback.Stop();
+        pendingImagePreviews.Clear();
         CancelRouteLoad();
         CancelPendingScrollToEnd();
 #if ANDROID
         AndroidVoiceGestureRouter.Touch -= OnAndroidVoiceGesture;
+        if (voiceButtonPlatformView is not null)
+        {
+            voiceButtonPlatformView.Touch -= OnVoiceButtonPlatformTouch;
+            voiceButtonPlatformView = null;
+        }
 #endif
+    }
+
+    private void ReleaseDispatcherTimers()
+    {
+        if (autoRefreshTimer is not null)
+        {
+            autoRefreshTimer.Stop();
+            autoRefreshTimer.Tick -= OnAutoRefreshTick;
+            autoRefreshTimer = null;
+        }
+        if (imagePreviewDebounceTimer is not null)
+        {
+            imagePreviewDebounceTimer.Stop();
+            imagePreviewDebounceTimer.Tick -= OnImagePreviewDebounceTick;
+            imagePreviewDebounceTimer = null;
+        }
+        if (voiceRecordingTimer is not null)
+        {
+            voiceRecordingTimer.Stop();
+            voiceRecordingTimer.Tick -= OnVoiceRecordingTick;
+            voiceRecordingTimer = null;
+        }
+        if (voicePlaybackTimer is not null)
+        {
+            voicePlaybackTimer.Stop();
+            voicePlaybackTimer.Tick -= OnVoicePlaybackTick;
+            voicePlaybackTimer = null;
+        }
+        if (messageLongPressTimer is not null)
+        {
+            messageLongPressTimer.Stop();
+            messageLongPressTimer.Tick -= OnMessageLongPressTimerTick;
+            messageLongPressTimer = null;
+        }
     }
 
     private void SubscribePageEvents()
@@ -130,6 +184,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         UnsubscribePageEvents();
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
         viewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
+        MessagesCollection.HandlerChanged += OnMessagesCollectionHandlerChanged;
         SizeChanged += OnPageSizeChanged;
 #if ANDROID
         VoiceButton.HandlerChanged += OnVoiceButtonHandlerChanged;
@@ -140,6 +195,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     {
         networkStatusService.StatusChanged -= OnNetworkStatusChanged;
         viewModel.Messages.CollectionChanged -= OnMessagesCollectionChanged;
+        MessagesCollection.HandlerChanged -= OnMessagesCollectionHandlerChanged;
         SizeChanged -= OnPageSizeChanged;
 #if ANDROID
         VoiceButton.HandlerChanged -= OnVoiceButtonHandlerChanged;
@@ -180,9 +236,8 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
             shouldStickToEnd = true;
             didInitialScroll = false;
-
             await viewModel.OpenFromRouteAsync(groupId, displayName, cancellationToken);
-            _ = EnsureImagePreviewsAsync();
+            QueueVisibleImagePreviews();
             await RevealInitialMessagesAsync(cancellationToken);
         }
         catch (OperationCanceledException)
@@ -197,11 +252,40 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private async Task RevealInitialMessagesAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await MainThread.InvokeOnMainThreadAsync(() =>
+        var hasMessages = await MainThread.InvokeOnMainThreadAsync(() =>
         {
-            MessagesCollection.Opacity = 1;
-            QueueScrollToEnd(animate: false, force: true);
+            ConfigureMessageListPlatformView();
+            if (viewModel.Messages.Count == 0)
+            {
+                MessagesCollection.Opacity = 1;
+                return false;
+            }
+
+            MessagesCollection.Opacity = 0;
+            return true;
         });
+        if (!hasMessages)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(InitialMessageLayoutDelay, cancellationToken).ConfigureAwait(false);
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                CancelPendingScrollToEnd();
+                ScrollMessagesToEnd(animate: false, force: true);
+                QueueVisibleImagePreviews();
+            });
+        }
+        finally
+        {
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                await MainThread.InvokeOnMainThreadAsync(() => MessagesCollection.Opacity = 1);
+            }
+        }
     }
 
     private async void OnBackClicked(object? sender, EventArgs e)
@@ -210,7 +294,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     }
 
     private static Task NavigateBackToConversationsAsync() =>
-        Shell.Current.GoToAsync($"//{ShellRouteCatalog.Conversations}", animate: false);
+        Shell.Current.GoToAsync("..", animate: false);
 
     private async void OnMemberSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -381,6 +465,11 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     private void OnVoicePointerPressed(object? sender, PointerEventArgs e)
     {
+        if (OperatingSystem.IsAndroid())
+        {
+            return;
+        }
+
         if (voicePointerActive || !viewModel.ShowVoiceButton)
         {
             return;
@@ -391,6 +480,11 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     private void OnVoicePointerMoved(object? sender, PointerEventArgs e)
     {
+        if (OperatingSystem.IsAndroid())
+        {
+            return;
+        }
+
         if (!voicePointerActive)
         {
             return;
@@ -410,11 +504,21 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     private async void OnVoicePointerReleased(object? sender, PointerEventArgs e)
     {
+        if (OperatingSystem.IsAndroid())
+        {
+            return;
+        }
+
         await FinishVoiceRecordingGestureAsync();
     }
 
     private void OnVoicePanUpdated(object? sender, PanUpdatedEventArgs e)
     {
+        if (OperatingSystem.IsAndroid())
+        {
+            return;
+        }
+
         if (!voicePointerActive)
         {
             return;
@@ -428,9 +532,15 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         }
     }
 
-    private async Task ConfigureAutoRefreshAsync()
+    private async Task ConfigureAutoRefreshAsync(CancellationToken cancellationToken)
     {
-        if (await syncPollingPolicy.IsPushDrivenSyncAvailableAsync())
+        var pushDriven = await syncPollingPolicy.IsPushDrivenSyncAvailableAsync();
+        if (cancellationToken.IsCancellationRequested || pageActivityCancellation?.Token != cancellationToken)
+        {
+            return;
+        }
+
+        if (pushDriven)
         {
             autoRefreshTimer?.Stop();
             return;
@@ -505,13 +615,22 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems is not null)
+        hasLoadedImageMessages = e.Action switch
         {
-            _ = EnsureImagePreviewsAsync(e.NewItems.OfType<GroupChatMessageItem>());
+            NotifyCollectionChangedAction.Reset => viewModel.Messages.Any(static item => item.IsImageMessage),
+            NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Replace =>
+                hasLoadedImageMessages || e.NewItems?.OfType<GroupChatMessageItem>().Any(static item => item.IsImageMessage) == true,
+            NotifyCollectionChangedAction.Remove => viewModel.Messages.Any(static item => item.IsImageMessage),
+            _ => hasLoadedImageMessages
+        };
+
+        if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems is not null && WasAppendedToEnd(e))
+        {
+            QueueImagePreviews(e.NewItems.OfType<GroupChatMessageItem>());
         }
         else if (e.Action == NotifyCollectionChangedAction.Reset)
         {
-            _ = EnsureImagePreviewsAsync();
+            QueueVisibleImagePreviews();
         }
 
         if (MessageSearchBar.IsVisible)
@@ -521,6 +640,11 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
         if (e.Action is NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Reset)
         {
+            if (!didInitialScroll)
+            {
+                return;
+            }
+
             if (e.Action == NotifyCollectionChangedAction.Add && !WasAppendedToEnd(e))
             {
                 return;
@@ -529,7 +653,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
             var hasOutgoing = e.NewItems?
                 .OfType<GroupChatMessageItem>()
                 .Any(message => message.Direction == MessageDirection.Outgoing) == true;
-            var force = !didInitialScroll || hasOutgoing;
+            var force = hasOutgoing;
             if (force || shouldStickToEnd)
             {
                 QueueScrollToEnd(false, force);
@@ -546,7 +670,11 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         }
 
         shouldStickToEnd = e.LastVisibleItemIndex >= viewModel.Messages.Count - 2;
-        if (e.FirstVisibleItemIndex <= 2)
+        if (hasLoadedImageMessages)
+        {
+            ScheduleVisibleImagePreviews(e.FirstVisibleItemIndex, e.LastVisibleItemIndex);
+        }
+        if (didInitialScroll && e.FirstVisibleItemIndex <= 2)
         {
             _ = LoadOlderMessagesAsync();
         }
@@ -593,32 +721,78 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         ShowAttachmentActionSheet(item, item.Attachments);
     }
 
-    private async Task EnsureImagePreviewsAsync(IEnumerable<GroupChatMessageItem>? candidates = null)
+    private void QueueVisibleImagePreviews(int firstVisibleIndex = -1, int lastVisibleIndex = -1)
+    {
+        if (viewModel.Messages.Count == 0)
+        {
+            return;
+        }
+
+        var start = firstVisibleIndex >= 0
+            ? Math.Max(0, firstVisibleIndex - 2)
+            : Math.Max(0, viewModel.Messages.Count - 12);
+        var end = lastVisibleIndex >= start
+            ? Math.Min(viewModel.Messages.Count - 1, lastVisibleIndex + 2)
+            : viewModel.Messages.Count - 1;
+        QueueImagePreviews(viewModel.Messages.Skip(start).Take(end - start + 1));
+    }
+
+    private void ScheduleVisibleImagePreviews(int firstVisibleIndex, int lastVisibleIndex)
+    {
+        pendingPreviewFirstVisibleIndex = firstVisibleIndex;
+        pendingPreviewLastVisibleIndex = lastVisibleIndex;
+        if (imagePreviewDebounceTimer is null)
+        {
+            imagePreviewDebounceTimer = Dispatcher.CreateTimer();
+            imagePreviewDebounceTimer.Interval = TimeSpan.FromMilliseconds(150);
+            imagePreviewDebounceTimer.IsRepeating = false;
+            imagePreviewDebounceTimer.Tick += OnImagePreviewDebounceTick;
+        }
+
+        if (!imagePreviewDebounceTimer.IsRunning)
+        {
+            imagePreviewDebounceTimer.Start();
+        }
+    }
+
+    private void OnImagePreviewDebounceTick(object? sender, EventArgs e) =>
+        QueueVisibleImagePreviews(pendingPreviewFirstVisibleIndex, pendingPreviewLastVisibleIndex);
+
+    private void QueueImagePreviews(IEnumerable<GroupChatMessageItem> candidates)
+    {
+        foreach (var item in candidates)
+        {
+            var attachment = item.PrimaryImageAttachment;
+            if (attachment is not null && !item.HasImagePreview)
+            {
+                pendingImagePreviews[attachment.AttachmentId] = item;
+            }
+        }
+
+        if (!isLoadingImagePreviews && pendingImagePreviews.Count > 0)
+        {
+            _ = DrainImagePreviewQueueAsync();
+        }
+    }
+
+    private async Task DrainImagePreviewQueueAsync()
     {
         if (isLoadingImagePreviews)
         {
-            imagePreviewReloadRequested = true;
             return;
         }
 
         try
         {
             isLoadingImagePreviews = true;
-            var messages = (candidates ?? viewModel.Messages)
-                .Where(static message => message.IsImageMessage && !message.HasImagePreview)
-                .ToArray();
-
-            foreach (var item in messages)
+            while (pendingImagePreviews.Count > 0)
             {
+                var queued = pendingImagePreviews.First();
+                pendingImagePreviews.Remove(queued.Key);
+                var item = queued.Value;
                 var attachment = item.PrimaryImageAttachment;
                 if (attachment is null || item.HasImagePreview)
                 {
-                    continue;
-                }
-
-                if (!loadingImagePreviewAttachmentIds.Add(attachment.AttachmentId))
-                {
-                    imagePreviewReloadRequested = true;
                     continue;
                 }
 
@@ -627,34 +801,53 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
                     var file = AttachmentOpenService.TryGetCachedFile(attachment);
                     if (file is null && attachmentFiles.IsEnabled && attachment.RemoteUri is not null)
                     {
-                        file = await AttachmentOpenService.DownloadToCacheAsync(attachment, attachmentFiles)
-                            .ConfigureAwait(false);
+                        var cancellationToken = pageActivityCancellation?.Token ?? CancellationToken.None;
+                        file = await AttachmentOpenService.DownloadToCacheAsync(
+                            attachment,
+                            attachmentFiles,
+                            cancellationToken);
                     }
 
                     if (file is not null)
                     {
-                        await MainThread.InvokeOnMainThreadAsync(() => item.SetImagePreviewPath(file.Path));
+                        item.SetImagePreviewPath(file.Path);
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
                 }
                 catch (Exception ex)
                 {
                     CrashDiagnostics.LogException("GroupChatPage.ImagePreview", ex);
-                }
-                finally
-                {
-                    loadingImagePreviewAttachmentIds.Remove(attachment.AttachmentId);
                 }
             }
         }
         finally
         {
             isLoadingImagePreviews = false;
-            if (imagePreviewReloadRequested)
-            {
-                imagePreviewReloadRequested = false;
-                _ = EnsureImagePreviewsAsync();
-            }
         }
+    }
+
+    private void OnMessagesCollectionHandlerChanged(object? sender, EventArgs e) =>
+        ConfigureMessageListPlatformView();
+
+    private void ConfigureMessageListPlatformView()
+    {
+#if ANDROID
+        if (MessagesCollection.Handler?.PlatformView is RecyclerView recyclerView)
+        {
+            recyclerView.SetItemAnimator(null);
+            recyclerView.HasFixedSize = true;
+            recyclerView.SetItemViewCacheSize(12);
+            if (recyclerView.GetLayoutManager() is LinearLayoutManager layoutManager)
+            {
+                layoutManager.StackFromEnd = true;
+                layoutManager.InitialPrefetchItemCount = 8;
+            }
+
+        }
+#endif
     }
 
     private async Task OpenInlineImageAsync(GroupChatMessageItem item)
@@ -670,10 +863,10 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
             var file = AttachmentOpenService.TryGetCachedFile(attachment)
                 ?? await AttachmentOpenService.DownloadToCacheAsync(attachment, attachmentFiles);
             item.SetImagePreviewPath(file.Path);
-            ImageViewerTitle.Text = item.HasMultipleImages
+            ImageViewerOverlay.GetRequiredView<Label>("Title").Text = item.HasMultipleImages
                 ? $"1 из {item.Attachments.Count}"
                 : "Фото";
-            ImageViewerImage.Source = ImageSource.FromFile(file.Path);
+            ImageViewerOverlay.GetRequiredView<Image>("Image").Source = ImageSource.FromFile(file.Path);
             imageViewerAttachment = attachment;
             imageViewerMessage = item;
             ImageViewerOverlay.IsVisible = true;
@@ -687,7 +880,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
     private void OnCloseImageViewer(object? sender, TappedEventArgs e)
     {
         ImageViewerOverlay.IsVisible = false;
-        ImageViewerImage.Source = null;
+        ImageViewerOverlay.GetRequiredView<Image>("Image").Source = null;
         imageViewerAttachment = null;
         imageViewerMessage = null;
     }
@@ -735,11 +928,11 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
             return;
         }
 
-        AttachmentActionTitle.Text = selectedAttachment.FileName;
-        AttachmentActionSubtitle.Text = DescribeAttachment(selectedAttachment, attachments.Count);
-        AttachmentActionReplyRow.IsVisible = message is not null;
-        AttachmentActionDeleteRow.IsVisible = message is not null;
-        AttachmentActionSaveRow.IsVisible = true;
+        AttachmentActionOverlay.GetRequiredView<Label>("Title").Text = selectedAttachment.FileName;
+        AttachmentActionOverlay.GetRequiredView<Label>("Subtitle").Text = DescribeAttachment(selectedAttachment, attachments.Count);
+        AttachmentActionOverlay.GetRequiredView<Grid>("ReplyRow").IsVisible = message is not null;
+        AttachmentActionOverlay.GetRequiredView<Grid>("DeleteRow").IsVisible = message is not null;
+        AttachmentActionOverlay.GetRequiredView<Grid>("SaveRow").IsVisible = true;
         AttachmentActionOverlay.IsVisible = true;
     }
 
@@ -942,11 +1135,11 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         var attachment = PrimaryActionAttachment(item);
         var hasAttachment = attachment is not null;
         var hasText = item.HasVisibleBody;
-        MessageMenuOpenMediaRow.IsVisible = item.IsImageMessage;
-        MessageMenuSaveAttachmentRow.IsVisible = hasAttachment;
-        MessageMenuShareAttachmentRow.IsVisible = hasAttachment;
-        MessageMenuCopyAttachmentNameRow.IsVisible = hasAttachment;
-        MessageMenuCopyTextRow.IsVisible = hasText;
+        MessageMenuOverlay.GetRequiredView<Grid>("OpenMediaRow").IsVisible = item.IsImageMessage;
+        MessageMenuOverlay.GetRequiredView<Grid>("SaveAttachmentRow").IsVisible = hasAttachment;
+        MessageMenuOverlay.GetRequiredView<Grid>("ShareAttachmentRow").IsVisible = hasAttachment;
+        MessageMenuOverlay.GetRequiredView<Grid>("CopyAttachmentNameRow").IsVisible = hasAttachment;
+        MessageMenuOverlay.GetRequiredView<Grid>("CopyTextRow").IsVisible = hasText;
         MessageMenuOverlay.IsVisible = true;
     }
 
@@ -1155,39 +1348,62 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
         ApplyVoiceRecordingGestureProgress(cancelProgress);
     }
 
-    private async Task FinishVoiceRecordingGestureAsync()
+    private async Task FinishVoiceRecordingGestureAsync(bool forceCancel = false)
     {
-        if (!voicePointerActive && voiceGestureStartTask is null)
+        if (forceCancel)
         {
-            return;
+            Interlocked.Exchange(ref voicePageExitCancellationRequested, 1);
         }
 
-        voicePointerActive = false;
-        var startTask = voiceGestureStartTask;
-        voiceGestureStartTask = null;
-        if (startTask is not null)
+        await voiceGestureCompletionGate.WaitAsync();
+        try
         {
-            await startTask;
-        }
+            if (!voicePointerActive &&
+                voiceGestureStartTask is null &&
+                !forceCancel &&
+                !viewModel.IsRecordingVoice)
+            {
+                return;
+            }
 
-        StopRecordingUiTimer();
-        ResetVoiceRecordingGestureUi();
-        if (!viewModel.IsRecordingVoice)
+            voicePointerActive = false;
+            var startTask = voiceGestureStartTask;
+            voiceGestureStartTask = null;
+            if (startTask is not null)
+            {
+                await startTask;
+            }
+
+            StopRecordingUiTimer();
+            ResetVoiceRecordingGestureUi();
+            if (!viewModel.IsRecordingVoice)
+            {
+                return;
+            }
+
+            if (voiceCancelBySwipe || Volatile.Read(ref voicePageExitCancellationRequested) != 0)
+            {
+                await viewModel.CancelVoiceRecordingAsync();
+            }
+            else
+            {
+                await viewModel.StopVoiceRecordingAndSendAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("GroupChat.VoiceGestureFinish", exception);
+        }
+        finally
         {
             voiceCancelBySwipe = false;
-            return;
-        }
+            if (!viewModel.IsRecordingVoice)
+            {
+                Interlocked.Exchange(ref voicePageExitCancellationRequested, 0);
+            }
 
-        if (voiceCancelBySwipe)
-        {
-            await viewModel.CancelVoiceRecordingAsync();
+            voiceGestureCompletionGate.Release();
         }
-        else
-        {
-            await viewModel.StopVoiceRecordingAndSendAsync();
-        }
-
-        voiceCancelBySwipe = false;
     }
 
     private void ApplyVoiceRecordingGestureProgress(double progress)
@@ -1292,9 +1508,24 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
             return;
         }
 
-        if (e.Action is MotionEventActions.Move or MotionEventActions.Up or MotionEventActions.Cancel)
+        if (e.Action == MotionEventActions.Move)
         {
             UpdateVoiceRecordingGesture(new Point(e.RawX, e.RawY));
+            return;
+        }
+
+        if (e.Action == MotionEventActions.Up)
+        {
+            UpdateVoiceRecordingGesture(new Point(e.RawX, e.RawY));
+            _ = FinishVoiceRecordingGestureAsync();
+            return;
+        }
+
+        if (e.Action == MotionEventActions.Cancel)
+        {
+            voiceCancelBySwipe = true;
+            ApplyVoiceRecordingGestureProgress(1);
+            _ = FinishVoiceRecordingGestureAsync();
         }
     }
 
@@ -1322,7 +1553,7 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
             return;
         }
 
-        e.Handled = false;
+        e.Handled = true;
         switch (motion.ActionMasked)
         {
             case MotionEventActions.Down:
@@ -1341,7 +1572,8 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
                 break;
 
             case MotionEventActions.Cancel:
-                UpdateVoiceRecordingGesture(new Point(motion.RawX, motion.RawY));
+                voiceCancelBySwipe = true;
+                ApplyVoiceRecordingGestureProgress(1);
                 voiceButtonPlatformView?.Parent?.RequestDisallowInterceptTouchEvent(false);
                 _ = FinishVoiceRecordingGestureAsync();
                 break;
@@ -1392,28 +1624,40 @@ public partial class GroupChatPage : ContentPage, IQueryAttributable
 
     private async Task ScrollMessagesToEndAsync(CancellationTokenSource scrollRequest)
     {
+        var cancellationToken = scrollRequest.Token;
         try
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(80), scrollRequest.Token).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromMilliseconds(80), cancellationToken).ConfigureAwait(false);
+            if (pendingScrollToEnd != scrollRequest || cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            var animate = pendingScrollAnimate;
+            var force = pendingScrollForce;
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                if (pendingScrollToEnd == scrollRequest && !cancellationToken.IsCancellationRequested)
+                {
+                    ScrollMessagesToEnd(animate, force);
+                }
+            });
+
         }
         catch (OperationCanceledException)
         {
-            return;
         }
-
-        var animate = pendingScrollAnimate;
-        var force = pendingScrollForce;
-        if (pendingScrollToEnd != scrollRequest || scrollRequest.IsCancellationRequested)
+        finally
         {
-            return;
+            if (pendingScrollToEnd == scrollRequest)
+            {
+                pendingScrollToEnd = null;
+                pendingScrollAnimate = false;
+                pendingScrollForce = false;
+            }
+
+            scrollRequest.Dispose();
         }
-
-        pendingScrollToEnd = null;
-        pendingScrollAnimate = false;
-        pendingScrollForce = false;
-        scrollRequest.Dispose();
-
-        await MainThread.InvokeOnMainThreadAsync(() => ScrollMessagesToEnd(animate, force));
     }
 
     private void CancelPendingScrollToEnd()

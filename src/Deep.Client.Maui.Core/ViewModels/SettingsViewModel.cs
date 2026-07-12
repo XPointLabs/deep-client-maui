@@ -11,19 +11,21 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly ClientRuntime runtime;
     private readonly AuthNavigationState authNavigationState;
     private readonly INetworkStatusService networkStatusService;
+    private readonly IAccountLogoutCoordinator accountLogoutCoordinator;
     private string accountDisplayName = "Нет аккаунта";
     private string sessionId = "-";
     private string connectionStatus = "Неизвестно";
-    private bool wipeLocalDataOnLogout;
 
     public SettingsViewModel(
         ClientRuntime runtime,
         AuthNavigationState authNavigationState,
-        INetworkStatusService networkStatusService)
+        INetworkStatusService networkStatusService,
+        IAccountLogoutCoordinator accountLogoutCoordinator)
     {
         this.runtime = runtime;
         this.authNavigationState = authNavigationState;
         this.networkStatusService = networkStatusService;
+        this.accountLogoutCoordinator = accountLogoutCoordinator;
 
         RefreshCommand = new AsyncCommand(LoadAsync);
         LogoutCommand = new AsyncCommand(LogoutAsync, () => authNavigationState.IsAuthenticated);
@@ -71,12 +73,6 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public AsyncCommand LogoutCommand { get; }
 
-    public bool WipeLocalDataOnLogout
-    {
-        get => wipeLocalDataOnLogout;
-        set => SetProperty(ref wipeLocalDataOnLogout, value);
-    }
-
     public void Activate()
     {
         Deactivate();
@@ -114,11 +110,11 @@ public sealed class SettingsViewModel : ViewModelBase
             AccountDisplayName = updated.DisplayName;
         }, cancellationToken);
 
-    public Task LogoutAsync(bool wipeLocalData, CancellationToken cancellationToken = default)
+    public Task LogoutAsync(CancellationToken cancellationToken = default)
     {
         return RunBusyAsync(async ct =>
         {
-            await runtime.Accounts.SignOutAsync(ct);
+            await accountLogoutCoordinator.LogoutAsync(ct);
             authNavigationState.MarkSignedOut();
 
             AccountDisplayName = "Нет аккаунта";
@@ -126,9 +122,6 @@ public sealed class SettingsViewModel : ViewModelBase
             LogoutCommand.RaiseCanExecuteChanged();
         }, cancellationToken);
     }
-
-    private Task LogoutAsync(CancellationToken cancellationToken) =>
-        LogoutAsync(WipeLocalDataOnLogout, cancellationToken);
 
     private void OnNetworkStatusChanged(object? sender, EventArgs e)
     {

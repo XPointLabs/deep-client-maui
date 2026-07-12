@@ -10,7 +10,12 @@
     Shell.NavBarIsVisible="False"
     Title="Восстановление">
     <ScrollView BackgroundColor="{StaticResource PageBackground}">
-        <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto,Auto" RowSpacing="18">
+        <Grid
+            Padding="{StaticResource PagePadding}"
+            RowDefinitions="Auto,Auto,Auto"
+            RowSpacing="18"
+            MaximumWidthRequest="520"
+            HorizontalOptions="Fill">
             <VerticalStackLayout Spacing="8" Padding="0,28,0,0">
                 <Label Text="Восстановление" FontSize="34" FontAttributes="Bold" />
                 <Label Text="Введите фразу восстановления, чтобы открыть аккаунт на этом устройстве." FontSize="15" TextColor="{StaticResource TextSecondary}" />
@@ -18,7 +23,17 @@
 
             <VerticalStackLayout Grid.Row="1" Spacing="12">
                 <Entry AutomationId="Onboarding.DisplayName" Placeholder="Имя профиля" Text="{Binding DisplayName}" />
-                <Editor AutomationId="Onboarding.RecoveryPhrase" Placeholder="Фраза восстановления (12 слов)" Text="{Binding RecoveryPhrase}" AutoSize="TextChanges" HeightRequest="120" MaxLength="256" />
+                <Editor
+                    x:Name="RecoveryPhraseEditor"
+                    AutomationId="Onboarding.RecoveryPhrase"
+                    Placeholder="Фраза восстановления (12 или 13 слов)"
+                    Text="{Binding RecoveryPhrase}"
+                    AutoSize="TextChanges"
+                    HeightRequest="120"
+                    MaxLength="256"
+                    Keyboard="Plain"
+                    IsSpellCheckEnabled="False"
+                    IsTextPredictionEnabled="False" />
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                     <Button AutomationId="Onboarding.Back" Text="Назад" Clicked="OnBackClicked" Style="{StaticResource SecondaryButton}" WidthRequest="110" />
                     <Button AutomationId="Onboarding.Restore" Grid.Column="1" Text="Восстановить" Command="{Binding LoginCommand}" />

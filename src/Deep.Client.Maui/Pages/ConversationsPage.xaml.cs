@@ -13,7 +13,7 @@ namespace Deep.Client.Maui.Pages;
 public partial class ConversationsPage : ContentPage
 {
     private const string AvatarFileName = "profile-avatar.jpg";
-    private const int ChatOpenPreloadPageSize = 30;
+    private const int ChatOpenPreloadPageSize = 20;
     private static readonly SemaphoreSlim ChatOpenPreloadGate = new(1, 1);
     private readonly object chatOpenPreloadCancellationSync = new();
     private IDispatcherTimer? autoSyncTimer;
@@ -22,14 +22,15 @@ public partial class ConversationsPage : ContentPage
     private readonly ClientRuntime runtime;
     private readonly ChatOpenUiCache openCache;
     private readonly INetworkStatusService networkStatusService;
-    private readonly IPushRegistrationCoordinator pushRegistration;
+    private readonly PushRegistrationLifecycleCoordinator pushRegistrationLifecycle;
     private readonly CallSessionCoordinator callCoordinator;
     private readonly SyncPollingPolicy syncPollingPolicy;
-    private bool hasLoaded;
-    private bool pushRegistrationStarted;
+    private readonly BackgroundSyncSchedulingCoordinator backgroundSyncScheduling;
     private bool checkingCalls;
     private bool preloadingChatOpenCache;
-    private bool syncingConversations;
+    private readonly object syncPumpGate = new();
+    private Task? syncPump;
+    private int syncRequested;
     private CancellationTokenSource? pageActivityCancellation;
     private CancellationTokenSource? chatOpenPreloadCancellation;
 
@@ -38,18 +39,20 @@ public partial class ConversationsPage : ContentPage
         ClientRuntime runtime,
         ChatOpenUiCache openCache,
         INetworkStatusService networkStatusService,
-        IPushRegistrationCoordinator pushRegistration,
+        PushRegistrationLifecycleCoordinator pushRegistrationLifecycle,
         CallSessionCoordinator callCoordinator,
-        SyncPollingPolicy syncPollingPolicy)
+        SyncPollingPolicy syncPollingPolicy,
+        BackgroundSyncSchedulingCoordinator backgroundSyncScheduling)
     {
         InitializeComponent();
         this.viewModel = viewModel;
         this.runtime = runtime;
         this.openCache = openCache;
         this.networkStatusService = networkStatusService;
-        this.pushRegistration = pushRegistration;
+        this.pushRegistrationLifecycle = pushRegistrationLifecycle;
         this.callCoordinator = callCoordinator;
         this.syncPollingPolicy = syncPollingPolicy;
+        this.backgroundSyncScheduling = backgroundSyncScheduling;
         BindingContext = viewModel;
     }
 
@@ -58,63 +61,90 @@ public partial class ConversationsPage : ContentPage
         base.OnAppearing();
         pageActivityCancellation?.Cancel();
         pageActivityCancellation?.Dispose();
-        pageActivityCancellation = new CancellationTokenSource();
+        var activityCancellation = new CancellationTokenSource();
+        pageActivityCancellation = activityCancellation;
+        var cancellationToken = activityCancellation.Token;
         networkStatusService.StatusChanged -= OnNetworkStatusChanged;
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
-        ApplyAndroidSafeAreaCompensation();
-        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(120), ApplyAndroidSafeAreaCompensation);
         UpdateProfileAvatarUi();
         UpdateNetworkUi();
-        var loadCachedStopwatch = System.Diagnostics.Stopwatch.StartNew();
-        await viewModel.LoadCachedAsync();
-        CrashDiagnostics.LogInfo(
-            "Perf.Conversations",
-            $"LoadCached count={viewModel.Conversations.Count} elapsedMs={loadCachedStopwatch.ElapsedMilliseconds}");
-        _ = PreloadVisibleChatOpenCacheAsync();
-        if (!hasLoaded)
+        try
         {
-            hasLoaded = true;
-        }
+            var activeAccount = await runtime.Accounts.GetActiveAccountAsync(cancellationToken);
+            if (activeAccount is not null)
+            {
+                AttachmentOpenService.SetAccountScope(activeAccount.SessionId.Value);
+            }
 
-        await EnsurePushRegistrationAsync();
-        await ConfigureAutoSyncAsync();
-        await ConfigureIncomingCallPollingAsync();
-        ScheduleForegroundCatchUpSync();
+            var loadCachedStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            await viewModel.LoadCachedAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            CrashDiagnostics.LogInfo(
+                "Perf.Conversations",
+                $"LoadCached count={viewModel.Conversations.Count} elapsedMs={loadCachedStopwatch.ElapsedMilliseconds}");
+            if (!ReferenceEquals(pageActivityCancellation, activityCancellation))
+            {
+                return;
+            }
+
+            _ = PreloadVisibleChatOpenCacheAsync();
+            ScheduleForegroundCatchUpSync();
+            if (BackgroundSyncBridge.HasPendingSync())
+            {
+                RequestConversationSync(cancellationToken);
+            }
+
+            _ = InitializeRealtimeServicesAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("ConversationsPage.OnAppearing", exception);
+        }
     }
 
-    private async Task EnsurePushRegistrationAsync()
-    {
-        if (pushRegistrationStarted ||
-            !Preferences.Default.Get(ClientSettingKeys.NotificationsFastMode, true))
-        {
-            return;
-        }
-
-        if (await syncPollingPolicy.IsPushDrivenSyncAvailableAsync())
-        {
-            pushRegistrationStarted = true;
-            return;
-        }
-
-        pushRegistrationStarted = true;
-        _ = RegisterPushAsync();
-    }
-
-    private async Task RegisterPushAsync()
+    private async Task InitializeRealtimeServicesAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await pushRegistration.RegisterAsync();
-            syncPollingPolicy.Invalidate();
-            await MainThread.InvokeOnMainThreadAsync(ConfigureAutoSyncAsync);
+            cancellationToken.ThrowIfCancellationRequested();
+            await backgroundSyncScheduling
+                .EnsureScheduledForActiveAccountAsync(cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            await EnsurePushRegistrationAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            await MainThread.InvokeOnMainThreadAsync(ConfigureAutoSyncAsync).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            await MainThread.InvokeOnMainThreadAsync(ConfigureIncomingCallPollingAsync).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception ex)
         {
-            CrashDiagnostics.LogInfo("Push", $"Automatic registration failed: {ex.Message}");
-            pushRegistrationStarted = false;
+            CrashDiagnostics.LogException("ConversationsPage.RealtimeServices", ex);
         }
+    }
+
+    private async Task EnsurePushRegistrationAsync(CancellationToken cancellationToken)
+    {
+        if (!Preferences.Default.Get(ClientSettingKeys.NotificationsFastMode, true))
+        {
+            return;
+        }
+
+        if (await syncPollingPolicy.IsPushDrivenSyncAvailableAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await pushRegistrationLifecycle.EnsureRegisteredAsync(cancellationToken).ConfigureAwait(false);
+        syncPollingPolicy.Invalidate();
     }
 
     protected override void OnDisappearing()
@@ -136,37 +166,73 @@ public partial class ConversationsPage : ContentPage
         {
             if (pageActivityCancellation is { } pageCancellation)
             {
-                _ = SyncConversationsInBackgroundAsync(pageCancellation.Token);
+                RequestConversationSync(pageCancellation.Token);
             }
         });
     }
 
-    private async Task SyncConversationsInBackgroundAsync(CancellationToken cancellationToken)
+    private void RequestConversationSync(CancellationToken cancellationToken)
     {
-        if (viewModel.IsBusy || syncingConversations || cancellationToken.IsCancellationRequested)
+        if (cancellationToken.IsCancellationRequested)
         {
             return;
         }
 
+        Interlocked.Exchange(ref syncRequested, 1);
+        lock (syncPumpGate)
+        {
+            if (syncPump is { IsCompleted: false })
+            {
+                return;
+            }
+
+            syncPump = RunSyncPumpAsync(cancellationToken);
+        }
+    }
+
+    private async Task RunSyncPumpAsync(CancellationToken cancellationToken)
+    {
         try
         {
-            syncingConversations = true;
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            await viewModel.SyncAsync(cancellationToken);
-            CrashDiagnostics.LogInfo(
-                "Perf.Conversations",
-                $"BackgroundSync count={viewModel.Conversations.Count} elapsedMs={stopwatch.ElapsedMilliseconds}");
-        }
-        catch (Exception ex) when (IsCancellation(ex) || cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            CrashDiagnostics.LogException("ConversationsPage.BackgroundSync", ex);
+            while (!cancellationToken.IsCancellationRequested
+                   && Interlocked.Exchange(ref syncRequested, 0) != 0)
+            {
+                try
+                {
+                    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                    var synchronized = await viewModel.SyncAsync(cancellationToken);
+                    if (!synchronized)
+                    {
+                        CrashDiagnostics.LogInfo("Sync", "Foreground synchronization failed; pending work remains queued.");
+                        return;
+                    }
+
+                    BackgroundSyncBridge.MarkHandled();
+                    CrashDiagnostics.LogInfo(
+                        "Perf.Conversations",
+                        $"BackgroundSync count={viewModel.Conversations.Count} elapsedMs={stopwatch.ElapsedMilliseconds}");
+                }
+                catch (Exception ex) when (IsCancellation(ex) || cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    CrashDiagnostics.LogException("ConversationsPage.BackgroundSync", ex);
+                    return;
+                }
+            }
         }
         finally
         {
-            syncingConversations = false;
+            lock (syncPumpGate)
+            {
+                syncPump = null;
+                if (!cancellationToken.IsCancellationRequested && Volatile.Read(ref syncRequested) != 0)
+                {
+                    syncPump = RunSyncPumpAsync(cancellationToken);
+                }
+            }
         }
     }
 
@@ -177,10 +243,20 @@ public partial class ConversationsPage : ContentPage
             return;
         }
 
-        viewModel.SelectedConversation = selected;
-        pageActivityCancellation?.Cancel();
-        CancelChatOpenPreload();
-        await OpenConversationAsync(selected);
+        try
+        {
+            var navigationStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            CrashDiagnostics.LogInfo("Perf.Chat", "NavigateStart");
+            viewModel.SelectedConversation = selected;
+            pageActivityCancellation?.Cancel();
+            CancelChatOpenPreload();
+            await OpenConversationAsync(selected);
+            CrashDiagnostics.LogInfo("Perf.Chat", $"NavigateComplete elapsedMs={navigationStopwatch.ElapsedMilliseconds}");
+        }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("ConversationsPage.OpenConversation", exception);
+        }
     }
 
     private void OnSearchClicked(object? sender, EventArgs e)
@@ -198,12 +274,26 @@ public partial class ConversationsPage : ContentPage
 
     private async void OnNewConversationClicked(object? sender, EventArgs e)
     {
-        await Shell.Current.GoToAsync(ShellRouteCatalog.StartConversation);
+        try
+        {
+            await Shell.Current.GoToAsync(ShellRouteCatalog.StartConversation);
+        }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("ConversationsPage.NewConversation", exception);
+        }
     }
 
     private async void OnProfileClicked(object? sender, EventArgs e)
     {
-        await Shell.Current.GoToAsync(ShellRouteCatalog.Settings);
+        try
+        {
+            await Shell.Current.GoToAsync(ShellRouteCatalog.Settings);
+        }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("ConversationsPage.OpenSettings", exception);
+        }
     }
 
     private void UpdateProfileAvatarUi()
@@ -221,23 +311,6 @@ public partial class ConversationsPage : ContentPage
     }
 
     private static string GetAvatarPath() => Path.Combine(FileSystem.Current.AppDataDirectory, AvatarFileName);
-
-    private void ApplyAndroidSafeAreaCompensation()
-    {
-#if ANDROID
-        var missingTop = AndroidSafeArea.GetTopOverlap(HeaderBar);
-        if (missingTop <= 0.5)
-        {
-            return;
-        }
-
-        RootLayout.Padding = new Thickness(
-            RootLayout.Padding.Left,
-            RootLayout.Padding.Top + missingTop,
-            RootLayout.Padding.Right,
-            RootLayout.Padding.Bottom);
-#endif
-    }
 
     private static Task OpenConversationAsync(ConversationListItem selected)
     {
@@ -275,24 +348,19 @@ public partial class ConversationsPage : ContentPage
 
     private async Task ConfigureAutoSyncAsync()
     {
-        if (await syncPollingPolicy.IsPushDrivenSyncAvailableAsync())
-        {
-            autoSyncTimer?.Stop();
-            return;
-        }
-
-        EnsureAutoSync();
+        var pushDriven = await syncPollingPolicy.IsPushDrivenSyncAvailableAsync();
+        EnsureAutoSync(pushDriven ? TimeSpan.FromMinutes(15) : TimeSpan.FromSeconds(30));
     }
 
-    private void EnsureAutoSync()
+    private void EnsureAutoSync(TimeSpan interval)
     {
         if (autoSyncTimer is null)
         {
             autoSyncTimer = Dispatcher.CreateTimer();
-            autoSyncTimer.Interval = TimeSpan.FromSeconds(30);
             autoSyncTimer.Tick += OnAutoSyncTick;
         }
 
+        autoSyncTimer.Interval = interval;
         autoSyncTimer.Start();
     }
 
@@ -308,15 +376,10 @@ public partial class ConversationsPage : ContentPage
         incomingCallTimer.Start();
     }
 
-    private async Task ConfigureIncomingCallPollingAsync()
+    private Task ConfigureIncomingCallPollingAsync()
     {
-        if (await syncPollingPolicy.IsPushDrivenSyncAvailableAsync())
-        {
-            incomingCallTimer?.Stop();
-            return;
-        }
-
         EnsureIncomingCallPolling();
+        return Task.CompletedTask;
     }
 
     private void ScheduleForegroundCatchUpSync()
@@ -331,7 +394,7 @@ public partial class ConversationsPage : ContentPage
         {
             if (!cancellationToken.IsCancellationRequested)
             {
-                _ = SyncConversationsInBackgroundAsync(cancellationToken);
+                RequestConversationSync(cancellationToken);
             }
         });
     }
@@ -382,10 +445,13 @@ public partial class ConversationsPage : ContentPage
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var recipient = SessionId.Parse(candidate.Id.Value);
-                if (openCache.TryGet(recipient, out _))
+                if (openCache.TryGet(recipient, runtime.Clock.UtcNow, out var cached)
+                    && cached.Conversation.UpdatedAt >= candidate.UpdatedAt)
                 {
                     continue;
                 }
+
+                openCache.Remove(recipient);
 
                 var snapshot = await openRepository.OpenOneToOneConversationAsync(
                     recipient,
@@ -470,6 +536,7 @@ public partial class ConversationsPage : ContentPage
                 && snapshot.Contact is { IsApproved: false, IsBlocked: false },
             items,
             snapshot.RecentMessages.Count == 0 ? null : snapshot.RecentMessages[0].CreatedAt,
+            snapshot.RecentMessages.Count == 0 ? null : snapshot.RecentMessages[0].Id,
             snapshot.RecentMessages.Count == ChatOpenPreloadPageSize,
             runtime.Clock.UtcNow);
     }
@@ -483,7 +550,8 @@ public partial class ConversationsPage : ContentPage
             message.CreatedAt,
             message.Attachments,
             message.ReplyTo,
-            message.ReactionItems);
+            message.ReactionItems,
+            message.ExpiresAt);
 
     private static Message ApplyReadCursor(Message message, DateTimeOffset readAt) =>
         message.Direction == MessageDirection.Incoming && message.CreatedAt <= readAt
@@ -503,7 +571,7 @@ public partial class ConversationsPage : ContentPage
         return false;
     }
 
-    private async void OnAutoSyncTick(object? sender, EventArgs e)
+    private void OnAutoSyncTick(object? sender, EventArgs e)
     {
         if (pageActivityCancellation is not { } pageCancellation)
         {
@@ -515,7 +583,7 @@ public partial class ConversationsPage : ContentPage
             return;
         }
 
-        await SyncConversationsInBackgroundAsync(pageCancellation.Token);
+        RequestConversationSync(pageCancellation.Token);
     }
 
     private async void OnIncomingCallTick(object? sender, EventArgs e)

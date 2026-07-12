@@ -7,7 +7,11 @@ using DomainContact = Deep.Client.Shared.Domain.Contact;
 
 namespace Deep.Client.Maui.Services;
 
-internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILocalSessionStore, IOneToOneConversationOpenRepository, IDisposable
+internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) :
+    ILocalSessionStore,
+    IOneToOneConversationOpenRepository,
+    IMessageSyncRepository,
+    IDisposable
 {
     private const string SecureRecoveryPhraseKey = "deep.account.recovery-phrase.v1";
 
@@ -27,6 +31,9 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILo
 
     public Task UpsertAsync(DomainContact contact, CancellationToken cancellationToken = default) =>
         inner.UpsertAsync(contact, cancellationToken);
+
+    public Task DeleteAsync(SessionId id, CancellationToken cancellationToken = default) =>
+        inner.DeleteAsync(id, cancellationToken);
 
     public Task<DomainContact?> GetAsync(SessionId id, CancellationToken cancellationToken = default) =>
         inner.GetAsync(id, cancellationToken);
@@ -77,10 +84,11 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILo
 
     async IAsyncEnumerable<Message> IMessageRepository.ListRecentForConversationAsync(
         ConversationId conversationId,
+        DateTimeOffset now,
         int limit,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await foreach (var item in ((IMessageRepository)inner).ListRecentForConversationAsync(conversationId, limit, cancellationToken).ConfigureAwait(false))
+        await foreach (var item in ((IMessageRepository)inner).ListRecentForConversationAsync(conversationId, now, limit, cancellationToken).ConfigureAwait(false))
         {
             yield return item;
         }
@@ -89,10 +97,12 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILo
     async IAsyncEnumerable<Message> IMessageRepository.ListBeforeForConversationAsync(
         ConversationId conversationId,
         DateTimeOffset beforeCreatedAt,
+        MessageId beforeMessageId,
+        DateTimeOffset now,
         int limit,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await foreach (var item in ((IMessageRepository)inner).ListBeforeForConversationAsync(conversationId, beforeCreatedAt, limit, cancellationToken).ConfigureAwait(false))
+        await foreach (var item in ((IMessageRepository)inner).ListBeforeForConversationAsync(conversationId, beforeCreatedAt, beforeMessageId, now, limit, cancellationToken).ConfigureAwait(false))
         {
             yield return item;
         }
@@ -105,11 +115,220 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILo
         CancellationToken cancellationToken) =>
         ((IMessageRepository)inner).CountUnreadForConversationAsync(conversationId, readCursor, now, cancellationToken);
 
+    Task<bool> IMessageSyncRepository.ContainsServerHashAsync(
+        ConversationId conversationId,
+        string serverHash,
+        CancellationToken cancellationToken) =>
+        RequireMessageSyncRepository().ContainsServerHashAsync(conversationId, serverHash, cancellationToken);
+
+    Task<bool> IMessageSyncRepository.ContainsMatchingSelfOutgoingAsync(
+        ConversationId conversationId,
+        SessionId account,
+        DateTimeOffset createdAt,
+        string body,
+        IReadOnlyList<AttachmentMetadata> attachments,
+        CancellationToken cancellationToken) =>
+        RequireMessageSyncRepository().ContainsMatchingSelfOutgoingAsync(
+            conversationId,
+            account,
+            createdAt,
+            body,
+            attachments,
+            cancellationToken);
+
+    Task<int> IMessageSyncRepository.DeleteDuplicateSelfIncomingAsync(
+        ConversationId conversationId,
+        SessionId account,
+        CancellationToken cancellationToken) =>
+        RequireMessageSyncRepository().DeleteDuplicateSelfIncomingAsync(conversationId, account, cancellationToken);
+
+    Task<IReadOnlyList<Message>> IMessageSyncRepository.ListPendingOutgoingAsync(
+        SessionId sender,
+        CancellationToken cancellationToken) =>
+        RequireMessageSyncRepository().ListPendingOutgoingAsync(sender, cancellationToken);
+
+    Task<ConversationReadResult> IMessageSyncRepository.MarkConversationReadIfUnreadAsync(
+        ConversationId conversationId,
+        DateTimeOffset readAt,
+        CancellationToken cancellationToken) =>
+        RequireMessageSyncRepository().MarkConversationReadIfUnreadAsync(conversationId, readAt, cancellationToken);
+
+    Task<int> IMessageSyncRepository.ApplyReadCursorAsync(
+        ConversationId conversationId,
+        DateTimeOffset readAt,
+        CancellationToken cancellationToken) =>
+        RequireMessageSyncRepository().ApplyReadCursorAsync(conversationId, readAt, cancellationToken);
+
+    private IMessageSyncRepository RequireMessageSyncRepository() =>
+        inner as IMessageSyncRepository
+        ?? throw new InvalidOperationException("The secured session store requires indexed message synchronization support.");
+
+    public Task MarkConversationReadAsync(
+        ConversationId conversationId,
+        DateTimeOffset readAt,
+        CancellationToken cancellationToken = default) =>
+        ((IConversationReadRepository)inner).MarkConversationReadAsync(conversationId, readAt, cancellationToken);
+
+    public Task AppendMessageAndTouchConversationAsync(
+        Message message,
+        Conversation conversation,
+        CancellationToken cancellationToken = default) =>
+        ((IMessageConversationPersistenceRepository)inner).AppendMessageAndTouchConversationAsync(
+            message,
+            conversation,
+            cancellationToken);
+
+    public Task<IReadOnlyList<MessageId>> ListPendingIncomingMessageNotificationIdsAsync(
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        inner.ListPendingIncomingMessageNotificationIdsAsync(limit, cancellationToken);
+
+    public Task MarkIncomingMessageNotificationsPresentedAsync(
+        IReadOnlyCollection<MessageId> ids,
+        CancellationToken cancellationToken = default) =>
+        inner.MarkIncomingMessageNotificationsPresentedAsync(ids, cancellationToken);
+
+    public Task<int> DeleteExpiredMessagesAsync(
+        ConversationId conversationId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        ((IMessageConversationPersistenceRepository)inner).DeleteExpiredMessagesAsync(
+            conversationId,
+            now,
+            cancellationToken);
+
+    public Task<int> ClearConversationMessagesAsync(
+        ConversationId conversationId,
+        CancellationToken cancellationToken = default) =>
+        ((IMessageConversationPersistenceRepository)inner).ClearConversationMessagesAsync(
+            conversationId,
+            cancellationToken);
+
+    public Task<MessageReplayClaimResult> TryClaimAsync(
+        SessionId sender,
+        MessageId messageId,
+        string envelopeDigest,
+        DateTimeOffset protocolExpiresAt,
+        CancellationToken cancellationToken = default) =>
+        ((IMessageReplayRepository)inner).TryClaimAsync(
+            sender,
+            messageId,
+            envelopeDigest,
+            protocolExpiresAt,
+            cancellationToken);
+
+    public Task<int> PruneExpiredAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        ((IMessageReplayRepository)inner).PruneExpiredAsync(now, cancellationToken);
+
+    public Task<string?> GetInboxCursorAsync(
+        DurableInboxScope scope,
+        CancellationToken cancellationToken = default) =>
+        ((IDurableInboxRepository)inner).GetInboxCursorAsync(scope, cancellationToken);
+
+    public Task<DurableInboxStageResult> StageInboxBatchAsync(
+        DurableInboxScope scope,
+        string? expectedCursor,
+        string? nextCursor,
+        IReadOnlyList<DurableInboxWireEntry> entries,
+        CancellationToken cancellationToken = default) =>
+        ((IDurableInboxRepository)inner).StageInboxBatchAsync(
+            scope,
+            expectedCursor,
+            nextCursor,
+            entries,
+            cancellationToken);
+
+    public Task<IReadOnlyList<DurableInboxItem>> ListStagedInboxItemsAsync(
+        DurableInboxScope scope,
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        ((IDurableInboxRepository)inner).ListStagedInboxItemsAsync(scope, limit, cancellationToken);
+
+    public Task<DurableInboxPrepareResult> PrepareInboxItemAsync(
+        DurableInboxScope scope,
+        string serverHash,
+        DurableInboxDecodedMetadata decoded,
+        CancellationToken cancellationToken = default) =>
+        ((IDurableInboxRepository)inner).PrepareInboxItemAsync(scope, serverHash, decoded, cancellationToken);
+
+    public Task<IReadOnlyList<DurableInboxItem>> ListDecodedInboxItemsAsync(
+        DurableInboxScope scope,
+        DurableInboxItemKind kind,
+        string? routeKey,
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        ((IDurableInboxRepository)inner).ListDecodedInboxItemsAsync(scope, kind, routeKey, limit, cancellationToken);
+
+    public Task<DurableInboxAckResult> AcknowledgeInboxItemAsync(
+        DurableInboxScope scope,
+        string serverHash,
+        CancellationToken cancellationToken = default) =>
+        ((IDurableInboxRepository)inner).AcknowledgeInboxItemAsync(scope, serverHash, cancellationToken);
+
+    public Task DiscardInboxItemAsync(
+        DurableInboxScope scope,
+        string serverHash,
+        CancellationToken cancellationToken = default) =>
+        ((IDurableInboxRepository)inner).DiscardInboxItemAsync(scope, serverHash, cancellationToken);
+
+    public Task<int> CountPendingInboxItemsAsync(
+        DurableInboxScope scope,
+        CancellationToken cancellationToken = default) =>
+        ((IDurableInboxRepository)inner).CountPendingInboxItemsAsync(scope, cancellationToken);
+
+    public Task<int> DiscardDecodedInboxItemsOutsideRoutesAsync(
+        DurableInboxScope scope,
+        DurableInboxItemKind kind,
+        IReadOnlySet<string> retainedRouteKeys,
+        CancellationToken cancellationToken = default) =>
+        ((IDurableInboxRepository)inner).DiscardDecodedInboxItemsOutsideRoutesAsync(
+            scope,
+            kind,
+            retainedRouteKeys,
+            cancellationToken);
+
+    public async Task PurgeAccountDataAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await ((IAccountDataPurger)inner).PurgeAccountDataAsync(cancellationToken).ConfigureAwait(false);
+        SecureStorage.Remove(SecureRecoveryPhraseKey);
+    }
+
+    public Task PersistGroupStateAsync(
+        Group group,
+        Conversation conversation,
+        DateTimeOffset updatedAt,
+        GroupStateOutboxItem? outboxItem,
+        CancellationToken cancellationToken = default) =>
+        ((IGroupStatePersistenceRepository)inner).PersistGroupStateAsync(
+            group,
+            conversation,
+            updatedAt,
+            outboxItem,
+            cancellationToken);
+
+    public Task<IReadOnlyList<GroupStateOutboxItem>> ListPendingGroupStatePublishesAsync(
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        ((IGroupStatePersistenceRepository)inner).ListPendingGroupStatePublishesAsync(limit, cancellationToken);
+
+    public Task AcknowledgeGroupStatePublishAsync(
+        string operationId,
+        CancellationToken cancellationToken = default) =>
+        ((IGroupStatePersistenceRepository)inner).AcknowledgeGroupStatePublishAsync(operationId, cancellationToken);
+
     public Task<IReadOnlyDictionary<ConversationId, ConversationListSummary>> GetConversationSummariesAsync(
         IReadOnlyCollection<ConversationId> conversationIds,
         DateTimeOffset now,
         CancellationToken cancellationToken = default) =>
         ((IConversationListSummaryRepository)inner).GetConversationSummariesAsync(conversationIds, now, cancellationToken);
+
+    public Task<ConversationListOpenSnapshot> OpenConversationListAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        ((IConversationListOpenRepository)inner).OpenConversationListAsync(now, cancellationToken);
 
     public Task<OneToOneConversationOpenSnapshot?> OpenOneToOneConversationAsync(
         SessionId recipient,
@@ -122,6 +341,19 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) : ILo
             ? repository.OpenOneToOneConversationAsync(recipient, displayName, messageLimit, now, cancellationToken, markAsRead)
             : Task.FromException<OneToOneConversationOpenSnapshot?>(
                 new NotSupportedException("The wrapped session store does not support optimized one-to-one conversation opening."));
+
+    public Task<GroupConversationOpenSnapshot?> OpenGroupConversationAsync(
+        ConversationId groupId,
+        int messageLimit,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default,
+        bool markAsRead = true) =>
+        ((IGroupConversationOpenRepository)inner).OpenGroupConversationAsync(
+            groupId,
+            messageLimit,
+            now,
+            cancellationToken,
+            markAsRead);
 
     public async Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)
     {

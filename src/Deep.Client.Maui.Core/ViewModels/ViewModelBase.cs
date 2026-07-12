@@ -5,6 +5,7 @@ namespace Deep.Client.Maui.Core.ViewModels;
 
 public abstract class ViewModelBase : INotifyPropertyChanged
 {
+    private readonly SemaphoreSlim busyGate = new(1, 1);
     private bool isBusy;
     private string? errorMessage;
 
@@ -47,10 +48,7 @@ public abstract class ViewModelBase : INotifyPropertyChanged
 
     protected async Task RunBusyAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken = default)
     {
-        if (IsBusy)
-        {
-            return;
-        }
+        await busyGate.WaitAsync(cancellationToken);
 
         try
         {
@@ -65,6 +63,7 @@ public abstract class ViewModelBase : INotifyPropertyChanged
         finally
         {
             IsBusy = false;
+            busyGate.Release();
         }
     }
 }

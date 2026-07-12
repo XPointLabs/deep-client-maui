@@ -18,7 +18,11 @@ public sealed record ConversationListItem(
     int UnreadCount,
     bool IsUnread,
     bool IsMessageRequest,
-    bool IsSelected);
+    bool IsSelected,
+    string? LastMessageId = null)
+{
+    public DateTimeOffset LocalUpdatedAt => UpdatedAt.ToLocalTime();
+}
 
 public sealed class ConversationsViewModel : ViewModelBase
 {
@@ -36,7 +40,7 @@ public sealed class ConversationsViewModel : ViewModelBase
     public ConversationsViewModel(ClientRuntime runtime)
     {
         this.runtime = runtime;
-        Conversations = [];
+        Conversations = new ObservableRangeCollection<ConversationListItem>();
         LoadCommand = new AsyncCommand(LoadAsync);
         ManualRefreshCommand = new AsyncCommand(ManualRefreshAsync);
         StartConversationCommand = new AsyncCommand(StartConversationCommandAsync, CanStartConversationFromComposer);
@@ -160,14 +164,14 @@ public sealed class ConversationsViewModel : ViewModelBase
     private async Task StartConversationCommandAsync(CancellationToken cancellationToken) =>
         await StartConversationFromComposerAsync(cancellationToken);
 
-    public Task LoadAsync(CancellationToken cancellationToken = default) =>
-        LoadAsync(forceMessageSummaries: true, cancellationToken);
+    public async Task LoadAsync(CancellationToken cancellationToken = default) =>
+        _ = await LoadCoreAsync(forceMessageSummaries: true, cancellationToken);
 
     public Task LoadCachedAsync(CancellationToken cancellationToken = default) =>
         LoadLocalSnapshotAsync(forceMessageSummaries: true, cancellationToken);
 
-    public Task SyncAsync(CancellationToken cancellationToken = default) =>
-        LoadAsync(forceMessageSummaries: false, cancellationToken);
+    public Task<bool> SyncAsync(CancellationToken cancellationToken = default) =>
+        LoadCoreAsync(forceMessageSummaries: false, cancellationToken);
 
     private async Task ManualRefreshAsync(CancellationToken cancellationToken)
     {
@@ -179,7 +183,7 @@ public sealed class ConversationsViewModel : ViewModelBase
         try
         {
             IsManualRefreshing = true;
-            await LoadAsync(forceMessageSummaries: true, cancellationToken);
+            _ = await LoadCoreAsync(forceMessageSummaries: true, cancellationToken);
         }
         finally
         {
@@ -187,35 +191,35 @@ public sealed class ConversationsViewModel : ViewModelBase
         }
     }
 
-    private async Task LoadAsync(bool forceMessageSummaries, CancellationToken cancellationToken)
+    private async Task<bool> LoadCoreAsync(bool forceMessageSummaries, CancellationToken cancellationToken)
     {
-        if (!await loadGate.WaitAsync(0, cancellationToken))
-        {
-            return;
-        }
+        await loadGate.WaitAsync(cancellationToken);
 
         try
         {
+            var synchronized = true;
             IsBusy = true;
             ErrorMessage = null;
-            var activeAccount = await runtime.Accounts.GetActiveAccountAsync(cancellationToken);
-            AccountInitial = DeepDisplayName.AvatarInitial(activeAccount?.DisplayName, activeAccount?.SessionId.Value);
-            await RefreshLocalAsync(activeAccount, forceMessageSummaries, cancellationToken);
+            await RefreshLocalAsync(forceMessageSummaries, cancellationToken);
 
             try
             {
                 await runtime.Inbox.SynchronizeAsync(cancellationToken);
             }
-            catch when (!cancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 // Keep the cached conversation list usable while the network is unavailable.
+                synchronized = false;
+                ErrorMessage = ex.Message;
             }
 
-            await RefreshLocalAsync(activeAccount, forceMessageSummaries: false, cancellationToken);
+            await RefreshLocalAsync(forceMessageSummaries: false, cancellationToken);
+            return synchronized;
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             ErrorMessage = ex.Message;
+            return false;
         }
         finally
         {
@@ -230,9 +234,7 @@ public sealed class ConversationsViewModel : ViewModelBase
         try
         {
             ErrorMessage = null;
-            var activeAccount = await runtime.Accounts.GetActiveAccountAsync(cancellationToken);
-            AccountInitial = DeepDisplayName.AvatarInitial(activeAccount?.DisplayName, activeAccount?.SessionId.Value);
-            await RefreshLocalAsync(activeAccount, forceMessageSummaries, cancellationToken);
+            await RefreshLocalAsync(forceMessageSummaries, cancellationToken);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -245,18 +247,33 @@ public sealed class ConversationsViewModel : ViewModelBase
     }
 
     private async Task RefreshLocalAsync(
-        SessionAccount? activeAccount,
         bool forceMessageSummaries,
         CancellationToken cancellationToken)
     {
-        var conversations = await runtime.Conversations.ListAsync(cancellationToken);
+        SessionAccount? activeAccount;
+        IReadOnlyList<Conversation> conversations;
+        IReadOnlyDictionary<ConversationId, ConversationListSummary> summaries;
+        if (runtime.Store is IConversationListOpenRepository openRepository)
+        {
+            var snapshot = await openRepository.OpenConversationListAsync(runtime.Clock.UtcNow, cancellationToken);
+            activeAccount = snapshot.ActiveAccount;
+            conversations = snapshot.Conversations;
+            summaries = snapshot.Summaries;
+        }
+        else
+        {
+            activeAccount = await runtime.Accounts.GetActiveAccountAsync(cancellationToken);
+            conversations = await runtime.Conversations.ListAsync(cancellationToken);
+            summaries = await runtime.Store.GetConversationSummariesAsync(
+                conversations.Select(static conversation => conversation.Id).ToArray(),
+                runtime.Clock.UtcNow,
+                cancellationToken);
+        }
+
+        AccountInitial = DeepDisplayName.AvatarInitial(activeAccount?.DisplayName, activeAccount?.SessionId.Value);
         var visibleConversations = conversations
             .Where(static item => !item.IsHidden)
             .ToArray();
-        var summaries = await runtime.Store.GetConversationSummariesAsync(
-            visibleConversations.Select(static conversation => conversation.Id).ToArray(),
-            runtime.Clock.UtcNow,
-            cancellationToken);
         var previousById = allConversations.ToDictionary(item => item.Id);
         var nextConversations = new List<ConversationListItem>(visibleConversations.Length);
         foreach (var conversation in visibleConversations)
@@ -264,14 +281,20 @@ public sealed class ConversationsViewModel : ViewModelBase
             var resolvedTitle = ResolveConversationTitle(conversation);
             summaries.TryGetValue(conversation.Id, out var summary);
             if (!forceMessageSummaries
+                && summary is not null
                 && previousById.TryGetValue(conversation.Id, out var previous)
                 && previous.UpdatedAt == conversation.UpdatedAt
                 && string.Equals(previous.Title, resolvedTitle, StringComparison.Ordinal)
                 && previous.IsMuted == conversation.Settings.IsMuted
-                && previous.Kind == conversation.Kind)
+                && previous.Kind == conversation.Kind
+                && string.Equals(previous.LastMessageId, summary.LastMessage?.Id.Value, StringComparison.Ordinal)
+                && previous.UnreadCount == summary.UnreadCount
+                && previous.IsMessageRequest == ResolveIsMessageRequest(
+                    conversation,
+                    activeAccount?.SessionId,
+                    summary.Contact))
             {
-                var readCursor = summary?.ReadCursor
-                    ?? await runtime.Messages.GetReadCursorAsync(conversation.Id, cancellationToken);
+                var readCursor = summary.ReadCursor;
                 var cursorChanged = !readCursors.TryGetValue(conversation.Id, out var previousCursor)
                     || previousCursor != readCursor;
                 readCursors[conversation.Id] = readCursor;
@@ -315,11 +338,12 @@ public sealed class ConversationsViewModel : ViewModelBase
         ConversationListSummary? summary,
         CancellationToken cancellationToken)
     {
-        var readCursor = summary?.ReadCursor
-            ?? await runtime.Messages.GetReadCursorAsync(conversation.Id, cancellationToken);
+        var readCursor = summary is not null
+            ? summary.ReadCursor
+            : await runtime.Messages.GetReadCursorAsync(conversation.Id, cancellationToken);
         readCursors[conversation.Id] = readCursor;
         var lastMessage = summary?.LastMessage;
-        if (lastMessage is null)
+        if (summary is null)
         {
             var recentMessages = await runtime.Messages.ListRecentConversationMessagesAsync(conversation.Id, 1, cancellationToken);
             lastMessage = recentMessages.LastOrDefault();
@@ -348,8 +372,9 @@ public sealed class ConversationsViewModel : ViewModelBase
                 : $"{lastMessage.Attachments.Count} вложения · {preview}";
         }
 
-        var unreadCount = summary?.UnreadCount
-            ?? await runtime.Messages.CountUnreadConversationMessagesAsync(
+        var unreadCount = summary is not null
+            ? summary.UnreadCount
+            : await runtime.Messages.CountUnreadConversationMessagesAsync(
                 conversation.Id,
                 readCursor,
                 cancellationToken);
@@ -359,8 +384,9 @@ public sealed class ConversationsViewModel : ViewModelBase
             && activeSessionId is not null
             && !string.Equals(conversation.Id.Value, activeSessionId.Value.Value, StringComparison.Ordinal))
         {
-            var contact = summary?.Contact
-                ?? await ((IContactRepository)runtime.Store)
+            var contact = summary is not null
+                ? summary.Contact
+                : await ((IContactRepository)runtime.Store)
                     .GetAsync(SessionId.Parse(conversation.Id.Value), cancellationToken);
             isMessageRequest = contact is { IsApproved: false, IsBlocked: false };
         }
@@ -378,8 +404,18 @@ public sealed class ConversationsViewModel : ViewModelBase
             unreadCount,
             IsUnread: unreadCount > 0,
             IsMessageRequest: isMessageRequest,
-            IsSelected: false);
+            IsSelected: false,
+            LastMessageId: lastMessage?.Id.Value);
     }
+
+    private static bool ResolveIsMessageRequest(
+        Conversation conversation,
+        SessionId? activeSessionId,
+        Contact? contact) =>
+        conversation.Kind == ConversationKind.OneToOne
+        && activeSessionId is not null
+        && !string.Equals(conversation.Id.Value, activeSessionId.Value.Value, StringComparison.Ordinal)
+        && contact is { IsApproved: false, IsBlocked: false };
 
     private static string ResolveConversationTitle(Conversation conversation)
     {
@@ -423,46 +459,42 @@ public sealed class ConversationsViewModel : ViewModelBase
 
     private void SyncConversationItems(IReadOnlyList<ConversationListItem> nextItems)
     {
-        if (Conversations.Count == nextItems.Count && Conversations.SequenceEqual(nextItems))
+        if (HasSameConversationOrder(nextItems))
         {
-            return;
-        }
-
-        for (var targetIndex = 0; targetIndex < nextItems.Count; targetIndex++)
-        {
-            var next = nextItems[targetIndex];
-            var existingIndex = -1;
-            for (var index = targetIndex; index < Conversations.Count; index++)
+            for (var index = 0; index < nextItems.Count; index++)
             {
-                if (Conversations[index].Id == next.Id)
+                if (Conversations[index] != nextItems[index])
                 {
-                    existingIndex = index;
-                    break;
+                    Conversations[index] = nextItems[index];
                 }
             }
 
-            if (existingIndex < 0)
-            {
-                Conversations.Insert(targetIndex, next);
-                continue;
-            }
-
-            if (existingIndex != targetIndex)
-            {
-                Conversations.Move(existingIndex, targetIndex);
-            }
-
-            if (Conversations[targetIndex] != next)
-            {
-                Conversations[targetIndex] = next;
-            }
+            return;
         }
 
-        while (Conversations.Count > nextItems.Count)
-        {
-            Conversations.RemoveAt(Conversations.Count - 1);
-        }
+        ConversationItems.ReplaceRange(nextItems);
     }
+
+    private bool HasSameConversationOrder(IReadOnlyList<ConversationListItem> nextItems)
+    {
+        if (Conversations.Count != nextItems.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < nextItems.Count; index++)
+        {
+            if (Conversations[index].Id != nextItems[index].Id)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private ObservableRangeCollection<ConversationListItem> ConversationItems =>
+        (ObservableRangeCollection<ConversationListItem>)Conversations;
 
     private void UpdateSelection(ConversationId? selectedId)
     {

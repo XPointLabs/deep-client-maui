@@ -50,7 +50,7 @@ public partial class SettingsPage : ContentPage
     }
 
     private static Task NavigateBackToConversationsAsync() =>
-        Shell.Current.GoToAsync($"//{ShellRouteCatalog.Conversations}");
+        Shell.Current.GoToAsync("..", animate: false);
 
     private static Task NavigateToSettingsSectionAsync(string section) =>
         Shell.Current.GoToAsync($"{ShellRouteCatalog.SettingsDetail}?section={Uri.EscapeDataString(section)}");
@@ -279,16 +279,11 @@ public partial class SettingsPage : ContentPage
             return;
         }
 
-        if (viewModel.WipeLocalDataOnLogout)
-        {
-            Preferences.Default.Set("session.wipe-local-on-next-launch", true);
-        }
+        await viewModel.LogoutAsync();
 
-        await viewModel.LogoutAsync(viewModel.WipeLocalDataOnLogout);
-
-        if (viewModel.WipeLocalDataOnLogout)
+        if (viewModel.HasError)
         {
-            await DisplayAlertAsync("Очистить данные", "Локальные данные будут очищены при следующем запуске приложения.", "OK");
+            await DisplayAlertAsync("Очистить данные", viewModel.ErrorMessage!, "OK");
         }
     }
 }

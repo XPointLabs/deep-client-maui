@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
 using Microsoft.Maui.Storage;
 
 namespace Deep.Client.Maui;
@@ -7,17 +8,35 @@ namespace Deep.Client.Maui;
 internal static class CrashDiagnostics
 {
     private static readonly object Sync = new();
+    private static readonly Channel<InfoEntry> InfoEntries = Channel.CreateBounded<InfoEntry>(new BoundedChannelOptions(256)
+    {
+        SingleReader = true,
+        SingleWriter = false,
+        FullMode = BoundedChannelFullMode.DropOldest
+    });
     private const string LogFileName = "crash.log";
     private const long MaxLogBytes = 256 * 1024;
     private const int MaxEntryChars = 16 * 1024;
+    private const int MaxSanitizeInputChars = 64 * 1024;
+    private static readonly Regex RecoveryPhrasePattern = new(
+        @"(?im)\b(seed(?:[ _]?phrase)?|mnemonic|recovery[ _]?phrase)\b['""]?(?<separator>\s*[:=]\s*)['""]?[^\r\n,;}&\]]{1,2048}",
+        RegexOptions.Compiled,
+        TimeSpan.FromMilliseconds(100));
     private static readonly Regex SensitivePairPattern = new(
-        @"(?i)\b(authorization|bearer|token|access_token|refresh_token|password|secret|seed|mnemonic|recoveryPhrase|recovery_phrase)\b\s*[:=]\s*['""]?[^'""\s&]+",
-        RegexOptions.Compiled);
+        @"(?i)\b(authorization|bearer|token|access_token|refresh_token|password|secret|seed|mnemonic|recovery[ _]?phrase)\b\s*[:=]\s*['""]?[^'""\s&]+",
+        RegexOptions.Compiled,
+        TimeSpan.FromMilliseconds(100));
     private static readonly Regex LongSecretPattern = new(
         @"\b([a-fA-F0-9]{48,}|[A-Za-z0-9_\-]{64,})\b",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled,
+        TimeSpan.FromMilliseconds(100));
 
-    internal static string LogPath => Path.Combine(FileSystem.Current.AppDataDirectory, LogFileName);
+    static CrashDiagnostics()
+    {
+        _ = Task.Run(ProcessInfoEntriesAsync);
+    }
+
+    internal static string LogPath => Path.Combine(FileSystem.AppDataDirectory, LogFileName);
 
     internal static void LogException(string source, Exception? exception, string? details = null)
     {
@@ -46,8 +65,23 @@ internal static class CrashDiagnostics
 
     internal static void LogInfo(string source, string message)
     {
-        var text = $"[{DateTimeOffset.UtcNow:O}] [{source}] {Sanitize(message)}{Environment.NewLine}";
-        TryAppend(text);
+        InfoEntries.Writer.TryWrite(new InfoEntry(DateTimeOffset.UtcNow, source, message));
+    }
+
+    private static async Task ProcessInfoEntriesAsync()
+    {
+        try
+        {
+            await foreach (var entry in InfoEntries.Reader.ReadAllAsync().ConfigureAwait(false))
+            {
+                var text = $"[{entry.Timestamp:O}] [{Sanitize(entry.Source)}] {Sanitize(entry.Message)}{Environment.NewLine}";
+                TryAppend(text);
+            }
+        }
+        catch
+        {
+            // Logging must never terminate the process or surface an unobserved task failure.
+        }
     }
 
     private static string Sanitize(string? value)
@@ -57,24 +91,39 @@ internal static class CrashDiagnostics
             return string.Empty;
         }
 
-        var redacted = SensitivePairPattern.Replace(value, match =>
+        var bounded = value.Length <= MaxSanitizeInputChars
+            ? value
+            : value[..MaxSanitizeInputChars] + $"{Environment.NewLine}[input truncated]";
+        try
         {
-            var equalsIndex = match.Value.IndexOf('=');
-            var colonIndex = match.Value.IndexOf(':');
-            var separatorIndex = equalsIndex < 0
-                ? colonIndex
-                : colonIndex < 0 ? equalsIndex : Math.Min(equalsIndex, colonIndex);
+            var redacted = RecoveryPhrasePattern.Replace(
+                bounded,
+                match => match.Groups[1].Value + match.Groups["separator"].Value + "[redacted]");
+            redacted = SensitivePairPattern.Replace(redacted, match =>
+            {
+                var equalsIndex = match.Value.IndexOf('=');
+                var colonIndex = match.Value.IndexOf(':');
+                var separatorIndex = equalsIndex < 0
+                    ? colonIndex
+                    : colonIndex < 0 ? equalsIndex : Math.Min(equalsIndex, colonIndex);
 
-            return separatorIndex < 0
-                ? "[redacted]"
-                : match.Value[..(separatorIndex + 1)] + "[redacted]";
-        });
+                return separatorIndex < 0
+                    ? "[redacted]"
+                    : match.Value[..(separatorIndex + 1)] + "[redacted]";
+            });
 
-        redacted = LongSecretPattern.Replace(redacted, "[redacted]");
-        return redacted.Length <= MaxEntryChars
-            ? redacted
-            : redacted[..MaxEntryChars] + $"{Environment.NewLine}[truncated]";
+            redacted = LongSecretPattern.Replace(redacted, "[redacted]");
+            return redacted.Length <= MaxEntryChars
+                ? redacted
+                : redacted[..MaxEntryChars] + $"{Environment.NewLine}[truncated]";
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return "[redacted: diagnostic sanitization timed out]";
+        }
     }
+
+    internal static string SanitizeForTests(string value) => Sanitize(value);
 
     private static void TryAppend(string text)
     {
@@ -120,4 +169,6 @@ internal static class CrashDiagnostics
 
         File.Move(path, rotatedPath);
     }
+
+    private sealed record InfoEntry(DateTimeOffset Timestamp, string Source, string Message);
 }

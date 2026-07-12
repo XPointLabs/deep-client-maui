@@ -78,6 +78,34 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public void ChatOpenCacheRejectsStaleEntriesAndNeverReturnsExpiredMessages()
+    {
+        var now = DateTimeOffset.Parse("2026-05-28T00:00:00Z");
+        var account = new SessionAccount(SessionId.CreateNew(), "Owner", now);
+        var remote = SessionId.CreateNew();
+        var conversation = new Conversation(
+            ConversationId.ForOneToOne(remote),
+            ConversationKind.OneToOne,
+            "Remote",
+            ConversationSettings.Default(ConversationKind.OneToOne),
+            now,
+            now);
+        var live = new ChatMessageItem(
+            MessageId.NewId(), "live", MessageDirection.Incoming, MessageDeliveryState.Delivered,
+            now, [], null, [], now.AddMinutes(1));
+        var expired = new ChatMessageItem(
+            MessageId.NewId(), "expired", MessageDirection.Incoming, MessageDeliveryState.Delivered,
+            now, [], null, [], now.AddSeconds(1));
+        var cache = new ChatOpenUiCache();
+        cache.Store(new ChatOpenUiSnapshot(
+            account, remote, conversation, false, false, [live, expired], now, live.Id, false, now));
+
+        Assert.True(cache.TryGet(remote, now.AddSeconds(2), out var filtered));
+        Assert.Equal([live.Id], filtered.Messages.Select(static message => message.Id));
+        Assert.False(cache.TryGet(remote, now.AddMinutes(3), out _));
+    }
+
+    [Fact]
     public async Task OpenFromRouteClearsCachedMessagesWhenLocalSnapshotIsEmpty()
     {
         var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
@@ -347,6 +375,23 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task CancelVoiceRecordingStopsRecorderWithoutQueueingMessage()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var account = await runtime.Accounts.RegisterAsync("Alice");
+        var recorder = new FakeVoiceMessageRecorder();
+        var chat = new ChatViewModel(runtime, attachmentPicker: null, voiceRecorder: recorder);
+        await chat.OpenOneToOneAsync(account, SessionId.CreateNew(), "Bob");
+
+        await chat.StartVoiceRecordingAsync();
+        await chat.CancelVoiceRecordingAsync();
+
+        Assert.False(chat.IsRecordingVoice);
+        Assert.False(recorder.IsRecording);
+        Assert.Empty(chat.Messages);
+    }
+
+    [Fact]
     public async Task VoiceRecordingClearsRecordingStateBeforeAttachmentUploadCompletes()
     {
         var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
@@ -430,6 +475,34 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task ReceiveMarksFutureDatedIncomingMessageReadWithoutTrustingSenderClock()
+    {
+        var backend = new StubSessionBackend();
+        var senderRuntime = ClientRuntime.CreateStubbed(
+            clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T01:00:00Z")),
+            backend: backend);
+        var recipientClock = new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z"));
+        var recipientRuntime = ClientRuntime.CreateStubbed(clock: recipientClock, backend: backend);
+        var sender = await senderRuntime.Accounts.RegisterAsync("Sender");
+        var recipient = await recipientRuntime.Accounts.RegisterAsync("Recipient");
+
+        var senderChat = new ChatViewModel(senderRuntime);
+        await senderChat.OpenOneToOneAsync(sender, recipient.SessionId, "Recipient");
+        senderChat.Draft = "future sender clock";
+        await senderChat.SendAsync();
+
+        var recipientChat = new ChatViewModel(recipientRuntime);
+        await recipientChat.OpenOneToOneAsync(recipient, sender.SessionId, "Sender");
+        await recipientChat.ReceiveAsync();
+
+        var item = Assert.Single(recipientChat.Messages);
+        Assert.Equal(MessageDeliveryState.Read, item.State);
+        Assert.Equal(
+            recipientClock.UtcNow,
+            await recipientRuntime.Messages.GetReadCursorAsync(ConversationId.ForOneToOne(sender.SessionId)));
+    }
+
+    [Fact]
     public async Task LoadOlderMessagesPrependsPreviousPage()
     {
         var clock = new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z"));
@@ -455,9 +528,11 @@ public sealed class ChatViewModelTests
         var chat = new ChatViewModel(runtime);
         await chat.OpenOneToOneAsync(account, remote, "Remote");
 
-        Assert.Equal(30, chat.Messages.Count);
-        Assert.Equal("message-075", chat.Messages[0].Body);
+        Assert.Equal(20, chat.Messages.Count);
+        Assert.Equal("message-085", chat.Messages[0].Body);
 
+        await chat.LoadOlderMessagesAsync();
+        await chat.LoadOlderMessagesAsync();
         await chat.LoadOlderMessagesAsync();
         await chat.LoadOlderMessagesAsync();
         await chat.LoadOlderMessagesAsync();
@@ -465,6 +540,44 @@ public sealed class ChatViewModelTests
         Assert.Equal(105, chat.Messages.Count);
         Assert.Equal("message-000", chat.Messages[0].Body);
         Assert.Equal("message-104", chat.Messages[^1].Body);
+    }
+
+    [Fact]
+    public async Task UiCacheKeepsOnlyTheLatestMessagePage()
+    {
+        var clock = new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z"));
+        var runtime = ClientRuntime.CreateStubbed(clock: clock);
+        var account = await runtime.Accounts.RegisterAsync("Owner");
+        var remote = SessionId.CreateNew();
+        var conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(remote, "Remote");
+        var cache = new ChatOpenUiCache();
+
+        for (var index = 0; index < 75; index++)
+        {
+            await ((IMessageRepository)runtime.Store).AppendAsync(new Message(
+                MessageId.NewId(),
+                conversation.Id,
+                account.SessionId,
+                remote,
+                $"message-{index:000}",
+                MessageDirection.Outgoing,
+                MessageDeliveryState.Sent,
+                clock.UtcNow.AddSeconds(index),
+                []));
+        }
+
+        var chat = new ChatViewModel(runtime, openCache: cache);
+        await chat.OpenOneToOneAsync(account, remote, "Remote");
+        await chat.LoadOlderMessagesAsync();
+        await chat.LoadOlderMessagesAsync();
+        await chat.LoadOlderMessagesAsync();
+        Assert.Equal(75, chat.Messages.Count);
+
+        var reopened = new ChatViewModel(runtime, openCache: cache);
+        Assert.True(reopened.PrepareRoute(remote, "Remote"));
+        Assert.Equal(20, reopened.Messages.Count);
+        Assert.Equal("message-055", reopened.Messages[0].Body);
+        Assert.Equal("message-074", reopened.Messages[^1].Body);
     }
 
     [Fact]
@@ -811,7 +924,7 @@ public sealed class ChatViewModelTests
         public void CompleteStop() => stopCompleted.TrySetResult(attachment);
     }
 
-    private sealed class BlockingMessageTransport : ISessionMessageTransport
+    private sealed class BlockingMessageTransport : ISessionMessageTransport, IAuthenticatedInboxTransport
     {
         private readonly TaskCompletionSource sendGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -820,6 +933,11 @@ public sealed class ChatViewModelTests
 
         public Task<IReadOnlyList<InboundMessageEnvelope>> ReceiveAsync(
             SessionId recipient,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<InboundMessageEnvelope>>([]);
+
+        public Task<IReadOnlyList<InboundMessageEnvelope>> ReceiveAuthenticatedAsync(
+            SessionIdentityProvider identity,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<InboundMessageEnvelope>>([]);
 

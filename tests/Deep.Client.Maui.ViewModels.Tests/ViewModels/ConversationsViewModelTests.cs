@@ -1,5 +1,6 @@
 ﻿using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Shared.Domain;
+using Deep.Client.Shared.Features;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
@@ -119,5 +120,33 @@ public sealed class ConversationsViewModelTests
         Assert.Equal("hello", conversation.LastMessagePreview);
         Assert.Equal(1, conversation.UnreadCount);
         Assert.True(conversation.IsMessageRequest);
+    }
+
+    [Fact]
+    public async Task SyncReturnsFalseWhenInboxTransportFails()
+    {
+        var runtime = new ClientRuntime(
+            new InMemorySessionStore(),
+            ClientFeatureFlags.Defaults,
+            new FrozenClock(DateTimeOffset.Parse("2026-07-11T00:00:00Z")),
+            new FailingInboxTransport());
+        await runtime.Accounts.RegisterAsync("Owner");
+        var viewModel = new ConversationsViewModel(runtime);
+
+        var synchronized = await viewModel.SyncAsync();
+
+        Assert.False(synchronized);
+        Assert.Equal("offline", viewModel.ErrorMessage);
+    }
+
+    private sealed class FailingInboxTransport : ISessionMessageTransport
+    {
+        public Task SendAsync(OutboundMessageEnvelope envelope, CancellationToken cancellationToken = default) =>
+            Task.FromException(new InvalidOperationException("offline"));
+
+        public Task<IReadOnlyList<InboundMessageEnvelope>> ReceiveAsync(
+            SessionId recipient,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<IReadOnlyList<InboundMessageEnvelope>>(new InvalidOperationException("offline"));
     }
 }

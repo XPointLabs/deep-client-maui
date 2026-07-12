@@ -19,6 +19,28 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\AttachmentOpenService.cs" Link="Services\AttachmentOpenService.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\CrashDiagnostics.cs" Link="Services\CrashDiagnostics.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\PushNotificationReplayCache.cs" Link="Services\PushNotificationReplayCache.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\PushTokenBridge.cs" Link="Services\PushTokenBridge.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\SecureRecoverySessionStore.cs" Link="Services\SecureRecoverySessionStore.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ClientSettingKeys.cs" Link="Services\ClientSettingKeys.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\SyncPollingPolicy.cs" Link="Services\SyncPollingPolicy.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\PushRegistrationLifecycleCoordinator.cs" Link="Services\PushRegistrationLifecycleCoordinator.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\BackgroundSyncSchedulingCoordinator.cs" Link="Services\BackgroundSyncSchedulingCoordinator.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ClientRuntimeBootstrapper.cs" Link="Services\ClientRuntimeBootstrapper.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\IncomingMessageNotificationCoordinator.cs" Link="Services\IncomingMessageNotificationCoordinator.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\PushUnsubscribeRetryStateCodec.cs" Link="Services\PushUnsubscribeRetryStateCodec.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\PushUnsubscribeRetryBootstrapper.cs" Link="Services\PushUnsubscribeRetryBootstrapper.cs" />
+    <Compile Remove="Services\PushNotificationSecureStorageTests.cs" Condition="'$(SkipPushNotificationFocusedTests)' == 'true'" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\PushNotificationKeyStateCodec.cs" Link="Services\PushNotificationKeyStateCodec.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(SkipPushNotificationFocusedTests)' == 'true'">
+    <Compile Remove="..\..\src\Deep.Client.Maui\Services\PushNotificationSecureStorage.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

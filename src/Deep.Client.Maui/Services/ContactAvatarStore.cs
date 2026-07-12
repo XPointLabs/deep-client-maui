@@ -37,4 +37,19 @@ internal static class ContactAvatarStore
             File.Delete(path);
         }
     }
+
+    internal static void PurgeAll()
+    {
+        var profilePath = GetProfileAvatarPath();
+        if (File.Exists(profilePath))
+        {
+            File.Delete(profilePath);
+        }
+
+        var contactDirectory = Path.Combine(FileSystem.Current.AppDataDirectory, ContactAvatarDirectoryName);
+        if (Directory.Exists(contactDirectory))
+        {
+            Directory.Delete(contactDirectory, recursive: true);
+        }
+    }
 }

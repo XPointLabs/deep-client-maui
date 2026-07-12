@@ -7,6 +7,7 @@
     xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
     x:DataType="vm:ConversationsViewModel"
     BackgroundColor="{StaticResource PageBackground}"
+    SafeAreaEdges="Container"
     Shell.NavBarIsVisible="False"
     Title="Диалоги">
     <Grid x:Name="RootLayout" AutomationId="Conversations.Root" RowDefinitions="Auto,Auto,Auto,*" BackgroundColor="{StaticResource PageBackground}">
@@ -86,7 +87,7 @@
                                         <Label Text="{Binding AvatarInitial}" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="19" />
                                     </Border>
                                     <Label Grid.Column="1" Text="{Binding Title}" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" VerticalOptions="End" MaxLines="1" />
-                                    <Label Grid.Column="2" Text="{Binding UpdatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="12" TextColor="{StaticResource TextTertiary}" VerticalOptions="End" />
+                                    <Label Grid.Column="2" Text="{Binding LocalUpdatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="12" TextColor="{StaticResource TextTertiary}" VerticalOptions="End" />
                                     <Grid Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="5">
                                             <Label Text="Запрос" FontSize="13" TextColor="{StaticResource PrimaryColor}" FontAttributes="Bold" IsVisible="{Binding IsMessageRequest}" />
