@@ -43,6 +43,13 @@ manifest tokens remain, every activation entry names the executable actually
 stored in the MSIX, and every declared package dependency has a compatible
 signed package in the sideload payload.
 
+For a local QA sideload certificate only, add
+`-AllowUntrustedSelfSignedCertificate`. The switch is rejected as a bypass for
+any other signature failure: the certificate must be self-signed, the package
+signer thumbprint must exactly match `-CertificateThumbprint`, and the only
+accepted validation error is an untrusted root. Permanent production and Store
+builds must omit this switch and use the trusted publisher certificate.
+
 ## Release payload
 
 Artifacts are written to `artifacts/windows-release`:

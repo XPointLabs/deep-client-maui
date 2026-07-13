@@ -19,7 +19,9 @@ param(
     [string]$CertificateThumbprint,
 
     [ValidateSet('win-x64', 'win-arm64')]
-    [string]$RuntimeIdentifier = 'win-x64'
+    [string]$RuntimeIdentifier = 'win-x64',
+
+    [switch]$AllowUntrustedSelfSignedCertificate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -232,6 +234,7 @@ $arguments = @(
     '-p:WindowsPackageType=MSIX',
     '-p:AppxBundle=Never',
     '-p:UapAppxPackageBuildMode=SideloadOnly',
+    '-p:AppxPackageIncludePrivateSymbols=false',
     "-p:AppxPackageDir=$appxPackageDir",
     '-p:AppxPackageSigningEnabled=true',
     "-p:PackageCertificateThumbprint=$($certificate.Thumbprint)",
@@ -372,9 +375,26 @@ foreach ($dependency in $packageDependencies) {
 }
 
 $signTool = Resolve-WindowsSdkTool 'signtool.exe'
-& $signTool verify /pa /all $package.FullName | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw "MSIX signature verification failed for '$($package.FullName)'."
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    $signatureVerificationOutput = @(& $signTool verify /pa /all $package.FullName 2>&1)
+    $signatureVerificationExitCode = $LASTEXITCODE
+}
+finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+}
+if ($signatureVerificationExitCode -ne 0) {
+    $authenticode = Get-AuthenticodeSignature -LiteralPath $package.FullName
+    $isExpectedUntrustedSelfSignedCertificate =
+        $AllowUntrustedSelfSignedCertificate.IsPresent -and
+        $certificate.Subject -eq $certificate.Issuer -and
+        $authenticode.Status -eq [Management.Automation.SignatureStatus]::UnknownError -and
+        $authenticode.SignerCertificate.Thumbprint -eq $certificate.Thumbprint -and
+        $authenticode.StatusMessage -match 'root certificate which is not trusted'
+    if (-not $isExpectedUntrustedSelfSignedCertificate) {
+        throw "MSIX signature verification failed for '$($package.FullName)': $($signatureVerificationOutput -join ' ')"
+    }
 }
 
 $safeDisplayVersion = $displayVersion -replace '[^0-9A-Za-z._-]', '-'
