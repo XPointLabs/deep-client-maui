@@ -9,11 +9,11 @@ internal static class ContactAvatarStore
     private const string ContactAvatarDirectoryName = "contact-avatars";
 
     public static string GetProfileAvatarPath() =>
-        Path.Combine(FileSystem.Current.AppDataDirectory, ProfileAvatarFileName);
+        Path.Combine(MauiProgram.ResolveAppDataDirectory(), ProfileAvatarFileName);
 
     public static string GetContactAvatarPath(SessionId contactId)
     {
-        var directory = Path.Combine(FileSystem.Current.AppDataDirectory, ContactAvatarDirectoryName);
+        var directory = Path.Combine(MauiProgram.ResolveAppDataDirectory(), ContactAvatarDirectoryName);
         Directory.CreateDirectory(directory);
         return Path.Combine(directory, $"{contactId.Value}.jpg");
     }
@@ -46,7 +46,7 @@ internal static class ContactAvatarStore
             File.Delete(profilePath);
         }
 
-        var contactDirectory = Path.Combine(FileSystem.Current.AppDataDirectory, ContactAvatarDirectoryName);
+        var contactDirectory = Path.Combine(MauiProgram.ResolveAppDataDirectory(), ContactAvatarDirectoryName);
         if (Directory.Exists(contactDirectory))
         {
             Directory.Delete(contactDirectory, recursive: true);

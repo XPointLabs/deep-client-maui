@@ -310,7 +310,7 @@ public partial class ConversationsPage : ContentPage
         ProfileAvatarImage.Source = hasAvatar ? ImageSource.FromFile(avatarPath) : null;
     }
 
-    private static string GetAvatarPath() => Path.Combine(FileSystem.Current.AppDataDirectory, AvatarFileName);
+    private static string GetAvatarPath() => Path.Combine(MauiProgram.ResolveAppDataDirectory(), AvatarFileName);
 
     private static Task OpenConversationAsync(ConversationListItem selected)
     {

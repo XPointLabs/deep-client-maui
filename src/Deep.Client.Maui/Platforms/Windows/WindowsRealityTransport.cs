@@ -265,7 +265,7 @@ internal static class WindowsRealityTransport
 
     private static string WriteConfig(string config)
     {
-        var directory = Path.Combine(FileSystem.AppDataDirectory, "xray");
+        var directory = Path.Combine(MauiProgram.ResolveAppDataDirectory(), "xray");
         Directory.CreateDirectory(directory);
         var destination = Path.Combine(directory, "client-reality-v1.json");
         var temporary = Path.Combine(directory, $".{Guid.NewGuid():N}.tmp");

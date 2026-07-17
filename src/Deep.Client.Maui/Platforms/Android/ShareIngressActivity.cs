@@ -175,7 +175,7 @@ public sealed class ShareIngressActivity : Activity
                 }
 
                 var path = Path.Combine(
-                    FileSystem.AppDataDirectory,
+                    MauiProgram.ResolveAppDataDirectory(),
                     "share-ingress",
                     $"{fingerprint}-{index}-{fileName}");
                 var length = PersistUri(resolver, uri, path, transcodeImage);

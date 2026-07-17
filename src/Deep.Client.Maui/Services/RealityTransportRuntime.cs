@@ -115,7 +115,7 @@ internal static class AndroidRealityTransport
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var dataDirectory = Path.Combine(FileSystem.AppDataDirectory, "xray");
+        var dataDirectory = Path.Combine(MauiProgram.ResolveAppDataDirectory(), "xray");
         Directory.CreateDirectory(dataDirectory);
         var config = RealityTransportConfiguration.BuildXrayConfig(seeds);
         var request = global::LibXray.LibXray.NewXrayRunFromJSONRequest(dataDirectory, string.Empty, config)

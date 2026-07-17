@@ -75,7 +75,7 @@ internal static class WindowsShareTargetService
     {
         var data = operation.Data;
         var text = await ReadTextAsync(data, cancellationToken).ConfigureAwait(false);
-        var directory = Path.Combine(FileSystem.AppDataDirectory, "share-ingress");
+        var directory = Path.Combine(MauiProgram.ResolveAppDataDirectory(), "share-ingress");
         Directory.CreateDirectory(directory);
         var fingerprint = Guid.NewGuid().ToString("N");
         var paths = new List<string>();

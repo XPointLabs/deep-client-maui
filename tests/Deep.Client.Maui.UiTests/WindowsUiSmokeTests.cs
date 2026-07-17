@@ -44,6 +44,17 @@ public sealed class WindowsUiSmokeTests
         Assert.NotNull(restore);
         Assert.True(restore!.IsEnabled);
 
+        session.FocusWindow();
+        create!.Focus();
+        Assert.True(displayName.Text.Length > 0);
+        create.Click(moveMouse: false);
+        var authenticatedRoot =
+            session.WaitForAnyAutomationId(
+                ["Page.DesktopWorkspace", "Page.Conversations", "Conversations.Root"],
+                TimeSpan.FromSeconds(20));
+        Assert.NotNull(authenticatedRoot);
+        Assert.Null(session.FindAutomationId("Welcome.Create"));
+
         session.WriteSuccessEvidence();
     }
 
@@ -65,6 +76,14 @@ public sealed class WindowsUiSmokeTests
         private const string ArtifactDirectoryKey = "DEEP_E2E_ARTIFACTS";
         private const string AppDataDirectoryKey = "DEEP_E2E_APPDATA_ROOT";
         private const string BootstrapKey = "DEEP_E2E_BOOTSTRAP";
+        private const string CaptureFailureKey = "DEEP_E2E_CAPTURE_STUB_WELCOME_FAILURE";
+        private static readonly HashSet<string> AllowedEvidenceIds =
+        [
+            .. Baseline.Welcome,
+            "Page.DesktopWorkspace",
+            "Page.Conversations",
+            "Conversations.Root"
+        ];
 
         private readonly Application application;
         private readonly UIA3Automation automation;
@@ -147,7 +166,7 @@ public sealed class WindowsUiSmokeTests
         public AutomationElement? WaitForAutomationId(string automationId, TimeSpan timeout)
         {
             var result = Retry.WhileNull(
-                () => window.FindFirstDescendant(condition => condition.ByAutomationId(automationId)),
+                () => FindAutomationId(automationId),
                 timeout,
                 TimeSpan.FromMilliseconds(200),
                 throwOnTimeout: false);
@@ -160,11 +179,31 @@ public sealed class WindowsUiSmokeTests
             return null;
         }
 
+        public AutomationElement? FindAutomationId(string automationId) =>
+            CurrentWindow().FindFirstDescendant(condition => condition.ByAutomationId(automationId));
+
+        public void FocusWindow() => CurrentWindow().Focus();
+
+        public AutomationElement? WaitForAnyAutomationId(IEnumerable<string> automationIds, TimeSpan timeout)
+        {
+            var ids = automationIds.ToArray();
+            var result = Retry.WhileNull(
+                () => ids.Select(FindAutomationId).FirstOrDefault(static element => element is not null),
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            if (result.Result is null)
+            {
+                WriteFailureEvidence("Authenticated root was not found after Create.");
+            }
+            return result.Result;
+        }
+
         public void WriteSuccessEvidence()
         {
             File.WriteAllText(
                 Path.Combine(artifactDirectory, "windows-ui-tree.txt"),
-                BuildSanitizedTree(window),
+                BuildSanitizedTree(CurrentWindow()),
                 Encoding.UTF8);
             File.WriteAllText(
                 Path.Combine(artifactDirectory, "windows-ui-result.json"),
@@ -174,8 +213,10 @@ public sealed class WindowsUiSmokeTests
                         schema = "deep.survival.windows-ui.v1",
                         status = "passed",
                         processStarted = true,
-                        nonzeroWindow = window.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero,
-                        baseline = Baseline.Welcome
+                        nonzeroWindow = CurrentWindow().Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero,
+                        baseline = Baseline.Welcome,
+                        createInvoked = true,
+                        authenticatedRootObserved = true
                     },
                     new JsonSerializerOptions { WriteIndented = true }),
                 Encoding.UTF8);
@@ -185,10 +226,16 @@ public sealed class WindowsUiSmokeTests
         {
             try
             {
-                CaptureWindow(window, Path.Combine(artifactDirectory, "windows-ui-failure.png"));
+                if (string.Equals(Environment.GetEnvironmentVariable(CaptureFailureKey), "1", StringComparison.Ordinal) &&
+                    string.Equals(Environment.GetEnvironmentVariable(BootstrapKey), "stub", StringComparison.OrdinalIgnoreCase))
+                {
+                    var quarantine = Path.Combine(artifactDirectory, "quarantine", "raw");
+                    Directory.CreateDirectory(quarantine);
+                    CaptureWindow(CurrentWindow(), Path.Combine(quarantine, "stub-welcome-failure.png"));
+                }
                 File.WriteAllText(
                     Path.Combine(artifactDirectory, "windows-ui-tree.txt"),
-                    BuildSanitizedTree(window),
+                    BuildSanitizedTree(CurrentWindow()),
                     Encoding.UTF8);
                 File.WriteAllText(
                     Path.Combine(artifactDirectory, "windows-ui-result.json"),
@@ -199,7 +246,7 @@ public sealed class WindowsUiSmokeTests
                             status = "failed",
                             reason,
                             processStarted = true,
-                            nonzeroWindow = window.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero
+                            nonzeroWindow = CurrentWindow().Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero
                         },
                         new JsonSerializerOptions { WriteIndented = true }),
                     Encoding.UTF8);
@@ -210,29 +257,34 @@ public sealed class WindowsUiSmokeTests
             }
         }
 
+        private Window CurrentWindow() =>
+            application
+                .GetAllTopLevelWindows(automation)
+                .FirstOrDefault(candidate =>
+                    candidate.Properties.ProcessId.ValueOrDefault == application.ProcessId
+                    && candidate.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero)
+            ?? window;
+
         private static string BuildSanitizedTree(AutomationElement root)
         {
             var builder = new StringBuilder();
-            Append(root, builder, 0);
+            Append(root, builder);
             return builder.ToString();
 
-            static void Append(AutomationElement element, StringBuilder output, int depth)
+            static void Append(AutomationElement element, StringBuilder output)
             {
                 var automationId = ReadSafely(() => element.Properties.AutomationId.ValueOrDefault);
-                var controlType = ReadSafely(() => element.Properties.ControlType.ValueOrDefault.ToString());
-                output.Append(' ', depth * 2)
-                    .Append(Sanitize(controlType))
-                    .Append(" id=")
-                    .AppendLine(Sanitize(automationId));
-
-                if (depth >= 12)
+                if (AllowedEvidenceIds.Contains(automationId))
                 {
-                    return;
+                    var controlType = ReadSafely(() => element.Properties.ControlType.ValueOrDefault.ToString());
+                    output.Append(Sanitize(controlType))
+                        .Append(" id=")
+                        .AppendLine(Sanitize(automationId));
                 }
 
                 foreach (var child in element.FindAllChildren())
                 {
-                    Append(child, output, depth + 1);
+                    Append(child, output);
                 }
             }
 
@@ -260,6 +312,7 @@ public sealed class WindowsUiSmokeTests
                 return safe.Length > 96 ? safe[..96] : safe;
             }
         }
+
 
         private static void CaptureWindow(Window target, string path)
         {

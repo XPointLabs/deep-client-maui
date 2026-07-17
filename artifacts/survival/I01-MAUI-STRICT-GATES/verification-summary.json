@@ -1,15 +1,16 @@
 {
   "schema": "deep.survival.i01-verification.v1",
+  "status": "blocked",
   "programRevisionSha": "ca5ad9f0c9d4dfb509dedcbf8133524c15867fce5534816da21ff86a07057383",
-  "sourceBaseSha": "d08e9371377f277575f8165bf87c8d7eb38673dd",
+  "sourceBaseSha": "a03413f0e67444ae4fad121c12de3cf1fc6f686e",
   "results": {
     "viewModels": {
-      "passed": 134,
-      "skipped": 1,
-      "skipReason": "live infrastructure lane was not requested"
+      "passed": 137,
+      "skipped": 2,
+      "skipReason": "routed live and direct-storage diagnostic lanes were not requested"
     },
     "smoke": {
-      "passed": 80,
+      "passed": 82,
       "skipped": 0
     },
     "windowsContracts": {
@@ -21,15 +22,21 @@
       "skipped": 0
     },
     "windowsStrictUi": {
-      "passed": 1,
+      "passed": 0,
+      "failed": 1,
       "skipped": 0,
       "realProcess": true,
-      "nonzeroWindow": true
+      "nonzeroWindow": true,
+      "welcomeRendered": true,
+      "displayNameSet": true,
+      "createClicked": true,
+      "authenticatedRootObserved": false
     },
     "windowsDebugArm64Build": "passed",
     "windowsReleaseArm64Build": "passed",
     "androidDebugApkBuild": "passed",
-    "androidDeviceExecution": "blocked"
+    "androidDeviceExecution": "blocked",
+    "routedLiveInfrastructure": "blocked"
   },
   "artifacts": {
     "androidApk": {
@@ -47,6 +54,15 @@
     "adb is not installed or discoverable",
     "no authorized Android device is attached",
     "a real on-device E2E runner is not configured"
+  ],
+  "releaseEvidenceBlockers": [
+    "Windows Create click did not reach an authenticated UI root on this host",
+    "Android physical-device execution has not run",
+    "mandatory three-router live acceptance has not run"
+  ],
+  "windowsBlockers": [
+    "UIA3 observed the real Welcome window and clicked enabled Create after setting a non-empty display name, but no authenticated root appeared",
+    "SendInput fallback is intentionally not used; this host rejects it across the process integrity boundary"
   ],
   "negativePreflight": {
     "windowsMissingExecutableExitCode": 2,

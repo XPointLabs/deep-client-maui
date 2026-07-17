@@ -156,7 +156,7 @@ public partial class SettingsPage : ContentPage
         ProfileAvatarImage.Source = hasAvatar ? ImageSource.FromFile(avatarPath) : null;
     }
 
-    private static string GetAvatarPath() => Path.Combine(FileSystem.Current.AppDataDirectory, AvatarFileName);
+    private static string GetAvatarPath() => Path.Combine(MauiProgram.ResolveAppDataDirectory(), AvatarFileName);
 
     private static string FormatSessionIdForDisplay(string? sessionId)
     {

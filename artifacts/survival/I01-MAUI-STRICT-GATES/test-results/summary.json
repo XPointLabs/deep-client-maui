@@ -1,17 +1,18 @@
 {
   "schemaVersion": "survival-test-results-v1",
   "workPackage": "I01-MAUI-STRICT-GATES",
+  "status": "blocked",
   "results": [
     {
       "name": "ViewModels",
-      "passed": 134,
+      "passed": 137,
       "failed": 0,
-      "notRun": 1,
-      "note": "Live infrastructure lane was not requested in the ordinary suite."
+      "notRun": 2,
+      "note": "Routed live and direct-storage diagnostic lanes were not requested in the ordinary suite."
     },
     {
       "name": "Smoke",
-      "passed": 80,
+      "passed": 82,
       "failed": 0,
       "notRun": 0
     },
@@ -29,11 +30,12 @@
     },
     {
       "name": "Strict Windows UIA3",
-      "passed": 1,
-      "failed": 0,
+      "passed": 0,
+      "failed": 1,
       "notRun": 0,
       "realProcess": true,
-      "nonzeroWindow": true
+      "nonzeroWindow": true,
+      "authenticatedRootObserved": false
     }
   ],
   "negativePreflightExitCodes": {
@@ -42,5 +44,11 @@
     "androidMissingDeviceOrRunner": 2
   },
   "androidDeviceExecution": "blocked",
+  "routedLiveInfrastructure": "blocked",
+  "blockers": [
+    "Windows Create click did not reach an authenticated UI root on this host",
+    "Android physical-device execution has not run",
+    "mandatory three-router live acceptance has not run"
+  ],
   "privacyScanMatches": 0
 }

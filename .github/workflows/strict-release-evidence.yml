@@ -1,0 +1,64 @@
+name: strict-client-release-evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  physical-client-evidence:
+    runs-on: [self-hosted, Windows, deep-client-lab]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: deep-client-maui
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/deep-client-shared
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          path: deep-client-shared
+          ref: 94b623f078bd141163887a15116e6f9702510576
+      - name: Build Debug clients
+        working-directory: deep-client-maui
+        shell: pwsh
+        run: |
+          dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 -c Debug
+          dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android -c Debug
+      - name: Strict Windows rendered acceptance
+        working-directory: deep-client-maui
+        shell: pwsh
+        run: |
+          ./eng/Invoke-StrictClientLane.ps1 -Lane WindowsUi -Bootstrap live `
+            -AppPath $env:DEEP_WINDOWS_EXE -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
+      - name: Strict Android physical-device acceptance
+        working-directory: deep-client-maui
+        shell: pwsh
+        run: |
+          ./eng/Invoke-StrictClientLane.ps1 -Lane AndroidDevice `
+            -ApkPath $env:DEEP_ANDROID_APK -AndroidSerial $env:DEEP_ANDROID_SERIAL `
+            -AndroidRunner $env:DEEP_ANDROID_RUNNER -ConfigureAdbReverse `
+            -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
+      - name: Strict three-router live acceptance
+        working-directory: deep-client-maui
+        shell: pwsh
+        run: |
+          ./eng/Invoke-StrictClientLane.ps1 -Lane LiveInfrastructure `
+            -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
+      - name: Validate fresh commit-bound evidence
+        working-directory: deep-client-maui
+        shell: pwsh
+        run: |
+          ./eng/Test-StrictClientEvidence.ps1 -RequireComplete `
+            -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
+      - name: Upload sanitized strict evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-client-release-evidence
+          path: |
+            deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/*.json
+            deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/windows-ui/windows-ui-result.json
+            deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/windows-ui/windows-ui-tree.txt
+            deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/android-run-*/android-device.junit.xml
+          if-no-files-found: error

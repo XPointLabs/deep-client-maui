@@ -14,16 +14,15 @@ public sealed class ClientLiveAcceptanceTests
     [StrictLiveFact]
     public async Task ClientViewModels_RunLaunchCriticalFlowThroughLiveLocalInfrastructure_WhenConfigured()
     {
-        var storageUrl = Environment.GetEnvironmentVariable("DEEP_STORAGE_URL");
         var routerUrls = Environment.GetEnvironmentVariable("XNODE_URLS");
         var fileUrl = Environment.GetEnvironmentVariable("DEEP_FILE_URL");
         var pushUrl = Environment.GetEnvironmentVariable("DEEP_PUSH_URL");
         var callUrl = Environment.GetEnvironmentVariable("DEEP_CALL_SIGNALING_BASE_URL")
             ?? Environment.GetEnvironmentVariable("DEEP_CALL_SIGNALING_URL");
         var missing = new List<string>();
-        if (string.IsNullOrWhiteSpace(storageUrl) && string.IsNullOrWhiteSpace(routerUrls))
+        if (string.IsNullOrWhiteSpace(routerUrls))
         {
-            missing.Add("DEEP_STORAGE_URL or XNODE_URLS");
+            missing.Add("XNODE_URLS (exactly three pinned routers; direct storage is a separate contract lane)");
         }
         if (string.IsNullOrWhiteSpace(fileUrl))
         {
@@ -39,8 +38,8 @@ public sealed class ClientLiveAcceptanceTests
         }
         Assert.True(missing.Count == 0, $"Strict live acceptance configuration is incomplete: {string.Join(", ", missing)}.");
 
-        var aliceRuntime = CreateRuntime(storageUrl, routerUrls);
-        var bobRuntime = CreateRuntime(storageUrl, routerUrls);
+        var aliceRuntime = CreateRoutedRuntime(routerUrls!);
+        var bobRuntime = CreateRoutedRuntime(routerUrls!);
         var attachmentFiles = new HttpAttachmentFileTransport(
             new HttpClient(),
             new HttpAttachmentFileTransportOptions(fileUrl!));
@@ -174,37 +173,65 @@ public sealed class ClientLiveAcceptanceTests
         Assert.Equal(CallSessionState.Ended, bobEnded!.State);
     }
 
-    private static ClientRuntime CreateRuntime(string? storageUrl, string? routerUrls)
+    [DirectStorageContractFact]
+    public async Task DirectStorageTransportContract_IsDiagnosticAndCannotSatisfyTheRoutedLane()
     {
-        if (!string.IsNullOrWhiteSpace(routerUrls))
+        var storageUrl = Environment.GetEnvironmentVariable("DEEP_STORAGE_URL");
+        Assert.False(string.IsNullOrWhiteSpace(storageUrl));
+        var aliceRuntime = CreateDirectStorageRuntime(storageUrl!);
+        var bobRuntime = CreateDirectStorageRuntime(storageUrl!);
+        var alice = await aliceRuntime.Accounts.RegisterAsync("Alice direct contract");
+        var bob = await bobRuntime.Accounts.RegisterAsync("Bob direct contract");
+        var conversation = await aliceRuntime.Conversations.GetOrCreateOneToOneAsync(bob.SessionId, "Bob");
+        var body = $"direct-storage-contract-{Guid.NewGuid():N}";
+        await aliceRuntime.Messages.SendOneToOneAsync(alice.SessionId, bob.SessionId, body);
+        await bobRuntime.Messages.ReceiveAsync(bob.SessionId);
+        var received = await bobRuntime.Messages.ListConversationMessagesAsync(
+            ConversationId.ForOneToOne(alice.SessionId));
+        Assert.Contains(received, message => message.Body == body);
+    }
+
+    private static ClientRuntime CreateRoutedRuntime(string routerUrls)
+    {
+        var endpoints = ParseRouterUrls(routerUrls);
+        if (endpoints.Count != 3 ||
+            endpoints.Select(static endpoint => endpoint.ExpectedRouterId).Distinct(StringComparer.Ordinal).Count() != 3 ||
+            endpoints.Select(static endpoint => endpoint.BaseUrl).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3)
         {
-            var router = new XNodeRpcClient(
-                new HttpClient { Timeout = TimeSpan.FromSeconds(15) },
-                new XNodeRpcClientOptions(ParseRouterUrls(routerUrls)));
-            return new ClientRuntime(
-                new InMemorySessionStore(),
-                ClientFeatureFlags.ReleaseDefaults,
-                new SystemClock(),
-                new RoutedSessionStorageMessageTransport(router, new RoutedSessionStorageTransportOptions()),
-                requireE2eeTransport: true);
+            throw new InvalidOperationException(
+                "The routed live lane requires exactly three distinct pinned router identities and URLs.");
         }
 
+        var router = new XNodeRpcClient(
+            new HttpClient { Timeout = TimeSpan.FromSeconds(15) },
+            new XNodeRpcClientOptions(endpoints));
         return new ClientRuntime(
+            new InMemorySessionStore(),
+            ClientFeatureFlags.ReleaseDefaults,
+            new SystemClock(),
+            new RoutedSessionStorageMessageTransport(router, new RoutedSessionStorageTransportOptions()),
+            requireE2eeTransport: true);
+    }
+
+    private static ClientRuntime CreateDirectStorageRuntime(string storageUrl) =>
+        new(
             new InMemorySessionStore(),
             ClientFeatureFlags.ReleaseDefaults,
             new SystemClock(),
             new SessionStorageMessageTransport(
                 new HttpClient(),
-                new SessionStorageMessageTransportOptions(storageUrl!)),
+                new SessionStorageMessageTransportOptions(storageUrl)),
             requireE2eeTransport: true);
-    }
 
     private static IReadOnlyList<PinnedRouterEndpoint> ParseRouterUrls(string routerUrls) =>
         routerUrls
             .Split([';', ',', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(static value => value.Split('|', 2, StringSplitOptions.TrimEntries))
-            .Select(static parts => parts.Length == 2
-                ? new PinnedRouterEndpoint(parts[1], parts[0])
+            .Select(static parts => parts.Length == 2 &&
+                                    parts[0].Length == 64 &&
+                                    parts[0].All(Uri.IsHexDigit) &&
+                                    Uri.TryCreate(parts[1], UriKind.Absolute, out _)
+                ? new PinnedRouterEndpoint(parts[1], parts[0].ToLowerInvariant())
                 : throw new InvalidOperationException("XNODE_URLS entries must use '<router-id>|<absolute-url>'."))
             .ToArray();
 

@@ -676,7 +676,7 @@ public static class AttachmentOpenService
             ? AndroidEnvironment.DirectoryPictures
             : AndroidEnvironment.DirectoryDownloads;
         var publicDirectory = AndroidEnvironment.GetExternalStoragePublicDirectory(publicFolder)?.AbsolutePath
-            ?? FileSystem.AppDataDirectory;
+            ?? AppDataPath.Resolve();
         var destinationDirectory = Path.Combine(publicDirectory, "Deep");
         Directory.CreateDirectory(destinationDirectory);
         var destination = UniqueFilePath(destinationDirectory, file.FileName);
@@ -706,7 +706,7 @@ public static class AttachmentOpenService
             "Downloads");
         if (string.IsNullOrWhiteSpace(downloads) || !Directory.Exists(downloads))
         {
-            downloads = FileSystem.AppDataDirectory;
+            downloads = AppDataPath.Resolve();
         }
 
         var destinationDirectory = Path.Combine(downloads, "Deep");

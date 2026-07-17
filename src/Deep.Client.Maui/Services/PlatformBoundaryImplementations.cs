@@ -397,8 +397,8 @@ public static class MauiBackgroundSyncRunner
 
 public sealed class MauiShareExtensionBridge : IShareExtensionBridge
 {
-    private static readonly string ShareQueuePath = Path.Combine(FileSystem.AppDataDirectory, "pending-shares.json");
-    private static readonly string CompletedKeysPath = Path.Combine(FileSystem.AppDataDirectory, "completed-share-ingress.json");
+    private static string ShareQueuePath => Path.Combine(MauiProgram.ResolveAppDataDirectory(), "pending-shares.json");
+    private static string CompletedKeysPath => Path.Combine(MauiProgram.ResolveAppDataDirectory(), "completed-share-ingress.json");
 
     public Task<IReadOnlyList<SharePayload>> DrainPendingSharesAsync(CancellationToken cancellationToken = default)
     {
@@ -472,7 +472,7 @@ public sealed class MauiShareExtensionBridge : IShareExtensionBridge
         DeleteRequired(ShareQueuePath);
         DeleteRequired(CompletedKeysPath);
 
-        var ingressDirectory = Path.Combine(FileSystem.AppDataDirectory, "share-ingress");
+        var ingressDirectory = Path.Combine(MauiProgram.ResolveAppDataDirectory(), "share-ingress");
         if (Directory.Exists(ingressDirectory))
         {
             Directory.Delete(ingressDirectory, recursive: true);
@@ -635,7 +635,7 @@ public sealed class MauiRealtimeCallService : ICallService
 
 public sealed class MauiNotificationScheduler : INotificationScheduler
 {
-    private static readonly string PendingNotificationsPath = Path.Combine(FileSystem.AppDataDirectory, "pending-notifications.json");
+    private static string PendingNotificationsPath => Path.Combine(MauiProgram.ResolveAppDataDirectory(), "pending-notifications.json");
 
     public async Task ScheduleAsync(NotificationRequest request, CancellationToken cancellationToken = default)
     {
@@ -685,8 +685,8 @@ public sealed record NotificationAction(string ActionId, string ConversationId, 
 
 public static class NotificationActionBridge
 {
-    private static readonly string QueuePath = Path.Combine(FileSystem.AppDataDirectory, "pending-notification-actions.json");
-    private static readonly string CompletedKeysPath = Path.Combine(FileSystem.AppDataDirectory, "completed-notification-actions.json");
+    private static string QueuePath => Path.Combine(MauiProgram.ResolveAppDataDirectory(), "pending-notification-actions.json");
+    private static string CompletedKeysPath => Path.Combine(MauiProgram.ResolveAppDataDirectory(), "completed-notification-actions.json");
 
     public static void Publish(NotificationAction action)
     {

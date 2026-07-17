@@ -43,6 +43,7 @@ public static class MauiProgram
     internal const string TlsPublicKeyPinsEnv = "DEEP_TLS_PUBLIC_KEY_PINS";
     internal const string E2eBootstrapEnv = "DEEP_E2E_BOOTSTRAP";
     internal const string E2eAppDataRootEnv = "DEEP_E2E_APPDATA_ROOT";
+    internal const string E2eStrictWindowsEnv = "DEEP_STRICT_WINDOWS_UI";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
     private const string WindowsReleaseRuntimeEnvFile = "deep.windows.release.env";
     internal const string WipeLocalDataOnNextLaunchKey = "session.wipe-local-on-next-launch";
@@ -50,6 +51,14 @@ public static class MauiProgram
 
     public static MauiApp CreateMauiApp()
     {
+#if !DEBUG
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(E2eBootstrapEnv)) ||
+            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(E2eAppDataRootEnv)) ||
+            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(E2eStrictWindowsEnv)))
+        {
+            throw new InvalidOperationException("E2E bootstrap and app-data overrides are forbidden in Release builds.");
+        }
+#endif
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>();
 #if ANDROID
@@ -522,28 +531,7 @@ public static class MauiProgram
             requireE2eeTransport: true);
     }
 
-    internal static string ResolveAppDataDirectory()
-    {
-#if DEBUG
-        if (string.Equals(
-                Environment.GetEnvironmentVariable(E2eBootstrapEnv),
-                "stub",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            var testRoot = Environment.GetEnvironmentVariable(E2eAppDataRootEnv);
-            if (string.IsNullOrWhiteSpace(testRoot) || !Path.IsPathFullyQualified(testRoot))
-            {
-                throw new InvalidOperationException(
-                    $"{E2eAppDataRootEnv} must be an absolute path when {E2eBootstrapEnv}=stub.");
-            }
-
-            var fullPath = Path.GetFullPath(testRoot);
-            Directory.CreateDirectory(fullPath);
-            return fullPath;
-        }
-#endif
-        return FileSystem.AppDataDirectory;
-    }
+    internal static string ResolveAppDataDirectory() => AppDataPath.Resolve();
 
     private static HttpClient CreateRouterHttpClient()
     {

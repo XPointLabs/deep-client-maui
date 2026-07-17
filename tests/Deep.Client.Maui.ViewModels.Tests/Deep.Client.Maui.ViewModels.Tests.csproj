@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\src\Deep.Client.Maui\Services\AttachmentOpenService.cs" Link="Services\AttachmentOpenService.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\AppDataPath.cs" Link="Services\AppDataPath.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\CrashDiagnostics.cs" Link="Services\CrashDiagnostics.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PushNotificationReplayCache.cs" Link="Services\PushNotificationReplayCache.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PushTokenBridge.cs" Link="Services\PushTokenBridge.cs" />
