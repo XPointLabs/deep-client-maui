@@ -100,6 +100,49 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.DoesNotContain("stream.CopyToAsync(output", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void UiAutomationStubIsDebugOnlyAndReleaseStillRejectsCleartextAndImplicitStubs()
+    {
+        var program = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
+
+        Assert.Contains("internal const string E2eBootstrapEnv", program, StringComparison.Ordinal);
+        var runtimeFactoryIndex = program.IndexOf(
+            "private static async Task<ClientRuntime> CreateClientRuntimeAsync(",
+            StringComparison.Ordinal);
+        Assert.True(runtimeFactoryIndex >= 0);
+        var bootstrapIndex = program.IndexOf(
+            "Environment.GetEnvironmentVariable(E2eBootstrapEnv)",
+            runtimeFactoryIndex,
+            StringComparison.Ordinal);
+        Assert.True(bootstrapIndex >= 0);
+        var debugGuardIndex = program.LastIndexOf("#if DEBUG", bootstrapIndex, StringComparison.Ordinal);
+        var debugGuardEndIndex = program.IndexOf("#endif", bootstrapIndex, StringComparison.Ordinal);
+        var stubRuntimeIndex = program.IndexOf(
+            "return ClientRuntime.CreateStubbed(",
+            bootstrapIndex,
+            StringComparison.Ordinal);
+        Assert.True(debugGuardIndex >= 0);
+        Assert.True(debugGuardEndIndex > bootstrapIndex);
+        Assert.InRange(stubRuntimeIndex, bootstrapIndex + 1, debugGuardEndIndex - 1);
+        Assert.Contains(
+            "Stub transport is not allowed for release startup.",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Production messaging requires at least three pinned XPoint onion routers.",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "#if !DEBUG\r\n        if (pins.Count == 0)",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "must use HTTPS in non-Debug builds.",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains("IsExplicitLoopbackHttp(uri)", program, StringComparison.Ordinal);
+    }
+
     private static string ReadWorkspaceFile(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

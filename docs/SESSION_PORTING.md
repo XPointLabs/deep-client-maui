@@ -76,6 +76,11 @@ Each parity slice should leave:
 - screenshots or UI automation evidence for rendered changes when possible,
 - explicit note for unresolved parity debt.
 
+Strict Windows, Android, and live-infrastructure lane semantics are documented in
+`docs/STRICT_E2E_LANES.md`. The current Windows UIA3 slice proves only that the real
+Welcome UI renders and is interactive; it intentionally does not claim account,
+message, group, or cross-device E2E parity.
+
 ## Future Porting Backlog
 
 - Full conversation settings page: search, media/attachments view, mute/disappearing messages, destructive actions.

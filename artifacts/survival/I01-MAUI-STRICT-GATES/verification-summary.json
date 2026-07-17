@@ -1,0 +1,60 @@
+{
+  "schema": "deep.survival.i01-verification.v1",
+  "programRevisionSha": "ca5ad9f0c9d4dfb509dedcbf8133524c15867fce5534816da21ff86a07057383",
+  "sourceBaseSha": "d08e9371377f277575f8165bf87c8d7eb38673dd",
+  "results": {
+    "viewModels": {
+      "passed": 134,
+      "skipped": 1,
+      "skipReason": "live infrastructure lane was not requested"
+    },
+    "smoke": {
+      "passed": 80,
+      "skipped": 0
+    },
+    "windowsContracts": {
+      "passed": 10,
+      "skipped": 0
+    },
+    "windowsCompile": {
+      "passed": 2,
+      "skipped": 0
+    },
+    "windowsStrictUi": {
+      "passed": 1,
+      "skipped": 0,
+      "realProcess": true,
+      "nonzeroWindow": true
+    },
+    "windowsDebugArm64Build": "passed",
+    "windowsReleaseArm64Build": "passed",
+    "androidDebugApkBuild": "passed",
+    "androidDeviceExecution": "blocked"
+  },
+  "artifacts": {
+    "androidApk": {
+      "file": "network.xpoint.deep-Signed.apk",
+      "bytes": 155449629,
+      "sha256": "7352D262B6A54153B140EBEDA450E6748B4375340D8371FA9AD7AF6E92973893"
+    },
+    "windowsExecutable": {
+      "file": "Deep.Client.Maui.exe",
+      "bytes": 281088,
+      "sha256": "3623FE6F7F783F2A227CCBFCBF92A8D7C7C6154E6A3E59A5FCEEABA8FB0405B9"
+    }
+  },
+  "androidBlockers": [
+    "adb is not installed or discoverable",
+    "no authorized Android device is attached",
+    "a real on-device E2E runner is not configured"
+  ],
+  "negativePreflight": {
+    "windowsMissingExecutableExitCode": 2,
+    "liveMissingConfigurationExitCode": 2,
+    "androidMissingDeviceOrRunnerExitCode": 2
+  },
+  "privacyScan": {
+    "textFilesScanned": 11,
+    "sensitiveOrAbsolutePathMatches": 0
+  }
+}

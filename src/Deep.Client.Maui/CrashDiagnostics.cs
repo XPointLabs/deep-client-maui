@@ -36,7 +36,25 @@ internal static class CrashDiagnostics
         _ = Task.Run(ProcessInfoEntriesAsync);
     }
 
-    internal static string LogPath => Path.Combine(FileSystem.AppDataDirectory, LogFileName);
+    internal static string LogPath => Path.Combine(ResolveDiagnosticRoot(), LogFileName);
+
+    private static string ResolveDiagnosticRoot()
+    {
+#if DEBUG
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("DEEP_E2E_BOOTSTRAP"),
+                "stub",
+                StringComparison.OrdinalIgnoreCase) &&
+            Environment.GetEnvironmentVariable("DEEP_E2E_APPDATA_ROOT") is { Length: > 0 } testRoot &&
+            Path.IsPathFullyQualified(testRoot))
+        {
+            var fullPath = Path.GetFullPath(testRoot);
+            Directory.CreateDirectory(fullPath);
+            return fullPath;
+        }
+#endif
+        return FileSystem.AppDataDirectory;
+    }
 
     internal static void LogException(string source, Exception? exception, string? details = null)
     {

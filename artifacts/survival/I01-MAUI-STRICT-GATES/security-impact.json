@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "survival-security-impact-v1",
+  "riskBefore": "Release evidence could be green without launching a Windows application or executing Android/live infrastructure tests.",
+  "controlsAdded": [
+    "Strict zero-skip gate with machine-readable blocked, failed, and passed states.",
+    "Real Windows ARM64 process and UIA3 control interaction.",
+    "Per-run isolated app-data root.",
+    "Debug-only generated bootstrap path with unchanged release no-stub and endpoint guards.",
+    "Sanitized failure evidence and removal of private transient run data.",
+    "Android absence is blocked evidence instead of a passing APK-build proxy."
+  ],
+  "residualRisks": [
+    "Android application behavior is not yet executed because no physical device and runner are available.",
+    "The Windows package proves the Welcome flow only; cross-process message delivery remains a later package.",
+    "A production provider push wake is not proven by this package."
+  ],
+  "secretsReadOrWritten": false,
+  "productionDefenseWeakened": false
+}

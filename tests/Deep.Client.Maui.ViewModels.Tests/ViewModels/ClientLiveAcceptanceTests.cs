@@ -11,7 +11,7 @@ namespace Deep.Client.Maui.ViewModels.Tests.ViewModels;
 
 public sealed class ClientLiveAcceptanceTests
 {
-    [Fact]
+    [StrictLiveFact]
     public async Task ClientViewModels_RunLaunchCriticalFlowThroughLiveLocalInfrastructure_WhenConfigured()
     {
         var storageUrl = Environment.GetEnvironmentVariable("DEEP_STORAGE_URL");
@@ -20,19 +20,30 @@ public sealed class ClientLiveAcceptanceTests
         var pushUrl = Environment.GetEnvironmentVariable("DEEP_PUSH_URL");
         var callUrl = Environment.GetEnvironmentVariable("DEEP_CALL_SIGNALING_BASE_URL")
             ?? Environment.GetEnvironmentVariable("DEEP_CALL_SIGNALING_URL");
-        if ((string.IsNullOrWhiteSpace(storageUrl) && string.IsNullOrWhiteSpace(routerUrls)) ||
-            string.IsNullOrWhiteSpace(fileUrl) ||
-            string.IsNullOrWhiteSpace(pushUrl) ||
-            string.IsNullOrWhiteSpace(callUrl))
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(storageUrl) && string.IsNullOrWhiteSpace(routerUrls))
         {
-            return;
+            missing.Add("DEEP_STORAGE_URL or XNODE_URLS");
         }
+        if (string.IsNullOrWhiteSpace(fileUrl))
+        {
+            missing.Add("DEEP_FILE_URL");
+        }
+        if (string.IsNullOrWhiteSpace(pushUrl))
+        {
+            missing.Add("DEEP_PUSH_URL");
+        }
+        if (string.IsNullOrWhiteSpace(callUrl))
+        {
+            missing.Add("DEEP_CALL_SIGNALING_BASE_URL");
+        }
+        Assert.True(missing.Count == 0, $"Strict live acceptance configuration is incomplete: {string.Join(", ", missing)}.");
 
         var aliceRuntime = CreateRuntime(storageUrl, routerUrls);
         var bobRuntime = CreateRuntime(storageUrl, routerUrls);
         var attachmentFiles = new HttpAttachmentFileTransport(
             new HttpClient(),
-            new HttpAttachmentFileTransportOptions(fileUrl));
+            new HttpAttachmentFileTransportOptions(fileUrl!));
         var attachmentBytes = Encoding.UTF8.GetBytes($"client-live-attachment-{Guid.NewGuid():N}");
 
         var aliceOnboarding = new OnboardingViewModel(aliceRuntime) { DisplayName = "Alice Live Client" };
@@ -49,13 +60,13 @@ public sealed class ClientLiveAcceptanceTests
 
         var alicePhrase = await aliceRuntime.Accounts.GetRecoveryPhraseAsync();
         var bobPhrase = await bobRuntime.Accounts.GetRecoveryPhraseAsync();
-        var aliceCalls = new ClientCallService(CreateCallService(callUrl, alicePhrase));
-        var bobCalls = new ClientCallService(CreateCallService(callUrl, bobPhrase));
+        var aliceCalls = new ClientCallService(CreateCallService(callUrl!, alicePhrase));
+        var bobCalls = new ClientCallService(CreateCallService(callUrl!, bobPhrase));
 
         var bobNotifications = new NotificationRegistrationViewModel(new PushRegistrationCoordinator(
             bobRuntime,
             new LocalPushNotificationService("fcm", $"client-live-fcm-{Guid.NewGuid():N}"),
-            new HttpPushSubscriptionTransport(new HttpClient(), new HttpPushSubscriptionTransportOptions(pushUrl)),
+            new HttpPushSubscriptionTransport(new HttpClient(), new HttpPushSubscriptionTransportOptions(pushUrl!)),
             bobRuntime.Clock));
         await bobNotifications.RegisterAsync();
 

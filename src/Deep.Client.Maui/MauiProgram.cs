@@ -19,6 +19,10 @@ using Microsoft.Maui.Graphics;
 using Microsoft.Maui.Handlers;
 using Microsoft.Maui.Platform;
 #endif
+#if WINDOWS
+using Microsoft.Maui.Handlers;
+using Microsoft.UI.Xaml;
+#endif
 
 namespace Deep.Client.Maui;
 
@@ -37,6 +41,8 @@ public static class MauiProgram
     internal const string StakingBackendBaseUrlEnv = "DEEP_STAKING_BACKEND_URL";
     internal const string StakingPortalBaseUrlEnv = "DEEP_STAKING_PORTAL_URL";
     internal const string TlsPublicKeyPinsEnv = "DEEP_TLS_PUBLIC_KEY_PINS";
+    internal const string E2eBootstrapEnv = "DEEP_E2E_BOOTSTRAP";
+    internal const string E2eAppDataRootEnv = "DEEP_E2E_APPDATA_ROOT";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
     private const string WindowsReleaseRuntimeEnvFile = "deep.windows.release.env";
     internal const string WipeLocalDataOnNextLaunchKey = "session.wipe-local-on-next-launch";
@@ -48,6 +54,9 @@ public static class MauiProgram
         builder.UseMauiApp<App>();
 #if ANDROID
         ConfigureAndroidHandlers();
+#endif
+#if WINDOWS
+        ConfigureWindowsHandlers();
 #endif
 
         var featureFlags = BuildFeatureFlags();
@@ -326,6 +335,26 @@ public static class MauiProgram
     }
 #endif
 
+#if WINDOWS
+    private static void ConfigureWindowsHandlers()
+    {
+        static void ApplyAutomationId(IElementHandler handler, IView view)
+        {
+            if (handler.PlatformView is FrameworkElement element &&
+                !string.IsNullOrWhiteSpace(view.AutomationId))
+            {
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(
+                    element,
+                    view.AutomationId);
+            }
+        }
+
+        ViewHandler.ViewMapper.AppendToMapping(
+            "DeepAutomationId",
+            ApplyAutomationId);
+    }
+#endif
+
     private static ClientFeatureFlags BuildFeatureFlags()
     {
 #if DEBUG
@@ -414,6 +443,15 @@ public static class MauiProgram
 
     private static IReadOnlyList<PinnedRouterEndpoint> ResolveRouterBaseUrls()
     {
+#if DEBUG
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(E2eBootstrapEnv),
+                "stub",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+#endif
         var raw = ResolveRuntimeSetting(RouterBaseUrlsEnv);
         if (!string.IsNullOrWhiteSpace(raw))
         {
@@ -437,8 +475,23 @@ public static class MauiProgram
         IServiceProvider services,
         CancellationToken cancellationToken)
     {
-        var stateDbPath = Path.Combine(FileSystem.AppDataDirectory, "client-state.db");
-        var legacyStatePath = Path.Combine(FileSystem.AppDataDirectory, "client-state.json");
+#if DEBUG
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(E2eBootstrapEnv),
+                "stub",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _ = ResolveAppDataDirectory();
+            return ClientRuntime.CreateStubbed(
+                services.GetRequiredService<ClientFeatureFlags>(),
+                services.GetRequiredService<IClock>(),
+                avatarProfiles: services.GetRequiredService<IAvatarProfileTransport>());
+        }
+#endif
+        var appDataDirectory = ResolveAppDataDirectory();
+        var stateDbPath = Path.Combine(appDataDirectory, "client-state.db");
+        var legacyStatePath = Path.Combine(appDataDirectory, "client-state.json");
         var stateDbKey = await ResolveLocalStateDatabaseKeyAsync(cancellationToken).ConfigureAwait(false);
 
         if (Preferences.Default.Get(WipeLocalDataOnNextLaunchKey, false))
@@ -467,6 +520,29 @@ public static class MauiProgram
             sqlCipherKey: stateDbKey,
             storeDecorator: store => new SecureRecoverySessionStore(store),
             requireE2eeTransport: true);
+    }
+
+    internal static string ResolveAppDataDirectory()
+    {
+#if DEBUG
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(E2eBootstrapEnv),
+                "stub",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var testRoot = Environment.GetEnvironmentVariable(E2eAppDataRootEnv);
+            if (string.IsNullOrWhiteSpace(testRoot) || !Path.IsPathFullyQualified(testRoot))
+            {
+                throw new InvalidOperationException(
+                    $"{E2eAppDataRootEnv} must be an absolute path when {E2eBootstrapEnv}=stub.");
+            }
+
+            var fullPath = Path.GetFullPath(testRoot);
+            Directory.CreateDirectory(fullPath);
+            return fullPath;
+        }
+#endif
+        return FileSystem.AppDataDirectory;
     }
 
     private static HttpClient CreateRouterHttpClient()

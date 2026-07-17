@@ -1,26 +1,8 @@
 {
-  "onboarding": [
-    "Onboarding.DisplayName",
-    "Onboarding.RecoveryPhrase",
-    "Onboarding.Create",
-    "Onboarding.Restore",
-    "Onboarding.SessionId"
-  ],
-  "conversations": [
-    "Conversations.Root",
-    "Conversations.List",
-    "Conversations.NewConversation"
-  ],
-  "chat": [
-    "Chat.Back",
-    "Chat.Attach",
-    "Chat.Draft",
-    "Chat.Send",
-    "Chat.Messages"
-  ],
-  "groupChat": [
-    "GroupChat.Draft",
-    "GroupChat.Send",
-    "GroupChat.Messages"
+  "welcome": [
+    "Welcome.DisplayName",
+    "Welcome.Create",
+    "Welcome.Restore",
+    "Welcome.Error"
   ]
 }

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "survival-test-results-v1",
+  "workPackage": "I01-MAUI-STRICT-GATES",
+  "results": [
+    {
+      "name": "ViewModels",
+      "passed": 134,
+      "failed": 0,
+      "notRun": 1,
+      "note": "Live infrastructure lane was not requested in the ordinary suite."
+    },
+    {
+      "name": "Smoke",
+      "passed": 80,
+      "failed": 0,
+      "notRun": 0
+    },
+    {
+      "name": "Windows contracts",
+      "passed": 10,
+      "failed": 0,
+      "notRun": 0
+    },
+    {
+      "name": "Windows compile",
+      "passed": 2,
+      "failed": 0,
+      "notRun": 0
+    },
+    {
+      "name": "Strict Windows UIA3",
+      "passed": 1,
+      "failed": 0,
+      "notRun": 0,
+      "realProcess": true,
+      "nonzeroWindow": true
+    }
+  ],
+  "negativePreflightExitCodes": {
+    "windowsMissingExecutable": 2,
+    "liveMissingConfiguration": 2,
+    "androidMissingDeviceOrRunner": 2
+  },
+  "androidDeviceExecution": "blocked",
+  "privacyScanMatches": 0
+}

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "survival-migration-rollback-v1",
+  "migrationRequired": false,
+  "migration": [
+    "Call the strict lane script from local or CI orchestration when release evidence is requested.",
+    "Provide a repository-local evidence directory and an isolated per-run app-data root.",
+    "Use adb reverse for a physical Android test device instead of weakening release cleartext policy."
+  ],
+  "dataMigration": "none",
+  "rollback": [
+    "Stop invoking the strict lane script.",
+    "Revert the single local commit if code rollback is required."
+  ],
+  "rollbackRisk": "Reverting restores false-green pass-by-return behavior and stale UI identifiers, so it must not be used for release evidence."
+}

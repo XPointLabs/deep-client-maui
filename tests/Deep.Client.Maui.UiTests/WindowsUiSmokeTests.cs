@@ -1,8 +1,14 @@
-﻿using OpenQA.Selenium;
-using OpenQA.Selenium.Appium;
-using OpenQA.Selenium.Appium.Windows;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
+using FlaUI.Core;
+using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Tools;
+using FlaUI.UIA3;
+using Xunit;
 
 namespace Deep.Client.Maui.UiTests;
 
@@ -10,334 +16,350 @@ public sealed class WindowsUiSmokeTests
 {
     private static readonly UiBaseline Baseline = LoadBaseline();
 
-    [Fact]
-    public void OnboardingPageRendersInteractiveControls()
+    [StrictWindowsUiFact]
+    public void WelcomePageRendersInteractiveControlsInRealWindowsApp()
     {
-        using var session = UiTestSession.TryCreate();
-        if (session is null)
+        using var session = WindowsUiTestSession.CreateStrict();
+
+        foreach (var id in Baseline.Welcome)
         {
-            return;
+            Assert.NotNull(session.WaitForAutomationId(id, TimeSpan.FromSeconds(20)));
         }
 
-        Assert.NotNull(session.WaitForAccessibilityId("Onboarding.DisplayName", TimeSpan.FromSeconds(15)));
-        Assert.NotNull(session.WaitForAccessibilityId("Onboarding.RecoveryPhrase", TimeSpan.FromSeconds(5)));
-        Assert.NotNull(session.WaitForAccessibilityId("Onboarding.Create", TimeSpan.FromSeconds(5)));
-        Assert.NotNull(session.WaitForAccessibilityId("Onboarding.Restore", TimeSpan.FromSeconds(5)));
-    }
-
-    [Fact]
-    public void RegisterFlowNavigatesToConversations()
-    {
-        using var session = UiTestSession.TryCreate();
-        if (session is null)
-        {
-            return;
-        }
-
-        var displayName = session.WaitForAccessibilityId("Onboarding.DisplayName", TimeSpan.FromSeconds(15));
+        var displayName = session.WaitForAutomationId("Welcome.DisplayName", TimeSpan.FromSeconds(5))?.AsTextBox();
         Assert.NotNull(displayName);
-        displayName.Clear();
-        displayName.SendKeys("UiAutomation");
+        Assert.True(displayName!.IsEnabled);
+        displayName.Text = "UIAutomation";
 
-        var createButton = session.WaitForAccessibilityId("Onboarding.Create", TimeSpan.FromSeconds(5));
-        Assert.NotNull(createButton);
-        createButton.Click();
+        var create = session.WaitForAutomationId("Welcome.Create", TimeSpan.FromSeconds(5))?.AsButton();
+        Assert.NotNull(create);
+        Assert.True(
+            Retry.WhileFalse(
+                () => create!.IsEnabled,
+                TimeSpan.FromSeconds(5),
+                TimeSpan.FromMilliseconds(100),
+                throwOnTimeout: false).Result);
 
-        var conversationsRoot = session.WaitForAccessibilityId("Conversations.Root", TimeSpan.FromSeconds(20));
-        Assert.NotNull(conversationsRoot);
+        var restore = session.WaitForAutomationId("Welcome.Restore", TimeSpan.FromSeconds(5))?.AsButton();
+        Assert.NotNull(restore);
+        Assert.True(restore!.IsEnabled);
 
-        var newConversation = session.WaitForAccessibilityId("Conversations.NewConversation", TimeSpan.FromSeconds(5));
-        Assert.NotNull(newConversation);
-    }
-
-    [Fact]
-    public void NewChatOpenAndSendShowsMessageBubble()
-    {
-        using var session = UiTestSession.TryCreate();
-        if (session is null)
-        {
-            return;
-        }
-
-        var displayName = session.WaitForAccessibilityId("Onboarding.DisplayName", TimeSpan.FromSeconds(15));
-        Assert.NotNull(displayName);
-        displayName.Clear();
-        displayName.SendKeys("UiSendFlow");
-
-        var createButton = session.WaitForAccessibilityId("Onboarding.Create", TimeSpan.FromSeconds(5));
-        Assert.NotNull(createButton);
-        createButton.Click();
-
-        var sessionId = session.WaitForAccessibilityId("Onboarding.SessionId", TimeSpan.FromSeconds(8))?.Text;
-        Assert.False(string.IsNullOrWhiteSpace(sessionId));
-
-        var newConversation = session.WaitForAccessibilityId("Conversations.NewConversation", TimeSpan.FromSeconds(15));
-        Assert.NotNull(newConversation);
-        newConversation.Click();
-
-        var newSessionId = session.WaitForAccessibilityId("NewConversation.SessionId", TimeSpan.FromSeconds(8));
-        Assert.NotNull(newSessionId);
-        newSessionId.Clear();
-        newSessionId.SendKeys(sessionId);
-
-        var start = session.WaitForAccessibilityId("NewConversation.Start", TimeSpan.FromSeconds(5));
-        Assert.NotNull(start);
-        start.Click();
-
-        var draft = session.WaitForAccessibilityId("Chat.Draft", TimeSpan.FromSeconds(10));
-        Assert.NotNull(draft);
-
-        var sentText = "ui smoke message";
-        draft.Clear();
-        draft.SendKeys(sentText);
-
-        var sendButton = session.WaitForAccessibilityId("Chat.Send", TimeSpan.FromSeconds(5));
-        Assert.NotNull(sendButton);
-        sendButton.Click();
-
-        var sentMessage = session.WaitForText(sentText, TimeSpan.FromSeconds(8));
-        Assert.NotNull(sentMessage);
-    }
-
-    [Fact]
-    public void BaselineUiElementsAreVisibleAcrossCoreScreens()
-    {
-        using var session = UiTestSession.TryCreate();
-        if (session is null)
-        {
-            return;
-        }
-
-        foreach (var id in Baseline.Onboarding)
-        {
-            Assert.NotNull(session.WaitForAccessibilityId(id, TimeSpan.FromSeconds(15)));
-        }
-
-        RegisterAndNavigateToConversations(session, "UiBaseline");
-
-        foreach (var id in Baseline.Conversations)
-        {
-            Assert.NotNull(session.WaitForAccessibilityId(id, TimeSpan.FromSeconds(8)));
-        }
-
-        var sessionId = session.WaitForAccessibilityId("Onboarding.SessionId", TimeSpan.FromSeconds(8))?.Text;
-        Assert.False(string.IsNullOrWhiteSpace(sessionId));
-
-        OpenOneToOneChat(session, sessionId!);
-
-        foreach (var id in Baseline.Chat)
-        {
-            Assert.NotNull(session.WaitForAccessibilityId(id, TimeSpan.FromSeconds(8)));
-        }
-    }
-
-    [Fact]
-    public void GroupChatCanSendMessage()
-    {
-        using var session = UiTestSession.TryCreate();
-        if (session is null)
-        {
-            return;
-        }
-
-        RegisterAndNavigateToConversations(session, "UiGroupSend");
-
-        var newConversation = session.WaitForAccessibilityId("Conversations.NewConversation", TimeSpan.FromSeconds(8));
-        Assert.NotNull(newConversation);
-        newConversation.Click();
-
-        var createGroupEntry = session.WaitForAccessibilityId("StartConversation.CreateGroup", TimeSpan.FromSeconds(8));
-        Assert.NotNull(createGroupEntry);
-        createGroupEntry.Click();
-
-        var groupName = session.WaitForAccessibilityId("Groups.GroupName", TimeSpan.FromSeconds(8));
-        Assert.NotNull(groupName);
-        groupName.Click();
-        groupName.SendKeys("BaselineGroup");
-
-        var createGroup = session.WaitForAccessibilityId("Groups.Create", TimeSpan.FromSeconds(8));
-        Assert.NotNull(createGroup);
-        createGroup.Click();
-
-        var createdGroup = session.WaitForText("BaselineGroup", TimeSpan.FromSeconds(8));
-        Assert.NotNull(createdGroup);
-
-        foreach (var id in Baseline.GroupChat)
-        {
-            Assert.NotNull(session.WaitForAccessibilityId(id, TimeSpan.FromSeconds(10)));
-        }
-
-        var draft = session.WaitForAccessibilityId("GroupChat.Draft", TimeSpan.FromSeconds(8));
-        Assert.NotNull(draft);
-        var text = "group ui smoke";
-        draft.Clear();
-        draft.SendKeys(text);
-
-        var send = session.WaitForAccessibilityId("GroupChat.Send", TimeSpan.FromSeconds(8));
-        Assert.NotNull(send);
-        send.Click();
-
-        Assert.NotNull(session.WaitForText(text, TimeSpan.FromSeconds(8)));
-    }
-
-    private static void RegisterAndNavigateToConversations(UiTestSession session, string name)
-    {
-        var displayName = session.WaitForAccessibilityId("Onboarding.DisplayName", TimeSpan.FromSeconds(15));
-        Assert.NotNull(displayName);
-        displayName.Clear();
-        displayName.SendKeys(name);
-
-        var createButton = session.WaitForAccessibilityId("Onboarding.Create", TimeSpan.FromSeconds(5));
-        Assert.NotNull(createButton);
-        createButton.Click();
-
-        Assert.NotNull(session.WaitForAccessibilityId("Conversations.Root", TimeSpan.FromSeconds(20)));
-    }
-
-    private static void OpenOneToOneChat(UiTestSession session, string sessionId)
-    {
-        var newConversation = session.WaitForAccessibilityId("Conversations.NewConversation", TimeSpan.FromSeconds(8));
-        Assert.NotNull(newConversation);
-        newConversation.Click();
-
-        var newSessionId = session.WaitForAccessibilityId("NewConversation.SessionId", TimeSpan.FromSeconds(8));
-        Assert.NotNull(newSessionId);
-        newSessionId.Clear();
-        newSessionId.SendKeys(sessionId);
-
-        var start = session.WaitForAccessibilityId("NewConversation.Start", TimeSpan.FromSeconds(5));
-        Assert.NotNull(start);
-        start.Click();
+        session.WriteSuccessEvidence();
     }
 
     private static UiBaseline LoadBaseline()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "Baselines", "session-ui-baseline.json");
-        if (!File.Exists(path))
-        {
-            path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Baselines", "session-ui-baseline.json"));
-        }
-
         var json = File.ReadAllText(path);
-        return JsonSerializer.Deserialize<UiBaseline>(json)
+        return JsonSerializer.Deserialize<UiBaseline>(
+                json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? throw new InvalidOperationException("UI baseline file could not be parsed.");
     }
 
-    private sealed record UiBaseline(string[] Onboarding, string[] Conversations, string[] Chat, string[] GroupChat);
+    private sealed record UiBaseline(string[] Welcome);
 
-    private sealed class UiTestSession : IDisposable
+    private sealed class WindowsUiTestSession : IDisposable
     {
-        private const string UiTestsEnabledKey = "DEEP_UI_TESTS";
         private const string AppPathKey = "DEEP_MAUI_EXE";
-        private const string WinAppDriverUrlKey = "WINAPPDRIVER_URL";
+        private const string ArtifactDirectoryKey = "DEEP_E2E_ARTIFACTS";
+        private const string AppDataDirectoryKey = "DEEP_E2E_APPDATA_ROOT";
+        private const string BootstrapKey = "DEEP_E2E_BOOTSTRAP";
 
-        private readonly Process appProcess;
+        private readonly Application application;
+        private readonly UIA3Automation automation;
+        private readonly Window window;
+        private readonly string artifactDirectory;
 
-        public WindowsDriver Driver { get; }
-
-        private UiTestSession(Process appProcess, WindowsDriver driver)
+        private WindowsUiTestSession(
+            Application application,
+            UIA3Automation automation,
+            Window window,
+            string artifactDirectory)
         {
-            this.appProcess = appProcess;
-            Driver = driver;
+            this.application = application;
+            this.automation = automation;
+            this.window = window;
+            this.artifactDirectory = artifactDirectory;
         }
 
-        public static UiTestSession? TryCreate()
+        public static WindowsUiTestSession CreateStrict()
         {
-            if (!string.Equals(Environment.GetEnvironmentVariable(UiTestsEnabledKey), "1", StringComparison.Ordinal))
+            if (!System.OperatingSystem.IsWindows())
             {
-                return null;
+                throw new PlatformNotSupportedException("The strict Windows UI lane requires Windows.");
             }
 
-            var appPath = Environment.GetEnvironmentVariable(AppPathKey);
-            if (string.IsNullOrWhiteSpace(appPath))
-            {
-                throw new InvalidOperationException($"Set {AppPathKey} to published Deep.Client.Maui.exe before running UI tests.");
-            }
+            var appPath = RequireExistingFile(AppPathKey);
+            var artifactDirectory = RequireDirectorySetting(ArtifactDirectoryKey);
+            var appDataDirectory = RequireDirectorySetting(AppDataDirectoryKey);
+            Directory.CreateDirectory(artifactDirectory);
+            Directory.CreateDirectory(appDataDirectory);
 
-            if (!File.Exists(appPath))
-            {
-                throw new FileNotFoundException($"Cannot find MAUI executable at '{appPath}'.", appPath);
-            }
-
-            var appProcess = Process.Start(new ProcessStartInfo
+            var startInfo = new ProcessStartInfo
             {
                 FileName = appPath,
-                UseShellExecute = true
-            }) ?? throw new InvalidOperationException("Failed to start MAUI app process.");
+                UseShellExecute = false,
+                WorkingDirectory = Path.GetDirectoryName(appPath)
+                    ?? throw new InvalidOperationException("The MAUI executable has no parent directory.")
+            };
+            startInfo.Environment[BootstrapKey] = RequireSetting(BootstrapKey);
+            startInfo.Environment[AppDataDirectoryKey] = appDataDirectory;
 
-            var serverUrl = Environment.GetEnvironmentVariable(WinAppDriverUrlKey);
-            if (string.IsNullOrWhiteSpace(serverUrl))
+            if (string.Equals(startInfo.Environment[BootstrapKey], "stub", StringComparison.OrdinalIgnoreCase))
             {
-                serverUrl = "http://127.0.0.1:4723";
+                foreach (var key in StrictLaneEnvironment.EndpointKeys)
+                {
+                    startInfo.Environment.Remove(key);
+                }
             }
 
-            var options = new AppiumOptions();
-            options.PlatformName = "Windows";
-            options.AddAdditionalAppiumOption("appTopLevelWindow", appProcess.MainWindowHandle.ToString("x"));
-
-            var driver = new WindowsDriver(new Uri(serverUrl), options);
-            driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromMilliseconds(200);
-
-            return new UiTestSession(appProcess, driver);
-        }
-
-        public IWebElement? WaitForAccessibilityId(string id, TimeSpan timeout)
-        {
-            var deadline = DateTimeOffset.UtcNow.Add(timeout);
-            while (DateTimeOffset.UtcNow < deadline)
+            var application = Application.Launch(startInfo);
+            var automation = new UIA3Automation();
+            try
             {
-                var element = Driver.FindElements(MobileBy.AccessibilityId(id)).FirstOrDefault();
-                if (element is not null)
+                var result = Retry.WhileNull(
+                    () => application
+                        .GetAllTopLevelWindows(automation)
+                        .FirstOrDefault(candidate =>
+                            candidate.Properties.ProcessId.ValueOrDefault == application.ProcessId
+                            && candidate.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero),
+                    timeout: TimeSpan.FromSeconds(30),
+                    interval: TimeSpan.FromMilliseconds(250),
+                    throwOnTimeout: false);
+                var window = result.Result;
+                if (window is null)
                 {
-                    return element;
+                    throw new InvalidOperationException("The real MAUI process did not expose a nonzero top-level window.");
                 }
 
-                Thread.Sleep(200);
+                return new WindowsUiTestSession(application, automation, window, artifactDirectory);
+            }
+            catch (Exception exception)
+            {
+                WriteLaunchFailure(artifactDirectory, application, exception);
+                automation.Dispose();
+                CloseApplication(application);
+                throw;
+            }
+        }
+
+        public AutomationElement? WaitForAutomationId(string automationId, TimeSpan timeout)
+        {
+            var result = Retry.WhileNull(
+                () => window.FindFirstDescendant(condition => condition.ByAutomationId(automationId)),
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            if (result.Result is not null)
+            {
+                return result.Result;
             }
 
+            WriteFailureEvidence($"Element '{automationId}' was not found.");
             return null;
         }
 
-        public IWebElement? WaitForText(string text, TimeSpan timeout)
+        public void WriteSuccessEvidence()
         {
-            var deadline = DateTimeOffset.UtcNow.Add(timeout);
-            while (DateTimeOffset.UtcNow < deadline)
+            File.WriteAllText(
+                Path.Combine(artifactDirectory, "windows-ui-tree.txt"),
+                BuildSanitizedTree(window),
+                Encoding.UTF8);
+            File.WriteAllText(
+                Path.Combine(artifactDirectory, "windows-ui-result.json"),
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        schema = "deep.survival.windows-ui.v1",
+                        status = "passed",
+                        processStarted = true,
+                        nonzeroWindow = window.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero,
+                        baseline = Baseline.Welcome
+                    },
+                    new JsonSerializerOptions { WriteIndented = true }),
+                Encoding.UTF8);
+        }
+
+        private void WriteFailureEvidence(string reason)
+        {
+            try
             {
-                var element = Driver.FindElements(By.Name(text)).FirstOrDefault();
-                if (element is not null)
+                CaptureWindow(window, Path.Combine(artifactDirectory, "windows-ui-failure.png"));
+                File.WriteAllText(
+                    Path.Combine(artifactDirectory, "windows-ui-tree.txt"),
+                    BuildSanitizedTree(window),
+                    Encoding.UTF8);
+                File.WriteAllText(
+                    Path.Combine(artifactDirectory, "windows-ui-result.json"),
+                    JsonSerializer.Serialize(
+                        new
+                        {
+                            schema = "deep.survival.windows-ui.v1",
+                            status = "failed",
+                            reason,
+                            processStarted = true,
+                            nonzeroWindow = window.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero
+                        },
+                        new JsonSerializerOptions { WriteIndented = true }),
+                    Encoding.UTF8);
+            }
+            catch
+            {
+                // Evidence collection must not replace the original test failure.
+            }
+        }
+
+        private static string BuildSanitizedTree(AutomationElement root)
+        {
+            var builder = new StringBuilder();
+            Append(root, builder, 0);
+            return builder.ToString();
+
+            static void Append(AutomationElement element, StringBuilder output, int depth)
+            {
+                var automationId = ReadSafely(() => element.Properties.AutomationId.ValueOrDefault);
+                var controlType = ReadSafely(() => element.Properties.ControlType.ValueOrDefault.ToString());
+                output.Append(' ', depth * 2)
+                    .Append(Sanitize(controlType))
+                    .Append(" id=")
+                    .AppendLine(Sanitize(automationId));
+
+                if (depth >= 12)
                 {
-                    return element;
+                    return;
                 }
 
-                Thread.Sleep(200);
+                foreach (var child in element.FindAllChildren())
+                {
+                    Append(child, output, depth + 1);
+                }
             }
 
-            return null;
+            static string ReadSafely(Func<string?> read)
+            {
+                try
+                {
+                    return read() ?? "-";
+                }
+                catch
+                {
+                    return "unavailable";
+                }
+            }
+
+            static string Sanitize(string? value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return "-";
+                }
+
+                var safe = new string(value.Where(character =>
+                    char.IsLetterOrDigit(character) || character is '.' or '_' or '-').ToArray());
+                return safe.Length > 96 ? safe[..96] : safe;
+            }
+        }
+
+        private static void CaptureWindow(Window target, string path)
+        {
+            var handle = target.Properties.NativeWindowHandle.ValueOrDefault;
+            var bounds = target.BoundingRectangle;
+            var width = Math.Max(1, (int)Math.Ceiling((double)bounds.Width));
+            var height = Math.Max(1, (int)Math.Ceiling((double)bounds.Height));
+            using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+            using var graphics = Graphics.FromImage(bitmap);
+            var deviceContext = graphics.GetHdc();
+            try
+            {
+                if (!PrintWindow(handle, deviceContext, PrintWindowRenderFullContent))
+                {
+                    throw new InvalidOperationException("Win32 PrintWindow did not capture the MAUI window.");
+                }
+            }
+            finally
+            {
+                graphics.ReleaseHdc(deviceContext);
+            }
+
+            bitmap.Save(path, ImageFormat.Png);
+        }
+
+        private const uint PrintWindowRenderFullContent = 2;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool PrintWindow(IntPtr windowHandle, IntPtr deviceContext, uint flags);
+
+        private static void WriteLaunchFailure(string artifactDirectory, Application app, Exception exception)
+        {
+            Directory.CreateDirectory(artifactDirectory);
+            File.WriteAllText(
+                Path.Combine(artifactDirectory, "windows-ui-result.json"),
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        schema = "deep.survival.windows-ui.v1",
+                        status = "failed",
+                        reason = exception.GetType().Name,
+                        processStarted = app.ProcessId > 0,
+                        nonzeroWindow = false
+                    },
+                    new JsonSerializerOptions { WriteIndented = true }),
+                Encoding.UTF8);
+        }
+
+        private static string RequireExistingFile(string key)
+        {
+            var value = RequireSetting(key);
+            if (!File.Exists(value))
+            {
+                throw new FileNotFoundException($"{key} does not point to an existing file.");
+            }
+
+            return Path.GetFullPath(value);
+        }
+
+        private static string RequireDirectorySetting(string key)
+        {
+            var value = RequireSetting(key);
+            if (!Path.IsPathFullyQualified(value))
+            {
+                throw new InvalidOperationException($"{key} must be an absolute path.");
+            }
+
+            return Path.GetFullPath(value);
+        }
+
+        private static string RequireSetting(string key) =>
+            Environment.GetEnvironmentVariable(key) is { Length: > 0 } value
+                ? value
+                : throw new InvalidOperationException($"{key} is required in the strict Windows UI lane.");
+
+        private static void CloseApplication(Application app)
+        {
+            try
+            {
+                app.Close();
+            }
+            catch
+            {
+                try
+                {
+                    app.Kill();
+                }
+                catch
+                {
+                }
+            }
+
+            app.Dispose();
         }
 
         public void Dispose()
         {
-            try
-            {
-                Driver?.Quit();
-                Driver?.Dispose();
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                if (!appProcess.HasExited)
-                {
-                    appProcess.Kill(entireProcessTree: true);
-                }
-            }
-            catch
-            {
-            }
-
-            appProcess.Dispose();
+            automation.Dispose();
+            CloseApplication(application);
         }
     }
 }

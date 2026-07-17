@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "survival-compatibility-v1",
+  "publicRuntimeBehavior": "Production endpoint validation and release no-stub guards remain unchanged.",
+  "testContractChanges": [
+    "Live acceptance is explicit not-run unless the lane is requested; a requested lane fails on missing configuration.",
+    "Windows UI acceptance is explicit not-run unless requested; the strict lane requires a real executable, real process, nonzero window, executed tests, and zero skips.",
+    "The UI automation baseline now uses the current Welcome control identifiers."
+  ],
+  "configurationAdditions": [
+    "DEEP_STRICT_WINDOWS_UI",
+    "DEEP_STRICT_LIVE",
+    "DEEP_E2E_BOOTSTRAP",
+    "DEEP_E2E_APPDATA_ROOT",
+    "DEEP_E2E_ARTIFACTS"
+  ],
+  "wireFormatChanges": [],
+  "storageChanges": [],
+  "consumerActions": [
+    "deep-tests-e2e must invoke eng/Invoke-StrictClientLane.ps1 and treat exit code 2 as blocked, never passed.",
+    "A physical Android runner must execute the already-built APK before Android device evidence can pass."
+  ]
+}
