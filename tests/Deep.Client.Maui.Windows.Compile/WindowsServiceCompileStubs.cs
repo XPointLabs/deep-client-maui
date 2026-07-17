@@ -23,6 +23,8 @@ namespace Deep.Client.Maui
         public const string WindowsPushRemoteIdEnv = "DEEP_WINDOWS_PUSH_REMOTE_ID";
 
         public static string? ResolveRuntimeSetting(string key) => null;
+
+        public static string ResolveAppDataDirectory() => Path.GetTempPath();
     }
 
     public static class WnsPushPayloadCodec

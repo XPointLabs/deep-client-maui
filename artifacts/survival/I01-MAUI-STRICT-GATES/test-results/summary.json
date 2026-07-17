@@ -12,7 +12,7 @@
     },
     {
       "name": "Smoke",
-      "passed": 82,
+      "passed": 83,
       "failed": 0,
       "notRun": 0
     },
@@ -50,5 +50,12 @@
     "Android physical-device execution has not run",
     "mandatory three-router live acceptance has not run"
   ],
-  "privacyScanMatches": 0
+  "privacyScanMatches": 0,
+  "hardeningNegatives": [
+    "cross-lane copy rejected",
+    "missing/mismatched/duplicate/stale invocation rejected",
+    "Windows duplicate/alternate-separator/reparse payload rejected",
+    "Android APK binding tamper rejected",
+    "Android private system-out JUnit rejected"
+  ]
 }

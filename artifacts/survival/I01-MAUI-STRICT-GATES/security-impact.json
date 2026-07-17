@@ -1,7 +1,12 @@
 {
   "schemaVersion": "survival-security-impact-v1",
-  "riskBefore": "Release evidence could be green without launching a Windows application or executing Android/live infrastructure tests.",
+  "riskBefore": "Commit-only result binding allowed cross-lane copying, stale invocation reuse, Windows payload substitution, weak Android runner/APK/device claims, and raw JUnit upload.",
   "controlsAdded": [
+    "Common release invocation, unique lane invocation, exact lane/source binding, matching final preflight, freshness, and duplicate rejection.",
+    "Canonical repository-contained Windows AppPath with no reparse traversal, exact pre-launch normalized file-set/hash snapshot, and post-run rehash.",
+    "Android APK SHA/package/version/certificate, runner hash/version, serial, managed-device cleanup, JUnit hash, and counter cross-check contract.",
+    "Debug-only network.xpoint.deep.e2e physical test package while Release remains network.xpoint.deep.",
+    "Raw Android evidence is quarantined locally; upload accepts only an allowlisted summary without serials or absolute paths.",
     "Strict zero-skip gate with machine-readable blocked, failed, and passed states.",
     "Real Windows ARM64 process and UIA3 control interaction.",
     "Per-run isolated app-data root.",
@@ -10,7 +15,7 @@
     "Android absence is blocked evidence instead of a passing APK-build proxy."
   ],
   "residualRisks": [
-    "Android application behavior is not yet executed because no physical device and runner are available.",
+    "Android application behavior is not yet executed because no dedicated managed physical device and trusted runner are available.",
     "The Windows package proves the Welcome flow only; cross-process message delivery remains a later package.",
     "A production provider push wake is not proven by this package."
   ],

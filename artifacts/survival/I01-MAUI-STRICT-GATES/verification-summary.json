@@ -1,8 +1,8 @@
 {
-  "schema": "deep.survival.i01-verification.v1",
+  "schema": "deep.survival.i01a2-verification.v1",
   "status": "blocked",
   "programRevisionSha": "ca5ad9f0c9d4dfb509dedcbf8133524c15867fce5534816da21ff86a07057383",
-  "sourceBaseSha": "a03413f0e67444ae4fad121c12de3cf1fc6f686e",
+  "sourceBaseSha": "6103f30e6edb94a45e28aaccd667dca3d1fc174d",
   "results": {
     "viewModels": {
       "passed": 137,
@@ -10,7 +10,7 @@
       "skipReason": "routed live and direct-storage diagnostic lanes were not requested"
     },
     "smoke": {
-      "passed": 82,
+      "passed": 83,
       "skipped": 0
     },
     "windowsContracts": {
@@ -40,9 +40,9 @@
   },
   "artifacts": {
     "androidApk": {
-      "file": "network.xpoint.deep-Signed.apk",
-      "bytes": 155449629,
-      "sha256": "7352D262B6A54153B140EBEDA450E6748B4375340D8371FA9AD7AF6E92973893"
+      "file": "network.xpoint.deep.e2e-Signed.apk",
+      "bytes": 155461917,
+      "sha256": "46F9E68371EE23A3F1E8DEFF1A7C7E4FA261EB8DD3DE339F9D5ED703DB0A0796"
     },
     "windowsExecutable": {
       "file": "Deep.Client.Maui.exe",

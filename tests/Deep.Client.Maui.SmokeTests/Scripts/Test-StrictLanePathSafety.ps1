@@ -8,6 +8,7 @@ $root = Join-Path $sandbox 'artifacts'
 $sibling = Join-Path $sandbox 'artifacts-escape'
 $outside = Join-Path $sandbox 'outside'
 New-Item -ItemType Directory -Force -Path $root, $sibling, $outside | Out-Null
+$payloadJunction = $null
 try {
     $siblingRejected = $false
     try {
@@ -33,7 +34,67 @@ try {
     if (-not (Test-Path -LiteralPath $outside -PathType Container)) {
         throw 'The junction target was modified.'
     }
+
+    $payload = Join-Path $root 'payload'
+    $executableDirectory = Join-Path $payload 'app'
+    New-Item -ItemType Directory -Force -Path $executableDirectory | Out-Null
+    $executable = Join-Path $executableDirectory 'Deep.Client.Maui.exe'
+    $library = Join-Path $payload 'Deep.Client.Maui.dll'
+    [IO.File]::WriteAllText($executable, 'executable')
+    [IO.File]::WriteAllText($library, 'library')
+    $snapshot = Get-StrictPayloadSnapshot `
+        -RepositoryRoot $root `
+        -PayloadRoot $payload `
+        -ExecutablePath $executable
+
+    $duplicateSubstitution = [ordered]@{
+        payloadRoot = $snapshot.payloadRoot
+        executable = $snapshot.executable
+        files = @($snapshot.files[0], $snapshot.files[0])
+    }
+    $duplicateRejected = $false
+    try {
+        Assert-StrictPayloadSnapshotsEqual -Expected $duplicateSubstitution -Actual $snapshot
+    } catch {
+        $duplicateRejected = $true
+    }
+    if (-not $duplicateRejected) {
+        throw 'Duplicate manifest entry substituted for a distinct payload file.'
+    }
+
+    $separatorSubstitution = [ordered]@{
+        payloadRoot = $snapshot.payloadRoot
+        executable = $snapshot.executable.Replace('/', '\')
+        files = $snapshot.files
+    }
+    $separatorRejected = $false
+    try {
+        Assert-StrictPayloadSnapshotsEqual -Expected $separatorSubstitution -Actual $snapshot
+    } catch {
+        $separatorRejected = $true
+    }
+    if (-not $separatorRejected) {
+        throw 'Alternate-separator executable substitution was accepted.'
+    }
+
+    $payloadJunction = Join-Path $payload 'linked-outside'
+    New-Item -ItemType Junction -Path $payloadJunction -Target $outside | Out-Null
+    $payloadJunctionRejected = $false
+    try {
+        Get-StrictPayloadSnapshot `
+            -RepositoryRoot $root `
+            -PayloadRoot $payload `
+            -ExecutablePath $executable | Out-Null
+    } catch {
+        $payloadJunctionRejected = $true
+    }
+    if (-not $payloadJunctionRejected) {
+        throw 'Payload snapshot traversed a junction.'
+    }
 } finally {
+    if (-not [string]::IsNullOrWhiteSpace($payloadJunction) -and (Test-Path -LiteralPath $payloadJunction)) {
+        Remove-Item -LiteralPath $payloadJunction -Force
+    }
     if (Test-Path -LiteralPath $junction) {
         Remove-Item -LiteralPath $junction -Force
     }

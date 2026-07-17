@@ -3,22 +3,25 @@
   "programRevisionSha": "ca5ad9f0c9d4dfb509dedcbf8133524c15867fce5534816da21ff86a07057383",
   "workPackage": "I01-MAUI-STRICT-GATES",
   "repository": "deep-client-maui",
-  "baseSha": "d08e9371377f277575f8165bf87c8d7eb38673dd",
-  "resultCommit": "the single local commit containing this handoff",
+  "baseSha": "6103f30e6edb94a45e28aaccd667dca3d1fc174d",
+  "resultCommit": "resolve exactly from the single local commit reported with this handoff; self-embedding a commit SHA is impossible",
+  "resultTree": "resolve with git rev-parse HEAD^{tree} and bind it in the DevOps consumer before execution",
   "dependencyHashes": {
     "deep-client-shared": "94b623f078bd141163887a15116e6f9702510576"
   },
   "featureFlag": "DEEP_STRICT_WINDOWS_UI or DEEP_STRICT_LIVE",
-  "migrationPhase": "Strict Windows lane complete; physical Android and cross-platform orchestration pending.",
+  "migrationPhase": "I01A.2 contracts and adversarial tests complete; physical Windows/Android/live execution remains pending.",
   "tests": {
-    "passed": 227,
+    "passed": 232,
     "failed": 0,
-    "ordinaryNotRun": 1,
+    "ordinaryNotRun": 2,
     "strictWindowsSkipped": 0
   },
-  "rollback": "Revert the single local commit, but do not use restored pass-by-return tests as release evidence.",
+  "rollback": "Forward-only corrective commit; never restore the weaker validator, production-package device testing, or raw artifact uploads.",
   "blockers": [
-    "Physical Android device and real device runner are unavailable."
+    "Dedicated managed physical Android device and trusted real device runner are unavailable.",
+    "Windows UIA3 still does not observe the authenticated root after Create on this host.",
+    "Mandatory three-router live acceptance has not run."
   ],
-  "nextConsumerTask": "Implement the deep-tests-e2e Windows-to-Android orchestrator and execute the strict Android lane on a physical device."
+  "nextConsumerTask": "DevOps must bind the exact reported result commit/tree, configure the trusted runner and dedicated managed device, then execute strict-release-evidence.yml without changing upload allowlists."
 }

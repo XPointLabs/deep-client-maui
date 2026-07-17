@@ -16,6 +16,12 @@ public sealed class StrictLanePowerShellTests
         await RunScriptAsync("Test-AndroidRunnerContract.ps1");
     }
 
+    [Fact]
+    public async Task EvidenceIdentityRejectsCrossLaneMissingMismatchedAndDuplicateInvocations()
+    {
+        await RunScriptAsync("Test-StrictEvidenceIdentity.ps1");
+    }
+
     private static async Task RunScriptAsync(string scriptName)
     {
         var root = FindWorkspaceRoot();

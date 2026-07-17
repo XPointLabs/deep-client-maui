@@ -12,7 +12,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationTitle>Deep</ApplicationTitle>
-    <ApplicationId>network.xpoint.deep</ApplicationId>
+    <ApplicationId Condition="'$(DeepPhysicalE2E)' != 'true' Or '$(Configuration)' == 'Release'">network.xpoint.deep</ApplicationId>
+    <ApplicationId Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">network.xpoint.deep.e2e</ApplicationId>
     <ApplicationDisplayVersion>0.2.9</ApplicationDisplayVersion>
     <ApplicationVersion>15</ApplicationVersion>
     <WindowsPackageType>None</WindowsPackageType>

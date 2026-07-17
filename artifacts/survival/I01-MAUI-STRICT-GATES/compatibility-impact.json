@@ -2,6 +2,9 @@
   "schemaVersion": "survival-compatibility-v1",
   "publicRuntimeBehavior": "Production endpoint validation and release no-stub guards remain unchanged.",
   "testContractChanges": [
+    "All three lanes and the validator require one common release invocation plus distinct lane invocation identities.",
+    "A lane result must match its final passed preflight, expected lane, source commit, invocation identities, and freshness window.",
+    "Debug physical Android E2E uses network.xpoint.deep.e2e; Release remains network.xpoint.deep.",
     "Live acceptance is explicit not-run unless the lane is requested; a requested lane fails on missing configuration.",
     "Windows UI acceptance is explicit not-run unless requested; the strict lane requires a real executable, real process, nonzero window, executed tests, and zero skips.",
     "The UI automation baseline now uses the current Welcome control identifiers."
@@ -16,7 +19,8 @@
   "wireFormatChanges": [],
   "storageChanges": [],
   "consumerActions": [
-    "deep-tests-e2e must invoke eng/Invoke-StrictClientLane.ps1 and treat exit code 2 as blocked, never passed.",
-    "A physical Android runner must execute the already-built APK before Android device evidence can pass."
+    "deep-tests-e2e must pass the same ReleaseInvocationId to all lane wrappers and Test-StrictClientEvidence.ps1 -RequireComplete.",
+    "A physical Android runner must execute the bound E2E APK on an attested dedicated managed device before Android evidence can pass.",
+    "Only top-level sanitized JSON and allowlisted Windows UI evidence may be uploaded; raw Android runner, JUnit, logcat, and screenshots remain local quarantine."
   ]
 }

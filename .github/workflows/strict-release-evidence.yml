@@ -19,37 +19,74 @@ jobs:
           token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
           path: deep-client-shared
           ref: 94b623f078bd141163887a15116e6f9702510576
+      - name: Bind one release invocation
+        working-directory: deep-client-maui
+        shell: pwsh
+        run: |
+          $releaseInvocation = [Guid]::NewGuid().ToString('N')
+          "DEEP_RELEASE_INVOCATION_ID=$releaseInvocation" | Add-Content -LiteralPath $env:GITHUB_ENV
       - name: Build Debug clients
         working-directory: deep-client-maui
         shell: pwsh
         run: |
+          $projectRoot = 'src/Deep.Client.Maui'
+          foreach ($candidate in @(
+            "$projectRoot/bin/Debug/net10.0-windows10.0.19041.0",
+            "$projectRoot/obj/Debug/net10.0-windows10.0.19041.0",
+            "$projectRoot/bin/Debug/net10.0-android",
+            "$projectRoot/obj/Debug/net10.0-android")) {
+            if (Test-Path -LiteralPath $candidate) {
+              Remove-Item -LiteralPath $candidate -Recurse -Force
+            }
+          }
           dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 -c Debug
-          dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android -c Debug
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Debug build failed.' }
+          dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android -c Debug -p:DeepPhysicalE2E=true
+          if ($LASTEXITCODE -ne 0) { throw 'Android Debug E2E build failed.' }
+
+          $windowsExecutables = @(Get-ChildItem `
+            -LiteralPath "$projectRoot/bin/Debug/net10.0-windows10.0.19041.0" `
+            -Filter 'Deep.Client.Maui.exe' -File -Recurse)
+          if ($windowsExecutables.Count -ne 1) {
+            throw "Expected exactly one just-built Windows executable; found $($windowsExecutables.Count)."
+          }
+          $androidPackages = @(Get-ChildItem `
+            -LiteralPath "$projectRoot/bin/Debug/net10.0-android" `
+            -Filter 'network.xpoint.deep.e2e-Signed.apk' -File -Recurse)
+          if ($androidPackages.Count -ne 1) {
+            throw "Expected exactly one just-built Android E2E APK; found $($androidPackages.Count)."
+          }
+          "DEEP_WINDOWS_EXE=$($windowsExecutables[0].FullName)" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "DEEP_ANDROID_APK=$($androidPackages[0].FullName)" | Add-Content -LiteralPath $env:GITHUB_ENV
       - name: Strict Windows rendered acceptance
         working-directory: deep-client-maui
         shell: pwsh
         run: |
-          ./eng/Invoke-StrictClientLane.ps1 -Lane WindowsUi -Bootstrap live `
+          ./eng/Invoke-StrictClientLane.ps1 -Lane WindowsUi `
+            -ReleaseInvocationId $env:DEEP_RELEASE_INVOCATION_ID -Bootstrap live `
             -AppPath $env:DEEP_WINDOWS_EXE -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
       - name: Strict Android physical-device acceptance
         working-directory: deep-client-maui
         shell: pwsh
         run: |
           ./eng/Invoke-StrictClientLane.ps1 -Lane AndroidDevice `
+            -ReleaseInvocationId $env:DEEP_RELEASE_INVOCATION_ID `
             -ApkPath $env:DEEP_ANDROID_APK -AndroidSerial $env:DEEP_ANDROID_SERIAL `
-            -AndroidRunner $env:DEEP_ANDROID_RUNNER -ConfigureAdbReverse `
+            -AndroidRunner $env:DEEP_ANDROID_RUNNER -DedicatedManagedDevice -ConfigureAdbReverse `
             -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
       - name: Strict three-router live acceptance
         working-directory: deep-client-maui
         shell: pwsh
         run: |
           ./eng/Invoke-StrictClientLane.ps1 -Lane LiveInfrastructure `
+            -ReleaseInvocationId $env:DEEP_RELEASE_INVOCATION_ID `
             -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
       - name: Validate fresh commit-bound evidence
         working-directory: deep-client-maui
         shell: pwsh
         run: |
           ./eng/Test-StrictClientEvidence.ps1 -RequireComplete `
+            -ReleaseInvocationId $env:DEEP_RELEASE_INVOCATION_ID `
             -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
       - name: Upload sanitized strict evidence
         if: always()
@@ -60,5 +97,4 @@ jobs:
             deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/*.json
             deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/windows-ui/windows-ui-result.json
             deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/windows-ui/windows-ui-tree.txt
-            deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/android-run-*/android-device.junit.xml
           if-no-files-found: error
