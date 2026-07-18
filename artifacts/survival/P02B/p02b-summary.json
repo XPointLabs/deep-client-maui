@@ -23,7 +23,7 @@
       "name": "exact-p02-public-metadata-compatibility-and-focused-security-tests",
       "configuration": "Debug",
       "status": "passed",
-      "passed": 15,
+      "passed": 16,
       "failed": 0,
       "skipped": 0
     },
@@ -108,7 +108,7 @@
     "kind": "signed-debug-apk",
     "path": "src/Deep.Client.Maui/bin/Debug/net10.0-android/network.xpoint.deep-Signed.apk",
     "length": 155531549,
-    "sha256": "5101d1482e7cc7fc1f4329146134b492f9f6a519969e0081a4466f9518772fe3"
+    "sha256": "3e7ca6a4e16afa35aa81ef7b32845f38763476f68bd740f97af2374f775d6944"
   },
   "independentReview": {
     "initialP0": 0,
@@ -120,7 +120,7 @@
       "Snapshot evidence now describes post-inspection tamper detection instead of immutability.",
       "Missing or null nested persisted trust-state records are rejected as InvalidDataException and surfaced as a non-bypassable blocked result."
     ],
-    "finalFocusedTestsPassed": 15,
+    "finalFocusedTestsPassed": 16,
     "finalReleaseViewModelTestsPassed": 179
   },
   "productionActivationBlockers": [
