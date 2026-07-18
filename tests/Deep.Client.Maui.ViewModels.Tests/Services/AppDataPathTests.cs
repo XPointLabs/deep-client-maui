@@ -8,7 +8,7 @@ public sealed class AppDataPathTests
     [Theory]
     [InlineData("stub")]
     [InlineData("live")]
-    public void StrictDebugBootstrapUsesMandatoryIsolatedRoot(string bootstrap)
+    public void StrictBootstrapUsesIsolatedRootOnlyInDebug(string bootstrap)
     {
         var root = Path.Combine(Path.GetTempPath(), "deep-strict-appdata", Guid.NewGuid().ToString("N"));
         using var environment = new EnvironmentScope(
@@ -17,25 +17,41 @@ public sealed class AppDataPathTests
             ("DEEP_E2E_APPDATA_ROOT", root));
         try
         {
+#if DEBUG
             Assert.Equal(Path.GetFullPath(root), AppDataPath.Resolve());
             Assert.NotEqual(
                 Path.GetFullPath(FileSystem.AppDataDirectory),
                 Path.GetFullPath(AppDataPath.Resolve()));
+#else
+            Assert.Equal(
+                Path.GetFullPath(FileSystem.AppDataDirectory),
+                Path.GetFullPath(AppDataPath.Resolve()));
+            Assert.False(Directory.Exists(root));
+#endif
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
         }
     }
 
     [Fact]
-    public void StrictDebugBootstrapRejectsMissingRoot()
+    public void StrictBootstrapMissingRootFailsOnlyWhenDebugOverrideIsCompiled()
     {
         using var environment = new EnvironmentScope(
             ("DEEP_STRICT_WINDOWS_UI", "1"),
             ("DEEP_E2E_BOOTSTRAP", "live"),
             ("DEEP_E2E_APPDATA_ROOT", null));
+#if DEBUG
         Assert.Throws<InvalidOperationException>(AppDataPath.Resolve);
+#else
+        Assert.Equal(
+            Path.GetFullPath(FileSystem.AppDataDirectory),
+            Path.GetFullPath(AppDataPath.Resolve()));
+#endif
     }
 
     private sealed class EnvironmentScope : IDisposable
