@@ -2,9 +2,10 @@
   "schema": "deep.survival.p02b.maui-update-verification.v1",
   "status": "passed-with-explicit-release-input-blocker",
   "implementationCommitSha": "39a82f60e1a591c9e238092afca7179ec5f20945",
+  "correctiveCommitSha": "f06ac90f22140f8872aeb87875dd516c7ad23bff",
   "sourceBaseSha": "9dc1502392ce2c1a86441df6308f2db54410eae8",
   "devopsP02CommitSha": "3d2e163e354858937c4b6a8bd530e71b1b929dd9",
-  "generatedAtUtc": "2026-07-18T13:34:00Z",
+  "generatedAtUtc": "2026-07-18T14:04:00Z",
   "securityProperties": {
     "productionRootBundled": false,
     "productionVerifierRegistered": false,
