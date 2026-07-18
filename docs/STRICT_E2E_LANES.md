@@ -40,7 +40,10 @@ Use `-Bootstrap live` only when all live endpoint variables are present.
 
 ## Live client acceptance
 
-Set `XNODE_URLS` to exactly three distinct `<64-hex-routerId>|<absolute-url>` entries, plus `DEEP_FILE_URL`, `DEEP_PUSH_URL`, and `DEEP_CALL_SIGNALING_BASE_URL`, then run:
+Set `XNODE_URLS` to exactly three distinct
+`<64-lowerhex-routerId>|<https-or-loopback-http-url>` entries, plus valid HTTPS
+or explicit-loopback HTTP `DEEP_FILE_URL`, `DEEP_PUSH_URL`, and
+`DEEP_CALL_SIGNALING_BASE_URL`. `DEEP_STORAGE_URL` must be absent. Then run:
 
 ```powershell
 .\eng\Invoke-StrictClientLane.ps1 `
@@ -50,6 +53,11 @@ Set `XNODE_URLS` to exactly three distinct `<64-hex-routerId>|<absolute-url>` en
 
 Without `DEEP_STRICT_LIVE=1`, the live xUnit acceptance test is explicitly reported as `NOT-RUN` instead of silently passing.
 `DEEP_STORAGE_URL` cannot satisfy this release lane. Direct storage has a separate opt-in diagnostic contract (`DEEP_STRICT_DIRECT_STORAGE=1`) and is never routed evidence.
+The acceptance verifies the actual `CurrentRoute`: mode `onion-storage`, node
+indices exactly `0,1,2`, the exact pinned identity set, and three unique signed
+relay RPC endpoints. Both routed store and authenticated retrieve must cross the
+router API. A forced router-API outage must fail closed without any request to a
+direct storage endpoint.
 
 ## Android device lane
 

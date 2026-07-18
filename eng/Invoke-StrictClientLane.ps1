@@ -61,6 +61,16 @@ function Has-Value {
     return -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name))
 }
 
+function Test-StrictLiveUrl {
+    param([string]$Value)
+    $uri = $null
+    if ([string]::IsNullOrWhiteSpace($Value) -or
+        -not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$uri)) {
+        return $false
+    }
+    return $uri.Scheme -ceq 'https' -or ($uri.Scheme -ceq 'http' -and $uri.IsLoopback)
+}
+
 function Test-LiveConfiguration {
     $rawRouters = [Environment]::GetEnvironmentVariable('XNODE_URLS')
     $routerEntries = @(if ([string]::IsNullOrWhiteSpace($rawRouters)) {
@@ -72,14 +82,15 @@ function Test-LiveConfiguration {
     })
     $parsedRouters = @($routerEntries | ForEach-Object {
         $parts = @($_.Split('|', 2, [StringSplitOptions]::TrimEntries))
-        if ($parts.Count -ne 2 -or $parts[0] -notmatch '^[0-9a-fA-F]{64}$') {
+        if ($parts.Count -ne 2 -or $parts[0] -notmatch '^[0-9a-f]{64}$') {
             return $null
         }
         $uri = $null
-        if (-not [Uri]::TryCreate($parts[1], [UriKind]::Absolute, [ref]$uri)) {
+        if (-not [Uri]::TryCreate($parts[1], [UriKind]::Absolute, [ref]$uri) -or
+            -not (Test-StrictLiveUrl -Value $parts[1])) {
             return $null
         }
-        [pscustomobject]@{ routerId = $parts[0].ToLowerInvariant(); url = $uri.AbsoluteUri }
+        [pscustomobject]@{ routerId = $parts[0]; url = $uri.AbsoluteUri }
     })
     $validRouters = $routerEntries.Count -eq 3 -and
         $parsedRouters.Count -eq 3 -and
@@ -88,11 +99,21 @@ function Test-LiveConfiguration {
     Add-Check 'routed-message-endpoint' $validRouters $(if ($validRouters) {
         'exactly three distinct pinned router identities and URLs'
     } else {
-        'XNODE_URLS must contain exactly three distinct <64-hex-routerId>|<absolute-url> entries; direct storage cannot satisfy this lane'
+        'XNODE_URLS must contain exactly three distinct <64-lowerhex-routerId>|<https-or-loopback-http-url> entries'
+    })
+    $directStorageAbsent = -not (Has-Value 'DEEP_STORAGE_URL')
+    Add-Check 'direct-storage-absent' $directStorageAbsent $(if ($directStorageAbsent) {
+        'DEEP_STORAGE_URL is absent'
+    } else {
+        'DEEP_STORAGE_URL is forbidden in routed live evidence'
     })
     foreach ($name in @('DEEP_FILE_URL', 'DEEP_PUSH_URL', 'DEEP_CALL_SIGNALING_BASE_URL')) {
-        $present = Has-Value $name
-        Add-Check $name $present $(if ($present) { 'configured' } else { 'required' })
+        $valid = Test-StrictLiveUrl -Value ([Environment]::GetEnvironmentVariable($name))
+        Add-Check $name $valid $(if ($valid) {
+            'configured with HTTPS or explicit loopback HTTP'
+        } else {
+            'required and must use HTTPS or explicit loopback HTTP'
+        })
     }
 }
 

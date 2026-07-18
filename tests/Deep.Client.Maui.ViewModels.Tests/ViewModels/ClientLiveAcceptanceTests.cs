@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Features;
@@ -15,10 +16,10 @@ public sealed class ClientLiveAcceptanceTests
     public async Task ClientViewModels_RunLaunchCriticalFlowThroughLiveLocalInfrastructure_WhenConfigured()
     {
         var routerUrls = Environment.GetEnvironmentVariable("XNODE_URLS");
+        var storageUrl = Environment.GetEnvironmentVariable("DEEP_STORAGE_URL");
         var fileUrl = Environment.GetEnvironmentVariable("DEEP_FILE_URL");
         var pushUrl = Environment.GetEnvironmentVariable("DEEP_PUSH_URL");
-        var callUrl = Environment.GetEnvironmentVariable("DEEP_CALL_SIGNALING_BASE_URL")
-            ?? Environment.GetEnvironmentVariable("DEEP_CALL_SIGNALING_URL");
+        var callUrl = Environment.GetEnvironmentVariable("DEEP_CALL_SIGNALING_BASE_URL");
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(routerUrls))
         {
@@ -37,9 +38,18 @@ public sealed class ClientLiveAcceptanceTests
             missing.Add("DEEP_CALL_SIGNALING_BASE_URL");
         }
         Assert.True(missing.Count == 0, $"Strict live acceptance configuration is incomplete: {string.Join(", ", missing)}.");
+        Assert.True(
+            string.IsNullOrWhiteSpace(storageUrl),
+            "DEEP_STORAGE_URL must be absent; direct storage cannot satisfy routed release evidence.");
 
-        var aliceRuntime = CreateRoutedRuntime(routerUrls!);
-        var bobRuntime = CreateRoutedRuntime(routerUrls!);
+        var endpoints = RoutedRuntimeConfiguration.ParseExactlyThree(routerUrls!);
+        _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_FILE_URL", fileUrl);
+        _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_PUSH_URL", pushUrl);
+        _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_CALL_SIGNALING_BASE_URL", callUrl);
+        var aliceFixture = CreateRoutedRuntime(endpoints);
+        var bobFixture = CreateRoutedRuntime(endpoints);
+        var aliceRuntime = aliceFixture.Runtime;
+        var bobRuntime = bobFixture.Runtime;
         var attachmentFiles = new HttpAttachmentFileTransport(
             new HttpClient(),
             new HttpAttachmentFileTransportOptions(fileUrl!));
@@ -114,6 +124,8 @@ public sealed class ClientLiveAcceptanceTests
         var attachment = Assert.Single(received.Attachments);
         var downloaded = await attachmentFiles.DownloadAsync(attachment);
         Assert.Equal(attachmentBytes, downloaded.Content);
+        AssertRoutedStorageEvidence(aliceFixture, endpoints);
+        AssertRoutedStorageEvidence(bobFixture, endpoints);
 
         var aliceGroups = new GroupsViewModel(aliceRuntime)
         {
@@ -171,69 +183,63 @@ public sealed class ClientLiveAcceptanceTests
         Assert.Equal(CallSessionState.Ended, ended!.State);
         Assert.NotNull(bobEnded);
         Assert.Equal(CallSessionState.Ended, bobEnded!.State);
+
+        aliceFixture.RouterHandler.MakeRouterApisUnavailable();
+        var routedFailure = await Record.ExceptionAsync(() =>
+            aliceRuntime.Messages.SendOneToOneAsync(
+                aliceOnboarding.Account.SessionId,
+                bobOnboarding.Account.SessionId,
+                $"router-outage-must-fail-{Guid.NewGuid():N}"));
+
+        Assert.NotNull(routedFailure);
+        Assert.IsAssignableFrom<HttpRequestException>(routedFailure.GetBaseException());
+        Assert.True(aliceFixture.RouterHandler.BlockedRouterRequests > 0);
+        Assert.Equal(0, aliceFixture.RouterHandler.UnexpectedDestinationRequests);
     }
 
-    [DirectStorageContractFact]
-    public async Task DirectStorageTransportContract_IsDiagnosticAndCannotSatisfyTheRoutedLane()
+    private static RoutedRuntimeFixture CreateRoutedRuntime(
+        IReadOnlyList<PinnedRouterEndpoint> endpoints)
     {
-        var storageUrl = Environment.GetEnvironmentVariable("DEEP_STORAGE_URL");
-        Assert.False(string.IsNullOrWhiteSpace(storageUrl));
-        var aliceRuntime = CreateDirectStorageRuntime(storageUrl!);
-        var bobRuntime = CreateDirectStorageRuntime(storageUrl!);
-        var alice = await aliceRuntime.Accounts.RegisterAsync("Alice direct contract");
-        var bob = await bobRuntime.Accounts.RegisterAsync("Bob direct contract");
-        var conversation = await aliceRuntime.Conversations.GetOrCreateOneToOneAsync(bob.SessionId, "Bob");
-        var body = $"direct-storage-contract-{Guid.NewGuid():N}";
-        await aliceRuntime.Messages.SendOneToOneAsync(alice.SessionId, bob.SessionId, body);
-        await bobRuntime.Messages.ReceiveAsync(bob.SessionId);
-        var received = await bobRuntime.Messages.ListConversationMessagesAsync(
-            ConversationId.ForOneToOne(alice.SessionId));
-        Assert.Contains(received, message => message.Body == body);
-    }
-
-    private static ClientRuntime CreateRoutedRuntime(string routerUrls)
-    {
-        var endpoints = ParseRouterUrls(routerUrls);
-        if (endpoints.Count != 3 ||
-            endpoints.Select(static endpoint => endpoint.ExpectedRouterId).Distinct(StringComparer.Ordinal).Count() != 3 ||
-            endpoints.Select(static endpoint => endpoint.BaseUrl).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3)
-        {
-            throw new InvalidOperationException(
-                "The routed live lane requires exactly three distinct pinned router identities and URLs.");
-        }
-
+        var handler = new RouterAvailabilityHandler(endpoints);
         var router = new XNodeRpcClient(
-            new HttpClient { Timeout = TimeSpan.FromSeconds(15) },
+            new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) },
             new XNodeRpcClientOptions(endpoints));
-        return new ClientRuntime(
+        var runtime = new ClientRuntime(
             new InMemorySessionStore(),
             ClientFeatureFlags.ReleaseDefaults,
             new SystemClock(),
             new RoutedSessionStorageMessageTransport(router, new RoutedSessionStorageTransportOptions()),
             requireE2eeTransport: true);
+        return new RoutedRuntimeFixture(runtime, router, handler);
     }
 
-    private static ClientRuntime CreateDirectStorageRuntime(string storageUrl) =>
-        new(
-            new InMemorySessionStore(),
-            ClientFeatureFlags.ReleaseDefaults,
-            new SystemClock(),
-            new SessionStorageMessageTransport(
-                new HttpClient(),
-                new SessionStorageMessageTransportOptions(storageUrl)),
-            requireE2eeTransport: true);
-
-    private static IReadOnlyList<PinnedRouterEndpoint> ParseRouterUrls(string routerUrls) =>
-        routerUrls
-            .Split([';', ',', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(static value => value.Split('|', 2, StringSplitOptions.TrimEntries))
-            .Select(static parts => parts.Length == 2 &&
-                                    parts[0].Length == 64 &&
-                                    parts[0].All(Uri.IsHexDigit) &&
-                                    Uri.TryCreate(parts[1], UriKind.Absolute, out _)
-                ? new PinnedRouterEndpoint(parts[1], parts[0].ToLowerInvariant())
-                : throw new InvalidOperationException("XNODE_URLS entries must use '<router-id>|<absolute-url>'."))
-            .ToArray();
+    private static void AssertRoutedStorageEvidence(
+        RoutedRuntimeFixture fixture,
+        IReadOnlyList<PinnedRouterEndpoint> endpoints)
+    {
+        var route = Assert.IsType<TransportRouteSnapshot>(fixture.Router.CurrentRoute);
+        Assert.Equal("onion-storage", route.Mode);
+        Assert.Equal([0, 1, 2], route.Nodes.Select(static node => node.Index));
+        Assert.Equal(
+            endpoints.Select(static endpoint => endpoint.ExpectedRouterId).Order(StringComparer.Ordinal),
+            route.Nodes.Select(static node => node.RouterId).Order(StringComparer.Ordinal));
+        Assert.Equal(
+            3,
+            route.Nodes
+                .Select(static node => node.RpcEndpoint)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count());
+        Assert.All(
+            route.Nodes,
+            static node => Assert.True(Uri.TryCreate(node.RpcEndpoint, UriKind.Absolute, out _)));
+        Assert.Contains(
+            fixture.RouterHandler.ForwardedBodies,
+            static body => body.Contains("\"storage_route\"", StringComparison.Ordinal));
+        Assert.Contains(
+            fixture.RouterHandler.ForwardedBodies,
+            static body => body.Contains("\"onion_request\"", StringComparison.Ordinal));
+        Assert.Equal(0, fixture.RouterHandler.UnexpectedDestinationRequests);
+    }
 
     private static RealtimeCallService CreateCallService(string callUrl, string? recoveryPhrase) =>
         new(new HttpCallSignalingTransport(
@@ -250,6 +256,68 @@ public sealed class ClientLiveAcceptanceTests
         }
 
         Assert.True(condition(), "Timed out waiting for optimistic message dispatch.");
+    }
+
+    private sealed record RoutedRuntimeFixture(
+        ClientRuntime Runtime,
+        XNodeRpcClient Router,
+        RouterAvailabilityHandler RouterHandler);
+
+    private sealed class RouterAvailabilityHandler : DelegatingHandler
+    {
+        private readonly HashSet<string> allowedOrigins;
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> forwardedBodies = new();
+        private int routerApisUnavailable;
+        private int blockedRouterRequests;
+        private int unexpectedDestinationRequests;
+
+        public RouterAvailabilityHandler(IReadOnlyList<PinnedRouterEndpoint> endpoints)
+        {
+            allowedOrigins = endpoints
+                .Select(static endpoint => new Uri(endpoint.BaseUrl).GetLeftPart(UriPartial.Authority))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            InnerHandler = new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                ConnectTimeout = TimeSpan.FromSeconds(5)
+            };
+        }
+
+        public IReadOnlyList<string> ForwardedBodies => forwardedBodies.ToArray();
+
+        public int BlockedRouterRequests => Volatile.Read(ref blockedRouterRequests);
+
+        public int UnexpectedDestinationRequests => Volatile.Read(ref unexpectedDestinationRequests);
+
+        public void MakeRouterApisUnavailable() =>
+            Interlocked.Exchange(ref routerApisUnavailable, 1);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var destination = request.RequestUri?.GetLeftPart(UriPartial.Authority);
+            if (destination is null || !allowedOrigins.Contains(destination))
+            {
+                Interlocked.Increment(ref unexpectedDestinationRequests);
+                throw new HttpRequestException(
+                    "Routed acceptance attempted a destination outside the pinned router APIs.");
+            }
+
+            if (Volatile.Read(ref routerApisUnavailable) != 0)
+            {
+                Interlocked.Increment(ref blockedRouterRequests);
+                throw new HttpRequestException("Pinned router APIs are unavailable.");
+            }
+
+            if (request.Content is not null)
+            {
+                forwardedBodies.Enqueue(
+                    await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+            }
+
+            return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private sealed class LiveAttachmentPicker(

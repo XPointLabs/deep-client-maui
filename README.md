@@ -52,16 +52,20 @@ Platform caveats/workarounds are documented in `docs/ARCHITECTURE.md`.
 Runtime transport behavior:
 
 - Debug builds can use local stub mode for deterministic UI behavior.
-- Non-Debug builds require three authenticated XPoint onion routers and fail
+- Non-Debug builds require exactly three unique authenticated XPoint onion routers and fail
   closed when production trust/configuration is missing.
-- `DEEP_STORAGE_URL` is the preferred local-dev message transport for the root docker-compose stack.
-- The same `DEEP_STORAGE_URL` enables live group-state and group-message sync through `SessionStorageGroupSyncTransport`.
-- `DEEP_TRANSPORT_BASE_URL` remains available for a custom HTTP message API.
+- Routed composition requires exactly three lowercase pinned
+  `<64-hex-routerId>|<absolute-url>` entries and rejects any simultaneous
+  `DEEP_STORAGE_URL`.
+- `DEEP_STORAGE_URL` is Debug-only direct-storage diagnostics. It cannot satisfy
+  routed release evidence and is never a fallback after router failure.
+- `DEEP_TRANSPORT_BASE_URL` remains Debug-only for a custom diagnostic HTTP message API.
 
-Set `DEEP_STORAGE_URL` to use the local Session-compatible storage endpoint:
+For the separate Debug direct-storage diagnostic lane only, set:
 
 ```powershell
 $env:DEEP_STORAGE_URL = "http://127.0.0.1:18100"
+$env:DEEP_STRICT_DIRECT_STORAGE = "1"
 ```
 
 Set `DEEP_TRANSPORT_BASE_URL` only when using custom real HTTP transport endpoints, for example:

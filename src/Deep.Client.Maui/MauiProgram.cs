@@ -78,12 +78,19 @@ public static class MauiProgram
         }
 #endif
         var routerBaseUrls = ResolveRouterBaseUrls();
+        var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
+        if (routerBaseUrls.Count > 0)
+        {
+            RoutedRuntimeConfiguration.RejectDirectStorageForRoutedComposition(storageBaseUrl);
+        }
 #if !DEBUG
-        if (routerBaseUrls.Count < 3)
+        if (routerBaseUrls.Count != RoutedRuntimeConfiguration.RequiredRouterCount)
         {
             throw new InvalidOperationException(
-                "Production messaging requires at least three pinned XPoint onion routers. Direct storage fallback is disabled.");
+                "Production messaging requires exactly three unique pinned XPoint onion routers. Direct storage fallback is disabled.");
         }
+
+        RoutedRuntimeConfiguration.RejectDirectStorageForRoutedComposition(storageBaseUrl);
 #endif
         var fileConnectIps = ParseIpAddresses(ResolveRuntimeSetting(FileConnectIpsEnv));
 
@@ -97,8 +104,13 @@ public static class MauiProgram
         }
         else
         {
+#if DEBUG
             builder.Services.AddSingleton<ITransportRouteProvider>(_ =>
-                new DirectStorageRouteProvider(ResolveRuntimeSetting(StorageBaseUrlEnv)));
+                new DirectStorageRouteProvider(storageBaseUrl));
+#else
+            throw new InvalidOperationException(
+                "Release composition cannot create a direct-storage route provider.");
+#endif
         }
 
         builder.Services.AddSingleton<ISessionMessageTransport>(_ =>
@@ -110,7 +122,7 @@ public static class MauiProgram
                     new RoutedSessionStorageTransportOptions());
             }
 
-            var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
+#if DEBUG
             if (!string.IsNullOrWhiteSpace(storageBaseUrl))
             {
                 return new SessionStorageMessageTransport(
@@ -121,21 +133,19 @@ public static class MauiProgram
             var baseUrl = ResolveRuntimeSetting(TransportBaseUrlEnv);
             if (string.IsNullOrWhiteSpace(baseUrl))
             {
-#if DEBUG
                 if (!featureFlags.StubTransportAllowed)
                 {
                     throw new InvalidOperationException("Stub transport is disabled by feature flags.");
                 }
 
                 return new StubSessionBackend();
-#else
-                throw new InvalidOperationException(
-                    "DEEP_STORAGE_URL or DEEP_TRANSPORT_BASE_URL is required in non-Debug builds. " +
-                    "Stub transport is not allowed for release startup.");
-#endif
             }
 
             return new HttpSessionTransport(CreateServiceHttpClient(), new HttpSessionTransportOptions(baseUrl));
+#else
+            throw new InvalidOperationException(
+                "Release composition requires routed XNODE_URLS transport and has no direct storage fallback.");
+#endif
         });
         builder.Services.AddSingleton(featureFlags);
         builder.Services.AddSingleton<IClock, SystemClock>();
@@ -464,13 +474,13 @@ public static class MauiProgram
         var raw = ResolveRuntimeSetting(RouterBaseUrlsEnv);
         if (!string.IsNullOrWhiteSpace(raw))
         {
-            return ParseRouterEndpoints(raw);
+            return RoutedRuntimeConfiguration.ParseExactlyThree(raw);
         }
 
 #if ANDROID
-        return AndroidRealityTransport.Start();
+        return RoutedRuntimeConfiguration.ValidateExactlyThree(AndroidRealityTransport.Start());
 #elif WINDOWS
-        return WindowsRealityTransport.Start();
+        return RoutedRuntimeConfiguration.ValidateExactlyThree(WindowsRealityTransport.Start());
 #else
         return [];
 #endif
@@ -842,11 +852,7 @@ public static class MauiProgram
 #else
         if (string.Equals(key, RouterBaseUrlsEnv, StringComparison.Ordinal))
         {
-            foreach (var endpoint in ParseRouterEndpoints(value))
-            {
-                ValidateRuntimeUrl(key, endpoint.BaseUrl);
-            }
-
+            _ = RoutedRuntimeConfiguration.ParseExactlyThree(value);
             return value;
         }
 
@@ -886,44 +892,6 @@ public static class MauiProgram
 
     private static bool IsExplicitLoopbackHttp(Uri uri) =>
         uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback;
-
-    private static IReadOnlyList<PinnedRouterEndpoint> ParseRouterEndpoints(string raw)
-    {
-        var endpoints = new List<PinnedRouterEndpoint>();
-        foreach (var value in SplitRuntimeValues(raw))
-        {
-            var separator = value.IndexOf('|');
-            if (separator <= 0 || separator == value.Length - 1)
-            {
-                throw new InvalidOperationException(
-                    $"{RouterBaseUrlsEnv} entries must use '<router-id>|<absolute-url>'.");
-            }
-
-            var routerId = value[..separator].Trim();
-            var baseUrl = value[(separator + 1)..].Trim();
-            if (routerId.Length != 64 || !routerId.All(Uri.IsHexDigit))
-            {
-                throw new InvalidOperationException($"{RouterBaseUrlsEnv} contains an invalid 32-byte router ID.");
-            }
-
-            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
-                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-            {
-                throw new InvalidOperationException($"{RouterBaseUrlsEnv} contains an invalid router URL.");
-            }
-
-            endpoints.Add(new PinnedRouterEndpoint(baseUrl, routerId.ToLowerInvariant()));
-        }
-
-        if (endpoints.Count == 0
-            || endpoints.Select(static endpoint => endpoint.ExpectedRouterId).Distinct(StringComparer.Ordinal).Count() != endpoints.Count
-            || endpoints.Select(static endpoint => endpoint.BaseUrl).Distinct(StringComparer.OrdinalIgnoreCase).Count() != endpoints.Count)
-        {
-            throw new InvalidOperationException($"{RouterBaseUrlsEnv} must contain unique pinned router IDs and URLs.");
-        }
-
-        return endpoints;
-    }
 
     private static string[] SplitRuntimeValues(string raw) =>
         raw.Split([';', ',', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

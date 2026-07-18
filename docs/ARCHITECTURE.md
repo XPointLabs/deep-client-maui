@@ -31,9 +31,11 @@ fast unit tests.
 secure storage adapters, media/picker integration, push callbacks, app lock,
 Reality sidecars, and OS activation ingress.
 
-Release builds require real transports, three pinned Reality bootstrap nodes,
-TLS public-key pins, encrypted local persistence, and E2EE. Debug-only stubs and
-loose environment configuration cannot be selected by a Release process.
+Release builds require real transports, exactly three unique pinned Reality
+bootstrap nodes, TLS public-key pins, encrypted local persistence, and E2EE.
+Routed composition rejects `DEEP_STORAGE_URL`; direct storage and custom direct
+HTTP transports are Debug-only diagnostics and cannot be selected by a Release
+process or used after a router failure.
 
 ## Startup
 
@@ -52,6 +54,12 @@ encrypts content for the recipient, selects a signed three-node route, and sends
 through local Reality listeners. Inbox synchronization verifies authenticated
 storage responses, decrypts envelopes, rejects replay, persists domain state,
 and acknowledges only after durable processing.
+
+The routed runtime accepts exactly three distinct lowercase pinned identities
+and three distinct HTTPS or explicit-loopback HTTP router URLs. A live route is
+valid only when its mode is `onion-storage`, indices are exactly `0,1,2`, the
+signed relay identity set matches the pins, and relay RPC endpoints are unique.
+Router API loss fails the operation; there is no direct-storage fallback.
 
 Groups use the same transport and persistence guarantees for state and messages.
 Attachments are encrypted before upload; ordinary images are compressed for
