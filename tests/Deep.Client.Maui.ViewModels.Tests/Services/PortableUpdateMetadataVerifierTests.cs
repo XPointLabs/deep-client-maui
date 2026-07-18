@@ -201,6 +201,52 @@ public sealed class PortableUpdateMetadataVerifierTests
             () => store.LoadAsync(CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("""{"Schema":"deep.update-trust.client-state.v1","Versions":{"Timestamp":0,"Snapshot":0,"Targets":0,"AndroidRelease":0}}""")]
+    [InlineData("""{"Schema":"deep.update-trust.client-state.v1","TrustedRoot":null,"Versions":{"Timestamp":0,"Snapshot":0,"Targets":0,"AndroidRelease":0}}""")]
+    [InlineData("""{"Schema":"deep.update-trust.client-state.v1","TrustedRoot":{"Version":1,"Sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}""")]
+    [InlineData("""{"Schema":"deep.update-trust.client-state.v1","TrustedRoot":{"Version":1,"Sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"Versions":null}""")]
+    public async Task AtomicState_RejectsMissingOrNullNestedStateAsInvalidData(string json)
+    {
+        using var sandbox = new TemporaryDirectory();
+        var statePath = Path.Combine(sandbox.Path, "state.json");
+        await File.WriteAllTextAsync(statePath, json, CancellationToken.None);
+        var store = new AtomicTrustedUpdateStateStore(statePath);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(
+            () => store.LoadAsync(CancellationToken.None));
+
+        Assert.Contains("invalid", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task MissingNestedPersistedState_ReturnsBlockedResultInsteadOfEscapingException()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var statePath = Path.Combine(sandbox.Path, "state.json");
+        var apkPath = Path.Combine(sandbox.Path, "candidate.apk");
+        await File.WriteAllTextAsync(
+            statePath,
+            """{"Schema":"deep.update-trust.client-state.v1","Versions":{"Timestamp":0,"Snapshot":0,"Targets":0,"AndroidRelease":0}}""",
+            CancellationToken.None);
+        await File.WriteAllBytesAsync(apkPath, fixture.ApkBytes);
+        var verifier = CreateVerifier(
+            fixture,
+            new AtomicTrustedUpdateStateStore(statePath),
+            new TestSignerVerifier(
+                UpdateTrustTestFixture.PackageId,
+                UpdateTrustTestFixture.PackageSignerSha256),
+            sandbox.Path);
+
+        var result = await verifier.VerifyAsync(
+            Request(fixture.BuildBundle(), apkPath),
+            CancellationToken.None);
+
+        Assert.False(result.IsVerified);
+        Assert.Contains("invalid", result.Failure, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task AtomicState_RejectsStaleConcurrentWriterAndPreservesNewestVersions()
     {

@@ -154,12 +154,14 @@ public sealed class PortableUpdateMetadataVerifier
     {
         Require(state is not null &&
             state.Schema == TrustedUpdateState.CurrentSchema &&
-            state.TrustedRoot.Version >= 1 &&
-            IsLowerHex(state.TrustedRoot.Sha256, 64) &&
-            state.Versions.Timestamp >= 0 &&
-            state.Versions.Snapshot >= 0 &&
-            state.Versions.Targets >= 0 &&
-            state.Versions.AndroidRelease >= 0,
+            state.TrustedRoot is { } trustedRoot &&
+            trustedRoot.Version >= 1 &&
+            IsLowerHex(trustedRoot.Sha256, 64) &&
+            state.Versions is { } versions &&
+            versions.Timestamp >= 0 &&
+            versions.Snapshot >= 0 &&
+            versions.Targets >= 0 &&
+            versions.AndroidRelease >= 0,
         "Persisted update-trust state is invalid.");
     }
 
