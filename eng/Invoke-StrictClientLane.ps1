@@ -283,13 +283,12 @@ function Read-SanitizedJUnitCounters {
                 $attributeName -eq 'name' -and
                 $value -match '(?i)(password|passphrase|token|secret|mnemonic|seed|private.?key|authorization|bearer|recovery)'
             $sensitiveAttributeName = $attributeName -match '(?i)(password|passphrase|token|secret|mnemonic|seed|key|auth|bearer|recovery)'
-            $sensitiveValue = $isProperty -and $attributeName -eq 'value' -and
-                $value -match '(?i)(password|passphrase|token|secret|mnemonic|seed\s+phrase|private\s+key|authorization|bearer|recovery)'
+            $sensitiveValue = $value -match '(?i)(password|passphrase|token|secret|mnemonic|seed\s+phrase|private\s+key|authorization|bearer|recovery)'
             $attachmentValue = $attributeName -match '(?i)(attachment|artifact|file|path)' -or
-                $value -match '(?i)(^|[._-])attachments?($|[._-])'
+                $value -match '(?i)(attachment|artifact)'
             $absoluteWindowsPath = $value -match '(?i)(^|[\s="''])([a-z]:[\\/]|\\\\)'
             $absoluteUnixPath = $value -match '(^|[\s="'':(])/(?:$|[A-Za-z0-9._~-])'
-            $absoluteUri = $value -match '(?i)[a-z][a-z0-9+.-]{1,31}:(?://|[^\s"''<>]+)'
+            $absoluteUri = $value -match '(?i)[a-z][a-z0-9+.-]{0,31}:(?://|[^\s"''<>]+)'
             if ($propertyNameIsSensitive -or $sensitiveAttributeName -or
                 $sensitiveValue -or $attachmentValue -or
                 $absoluteWindowsPath -or $absoluteUnixPath -or $absoluteUri) {

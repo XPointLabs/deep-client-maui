@@ -90,6 +90,12 @@ public static class SyntheticAndroidTool
                 junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"safe\" file=\"/\" /></testsuite>";
             else if (privacyMode == "system-error")
                 junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><system-err>private</system-err></testsuite>";
+            else if (privacyMode == "sensitive-allowed-value")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"password=secret\" /></testsuite>";
+            else if (privacyMode == "artifact-allowed-value")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"artifact=result.bin\" /></testsuite>";
+            else if (privacyMode == "single-letter-uri")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"a:private\" /></testsuite>";
             File.WriteAllText(values["--junit"], junit, new UTF8Encoding(true));
 
             var tamper = Environment.GetEnvironmentVariable("DEEP_FAKE_TAMPER_BINDING") ?? "";
@@ -396,7 +402,10 @@ public static class SyntheticAndroidTool
         [pscustomobject]@{ name = 'sensitive-attribute-privacy'; binding = ''; privacy = 'sensitive-attribute' },
         [pscustomobject]@{ name = 'attachment-attribute-privacy'; binding = ''; privacy = 'attachment-attribute' },
         [pscustomobject]@{ name = 'unix-root-privacy'; binding = ''; privacy = 'unix-root' },
-        [pscustomobject]@{ name = 'system-error-privacy'; binding = ''; privacy = 'system-error' }
+        [pscustomobject]@{ name = 'system-error-privacy'; binding = ''; privacy = 'system-error' },
+        [pscustomobject]@{ name = 'sensitive-allowed-value-privacy'; binding = ''; privacy = 'sensitive-allowed-value' },
+        [pscustomobject]@{ name = 'artifact-allowed-value-privacy'; binding = ''; privacy = 'artifact-allowed-value' },
+        [pscustomobject]@{ name = 'single-letter-uri-privacy'; binding = ''; privacy = 'single-letter-uri' }
     )
     foreach ($scenario in $scenarios) {
         $scenarioEvidence = Join-Path $sandbox ("evidence-{0}" -f $scenario.name)

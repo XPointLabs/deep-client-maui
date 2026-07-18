@@ -9,6 +9,7 @@ $signer = Join-Path $repoRoot 'tests\Deep.SyntheticPolicySigner\Deep.SyntheticPo
 $provisioner = Join-Path $repoRoot 'eng\Provision-AndroidLabPolicy.ps1'
 $owner = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $junction = $null
+$ancestorJunction = $null
 
 function Protect-Tree([string]$Root) {
     foreach ($item in Get-ChildItem -LiteralPath $Root -File -Recurse -Force) {
@@ -96,6 +97,28 @@ try {
     $extraRejected = $false
     try { & $provisioner -SourceRoot $source -ExpectedOwner $owner -MrXPublicKeySha256 $keyHash } catch { $extraRejected = $true }
     if (-not $extraRejected) { throw 'Unbound extra executable was accepted.' }
+    Get-ChildItem $source -File -Recurse -Force | ForEach-Object { $_.IsReadOnly = $false }
+    Remove-Item -LiteralPath (Join-Path $source 'extra.exe') -Force
+    Protect-Tree $source
+
+    & (Join-Path $env:SystemRoot 'System32\icacls.exe') $source `
+        '/grant' '*S-1-5-32-545:(OI)(CI)M' '/T' '/C' | Out-Null
+    $writerRejected = $false
+    try { & $provisioner -SourceRoot $source -ExpectedOwner $owner -MrXPublicKeySha256 $keyHash } catch { $writerRejected = $true }
+    if (-not $writerRejected) { throw 'Untrusted SID writer was accepted.' }
+    & (Join-Path $env:SystemRoot 'System32\icacls.exe') $source '/remove:g' '*S-1-5-32-545' '/T' '/C' | Out-Null
+    Protect-Tree $source
+
+    $ancestorJunction = Join-Path $sandbox 'ancestor-link'
+    New-Item -ItemType Junction -Path $ancestorJunction -Target $sandbox | Out-Null
+    $ancestorRejected = $false
+    try {
+        & $provisioner -SourceRoot (Join-Path $ancestorJunction 'protected-source') `
+            -ExpectedOwner $owner -MrXPublicKeySha256 $keyHash
+    } catch { $ancestorRejected = $true }
+    if (-not $ancestorRejected) { throw 'Reparse-point source ancestor was accepted.' }
+    [IO.Directory]::Delete($ancestorJunction)
+    $ancestorJunction = $null
 
     Get-ChildItem $source -File -Recurse -Force | ForEach-Object { $_.IsReadOnly = $false }
     $outside = Join-Path $sandbox 'outside'
@@ -108,7 +131,10 @@ try {
 } finally {
     if (Test-Path -LiteralPath $destination) { & $provisioner -Clean }
     if (-not [string]::IsNullOrWhiteSpace($junction) -and (Test-Path -LiteralPath $junction)) {
-        Remove-Item -LiteralPath $junction -Force
+        [IO.Directory]::Delete($junction)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ancestorJunction) -and (Test-Path -LiteralPath $ancestorJunction)) {
+        [IO.Directory]::Delete($ancestorJunction)
     }
     if (Test-Path -LiteralPath $sandbox) {
         & (Join-Path $env:SystemRoot 'System32\icacls.exe') $sandbox '/grant:r' "${owner}:(OI)(CI)F" '/T' '/C' | Out-Null

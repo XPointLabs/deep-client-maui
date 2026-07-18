@@ -24,6 +24,25 @@ function Assert-ExactDestination {
     return $canonical
 }
 
+function Assert-NoReparseAncestor {
+    param([Parameter(Mandatory)][string]$Path)
+    $current = [IO.Path]::GetFullPath($Path)
+    while (-not [string]::IsNullOrWhiteSpace($current)) {
+        if (Test-Path -LiteralPath $current) {
+            $item = Get-Item -LiteralPath $current -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Protected path ancestor is a reparse point."
+            }
+        }
+        $parent = [IO.Path]::GetDirectoryName($current)
+        if ([string]::IsNullOrWhiteSpace($parent) -or
+            [StringComparer]::OrdinalIgnoreCase.Equals($parent, $current)) {
+            break
+        }
+        $current = $parent
+    }
+}
+
 if ($Clean) {
     $target = Assert-ExactDestination $(if ([string]::IsNullOrWhiteSpace($CleanDestinationRoot)) {
         $defaultDestination
@@ -48,13 +67,17 @@ $destination = Assert-ExactDestination $(if ([string]::IsNullOrWhiteSpace($Desti
 } else {
     $DestinationRoot
 })
+Assert-NoReparseAncestor -Path $source
+Assert-NoReparseAncestor -Path ([IO.Path]::GetDirectoryName($destination))
 if (-not (Test-Path -LiteralPath $source -PathType Container)) {
     throw 'Protected Android lab source bundle is missing.'
 }
 if (((Get-Item -LiteralPath $source -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
     throw 'Protected Android lab source root may not be a reparse point.'
 }
-$broadIdentities = @('Everyone', 'BUILTIN\Users', 'NT AUTHORITY\Authenticated Users')
+$ownerSid = ([Security.Principal.NTAccount]::new($ExpectedOwner)).Translate(
+    [Security.Principal.SecurityIdentifier]).Value
+$trustedWriterSids = @($ownerSid, 'S-1-5-18', 'S-1-5-32-544')
 function Assert-ProtectedAcl {
     param([string]$Path)
     $acl = Get-Acl -LiteralPath $Path
@@ -71,9 +94,11 @@ function Assert-ProtectedAcl {
             [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
             [Security.AccessControl.FileSystemRights]::TakeOwnership
         $writes = $rule.FileSystemRights -band $writeMask
+        $ruleSid = $rule.IdentityReference.Translate(
+            [Security.Principal.SecurityIdentifier]).Value
         if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
-            $writes -ne 0 -and [string]$rule.IdentityReference -in $broadIdentities) {
-            throw "Protected bundle item grants broad write access: $Path"
+            $writes -ne 0 -and $ruleSid -notin $trustedWriterSids) {
+            throw "Protected bundle item grants write access outside the exact trusted SID set."
         }
     }
     return $acl
@@ -120,8 +145,8 @@ $publicKeyPath = Join-Path $source 'mr-x-public-key.bin'
 $signaturePath = Join-Path $source 'policy.signature'
 $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
 $payload = Get-Content -LiteralPath $payloadPath -Raw | ConvertFrom-Json
-$allowedFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-foreach ($relative in $required) { $null = $allowedFiles.Add($relative) }
+$expectedFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($relative in $required) { $null = $expectedFiles.Add($relative) }
 $policyRelativePrefix = '.secrets/android-lab/'
 foreach ($relative in @(
     [string]$policy.approval.receiptRelativePath,
@@ -133,15 +158,17 @@ foreach ($relative in @(
         $relative.Contains('\') -or $relative.Split('/').Contains('..')) {
         throw 'Protected policy contains a non-canonical bundle path.'
     }
-    $null = $allowedFiles.Add($relative.Substring($policyRelativePrefix.Length))
+    $null = $expectedFiles.Add($relative.Substring($policyRelativePrefix.Length))
 }
+$remainingSourceFiles = [Collections.Generic.HashSet[string]]::new(
+    $expectedFiles, [StringComparer]::OrdinalIgnoreCase)
 foreach ($sourceFile in $sourceFiles) {
     $relative = (Get-RelativePathCompat -Root $source -Candidate $sourceFile.FullName).Replace('\', '/')
-    if (-not $allowedFiles.Remove($relative)) {
+    if (-not $remainingSourceFiles.Remove($relative)) {
         throw "Protected bundle contains unexpected or duplicate file '$relative'."
     }
 }
-if ($allowedFiles.Count -ne 0) {
+if ($remainingSourceFiles.Count -ne 0) {
     throw 'Protected bundle is missing one or more signed/approved files.'
 }
 if ((Get-Sha256Lower -Path (Join-Path $source (
@@ -180,6 +207,10 @@ if ($LASTEXITCODE -ne 0) {
 if (Test-Path -LiteralPath $destination) {
     throw 'Destination already exists; clean it explicitly before provisioning.'
 }
+if (-not (Test-Path -LiteralPath ([IO.Path]::GetDirectoryName($destination)))) {
+    New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($destination)) | Out-Null
+}
+Assert-NoReparseAncestor -Path ([IO.Path]::GetDirectoryName($destination))
 New-Item -ItemType Directory -Path $destination | Out-Null
 try {
     Get-ChildItem -LiteralPath $source -Force |
@@ -202,6 +233,28 @@ try {
         if ((Get-Sha256Lower -Path $sourceFile.FullName) -cne (Get-Sha256Lower -Path $destinationFile)) {
             throw 'Provisioned Android lab bundle differs from the protected source.'
         }
+    }
+    $remainingDestinationFiles = [Collections.Generic.HashSet[string]]::new(
+        $expectedFiles, [StringComparer]::OrdinalIgnoreCase)
+    $destinationPending = [Collections.Generic.Stack[string]]::new()
+    $destinationPending.Push($destination)
+    while ($destinationPending.Count -gt 0) {
+        foreach ($destinationEntry in Get-ChildItem -LiteralPath $destinationPending.Pop() -Force) {
+            if (($destinationEntry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'Provisioned destination contains a reparse point.'
+            }
+            if ($destinationEntry.PSIsContainer) {
+                $destinationPending.Push($destinationEntry.FullName)
+            } else {
+                $relative = (Get-RelativePathCompat -Root $destination -Candidate $destinationEntry.FullName).Replace('\', '/')
+                if (-not $remainingDestinationFiles.Remove($relative)) {
+                    throw 'Provisioned destination contains an unexpected or duplicate file.'
+                }
+            }
+        }
+    }
+    if ($remainingDestinationFiles.Count -ne 0) {
+        throw 'Provisioned destination is missing an expected file.'
     }
     $destinationItems = @(Get-Item -LiteralPath $destination)
     $destinationItems += @(Get-ChildItem -LiteralPath $destination -Recurse -Force)

@@ -58,10 +58,10 @@
     "Windows concurrent payload write/replace/delete rejected while read leases are retained",
     "Android unprovisioned template and default synthetic policy rejected",
     "Android non-synthetic managed-emulator policy rejected before tool/device execution",
-    "Android signed lab provisioning accepts an exact protected synthetic fixture and rejects zero key pin, unsigned semantic flip, unexpected executable, and directory reparse point",
+    "Android signed lab provisioning accepts an exact protected synthetic fixture and rejects zero key pin, unsigned semantic flip, unexpected executable, directory/ancestor reparse point, and untrusted write-capable SID",
     "Android hash-bound non-ZIP APK rejected",
     "Android exact policy/tool/runner-version/device bindings enforced",
     "Android APK binding tamper rejected",
-    "Android private system output/error, absolute Windows/Unix path including root, embedded URI, attachment element/attribute, sensitive property/attribute/value, and runner-version evidence rejected"
+    "Android private system output/error, absolute Windows/Unix path including root, embedded and one-letter-scheme URI, attachment/artifact element/attribute/value, sensitive property/attribute/allowed-value, and runner-version evidence rejected"
   ]
 }
