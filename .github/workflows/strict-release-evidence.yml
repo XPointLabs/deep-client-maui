@@ -72,7 +72,7 @@ jobs:
           ./eng/Invoke-StrictClientLane.ps1 -Lane AndroidDevice `
             -ReleaseInvocationId $env:DEEP_RELEASE_INVOCATION_ID `
             -ApkPath $env:DEEP_ANDROID_APK -AndroidSerial $env:DEEP_ANDROID_SERIAL `
-            -AndroidRunner $env:DEEP_ANDROID_RUNNER -DedicatedManagedDevice -ConfigureAdbReverse `
+            -AndroidLabPolicyPath $env:DEEP_ANDROID_LAB_POLICY -ConfigureAdbReverse `
             -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
       - name: Strict three-router live acceptance
         working-directory: deep-client-maui
@@ -87,6 +87,8 @@ jobs:
         run: |
           ./eng/Test-StrictClientEvidence.ps1 -RequireComplete `
             -ReleaseInvocationId $env:DEEP_RELEASE_INVOCATION_ID `
+            -AndroidLabPolicyPath $env:DEEP_ANDROID_LAB_POLICY `
+            -AndroidApkPath $env:DEEP_ANDROID_APK `
             -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
       - name: Upload sanitized strict evidence
         if: always()

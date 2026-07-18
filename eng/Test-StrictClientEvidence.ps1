@@ -4,6 +4,8 @@ param(
     [ValidatePattern('^[0-9a-f]{32}$')]
     [string]$ReleaseInvocationId,
     [string]$ArtifactDirectory,
+    [string]$AndroidLabPolicyPath,
+    [string]$AndroidApkPath,
     [switch]$RequireComplete,
     [int]$MaximumAgeHours = 24
 )
@@ -42,6 +44,30 @@ function Test-FreshTimestamp {
         return $generated -le $now.AddMinutes(5) -and $generated -ge $now.AddHours(-$MaximumAgeHours)
     } catch {
         return $false
+    }
+}
+
+function Test-NonZeroSha256Value {
+    param([string]$Value)
+    return $Value -match '^[0-9a-f]{64}$' -and $Value -ne ('0' * 64)
+}
+
+function Test-SafeSummaryVersion {
+    param([string]$Value)
+    return -not [string]::IsNullOrWhiteSpace($Value) -and
+        $Value.Length -le 128 -and
+        $Value -match '^[A-Za-z0-9][A-Za-z0-9 ._+(),-]*$' -and
+        $Value -notmatch '(?i)(password|passphrase|token|secret|mnemonic|seed|private.?key|authorization|bearer|recovery)'
+}
+
+function Get-TextSha256Lower {
+    param([Parameter(Mandatory)][string]$Value)
+    $bytes = [Text.Encoding]::UTF8.GetBytes($Value)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
     }
 }
 
@@ -200,17 +226,105 @@ if (Test-Path -LiteralPath $androidSummaryPath -PathType Leaf) {
             [int]$summary.counters.executed -gt 0 -and
             [int]$summary.counters.skipped -eq 0 -and
             [int]$summary.counters.failed -eq 0
-        $androidSummaryPassed = $summary.schema -ceq 'deep.survival.android-device-summary.v1' -and
+        if ([string]::IsNullOrWhiteSpace($AndroidLabPolicyPath) -or
+            [string]::IsNullOrWhiteSpace($AndroidApkPath)) {
+            throw 'Protected Android policy and exact APK are required for complete validation.'
+        }
+        $policyPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+            [IO.Path]::GetFullPath($AndroidLabPolicyPath))
+        Assert-NoReparsePointInPath -Root $repoRoot -Candidate $policyPath
+        $policyRelative = (Get-RelativePathCompat -Root $repoRoot -Candidate $policyPath).Replace('\', '/')
+        if (-not $policyRelative.StartsWith('.secrets/android-lab/', [StringComparison]::Ordinal)) {
+            throw 'Release Android policy is outside the protected lab root.'
+        }
+        $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
+        $policyHash = Get-Sha256Lower -Path $policyPath
+        $receiptRelative = [string]$policy.approval.receiptRelativePath
+        if ($receiptRelative.Contains('\') -or
+            -not $receiptRelative.StartsWith('.secrets/android-lab/', [StringComparison]::Ordinal) -or
+            $receiptRelative.Split('/').Contains('..')) {
+            throw 'Release approval receipt path is invalid.'
+        }
+        $receiptPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+            [IO.Path]::GetFullPath((Join-Path $repoRoot $receiptRelative)))
+        Assert-NoReparsePointInPath -Root $repoRoot -Candidate $receiptPath
+        $policyValid = $policy.schema -ceq 'deep.survival.android-lab-policy.v1' -and
+            $policy.provisioned -eq $true -and
+            $policy.synthetic -eq $false -and
+            $policy.sourceCommitSha -ceq $commit -and
+            (Test-NonZeroSha256Value ([string]$policy.policyId)) -and
+            $policy.approval.state -ceq 'approved' -and
+            $policy.approval.approvedBy -ceq 'Mr. X' -and
+            (Test-NonZeroSha256Value ([string]$policy.approval.receiptSha256)) -and
+            (Get-Sha256Lower -Path $receiptPath) -ceq [string]$policy.approval.receiptSha256 -and
+            $policy.application.packageId -ceq 'network.xpoint.deep.e2e' -and
+            [int]$policy.application.versionCode -gt 0 -and
+            (Test-SafeSummaryVersion ([string]$policy.application.versionName)) -and
+            (Test-NonZeroSha256Value ([string]$policy.application.apkSha256)) -and
+            (Test-NonZeroSha256Value ([string]$policy.application.signingCertificateSha256)) -and
+            [string]$policy.device.class -in @('managed-emulator', 'managed-physical') -and
+            [int]$policy.device.sdk -ge 26 -and [int]$policy.device.sdk -le 100 -and
+            [string]$policy.tools.aapt.kind -in @('aapt', 'aapt2')
+        foreach ($role in @('runner', 'adb', 'aapt', 'apksigner')) {
+            $definition = $policy.tools.$role
+            $relativeToolPath = [string]$definition.relativePath
+            if ($relativeToolPath.Contains('\') -or
+                -not $relativeToolPath.StartsWith('.secrets/android-lab/tools/', [StringComparison]::Ordinal) -or
+                $relativeToolPath.Split('/').Contains('..') -or
+                -not (Test-NonZeroSha256Value ([string]$definition.sha256)) -or
+                -not (Test-SafeSummaryVersion ([string]$definition.version))) {
+                $policyValid = $false
+                break
+            }
+            $toolPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+                [IO.Path]::GetFullPath((Join-Path $repoRoot $relativeToolPath)))
+            Assert-NoReparsePointInPath -Root $repoRoot -Candidate $toolPath
+            $expectedToolName = switch ($role) {
+                'runner' { 'deep-android-runner.exe' }
+                'adb' { 'adb.exe' }
+                'aapt' { "$([string]$policy.tools.aapt.kind).exe" }
+                'apksigner' { 'apksigner.bat' }
+            }
+            if ((Get-Sha256Lower -Path $toolPath) -cne [string]$definition.sha256 -or
+                -not [StringComparer]::OrdinalIgnoreCase.Equals([IO.Path]::GetFileName($toolPath), $expectedToolName) -or
+                $summary.toolchain.$role.sha256 -cne [string]$definition.sha256 -or
+                $summary.toolchain.$role.version -cne [string]$definition.version) {
+                $policyValid = $false
+                break
+            }
+        }
+        $apkPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate ([IO.Path]::GetFullPath($AndroidApkPath))
+        Assert-NoReparsePointInPath -Root $repoRoot -Candidate $apkPath
+        $apkValid = (Get-Sha256Lower -Path $apkPath) -ceq [string]$policy.application.apkSha256
+        $androidSummaryPassed = $summary.schema -ceq 'deep.survival.android-device-summary.v2' -and
             $summary.sourceCommitSha -ceq $commit -and
             $summary.releaseInvocationId -ceq $ReleaseInvocationId -and
             $summary.laneInvocationId -ceq $androidRecord.laneInvocationId -and
             $summary.status -ceq 'passed' -and
+            $summary.labPolicy.synthetic -eq $false -and
+            $summary.labPolicy.id -ceq [string]$policy.policyId -and
+            $summary.labPolicy.sha256 -ceq $policyHash -and
+            $summary.labPolicy.approvalReceiptSha256 -ceq [string]$policy.approval.receiptSha256 -and
+            $policyValid -and
+            $apkValid -and
             $summary.apk.packageId -ceq 'network.xpoint.deep.e2e' -and
+            $summary.apk.packageId -ceq [string]$policy.application.packageId -and
             $summary.apk.sha256 -match '^[0-9a-f]{64}$' -and
+            $summary.apk.sha256 -ceq [string]$policy.application.apkSha256 -and
             $summary.apk.signingCertificateSha256 -match '^[0-9a-f]{64}$' -and
+            $summary.apk.signingCertificateSha256 -ceq [string]$policy.application.signingCertificateSha256 -and
+            [string]$summary.apk.versionCode -ceq [string]$policy.application.versionCode -and
+            [string]$summary.apk.versionName -ceq [string]$policy.application.versionName -and
             $summary.runner.sha256 -match '^[0-9a-f]{64}$' -and
-            -not [string]::IsNullOrWhiteSpace([string]$summary.runner.version) -and
-            $summary.device.serialSha256 -match '^[0-9a-f]{64}$' -and
+            $summary.runner.sha256 -ceq [string]$policy.tools.runner.sha256 -and
+            $summary.runner.version -ceq [string]$policy.tools.runner.version -and
+            (Test-SafeSummaryVersion ([string]$summary.runner.version)) -and
+            $summary.toolchain.aapt.kind -ceq [string]$policy.tools.aapt.kind -and
+            $summary.device.serialSha256 -ceq (Get-TextSha256Lower -Value ([string]$policy.device.serial)) -and
+            $summary.device.fingerprintSha256 -ceq (Get-TextSha256Lower -Value ([string]$policy.device.fingerprint)) -and
+            $summary.device.productSha256 -ceq (Get-TextSha256Lower -Value ([string]$policy.device.product)) -and
+            [int]$summary.device.sdk -eq [int]$policy.device.sdk -and
+            [string]$summary.device.class -ceq [string]$policy.device.class -and
             $summary.device.dedicatedManaged -eq $true -and
             $summary.device.personalDataAbsent -eq $true -and
             $summary.device.productionPackageAbsentBefore -eq $true -and

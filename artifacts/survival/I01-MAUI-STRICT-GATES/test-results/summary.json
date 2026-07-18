@@ -55,7 +55,11 @@
     "cross-lane copy rejected",
     "missing/mismatched/duplicate/stale invocation rejected",
     "Windows duplicate/alternate-separator/reparse payload rejected",
+    "Windows concurrent payload write/replace/delete rejected while read leases are retained",
+    "Android unprovisioned template and default synthetic policy rejected",
+    "Android hash-bound non-ZIP APK rejected",
+    "Android exact policy/tool/runner-version/device bindings enforced",
     "Android APK binding tamper rejected",
-    "Android private system-out JUnit rejected"
+    "Android private system output/error, absolute Windows/Unix path, URI, attachment, sensitive property/value, and runner-version evidence rejected"
   ]
 }

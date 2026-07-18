@@ -1,12 +1,15 @@
 {
   "schemaVersion": "survival-security-impact-v1",
-  "riskBefore": "Commit-only result binding allowed cross-lane copying, stale invocation reuse, Windows payload substitution, weak Android runner/APK/device claims, and raw JUnit upload.",
+  "riskBefore": "Hash-only Windows verification still allowed transient payload substitution, while caller-selected Android tools/device claims, non-ZIP APKs, unbound runner versions, and path/URI/property-bearing JUnit could create false release evidence.",
   "controlsAdded": [
     "Common release invocation, unique lane invocation, exact lane/source binding, matching final preflight, freshness, and duplicate rejection.",
-    "Canonical repository-contained Windows AppPath with no reparse traversal, exact pre-launch normalized file-set/hash snapshot, and post-run rehash.",
-    "Android APK SHA/package/version/certificate, runner hash/version, serial, managed-device cleanup, JUnit hash, and counter cross-check contract.",
+    "Canonical repository-contained Windows AppPath with no reparse traversal; every payload file is opened FileShare.Read, hashed from its leased handle, and retained through real process/UI/post-run verification.",
+    "A checked-in Android policy schema binds the current commit, Mr. X approval receipt, exact tool paths/hashes/versions, exact managed device identity, and exact E2E APK identity.",
+    "The checked-in policy template is intentionally unprovisioned; a real policy and all trusted files must live below ignored .secrets/android-lab, while synthetic policy requires an explicit contract-test switch and cannot pass release validation.",
+    "The wrapper independently queries trusted adb/device state, validates a real ZIP APK plus package/version/certificate, and treats caller paths/serial only as exact policy cross-checks.",
+    "Android runner result v3 binds policy, tool, APK, device, JUnit, invocation, cleanup, and counter claims.",
     "Debug-only network.xpoint.deep.e2e physical test package while Release remains network.xpoint.deep.",
-    "Raw Android evidence is quarantined locally; upload accepts only an allowlisted summary without serials or absolute paths.",
+    "Raw Android evidence is quarantined locally; JUnit rejects system output/errors, attachments, absolute Windows/Unix paths, URIs, sensitive properties/values, and text payloads before any allowlisted summary is emitted.",
     "Strict zero-skip gate with machine-readable blocked, failed, and passed states.",
     "Real Windows ARM64 process and UIA3 control interaction.",
     "Per-run isolated app-data root.",
@@ -15,7 +18,7 @@
     "Android absence is blocked evidence instead of a passing APK-build proxy."
   ],
   "residualRisks": [
-    "Android application behavior is not yet executed because no dedicated managed physical device and trusted runner are available.",
+    "Android application behavior is not yet executed because Mr. X has not provisioned an approved commit-bound protected policy, trusted real tools, and an authorized managed device.",
     "The Windows package proves the Welcome flow only; cross-process message delivery remains a later package.",
     "A production provider push wake is not proven by this package."
   ],

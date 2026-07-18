@@ -19,11 +19,13 @@ param(
     [string]$AdbPath,
     [string]$AaptPath,
     [string]$ApkSignerPath,
-    [switch]$DedicatedManagedDevice,
+    [string]$AndroidLabPolicyPath,
+    [switch]$AllowSyntheticLabPolicyForContractTests,
     [switch]$CaptureStubWelcomeFailure
 )
 
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $PSScriptRoot 'StrictLane.Common.ps1')
 $sourceCommitSha = (& git -C $repoRoot rev-parse HEAD).Trim()
@@ -243,9 +245,7 @@ function Get-AndroidApkMetadata {
 function Read-SanitizedJUnitCounters {
     param([Parameter(Mandatory)][string]$Path)
     $raw = Get-Content -LiteralPath $Path -Raw
-    if ($raw -match '(?is)<!DOCTYPE|<!ENTITY|<\s*(system-out|system-err|attachments?|attachment)\b' -or
-        $raw -match '(?i)([a-z]:\\|\\\\[^\\\s]+\\|/(home|users|data|storage|sdcard)/)' -or
-        $raw -match '(?i)(mnemonic|seed\s+phrase|recovery\s+phrase|private\s+key|authorization\s*:|bearer\s+|password\s*[=:])') {
+    if ($raw -match '(?is)<!DOCTYPE|<!ENTITY|<\s*(system-out|system-err|attachments?|attachment)\b') {
         throw 'Android JUnit contains prohibited private or non-allowlisted content.'
     }
     $settings = [Xml.XmlReaderSettings]::new()
@@ -255,6 +255,37 @@ function Read-SanitizedJUnitCounters {
     $document = [Xml.XmlDocument]::new()
     $document.XmlResolver = $null
     $document.Load($reader)
+    foreach ($node in @($document.SelectNodes('//*'))) {
+        $nodeName = $node.LocalName
+        if ($nodeName -match '(?i)^(system-out|system-err|attachments?|attachment)$') {
+            throw 'Android JUnit contains prohibited output or attachment nodes.'
+        }
+        $isProperty = $nodeName -match '(?i)^property$'
+        foreach ($attribute in @($node.Attributes)) {
+            $value = [string]$attribute.Value
+            $propertyNameIsSensitive = $isProperty -and
+                $attribute.LocalName -match '(?i)^(name|key)$' -and
+                $value -match '(?i)(password|passphrase|token|secret|mnemonic|seed|private.?key|authorization|bearer|recovery)'
+            $sensitiveValue = $value -match '(?i)(password|passphrase|token|secret|mnemonic|seed\s+phrase|private\s+key|authorization|bearer)\s*[:=]'
+            $attachmentValue = $value -match '(?i)(^|[._-])attachments?($|[._-])'
+            $absoluteWindowsPath = $value -match '(?i)(^|[\s="''])([a-z]:[\\/]|\\\\)'
+            $absoluteUnixPath = $value -match '(^|[\s="''])/(?!/)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*'
+            $uri = $null
+            $absoluteUri = [Uri]::TryCreate($value.Trim(), [UriKind]::Absolute, [ref]$uri)
+            if ($propertyNameIsSensitive -or $sensitiveValue -or $attachmentValue -or
+                $absoluteWindowsPath -or $absoluteUnixPath -or $absoluteUri) {
+                throw 'Android JUnit contains a prohibited property, path, URI, attachment, or sensitive value.'
+            }
+        }
+        foreach ($child in @($node.ChildNodes | Where-Object {
+            $_.NodeType -in @([Xml.XmlNodeType]::Text, [Xml.XmlNodeType]::CDATA)
+        })) {
+            $text = [string]$child.Value
+            if (-not [string]::IsNullOrWhiteSpace($text)) {
+                throw 'Android JUnit text output is not allowlisted.'
+            }
+        }
+    }
     $suites = @(if ($document.DocumentElement.LocalName -eq 'testsuite') {
         @($document.DocumentElement)
     } else {
@@ -280,6 +311,288 @@ function Read-SanitizedJUnitCounters {
     }
 }
 
+function Test-CanonicalPolicyRelativePath {
+    param([string]$Value)
+    return -not [string]::IsNullOrWhiteSpace($Value) -and
+        -not $Value.Contains('\') -and
+        -not $Value.StartsWith('/') -and
+        -not (Test-FullyQualifiedPath $Value) -and
+        -not $Value.Split('/').Contains('..')
+}
+
+function Test-NonZeroSha256 {
+    param([string]$Value)
+    return $Value -match '^[0-9a-f]{64}$' -and $Value -ne ('0' * 64)
+}
+
+function Test-PrivacySafeVersion {
+    param([string]$Value)
+    return -not [string]::IsNullOrWhiteSpace($Value) -and
+        $Value.Length -le 128 -and
+        $Value -match '^[A-Za-z0-9][A-Za-z0-9 ._+(),-]*$' -and
+        $Value -notmatch '(?i)(password|passphrase|token|secret|mnemonic|seed|private.?key|authorization|bearer|recovery)'
+}
+
+function Open-ReadOnlyLease {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$ContainmentRoot
+    )
+    $canonical = Get-CanonicalContainedPath -Root $ContainmentRoot -Candidate ([IO.Path]::GetFullPath($Path))
+    Assert-NoReparsePointInPath -Root $ContainmentRoot -Candidate $canonical
+    $item = Get-Item -LiteralPath $canonical -Force
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        -not (Test-Path -LiteralPath $canonical -PathType Leaf)) {
+        throw 'Trusted lab file must be a regular non-reparse file.'
+    }
+    $stream = [IO.FileStream]::new(
+        $canonical,
+        [IO.FileMode]::Open,
+        [IO.FileAccess]::Read,
+        [IO.FileShare]::Read)
+    return [pscustomobject]@{
+        path = $canonical
+        stream = $stream
+        sha256 = Get-StreamSha256Lower -Stream $stream
+    }
+}
+
+function Read-AndroidLabPolicy {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw 'A provisioned protected Android lab policy is required.'
+    }
+    $lease = Open-ReadOnlyLease -Path $Path -ContainmentRoot $repoRoot
+    try {
+        $lease.stream.Position = 0
+        $reader = [IO.StreamReader]::new($lease.stream, [Text.Encoding]::UTF8, $true, 4096, $true)
+        try {
+            $policy = $reader.ReadToEnd() | ConvertFrom-Json
+        } finally {
+            $reader.Dispose()
+        }
+        $relativePolicyPath = (Get-RelativePathCompat -Root $repoRoot -Candidate $lease.path).Replace('\', '/')
+        $synthetic = $policy.synthetic -eq $true
+        if ($policy.schema -cne 'deep.survival.android-lab-policy.v1' -or
+            $policy.provisioned -ne $true -or
+            $policy.sourceCommitSha -cne $sourceCommitSha -or
+            -not (Test-NonZeroSha256 ([string]$policy.policyId)) -or
+            $policy.application.packageId -cne 'network.xpoint.deep.e2e' -or
+            -not (Test-NonZeroSha256 ([string]$policy.application.apkSha256)) -or
+            -not (Test-NonZeroSha256 ([string]$policy.application.signingCertificateSha256)) -or
+            [int]$policy.application.versionCode -le 0 -or
+            -not (Test-PrivacySafeVersion ([string]$policy.application.versionName))) {
+            throw 'Android lab policy schema, commit, identity, or application binding is invalid.'
+        }
+        if ($synthetic) {
+            if (-not $AllowSyntheticLabPolicyForContractTests -or
+                $policy.approval.state -cne 'synthetic-contract-fixture') {
+                throw 'Synthetic Android lab policy is accepted only by the explicit contract-test lane.'
+            }
+        } else {
+            if (-not $relativePolicyPath.StartsWith('.secrets/android-lab/', [StringComparison]::Ordinal) -or
+                $policy.approval.state -cne 'approved' -or
+                $policy.approval.approvedBy -cne 'Mr. X' -or
+                -not (Test-CanonicalPolicyRelativePath ([string]$policy.approval.receiptRelativePath)) -or
+                -not ([string]$policy.approval.receiptRelativePath).StartsWith('.secrets/android-lab/', [StringComparison]::Ordinal) -or
+                -not (Test-NonZeroSha256 ([string]$policy.approval.receiptSha256))) {
+                throw 'Protected Android lab policy lacks the required Mr. X approval receipt.'
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$policy.device.serial) -or
+            [string]::IsNullOrWhiteSpace([string]$policy.device.fingerprint) -or
+            [string]::IsNullOrWhiteSpace([string]$policy.device.product) -or
+            [int]$policy.device.sdk -lt 26 -or [int]$policy.device.sdk -gt 100 -or
+            [string]$policy.device.class -notin @('managed-emulator', 'managed-physical')) {
+            throw 'Android lab policy device identity is incomplete or invalid.'
+        }
+        return [pscustomobject]@{
+            policy = $policy
+            lease = $lease
+            path = $lease.path
+            relativePath = $relativePolicyPath
+            sha256 = $lease.sha256
+            synthetic = $synthetic
+        }
+    } catch {
+        $lease.stream.Dispose()
+        throw
+    }
+}
+
+function Get-TrustedToolVersion {
+    param(
+        [Parameter(Mandatory)][string]$Role,
+        [Parameter(Mandatory)][string]$Path
+    )
+    try {
+        $rawOutput = if ($Role -eq 'runner') {
+            @(& $Path '--version' 2>&1)
+        } else {
+            @(& $Path 'version' 2>&1)
+        }
+        $commandSucceeded = $?
+        $commandExitCode = $LASTEXITCODE
+    } catch {
+        throw "Trusted $Role version query could not start."
+    }
+    $lines = @($rawOutput | ForEach-Object { [string]$_ } | Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_)
+        })
+    if (-not $commandSucceeded -or $commandExitCode -ne 0) {
+        $safeExitCode = if ($null -eq $commandExitCode) { 'unset' } else { [string][int]$commandExitCode }
+        throw "Trusted $Role version query returned a failure status ($safeExitCode)."
+    }
+    if ($lines.Count -eq 0) {
+        throw "Trusted $Role version query returned no output."
+    }
+    $version = $lines[0].Trim()
+    if (-not (Test-PrivacySafeVersion $version)) {
+        throw "Trusted $Role returned a non-allowlisted version string."
+    }
+    return $version
+}
+
+function Open-TrustedPolicyTool {
+    param(
+        [Parameter(Mandatory)][string]$Role,
+        [Parameter(Mandatory)][object]$Definition,
+        [string]$CallerPath,
+        [Parameter(Mandatory)][bool]$Synthetic
+    )
+    $stage = 'definition'
+    $lease = $null
+    try {
+        $relativePath = [string]$Definition.relativePath
+        if (-not (Test-CanonicalPolicyRelativePath $relativePath) -or
+            -not (Test-NonZeroSha256 ([string]$Definition.sha256)) -or
+            -not (Test-PrivacySafeVersion ([string]$Definition.version))) {
+            throw "definition"
+        }
+        if (-not $Synthetic -and
+            -not $relativePath.StartsWith('.secrets/android-lab/tools/', [StringComparison]::Ordinal)) {
+            throw "location"
+        }
+        $candidate = [IO.Path]::GetFullPath((Join-Path $repoRoot $relativePath))
+        if (-not [string]::IsNullOrWhiteSpace($CallerPath) -and
+            -not [StringComparer]::OrdinalIgnoreCase.Equals([IO.Path]::GetFullPath($CallerPath), $candidate)) {
+            throw "caller-binding"
+        }
+        $stage = 'lease'
+        $lease = Open-ReadOnlyLease -Path $candidate -ContainmentRoot $repoRoot
+        $stage = 'hash'
+        if ($lease.sha256 -cne [string]$Definition.sha256) {
+            throw "hash"
+        }
+        # PowerShell script fixtures cannot be executed while their source is leased on
+        # Windows. Release the first hash-verified handle for the version probe, then
+        # reacquire and re-hash the exact policy binary. The second handle is retained
+        # through execution, so a probe-time substitution cannot become the used tool.
+        $lease.stream.Dispose()
+        $lease = $null
+        $stage = 'version-query'
+        $version = Get-TrustedToolVersion -Role $Role -Path $candidate
+        $stage = 'version-binding'
+        if ($version -cne [string]$Definition.version) {
+            throw "version-binding"
+        }
+        $stage = 'lease-after-version'
+        $lease = Open-ReadOnlyLease -Path $candidate -ContainmentRoot $repoRoot
+        $stage = 'hash-after-version'
+        if ($lease.sha256 -cne [string]$Definition.sha256) {
+            throw "hash-after-version"
+        }
+        return [pscustomobject]@{
+            role = $Role
+            path = $lease.path
+            sha256 = $lease.sha256
+            version = $version
+            stream = $lease.stream
+        }
+    } catch {
+        if ($null -ne $lease) {
+            $lease.stream.Dispose()
+        }
+        $category = if ($_.Exception.Message -match '^Trusted [a-z0-9]+ version query (could not start|returned a failure status( \((-?[0-9]+|unset)\))?|returned no output)\.$') {
+            $_.Exception.Message
+        } elseif ($_.Exception.Message -match '^Trusted [a-z0-9]+ returned a non-allowlisted version string\.$') {
+            $_.Exception.Message
+        } else {
+            "Trusted $Role policy validation failed"
+        }
+        throw "$category at $stage."
+    }
+}
+
+function Open-ValidatedApkLease {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$ExpectedSha256
+    )
+    $lease = Open-ReadOnlyLease -Path $Path -ContainmentRoot $repoRoot
+    try {
+        if ($lease.stream.Length -lt 22 -or $lease.sha256 -cne $ExpectedSha256) {
+            throw 'APK is too small, unbound, or has an unexpected SHA-256.'
+        }
+        $lease.stream.Position = 0
+        $archive = [IO.Compression.ZipArchive]::new(
+            $lease.stream,
+            [IO.Compression.ZipArchiveMode]::Read,
+            $true)
+        try {
+            $entryNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            $hasManifest = $false
+            foreach ($entry in $archive.Entries) {
+                $name = $entry.FullName.Replace('\', '/')
+                if ([string]::IsNullOrWhiteSpace($name) -or
+                    $name.StartsWith('/') -or
+                    $name.Split('/').Contains('..') -or
+                    -not $entryNames.Add($name)) {
+                    throw 'APK archive contains a duplicate or non-canonical entry.'
+                }
+                if ($name -ceq 'AndroidManifest.xml') {
+                    $hasManifest = $true
+                }
+            }
+            if (-not $hasManifest -or $archive.Entries.Count -eq 0) {
+                throw 'APK archive is missing AndroidManifest.xml.'
+            }
+        } finally {
+            $archive.Dispose()
+            $lease.stream.Position = 0
+        }
+        return $lease
+    } catch {
+        $lease.stream.Dispose()
+        throw
+    }
+}
+
+function Invoke-AdbSingleValue {
+    param(
+        [Parameter(Mandatory)][string]$Adb,
+        [Parameter(Mandatory)][string[]]$Arguments
+    )
+    $lines = @(& $Adb @Arguments 2>$null | ForEach-Object { ([string]$_).Trim() } | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_)
+    })
+    if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 1) {
+        throw 'Managed-device identity query failed.'
+    }
+    return $lines[0]
+}
+
+function Get-TextSha256Lower {
+    param([Parameter(Mandatory)][string]$Value)
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString(
+            $algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($Value)))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $algorithm.Dispose()
+    }
+}
+
 if ($Lane -eq 'WindowsUi') {
     $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
     Add-Check 'host-os' $isWindowsHost $(if ($isWindowsHost) { 'Windows' } else { 'Windows is required' })
@@ -289,22 +602,36 @@ if ($Lane -eq 'WindowsUi') {
     $canonicalAppPath = $null
     $payloadRoot = $null
     $preRunSnapshot = $null
-    if ($appExists) {
+    $preRunLease = $null
+    if ($isWindowsHost -and $appExists) {
         try {
             $canonicalAppPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate ([IO.Path]::GetFullPath($AppPath))
             $payloadRoot = [IO.Path]::GetDirectoryName($canonicalAppPath)
             Assert-NoReparsePointInPath -Root $repoRoot -Candidate $payloadRoot
             Assert-NoReparsePointInPath -Root $payloadRoot -Candidate $canonicalAppPath
-            $preRunSnapshot = Get-StrictPayloadSnapshot `
+            $preRunLease = Open-StrictPayloadLease `
                 -RepositoryRoot $repoRoot `
                 -PayloadRoot $payloadRoot `
                 -ExecutablePath $canonicalAppPath
+            $preRunSnapshot = $preRunLease.snapshot
+            if (-not [StringComparer]::OrdinalIgnoreCase.Equals(
+                [string]$preRunLease.executablePath,
+                $canonicalAppPath)) {
+                throw 'The executable path is not the exact leased payload file.'
+            }
             $appPayloadContained = $true
         } catch {
+            Close-StrictPayloadLease -Lease $preRunLease
+            $preRunLease = $null
             $appPayloadContained = $false
         }
     }
     Add-Check 'maui-payload-root' $appPayloadContained $(if ($appPayloadContained) { 'repository-local' } else { 'AppPath must be inside the repository' })
+    Add-Check 'windows-payload-read-leases' ($null -ne $preRunLease) $(if ($null -ne $preRunLease) {
+        'all payload files opened read-only with write/delete sharing denied'
+    } else {
+        'the platform could not guarantee strict payload read leases'
+    })
     Add-Check 'artifact-root' $true 'canonical repository child without reparse points'
     if ($Bootstrap -eq 'live') {
         Test-LiveConfiguration
@@ -315,6 +642,7 @@ if ($Lane -eq 'WindowsUi') {
     $blocked = @($checks.Where({ $_.status -ne 'passed' })).Count -gt 0
     Write-Preflight $(if ($blocked) { 'failed' } else { 'ready' }) | Out-Null
     if ($blocked) {
+        Close-StrictPayloadLease -Lease $preRunLease
         Write-LaneResult 'blocked' $null 'machine-readable preflight'
         exit 2
     }
@@ -341,6 +669,7 @@ if ($Lane -eq 'WindowsUi') {
     $trxPath = Join-Path $ArtifactDirectory $trxName
     if (-not (Test-Path -LiteralPath $trxPath)) {
         Remove-PrivateArtifact $runRoot
+        Close-StrictPayloadLease -Lease $preRunLease
         Add-Check 'windows-payload-post-run' $false 'TRX was missing; post-run payload verification was not completed'
         Write-Preflight 'failed' | Out-Null
         Write-LaneResult 'failed' $null 'TRX missing'
@@ -359,6 +688,8 @@ if ($Lane -eq 'WindowsUi') {
     } catch {
         $payloadUnchanged = $false
     }
+    Close-StrictPayloadLease -Lease $preRunLease
+    $preRunLease = $null
     Add-Check 'windows-payload-post-run' $payloadUnchanged $(if ($payloadUnchanged) {
         'exact pre-launch file set, lengths, paths, and hashes preserved'
     } else {
@@ -383,108 +714,225 @@ if ($Lane -eq 'WindowsUi') {
 }
 
 if ($Lane -eq 'AndroidDevice') {
-    $adb = if ([string]::IsNullOrWhiteSpace($AdbPath)) {
-        Get-Command adb -ErrorAction SilentlyContinue
-    } elseif (Test-Path -LiteralPath $AdbPath -PathType Leaf) {
-        Get-Command ([IO.Path]::GetFullPath($AdbPath)) -ErrorAction SilentlyContinue
-    } else {
-        $null
+    $androidTrustStreams = [Collections.Generic.List[IO.Stream]]::new()
+    function Close-AndroidTrustStreams {
+        foreach ($stream in $androidTrustStreams) {
+            $stream.Dispose()
+        }
+        $androidTrustStreams.Clear()
     }
-    Add-Check 'adb' ($null -ne $adb) $(if ($null -ne $adb) { 'present' } else { 'adb is required' })
-    $apkExists = -not [string]::IsNullOrWhiteSpace($ApkPath) -and (Test-Path -LiteralPath $ApkPath -PathType Leaf)
-    Add-Check 'apk' $apkExists $(if ($apkExists) { 'present' } else { 'ApkPath is required and must exist' })
-    $dedicated = [bool]$DedicatedManagedDevice
-    Add-Check 'dedicated-managed-device' $dedicated $(if ($dedicated) {
-        'caller attested a dedicated managed test device'
+
+    $policyContext = $null
+    $policy = $null
+    try {
+        $policyContext = Read-AndroidLabPolicy -Path $AndroidLabPolicyPath
+        $policy = $policyContext.policy
+        $androidTrustStreams.Add($policyContext.lease.stream)
+        if (-not $policyContext.synthetic) {
+            $receiptPath = [IO.Path]::GetFullPath((
+                Join-Path $repoRoot ([string]$policy.approval.receiptRelativePath)))
+            $receiptLease = Open-ReadOnlyLease -Path $receiptPath -ContainmentRoot $repoRoot
+            if ($receiptLease.sha256 -cne [string]$policy.approval.receiptSha256) {
+                $receiptLease.stream.Dispose()
+                throw 'Mr. X approval receipt hash does not match the protected policy.'
+            }
+            $androidTrustStreams.Add($receiptLease.stream)
+        }
+    } catch {
+        $policyContext = $null
+        $policy = $null
+    }
+    Add-Check 'android-lab-policy' ($null -ne $policyContext) $(if ($null -ne $policyContext) {
+        $(if ($policyContext.synthetic) { 'synthetic contract fixture; never release-valid' } else { 'protected, commit-bound, and Mr. X approved' })
     } else {
-        'explicit -DedicatedManagedDevice attestation is required; personal devices are prohibited'
+        'a provisioned protected commit-bound policy is required; the checked-in template cannot pass'
     })
 
+    $trustedTools = @{}
+    $toolchainStage = 'policy-unavailable'
+    if ($null -ne $policyContext) {
+        try {
+            $toolchainStage = 'validate-aapt-kind'
+            if ([string]$policy.tools.aapt.kind -notin @('aapt', 'aapt2')) {
+                throw 'The lab policy must select exactly aapt or aapt2.'
+            }
+            $definitions = [ordered]@{
+                runner = $policy.tools.runner
+                adb = $policy.tools.adb
+                aapt = $policy.tools.aapt
+                apksigner = $policy.tools.apksigner
+            }
+            $callerPaths = @{
+                runner = $AndroidRunner
+                adb = $AdbPath
+                aapt = $AaptPath
+                apksigner = $ApkSignerPath
+            }
+            foreach ($role in $definitions.Keys) {
+                $toolchainStage = "open-$role"
+                try {
+                    $trustedTool = Open-TrustedPolicyTool `
+                        -Role $role `
+                        -Definition $definitions[$role] `
+                        -CallerPath $callerPaths[$role] `
+                        -Synthetic $policyContext.synthetic
+                } catch {
+                    $toolchainStage = "$toolchainStage/$($_.Exception.Message)"
+                    throw
+                }
+                $trustedTools[$role] = $trustedTool
+                $androidTrustStreams.Add($trustedTool.stream)
+            }
+            if (-not $policyContext.synthetic) {
+                $toolchainStage = 'validate-role-basenames'
+                $expectedAaptName = "$([string]$policy.tools.aapt.kind).exe"
+                if (-not [StringComparer]::OrdinalIgnoreCase.Equals(
+                        [IO.Path]::GetFileName([string]$trustedTools.aapt.path),
+                        $expectedAaptName) -or
+                    -not [StringComparer]::OrdinalIgnoreCase.Equals(
+                        [IO.Path]::GetFileName([string]$trustedTools.runner.path),
+                        'deep-android-runner.exe') -or
+                    -not [StringComparer]::OrdinalIgnoreCase.Equals(
+                        [IO.Path]::GetFileName([string]$trustedTools.adb.path),
+                        'adb.exe') -or
+                    -not [StringComparer]::OrdinalIgnoreCase.Equals(
+                        [IO.Path]::GetFileName([string]$trustedTools.apksigner.path),
+                        'apksigner.bat')) {
+                    throw 'Protected lab tool basenames do not match their fixed roles.'
+                }
+            }
+        } catch {
+            foreach ($tool in @($trustedTools.Values)) {
+                $tool.stream.Dispose()
+                $null = $androidTrustStreams.Remove($tool.stream)
+            }
+            $trustedTools = @{}
+        }
+    }
+    $toolchainTrusted = $trustedTools.Count -eq 4
+    Add-Check 'android-trusted-toolchain' $toolchainTrusted $(if ($toolchainTrusted) {
+        'runner, adb, aapt/aapt2, and apksigner exact paths, hashes, and versions matched policy'
+    } else {
+        "the complete protected toolchain did not match policy; stage=$toolchainStage"
+    })
+
+    $apkExists = -not [string]::IsNullOrWhiteSpace($ApkPath) -and (Test-Path -LiteralPath $ApkPath -PathType Leaf)
+    Add-Check 'apk' $apkExists $(if ($apkExists) { 'present' } else { 'ApkPath is required and must exist' })
     $canonicalApkPath = $null
+    $apkLease = $null
     $apkMetadata = $null
-    $aapt = Resolve-RequiredTool -ExplicitPath $AaptPath -CommandName 'aapt.exe'
-    $apkSigner = Resolve-RequiredTool -ExplicitPath $ApkSignerPath -CommandName 'apksigner.bat'
-    Add-Check 'aapt' ($null -ne $aapt) $(if ($null -ne $aapt) { 'present' } else { 'aapt is required' })
-    Add-Check 'apksigner' ($null -ne $apkSigner) $(if ($null -ne $apkSigner) { 'present' } else { 'apksigner is required' })
-    if ($apkExists -and $null -ne $aapt -and $null -ne $apkSigner) {
+    if ($apkExists -and $toolchainTrusted -and $null -ne $policyContext) {
         try {
             $canonicalApkPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate ([IO.Path]::GetFullPath($ApkPath))
             Assert-NoReparsePointInPath -Root $repoRoot -Candidate $canonicalApkPath
-            $apkMetadata = Get-AndroidApkMetadata -Aapt $aapt -Apk $canonicalApkPath -ApkSigner $apkSigner
+            $apkLease = Open-ValidatedApkLease `
+                -Path $canonicalApkPath `
+                -ExpectedSha256 ([string]$policy.application.apkSha256)
+            $androidTrustStreams.Add($apkLease.stream)
+            $apkMetadata = Get-AndroidApkMetadata `
+                -Aapt $trustedTools.aapt.path `
+                -Apk $canonicalApkPath `
+                -ApkSigner $trustedTools.apksigner.path
         } catch {
+            if ($null -ne $apkLease) {
+                $apkLease.stream.Dispose()
+                $null = $androidTrustStreams.Remove($apkLease.stream)
+            }
             $apkMetadata = $null
         }
     }
-    $testPackage = $null -ne $apkMetadata -and $apkMetadata.packageId -ceq 'network.xpoint.deep.e2e'
-    Add-Check 'apk-debug-test-identity' $testPackage $(if ($testPackage) {
-        'network.xpoint.deep.e2e'
+    $testPackage = $null -ne $apkMetadata -and
+        $apkMetadata.apkSha256 -ceq [string]$policy.application.apkSha256 -and
+        $apkMetadata.packageId -ceq [string]$policy.application.packageId -and
+        [string]$apkMetadata.versionCode -ceq [string]$policy.application.versionCode -and
+        [string]$apkMetadata.versionName -ceq [string]$policy.application.versionName -and
+        $apkMetadata.signingCertificateSha256 -ceq [string]$policy.application.signingCertificateSha256
+    Add-Check 'apk-archive-and-identity' $testPackage $(if ($testPackage) {
+        'valid leased APK archive exactly matched policy hash, E2E package, version, and signing certificate'
     } else {
-        'strict physical E2E accepts only the Debug test package; the production package is prohibited'
+        'APK is invalid/non-ZIP or does not match the protected E2E application policy'
     })
 
-    $serial = $AndroidSerial
+    $adb = if ($toolchainTrusted) { [string]$trustedTools.adb.path } else { $null }
+    $serial = if ($null -ne $policy) { [string]$policy.device.serial } else { '' }
     $attached = $false
+    $devicePolicyMatched = $false
     $productionPackageAbsent = $false
-    if ($null -ne $adb) {
-        $deviceLines = @(& $adb.Source devices | Select-Object -Skip 1 | Where-Object { $_ -match '\S+\s+device$' })
-        if ([string]::IsNullOrWhiteSpace($serial) -and $deviceLines.Count -eq 1) {
-            $serial = ($deviceLines[0] -split '\s+')[0]
-        }
-        $attached = -not [string]::IsNullOrWhiteSpace($serial) -and
-            @($deviceLines | Where-Object { $_ -match ("^{0}\s+device$" -f [regex]::Escape($serial)) }).Count -eq 1
-        Add-Check 'android-device' $attached $(if ($attached) { 'one authorized device selected' } else { 'no unique authorized device attached' })
-        if ($attached) {
-            $productionPackages = @(& $adb.Source -s $serial shell pm list packages 'network.xpoint.deep' 2>$null)
+    $deviceFingerprint = ''
+    $deviceProduct = ''
+    $deviceSdk = 0
+    $deviceClass = ''
+    if ($null -ne $adb -and $null -ne $policy) {
+        try {
+            if (-not [string]::IsNullOrWhiteSpace($AndroidSerial) -and
+                $AndroidSerial -cne $serial) {
+                throw 'Caller-selected serial does not match policy.'
+            }
+            $deviceLines = @(& $adb devices | Select-Object -Skip 1 | Where-Object { $_ -match '\S+\s+device$' })
+            $attached = @($deviceLines | Where-Object {
+                $_ -match ("^{0}\s+device$" -f [regex]::Escape($serial))
+            }).Count -eq 1
+            if (-not $attached) {
+                throw 'The policy device is not uniquely attached.'
+            }
+            $reportedSerial = Invoke-AdbSingleValue -Adb $adb -Arguments @('-s', $serial, 'get-serialno')
+            $deviceFingerprint = Invoke-AdbSingleValue -Adb $adb -Arguments @(
+                '-s', $serial, 'shell', 'getprop', 'ro.build.fingerprint')
+            $deviceProduct = Invoke-AdbSingleValue -Adb $adb -Arguments @(
+                '-s', $serial, 'shell', 'getprop', 'ro.product.name')
+            $sdkText = Invoke-AdbSingleValue -Adb $adb -Arguments @(
+                '-s', $serial, 'shell', 'getprop', 'ro.build.version.sdk')
+            $characteristics = Invoke-AdbSingleValue -Adb $adb -Arguments @(
+                '-s', $serial, 'shell', 'getprop', 'ro.build.characteristics')
+            $deviceSdk = [int]$sdkText
+            $deviceClass = if ($characteristics -match '(?i)(^|,)emulator(,|$)') {
+                'managed-emulator'
+            } else {
+                'managed-physical'
+            }
+            $devicePolicyMatched = $reportedSerial -ceq $serial -and
+                $deviceFingerprint -ceq [string]$policy.device.fingerprint -and
+                $deviceProduct -ceq [string]$policy.device.product -and
+                $deviceSdk -eq [int]$policy.device.sdk -and
+                $deviceClass -ceq [string]$policy.device.class
+            if (-not $devicePolicyMatched) {
+                throw 'Attached device identity does not match policy.'
+            }
+            $productionPackages = @(& $adb -s $serial shell pm list packages 'network.xpoint.deep' 2>$null)
             $packageQuerySucceeded = $LASTEXITCODE -eq 0
             $productionPackageAbsent = $packageQuerySucceeded -and
                 @($productionPackages | Where-Object { $_.Trim() -ceq 'package:network.xpoint.deep' }).Count -eq 0
-        }
-        Add-Check 'production-package-absent' $productionPackageAbsent $(if ($productionPackageAbsent) {
-            'production package is absent; wrapper will not inspect or modify it'
-        } else {
-            'production package is installed or package-state attestation failed; device rejected'
-        })
-
-        if ($attached -and $ConfigureAdbReverse) {
-            $reverseSucceeded = $true
-            foreach ($port in $ReversePort | Sort-Object -Unique) {
-                & $adb.Source -s $serial reverse "tcp:$port" "tcp:$port" | Out-Null
-                if ($LASTEXITCODE -ne 0) {
-                    $reverseSucceeded = $false
-                    break
+            if (-not $productionPackageAbsent) {
+                throw 'Production package is present or query failed.'
+            }
+            if ($ConfigureAdbReverse) {
+                foreach ($port in $ReversePort | Sort-Object -Unique) {
+                    & $adb -s $serial reverse "tcp:$port" "tcp:$port" | Out-Null
+                    if ($LASTEXITCODE -ne 0) {
+                        throw 'Managed device rejected adb reverse.'
+                    }
                 }
             }
-            Add-Check 'adb-reverse' $reverseSucceeded $(if ($reverseSucceeded) { 'configured for selected ports' } else { 'device rejected adb reverse' })
-        } elseif ($attached) {
-            Add-Check 'adb-reverse' $true 'supported; use -ConfigureAdbReverse to configure'
-        }
-    }
-
-    $runnerExists = -not [string]::IsNullOrWhiteSpace($AndroidRunner) -and (Test-Path -LiteralPath $AndroidRunner -PathType Leaf)
-    Add-Check 'android-e2e-runner' $runnerExists $(if ($runnerExists) { 'present' } else { 'real device runner is required; APK build alone is not execution' })
-    $canonicalRunner = $null
-    $runnerSha256 = $null
-    if ($runnerExists) {
-        try {
-            $canonicalRunner = [IO.Path]::GetFullPath($AndroidRunner)
-            $runnerItem = Get-Item -LiteralPath $canonicalRunner -Force
-            if (($runnerItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw 'Android runner may not be a reparse point.'
-            }
-            $runnerSha256 = Get-Sha256Lower -Path $canonicalRunner
         } catch {
-            $runnerExists = $false
+            $devicePolicyMatched = $false
+            $productionPackageAbsent = $false
         }
     }
-    Add-Check 'android-runner-hash' ($null -ne $runnerSha256) $(if ($null -ne $runnerSha256) {
-        'runner SHA-256 captured'
+    Add-Check 'android-managed-device-policy' $devicePolicyMatched $(if ($devicePolicyMatched) {
+        'serial, fingerprint, product, SDK, and managed-device class exactly matched protected policy'
     } else {
-        'runner identity could not be captured'
+        'caller switches and runner self-attestation cannot satisfy managed-device trust'
+    })
+    Add-Check 'production-package-absent' $productionPackageAbsent $(if ($productionPackageAbsent) {
+        'production package is absent; wrapper will not inspect or modify it'
+    } else {
+        'production package is installed or independently queried device state failed'
     })
 
     $blocked = @($checks.Where({ $_.status -ne 'passed' })).Count -gt 0
     Write-Preflight $(if ($blocked) { 'failed' } else { 'ready' }) | Out-Null
     if ($blocked) {
+        Close-AndroidTrustStreams
         Write-LaneResult 'blocked' $null 'device execution did not run'
         exit 2
     }
@@ -494,6 +942,11 @@ if ($Lane -eq 'AndroidDevice') {
     New-Item -ItemType Directory -Force -Path $rawRoot | Out-Null
     $runnerResultPath = Join-Path $rawRoot 'runner-result.json'
     $junitPath = Join-Path $rawRoot 'android-device.junit.xml'
+    $canonicalRunner = [string]$trustedTools.runner.path
+    $runnerSha256 = [string]$trustedTools.runner.sha256
+    $runnerVersion = [string]$trustedTools.runner.version
+    $deviceFingerprintSha256 = Get-TextSha256Lower -Value $deviceFingerprint
+    $deviceProductSha256 = Get-TextSha256Lower -Value $deviceProduct
     $runnerArguments = @(
         '--serial', $serial,
         '--apk', $canonicalApkPath,
@@ -509,17 +962,25 @@ if ($Lane -eq 'AndroidDevice') {
         '--version-name', $apkMetadata.versionName,
         '--signing-cert-sha256', $apkMetadata.signingCertificateSha256,
         '--runner-sha256', $runnerSha256,
-        '--dedicated-managed', 'true'
+        '--runner-version', $runnerVersion,
+        '--lab-policy-id', [string]$policy.policyId,
+        '--lab-policy-sha256', $policyContext.sha256,
+        '--device-fingerprint-sha256', $deviceFingerprintSha256,
+        '--device-product-sha256', $deviceProductSha256,
+        '--device-sdk', [string]$deviceSdk,
+        '--device-class', $deviceClass
     )
     & $canonicalRunner @runnerArguments
     $runnerExit = $LASTEXITCODE
     if (-not (Test-Path -LiteralPath $runnerResultPath -PathType Leaf)) {
+        Close-AndroidTrustStreams
         Add-Check 'android-runner-contract' $false 'runner result missing'
         Write-Preflight 'failed' | Out-Null
         Write-LaneResult 'failed' $null 'Android runner result JSON missing'
         exit 3
     }
     if (-not (Test-Path -LiteralPath $junitPath -PathType Leaf)) {
+        Close-AndroidTrustStreams
         Add-Check 'android-runner-contract' $false 'runner JUnit missing'
         Write-Preflight 'failed' | Out-Null
         Write-LaneResult 'failed' $null 'Android runner JUnit missing'
@@ -550,24 +1011,30 @@ if ($Lane -eq 'AndroidDevice') {
             $counters.passed -eq $junitCounters.passed -and
             $counters.failed -eq $junitCounters.failed -and
             $counters.skipped -eq $junitCounters.skipped
-        $bindingContract = $runnerResult.schema -eq 'deep.survival.android-runner-result.v2' -and
+        $bindingContract = $runnerResult.schema -eq 'deep.survival.android-runner-result.v3' -and
             $runnerResult.sourceCommitSha -ceq $sourceCommitSha -and
             $runnerResult.releaseInvocationId -ceq $ReleaseInvocationId -and
             $runnerResult.laneInvocationId -ceq $laneInvocationId -and
+            $runnerResult.labPolicyId -ceq [string]$policy.policyId -and
+            $runnerResult.labPolicySha256 -ceq $policyContext.sha256 -and
             $runnerResult.apkSha256 -ceq $apkMetadata.apkSha256 -and
             $runnerResult.packageId -ceq $apkMetadata.packageId -and
             [string]$runnerResult.versionCode -ceq [string]$apkMetadata.versionCode -and
             [string]$runnerResult.versionName -ceq [string]$apkMetadata.versionName -and
             $runnerResult.signingCertificateSha256 -ceq $apkMetadata.signingCertificateSha256 -and
             $runnerResult.runnerSha256 -ceq $runnerSha256 -and
+            $runnerResult.runnerVersion -ceq $runnerVersion -and
             $runnerResult.junitSha256 -ceq $junitSha256 -and
             $runnerResult.device.serial -ceq $serial -and
+            $runnerResult.device.fingerprintSha256 -ceq $deviceFingerprintSha256 -and
+            $runnerResult.device.productSha256 -ceq $deviceProductSha256 -and
+            [int]$runnerResult.device.sdk -eq $deviceSdk -and
+            $runnerResult.device.class -ceq $deviceClass -and
             $runnerResult.device.dedicatedManaged -eq $true -and
             $runnerResult.device.personalDataAbsent -eq $true -and
             $runnerResult.device.productionPackageAbsentBefore -eq $true -and
             $runnerResult.device.testPackageClearedBefore -eq $true -and
-            $runnerResult.device.testPackageRemovedAfter -eq $true -and
-            -not [string]::IsNullOrWhiteSpace([string]$runnerResult.runnerVersion)
+            $runnerResult.device.testPackageRemovedAfter -eq $true
         $contractDiagnostic = "bindings=$bindingContract; counters=$counterContract; junitHashBound=$($runnerResult.junitSha256 -ceq $junitSha256)"
         $contractPassed = $bindingContract -and
             $counterContract -and
@@ -579,12 +1046,32 @@ if ($Lane -eq 'AndroidDevice') {
         if ($contractPassed) {
             $contractStage = 'write-sanitized-summary'
             [ordered]@{
-                schema = 'deep.survival.android-device-summary.v1'
+                schema = 'deep.survival.android-device-summary.v2'
                 sourceCommitSha = $sourceCommitSha
                 releaseInvocationId = $ReleaseInvocationId
                 laneInvocationId = $laneInvocationId
                 generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
                 status = 'passed'
+                labPolicy = [ordered]@{
+                    id = [string]$policy.policyId
+                    sha256 = $policyContext.sha256
+                    synthetic = [bool]$policyContext.synthetic
+                    approvalReceiptSha256 = $(if ($policyContext.synthetic) {
+                        '0' * 64
+                    } else {
+                        [string]$policy.approval.receiptSha256
+                    })
+                }
+                toolchain = [ordered]@{
+                    runner = [ordered]@{ sha256 = $trustedTools.runner.sha256; version = $trustedTools.runner.version }
+                    adb = [ordered]@{ sha256 = $trustedTools.adb.sha256; version = $trustedTools.adb.version }
+                    aapt = [ordered]@{
+                        kind = [string]$policy.tools.aapt.kind
+                        sha256 = $trustedTools.aapt.sha256
+                        version = $trustedTools.aapt.version
+                    }
+                    apksigner = [ordered]@{ sha256 = $trustedTools.apksigner.sha256; version = $trustedTools.apksigner.version }
+                }
                 apk = [ordered]@{
                     sha256 = $apkMetadata.apkSha256
                     packageId = $apkMetadata.packageId
@@ -594,13 +1081,14 @@ if ($Lane -eq 'AndroidDevice') {
                 }
                 runner = [ordered]@{
                     sha256 = $runnerSha256
-                    version = [string]$runnerResult.runnerVersion
+                    version = $runnerVersion
                 }
                 device = [ordered]@{
-                    serialSha256 = $((
-                        [BitConverter]::ToString(
-                            [Security.Cryptography.SHA256]::Create().ComputeHash(
-                                [Text.Encoding]::UTF8.GetBytes($serial)))).Replace('-', '').ToLowerInvariant())
+                    serialSha256 = Get-TextSha256Lower -Value $serial
+                    fingerprintSha256 = $deviceFingerprintSha256
+                    productSha256 = $deviceProductSha256
+                    sdk = $deviceSdk
+                    class = $deviceClass
                     dedicatedManaged = $true
                     personalDataAbsent = $true
                     productionPackageAbsentBefore = $true
@@ -624,6 +1112,7 @@ if ($Lane -eq 'AndroidDevice') {
     }
     Add-Check 'android-runner-contract' $contractPassed (
         "exit={0}; counters={1}; {2}" -f $runnerExit, $counterDetail, $contractDiagnostic)
+    Close-AndroidTrustStreams
     Write-Preflight $(if ($contractPassed) { 'passed' } else { 'failed' }) | Out-Null
     Write-LaneResult `
         $(if ($contractPassed) { 'passed' } else { 'failed' }) `

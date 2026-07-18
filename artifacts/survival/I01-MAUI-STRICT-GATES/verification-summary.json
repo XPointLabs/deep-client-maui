@@ -2,7 +2,7 @@
   "schema": "deep.survival.i01a2-verification.v1",
   "status": "blocked",
   "programRevisionSha": "ca5ad9f0c9d4dfb509dedcbf8133524c15867fce5534816da21ff86a07057383",
-  "sourceBaseSha": "6103f30e6edb94a45e28aaccd667dca3d1fc174d",
+  "sourceBaseSha": "be9f138922576395aa425daa3d545b6e194b178a",
   "results": {
     "viewModels": {
       "passed": 137,
@@ -41,23 +41,23 @@
   "artifacts": {
     "androidApk": {
       "file": "network.xpoint.deep.e2e-Signed.apk",
-      "bytes": 155461917,
-      "sha256": "46F9E68371EE23A3F1E8DEFF1A7C7E4FA261EB8DD3DE339F9D5ED703DB0A0796"
+      "bytes": 155023467,
+      "sha256": "E423DF7CD10C7B0C1F788FB9C4E55AE060C1B8D60B486AA9A5EC4570ADFDB504"
     },
     "windowsExecutable": {
       "file": "Deep.Client.Maui.exe",
       "bytes": 281088,
-      "sha256": "3623FE6F7F783F2A227CCBFCBF92A8D7C7C6154E6A3E59A5FCEEABA8FB0405B9"
+      "sha256": "29F21E57B5891F310DC359B40DB5141AA27D595D9B6F23C7747E0DE370B79605"
     }
   },
   "androidBlockers": [
-    "adb is not installed or discoverable",
-    "no authorized Android device is attached",
-    "a real on-device E2E runner is not configured"
+    "Mr. X approved commit-bound protected policy and receipt are not provisioned",
+    "exact policy-bound trusted Android tools are not provisioned",
+    "no exact authorized managed Android device is attached"
   ],
   "releaseEvidenceBlockers": [
     "Windows Create click did not reach an authenticated UI root on this host",
-    "Android physical-device execution has not run",
+    "Android approved managed-device execution has not run",
     "mandatory three-router live acceptance has not run"
   ],
   "windowsBlockers": [
@@ -70,7 +70,7 @@
     "androidMissingDeviceOrRunnerExitCode": 2
   },
   "privacyScan": {
-    "textFilesScanned": 11,
+    "textFilesScanned": 7,
     "sensitiveOrAbsolutePathMatches": 0
   }
 }

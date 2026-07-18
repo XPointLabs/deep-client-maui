@@ -1,0 +1,50 @@
+{
+  "schema": "deep.survival.android-lab-policy.v1",
+  "provisioned": false,
+  "synthetic": false,
+  "sourceCommitSha": "0000000000000000000000000000000000000000",
+  "policyId": "0000000000000000000000000000000000000000000000000000000000000000",
+  "approval": {
+    "state": "pending-mr-x-approval",
+    "approvedBy": "Mr. X",
+    "receiptRelativePath": ".secrets/android-lab/approval.receipt",
+    "receiptSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "tools": {
+    "runner": {
+      "relativePath": ".secrets/android-lab/tools/deep-android-runner.exe",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "version": "PENDING"
+    },
+    "adb": {
+      "relativePath": ".secrets/android-lab/tools/adb.exe",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "version": "PENDING"
+    },
+    "aapt": {
+      "kind": "aapt",
+      "relativePath": ".secrets/android-lab/tools/aapt.exe",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "version": "PENDING"
+    },
+    "apksigner": {
+      "relativePath": ".secrets/android-lab/tools/apksigner.bat",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "version": "PENDING"
+    }
+  },
+  "device": {
+    "serial": "PENDING",
+    "fingerprint": "PENDING",
+    "product": "PENDING",
+    "sdk": 0,
+    "class": "pending"
+  },
+  "application": {
+    "packageId": "network.xpoint.deep.e2e",
+    "versionCode": 0,
+    "versionName": "PENDING",
+    "apkSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "signingCertificateSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

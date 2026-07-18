@@ -30,7 +30,7 @@ Build the Debug Windows app first, then invoke:
   -Bootstrap stub
 ```
 
-The lane takes a canonical, repository-contained, no-reparse snapshot of the complete just-built payload before launch. It launches that exact executable, uses in-process FlaUI/UIA3 automation, and then requires the identical normalized path set, sizes, and hashes after the run. Duplicate/case-colliding paths, alternate separators, substitutions, and payload changes fail the lane. It waits for a nonzero top-level window, fills the display name, invokes Create, and proves that an authenticated Conversations/Desktop Workspace root replaces Welcome. Each run uses a mandatory unique Debug-only application-data directory for both `stub` and `live` bootstrap.
+The lane takes a canonical, repository-contained, no-reparse snapshot of the complete just-built payload before launch. On Windows it opens every payload file with `FileShare.Read`, hashes those leased handles, and keeps every lease through process launch, UI automation, and post-run verification. Concurrent write, replace, delete, new-file insertion, duplicate/case-colliding paths, alternate separators, substitutions, and payload changes fail the lane. A host that cannot provide these Windows leases is blocked; it cannot downgrade to hash-only verification. The lane waits for a nonzero top-level window, fills the display name, invokes Create, and proves that an authenticated Conversations/Desktop Workspace root replaces Welcome. Each run uses a mandatory unique Debug-only application-data directory for both `stub` and `live` bootstrap.
 
 Raw screenshots are disabled by default. `-CaptureStubWelcomeFailure` permits a raw bitmap only for an explicit stub Welcome failure; it is written below `windows-ui/quarantine/raw` and is never standard or uploadable evidence. The standard tree contains only allowlisted automation IDs and control types.
 
@@ -53,7 +53,15 @@ Without `DEEP_STRICT_LIVE=1`, the live xUnit acceptance test is explicitly repor
 
 ## Android device lane
 
-Build the Debug-only E2E APK, attach a dedicated managed emulator or physical test device, and invoke:
+Build the Debug-only E2E APK. Mr. X must provision and approve a commit-bound lab policy plus all referenced files below the ignored `.secrets/android-lab/` directory. Start from `eng/policies/android-lab-policy.template.json`, but do not edit that checked-in blocking template into a credential: copy it to the protected directory and fill exact values there. The policy binds:
+
+- the current 40-character Git commit and a nonzero policy ID;
+- an approval receipt signed off by `Mr. X`, including its exact SHA-256;
+- repository-relative paths, exact SHA-256 values, and privacy-safe exact versions for `deep-android-runner.exe`, `adb.exe`, the selected `aapt.exe` or `aapt2.exe`, and `apksigner.bat`;
+- the approved serial, build fingerprint, product, SDK, and `managed-emulator` or `managed-physical` class;
+- the E2E package, version, APK SHA-256, and signing-certificate SHA-256.
+
+Then attach that exact managed emulator or physical test device and invoke:
 
 ```powershell
 dotnet build .\src\Deep.Client.Maui\Deep.Client.Maui.csproj `
@@ -63,14 +71,15 @@ dotnet build .\src\Deep.Client.Maui\Deep.Client.Maui.csproj `
   -Lane AndroidDevice `
   -ReleaseInvocationId $releaseInvocationId `
   -ApkPath .\src\Deep.Client.Maui\bin\Debug\net10.0-android\network.xpoint.deep.e2e-Signed.apk `
-  -AndroidRunner C:\trusted-tools\deep-android-runner.exe `
-  -DedicatedManagedDevice `
+  -AndroidLabPolicyPath .\.secrets\android-lab\approved-policy.json `
   -ConfigureAdbReverse
 ```
 
-Release always keeps `network.xpoint.deep`; the physical Debug lane accepts only `network.xpoint.deep.e2e`. It rejects a personal/unattested device and any device where the production package is present, and never reads, cleans, or modifies that production package.
+Release always keeps `network.xpoint.deep`; the physical Debug lane accepts only `network.xpoint.deep.e2e`. The wrapper, not the caller or runner, opens and hashes the policy-selected tools and APK, checks their exact versions, queries the attached device identity with the trusted `adb`, validates the APK archive/metadata/certificate, and rejects any production package presence. Caller-selected tool paths or serials are optional cross-checks only and cannot establish trust. It never reads, cleans, or modifies the production package.
 
-The preflight supports an explicit `-AndroidSerial` and configures `adb reverse` for local UAT ports when requested. The runner must bind its result to the source commit, both invocation IDs, APK SHA-256, package/version, signing certificate, selected serial, its own binary hash/version, JUnit hash, and dedicated-device cleanup attestations before and after execution. JUnit counters are independently parsed and cross-checked. Raw JUnit, logcat, screenshots, and runner output remain below `quarantine/raw` and are never uploaded. Only `android-device-summary.json`, containing allowlisted hashes, counters, and booleans (not a raw serial or path), is standard evidence. Missing runner/device remains `blocked`; building an APK is never counted as execution.
+The preflight supports an explicit `-AndroidSerial` and configures `adb reverse` for local UAT ports when requested. The runner must bind its v3 result to the policy ID/hash, source commit, both invocation IDs, APK SHA-256, package/version, signing certificate, selected serial, fingerprint/product hashes, SDK/class, its own binary hash/exact version, JUnit hash, and cleanup attestations before and after execution. JUnit counters are independently parsed and cross-checked. Any DTD/entity, system output/error, attachment, absolute Windows/Unix path, absolute URI, sensitive property/value, or non-whitespace text blocks sanitization. Raw JUnit, logcat, screenshots, runner result, and runner output remain below `quarantine/raw` and are never uploaded. Only `android-device-summary.json`, containing allowlisted hashes, counters, safe versions, and booleans (not a raw serial or path), is standard evidence.
+
+`-AllowSyntheticLabPolicyForContractTests` exists only for the repository's compiled synthetic security fixture. It must be explicit, emits `synthetic=true`, and is always rejected by the release validator. The checked-in template, missing Mr. X receipt, missing exact tool/APK/device bindings, personal devices, or runner self-attestation remain `blocked`; building an APK is never counted as execution.
 
 ## Release evidence gate
 
@@ -79,9 +88,11 @@ The preflight supports an explicit `-AndroidSerial` and configures `adb reverse`
 ```powershell
 .\eng\Test-StrictClientEvidence.ps1 `
   -ReleaseInvocationId $releaseInvocationId `
+  -AndroidLabPolicyPath .\.secrets\android-lab\approved-policy.json `
+  -AndroidApkPath .\src\Deep.Client.Maui\bin\Debug\net10.0-android\network.xpoint.deep.e2e-Signed.apk `
   -RequireComplete
 ```
 
-The validator is the only release gate and sets `productionReady` explicitly. Normal developer CI only publishes `NOT-RUN`; direct `dotnet test`, a copied result, or skipped tests cannot satisfy this gate.
+The validator is the only release gate and sets `productionReady` explicitly. It revalidates the protected real policy, receipt, tools, exact APK, safe summary, and all three fresh lane identities against a clean current commit. Normal developer CI and synthetic contracts only publish `NOT-RUN`/blocked evidence; direct `dotnet test`, a copied result, a synthetic policy, or skipped tests cannot satisfy this gate. `productionReady` remains false until the real Windows rendered lane, approved physical Android lane, and routed live three-node lane all pass in one invocation.
 
-Rollback is forward-only: stop promotion, preserve rejected evidence locally for analysis, and ship a reviewed corrective commit. Do not restore the weaker validator, production package testing, raw artifact upload, or pass-by-return behavior. Mr. X owns the final release decision.
+Rollback is forward-only: stop promotion, preserve rejected raw evidence only in the local quarantine, and ship a reviewed corrective commit. Do not restore hash-only Windows checks, caller self-attestation, synthetic release evidence, weaker JUnit filtering, production package testing, raw artifact upload, or pass-by-return behavior. Mr. X owns policy approval and the final release decision.

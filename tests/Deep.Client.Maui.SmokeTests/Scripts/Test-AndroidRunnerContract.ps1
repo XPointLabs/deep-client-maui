@@ -1,88 +1,282 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
 $sandbox = Join-Path $repoRoot ("artifacts\contract-test-{0}" -f [Guid]::NewGuid().ToString('N'))
 $tools = Join-Path $sandbox 'tools'
 $evidence = Join-Path $sandbox 'evidence'
 New-Item -ItemType Directory -Force -Path $tools, $evidence | Out-Null
+$apkStream = $null
+$apkArchive = $null
 try {
     $apk = Join-Path $sandbox 'client test.apk'
-    [IO.File]::WriteAllBytes($apk, [byte[]](1, 2, 3))
-    $adb = Join-Path $tools 'fake adb.ps1'
-    @'
-if ($args.Count -eq 1 -and $args[0] -eq 'devices') {
-    "List of devices attached"
-    "safe-serial device"
-    exit 0
+    $apkStream = [IO.File]::Create($apk)
+    $apkArchive = [IO.Compression.ZipArchive]::new(
+        $apkStream,
+        [IO.Compression.ZipArchiveMode]::Create,
+        $false)
+    foreach ($entryName in @('AndroidManifest.xml', 'classes.dex')) {
+        $entry = $apkArchive.CreateEntry($entryName)
+        $entryStream = $entry.Open()
+        $bytes = [Text.Encoding]::UTF8.GetBytes("synthetic-$entryName")
+        $entryStream.Write($bytes, 0, $bytes.Length)
+        $entryStream.Dispose()
+    }
+    $apkArchive.Dispose()
+    $apkStream.Dispose()
+    $fixtureSource = @'
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+
+public static class SyntheticAndroidTool
+{
+    private static string Q(string value)
+    {
+        return "\"" + (value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+    }
+
+    private static string Sha256(string path)
+    {
+        using (var stream = File.OpenRead(path))
+        using (var hash = SHA256.Create())
+            return BitConverter.ToString(hash.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+    }
+
+    public static int Main(string[] args)
+    {
+        var name = Path.GetFileNameWithoutExtension(
+            Process.GetCurrentProcess().MainModule.FileName).ToLowerInvariant();
+        if (name.Contains("runner"))
+        {
+            if (args.Length == 1 && args[0] == "--version")
+            {
+                Console.WriteLine("Synthetic Runner 1.0");
+                return 0;
+            }
+            var values = new Dictionary<string, string>(StringComparer.Ordinal);
+            for (var i = 0; i + 1 < args.Length; i += 2)
+                values[args[i]] = args[i + 1];
+            if (!values.ContainsKey("--serial") || values["--serial"] != "safe-serial" ||
+                !values.ContainsKey("--apk") || !File.Exists(values["--apk"]))
+                return 8;
+
+            var privacyMode = Environment.GetEnvironmentVariable("DEEP_FAKE_PRIVATE_JUNIT") ?? "";
+            var junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\" />";
+            if (privacyMode == "system-output")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><system-out>password=secret</system-out></testsuite>";
+            else if (privacyMode == "absolute-path")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"safe\" file=\"/tmp/private.log\" /></testsuite>";
+            else if (privacyMode == "sensitive-property")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><properties><property name=\"token\" value=\"private\" /></properties></testsuite>";
+            else if (privacyMode == "windows-path")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"safe\" file=\"C:\\Users\\Private\\result.xml\" /></testsuite>";
+            else if (privacyMode == "absolute-uri")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"https://private.example/result\" /></testsuite>";
+            else if (privacyMode == "attachment")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><attachment path=\"result.bin\" /></testsuite>";
+            File.WriteAllText(values["--junit"], junit, new UTF8Encoding(true));
+
+            var tamper = Environment.GetEnvironmentVariable("DEEP_FAKE_TAMPER_BINDING") ?? "";
+            var apkSha = tamper == "apk" ? new string('0', 64) : values["--apk-sha256"];
+            var certSha = tamper == "cert" ? new string('0', 64) : values["--signing-cert-sha256"];
+            var serial = tamper == "serial" ? "wrong-serial" : values["--serial"];
+            var runnerSha = tamper == "runner" ? new string('0', 64) : values["--runner-sha256"];
+            var junitSha = tamper == "junit" ? new string('0', 64) : Sha256(values["--junit"]);
+            var runnerVersion = tamper == "runner-version" ? @"C:\private\runner.exe" : values["--runner-version"];
+            var json = "{" +
+                "\"schema\":\"deep.survival.android-runner-result.v3\"," +
+                "\"sourceCommitSha\":" + Q(values["--commit"]) + "," +
+                "\"releaseInvocationId\":" + Q(values["--release-invocation"]) + "," +
+                "\"laneInvocationId\":" + Q(values["--lane-invocation"]) + "," +
+                "\"labPolicyId\":" + Q(values["--lab-policy-id"]) + "," +
+                "\"labPolicySha256\":" + Q(values["--lab-policy-sha256"]) + "," +
+                "\"apkSha256\":" + Q(apkSha) + "," +
+                "\"packageId\":" + Q(values["--package-id"]) + "," +
+                "\"versionCode\":" + Q(values["--version-code"]) + "," +
+                "\"versionName\":" + Q(values["--version-name"]) + "," +
+                "\"signingCertificateSha256\":" + Q(certSha) + "," +
+                "\"runnerSha256\":" + Q(runnerSha) + "," +
+                "\"runnerVersion\":" + Q(runnerVersion) + "," +
+                "\"junitSha256\":" + Q(junitSha) + "," +
+                "\"device\":{" +
+                    "\"serial\":" + Q(serial) + "," +
+                    "\"fingerprintSha256\":" + Q(values["--device-fingerprint-sha256"]) + "," +
+                    "\"productSha256\":" + Q(values["--device-product-sha256"]) + "," +
+                    "\"sdk\":" + values["--device-sdk"] + "," +
+                    "\"class\":" + Q(values["--device-class"]) + "," +
+                    "\"dedicatedManaged\":true,\"personalDataAbsent\":true," +
+                    "\"productionPackageAbsentBefore\":true,\"testPackageClearedBefore\":true," +
+                    "\"testPackageRemovedAfter\":true}," +
+                "\"status\":\"passed\"," +
+                "\"counters\":{\"total\":2,\"executed\":2,\"passed\":2,\"failed\":0,\"skipped\":0}" +
+                "}";
+            File.WriteAllText(values["--result"], json, new UTF8Encoding(true));
+            return 0;
+        }
+
+        if (name.Contains("adb"))
+        {
+            if (args.Length == 1 && args[0] == "version") { Console.WriteLine("Synthetic ADB 1.0"); return 0; }
+            if (args.Length == 1 && args[0] == "devices") { Console.WriteLine("List of devices attached"); Console.WriteLine("safe-serial device"); return 0; }
+            if (args.Length == 3 && args[0] == "-s" && args[2] == "get-serialno") { Console.WriteLine("safe-serial"); return 0; }
+            if (args.Length >= 5 && args[0] == "-s" && args[2] == "shell" && args[3] == "getprop")
+            {
+                if (args[4] == "ro.build.fingerprint") Console.WriteLine("synthetic/fingerprint/value");
+                else if (args[4] == "ro.product.name") Console.WriteLine("synthetic_product");
+                else if (args[4] == "ro.build.version.sdk") Console.WriteLine("35");
+                else if (args[4] == "ro.build.characteristics") Console.WriteLine("emulator");
+                else return 9;
+                return 0;
+            }
+            if (args.Length >= 4 && args[0] == "-s" && args[2] == "reverse") return 0;
+            if (args.Length >= 7 && args[0] == "-s" && args[2] == "shell" && args[3] == "pm") return 0;
+            return 9;
+        }
+
+        if (name.Contains("aapt") && !name.Contains("signer"))
+        {
+            if (args.Length == 1 && args[0] == "version") { Console.WriteLine("Synthetic AAPT 1.0"); return 0; }
+            if (args.Length == 3 && args[0] == "dump" && args[1] == "badging")
+            {
+                Console.WriteLine("package: name='network.xpoint.deep.e2e' versionCode='42' versionName='1.2.3'");
+                return 0;
+            }
+            return 7;
+        }
+
+        if (name.Contains("apksigner"))
+        {
+            if (args.Length == 1 && args[0] == "version") { Console.WriteLine("Synthetic APK Signer 1.0"); return 0; }
+            if (args.Length == 3 && args[0] == "verify" && args[1] == "--print-certs")
+            {
+                Console.WriteLine("Signer #1 certificate SHA-256 digest: " + new string('a', 64));
+                return 0;
+            }
+        }
+        return 7;
+    }
 }
-if ($args.Count -ge 4 -and $args[0] -eq '-s' -and $args[2] -eq 'reverse') { exit 0 }
-if ($args.Count -ge 7 -and $args[0] -eq '-s' -and $args[2] -eq 'shell' -and $args[3] -eq 'pm') { exit 0 }
-exit 9
-'@ | Set-Content -LiteralPath $adb -Encoding utf8
-    $aapt = Join-Path $tools 'fake aapt.ps1'
-    @'
-if ($args.Count -eq 3 -and $args[0] -eq 'dump' -and $args[1] -eq 'badging') {
-  "package: name='network.xpoint.deep.e2e' versionCode='42' versionName='1.2.3'"
-  exit 0
-}
-exit 7
-'@ | Set-Content -LiteralPath $aapt -Encoding utf8
-    $apksigner = Join-Path $tools 'fake apksigner.ps1'
-    @'
-if ($args.Count -eq 3 -and $args[0] -eq 'verify' -and $args[1] -eq '--print-certs') {
-  'Signer #1 certificate SHA-256 digest: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-  exit 0
-}
-exit 7
-'@ | Set-Content -LiteralPath $apksigner -Encoding utf8
-    $runner = Join-Path $tools 'fake runner.ps1'
-    @'
-$values = @{}
-for ($i = 0; $i -lt $args.Count; $i += 2) { $values[$args[$i]] = $args[$i + 1] }
-if ($values['--serial'] -ne 'safe-serial' -or -not (Test-Path -LiteralPath $values['--apk'])) { exit 8 }
-if ($env:DEEP_FAKE_PRIVATE_JUNIT -eq '1') {
-  '<testsuite tests="2" failures="0" errors="0" skipped="0"><system-out>password=secret</system-out></testsuite>' |
-    Set-Content -LiteralPath $values['--junit'] -Encoding utf8
-} else {
-  '<testsuite tests="2" failures="0" errors="0" skipped="0" />' |
-    Set-Content -LiteralPath $values['--junit'] -Encoding utf8
-}
-$junitSha = (Get-FileHash -LiteralPath $values['--junit'] -Algorithm SHA256).Hash.ToLowerInvariant()
-$apkSha = if ($env:DEEP_FAKE_TAMPER_BINDING -eq '1') { '0' * 64 } else { $values['--apk-sha256'] }
-[ordered]@{
-  schema = 'deep.survival.android-runner-result.v2'
-  sourceCommitSha = $values['--commit']
-  releaseInvocationId = $values['--release-invocation']
-  laneInvocationId = $values['--lane-invocation']
-  apkSha256 = $apkSha
-  packageId = $values['--package-id']
-  versionCode = $values['--version-code']
-  versionName = $values['--version-name']
-  signingCertificateSha256 = $values['--signing-cert-sha256']
-  runnerSha256 = $values['--runner-sha256']
-  runnerVersion = 'fake-runner/1.0'
-  junitSha256 = $junitSha
-  device = [ordered]@{
-    serial = $values['--serial']
-    dedicatedManaged = $true
-    personalDataAbsent = $true
-    productionPackageAbsentBefore = $true
-    testPackageClearedBefore = $true
-    testPackageRemovedAfter = $true
-  }
-  status = 'passed'
-  counters = [ordered]@{ total = 2; executed = 2; passed = 2; failed = 0; skipped = 0 }
-} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $values['--result'] -Encoding utf8
-exit 0
-'@ | Set-Content -LiteralPath $runner -Encoding utf8
+'@
+    $compiledFixture = Join-Path $tools 'synthetic-android-tool.exe'
+    Add-Type -TypeDefinition $fixtureSource -Language CSharp -OutputAssembly $compiledFixture `
+        -OutputType ConsoleApplication -ErrorAction Stop
+    $runner = Join-Path $tools 'fake runner.exe'
+    $adb = Join-Path $tools 'fake adb.exe'
+    $aapt = Join-Path $tools 'fake aapt.exe'
+    $apksigner = Join-Path $tools 'fake apksigner.exe'
+    Copy-Item -LiteralPath $compiledFixture -Destination $runner
+    Copy-Item -LiteralPath $compiledFixture -Destination $adb
+    Copy-Item -LiteralPath $compiledFixture -Destination $aapt
+    Copy-Item -LiteralPath $compiledFixture -Destination $apksigner
+
+    $runnerVersionProbe = @(& $runner --version)
+    if ($LASTEXITCODE -ne 0 -or $runnerVersionProbe.Count -ne 1 -or
+        $runnerVersionProbe[0] -cne 'Synthetic Runner 1.0') {
+        throw 'The synthetic runner version fixture is not executable.'
+    }
 
     $engine = (Get-Process -Id $PID).Path
     $releaseInvocationId = '11111111111111111111111111111111'
-    & $engine -NoLogo -NoProfile -File (Join-Path $repoRoot 'eng\Invoke-StrictClientLane.ps1') -Lane AndroidDevice `
+    $commit = (& git -C $repoRoot rev-parse HEAD).Trim()
+    $relative = {
+        param([string]$Path)
+        return ([IO.Path]::GetFullPath($Path).Substring($repoRoot.Length + 1)).Replace('\', '/')
+    }
+    $policyPath = Join-Path $sandbox 'synthetic-lab-policy.json'
+    $policy = [ordered]@{
+        schema = 'deep.survival.android-lab-policy.v1'
+        provisioned = $true
+        synthetic = $true
+        sourceCommitSha = $commit
+        policyId = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+        approval = [ordered]@{
+            state = 'synthetic-contract-fixture'
+            approvedBy = 'Synthetic Contract Fixture'
+            receiptRelativePath = ''
+            receiptSha256 = '0' * 64
+        }
+        tools = [ordered]@{
+            runner = [ordered]@{
+                relativePath = & $relative $runner
+                sha256 = (Get-FileHash -LiteralPath $runner -Algorithm SHA256).Hash.ToLowerInvariant()
+                version = 'Synthetic Runner 1.0'
+            }
+            adb = [ordered]@{
+                relativePath = & $relative $adb
+                sha256 = (Get-FileHash -LiteralPath $adb -Algorithm SHA256).Hash.ToLowerInvariant()
+                version = 'Synthetic ADB 1.0'
+            }
+            aapt = [ordered]@{
+                kind = 'aapt'
+                relativePath = & $relative $aapt
+                sha256 = (Get-FileHash -LiteralPath $aapt -Algorithm SHA256).Hash.ToLowerInvariant()
+                version = 'Synthetic AAPT 1.0'
+            }
+            apksigner = [ordered]@{
+                relativePath = & $relative $apksigner
+                sha256 = (Get-FileHash -LiteralPath $apksigner -Algorithm SHA256).Hash.ToLowerInvariant()
+                version = 'Synthetic APK Signer 1.0'
+            }
+        }
+        device = [ordered]@{
+            serial = 'safe-serial'
+            fingerprint = 'synthetic/fingerprint/value'
+            product = 'synthetic_product'
+            sdk = 35
+            class = 'managed-emulator'
+        }
+        application = [ordered]@{
+            packageId = 'network.xpoint.deep.e2e'
+            versionCode = 42
+            versionName = '1.2.3'
+            apkSha256 = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+            signingCertificateSha256 = 'a' * 64
+        }
+    }
+    $policy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $policyPath -Encoding utf8
+
+    $templateEvidence = Join-Path $sandbox 'evidence-template'
+    & $engine -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'eng\Invoke-StrictClientLane.ps1') -Lane AndroidDevice `
+        -ReleaseInvocationId $releaseInvocationId -ApkPath $apk `
+        -AndroidLabPolicyPath (Join-Path $repoRoot 'eng\policies\android-lab-policy.template.json') `
+        -ArtifactDirectory $templateEvidence
+    if ($LASTEXITCODE -ne 2) {
+        throw 'The unprovisioned checked-in Android policy template did not block the physical lane.'
+    }
+
+    $syntheticDefaultEvidence = Join-Path $sandbox 'evidence-synthetic-default'
+    & $engine -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'eng\Invoke-StrictClientLane.ps1') -Lane AndroidDevice `
+        -ReleaseInvocationId $releaseInvocationId -ApkPath $apk -AndroidLabPolicyPath $policyPath `
+        -ArtifactDirectory $syntheticDefaultEvidence
+    if ($LASTEXITCODE -ne 2) {
+        throw 'Synthetic policy unexpectedly satisfied the default physical lane.'
+    }
+
+    $invalidApk = Join-Path $sandbox 'invalid.apk'
+    [IO.File]::WriteAllBytes($invalidApk, [byte[]](1, 2, 3))
+    $invalidPolicy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
+    $invalidPolicy.application.apkSha256 = (Get-FileHash -LiteralPath $invalidApk -Algorithm SHA256).Hash.ToLowerInvariant()
+    $invalidPolicyPath = Join-Path $sandbox 'synthetic-invalid-apk-policy.json'
+    $invalidPolicy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $invalidPolicyPath -Encoding utf8
+    $invalidEvidence = Join-Path $sandbox 'evidence-invalid-apk'
+    & $engine -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'eng\Invoke-StrictClientLane.ps1') -Lane AndroidDevice `
+        -ReleaseInvocationId $releaseInvocationId -ApkPath $invalidApk `
+        -AndroidSerial 'safe-serial' -AndroidRunner $runner -AdbPath $adb -AaptPath $aapt `
+        -ApkSignerPath $apksigner -AndroidLabPolicyPath $invalidPolicyPath -AllowSyntheticLabPolicyForContractTests `
+        -ArtifactDirectory $invalidEvidence
+    if ($LASTEXITCODE -ne 2) {
+        throw 'A hash-bound three-byte non-ZIP APK was not blocked before runner execution.'
+    }
+
+    & $engine -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'eng\Invoke-StrictClientLane.ps1') -Lane AndroidDevice `
         -ReleaseInvocationId $releaseInvocationId `
         -ApkPath $apk -AndroidSerial 'safe-serial' -AndroidRunner $runner -AdbPath $adb -AaptPath $aapt `
-        -ApkSignerPath $apksigner -DedicatedManagedDevice `
+        -ApkSignerPath $apksigner -AndroidLabPolicyPath $policyPath -AllowSyntheticLabPolicyForContractTests `
         -ArtifactDirectory $evidence
     if ($LASTEXITCODE -ne 0) {
         $diagnostic = Get-Content -LiteralPath (Join-Path $evidence 'preflight-androiddevice.json') -Raw
@@ -92,12 +286,22 @@ exit 0
     if ($result.status -ne 'passed' -or $result.counters.executed -ne 2) {
         throw 'The strict wrapper did not preserve Android runner counters.'
     }
+    try {
+        & (Join-Path $repoRoot 'eng\Test-StrictClientEvidence.ps1') -ReleaseInvocationId $releaseInvocationId `
+            -AndroidLabPolicyPath $policyPath -AndroidApkPath $apk `
+            -RequireComplete -ArtifactDirectory $evidence
+    } catch {
+    }
+    $syntheticSummary = Get-Content -LiteralPath (Join-Path $evidence 'strict-evidence-summary.json') -Raw | ConvertFrom-Json
+    if (($syntheticSummary.checks | Where-Object lane -eq 'android-sanitized-summary').status -ne 'failed') {
+        throw 'Synthetic fixture policy unexpectedly satisfied release evidence validation.'
+    }
 
     $result.sourceCommitSha = '0000000000000000000000000000000000000000'
     $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidence 'result-androiddevice.json') -Encoding utf8
     try {
         & (Join-Path $repoRoot 'eng\Test-StrictClientEvidence.ps1') -ReleaseInvocationId $releaseInvocationId `
-            -RequireComplete -ArtifactDirectory $evidence
+            -AndroidLabPolicyPath $policyPath -AndroidApkPath $apk -RequireComplete -ArtifactDirectory $evidence
     } catch {
     }
     $summary = Get-Content -LiteralPath (Join-Path $evidence 'strict-evidence-summary.json') -Raw | ConvertFrom-Json
@@ -110,7 +314,7 @@ exit 0
     $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidence 'result-androiddevice.json') -Encoding utf8
     try {
         & (Join-Path $repoRoot 'eng\Test-StrictClientEvidence.ps1') -ReleaseInvocationId $releaseInvocationId `
-            -RequireComplete -ArtifactDirectory $evidence
+            -AndroidLabPolicyPath $policyPath -AndroidApkPath $apk -RequireComplete -ArtifactDirectory $evidence
     } catch {
     }
     $summary = Get-Content -LiteralPath (Join-Path $evidence 'strict-evidence-summary.json') -Raw | ConvertFrom-Json
@@ -118,29 +322,52 @@ exit 0
         throw 'Stale evidence was not rejected.'
     }
 
-    foreach ($scenario in @('binding', 'privacy')) {
-        $scenarioEvidence = Join-Path $sandbox ("evidence-{0}" -f $scenario)
-        if ($scenario -eq 'binding') {
-            $env:DEEP_FAKE_TAMPER_BINDING = '1'
-        } else {
-            $env:DEEP_FAKE_PRIVATE_JUNIT = '1'
-        }
-        & $engine -NoLogo -NoProfile -File (Join-Path $repoRoot 'eng\Invoke-StrictClientLane.ps1') -Lane AndroidDevice `
+    $scenarios = @(
+        [pscustomobject]@{ name = 'apk-binding'; binding = 'apk'; privacy = '' },
+        [pscustomobject]@{ name = 'certificate-binding'; binding = 'cert'; privacy = '' },
+        [pscustomobject]@{ name = 'serial-binding'; binding = 'serial'; privacy = '' },
+        [pscustomobject]@{ name = 'runner-binding'; binding = 'runner'; privacy = '' },
+        [pscustomobject]@{ name = 'junit-binding'; binding = 'junit'; privacy = '' },
+        [pscustomobject]@{ name = 'runner-version-privacy'; binding = 'runner-version'; privacy = '' },
+        [pscustomobject]@{ name = 'system-output-privacy'; binding = ''; privacy = 'system-output' },
+        [pscustomobject]@{ name = 'absolute-path-privacy'; binding = ''; privacy = 'absolute-path' },
+        [pscustomobject]@{ name = 'sensitive-property-privacy'; binding = ''; privacy = 'sensitive-property' },
+        [pscustomobject]@{ name = 'windows-path-privacy'; binding = ''; privacy = 'windows-path' },
+        [pscustomobject]@{ name = 'absolute-uri-privacy'; binding = ''; privacy = 'absolute-uri' },
+        [pscustomobject]@{ name = 'attachment-privacy'; binding = ''; privacy = 'attachment' }
+    )
+    foreach ($scenario in $scenarios) {
+        $scenarioEvidence = Join-Path $sandbox ("evidence-{0}" -f $scenario.name)
+        $env:DEEP_FAKE_TAMPER_BINDING = $scenario.binding
+        $env:DEEP_FAKE_PRIVATE_JUNIT = $scenario.privacy
+        & $engine -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'eng\Invoke-StrictClientLane.ps1') -Lane AndroidDevice `
             -ReleaseInvocationId $releaseInvocationId `
             -ApkPath $apk -AndroidSerial 'safe-serial' -AndroidRunner $runner -AdbPath $adb -AaptPath $aapt `
-            -ApkSignerPath $apksigner -DedicatedManagedDevice `
+            -ApkSignerPath $apksigner -AndroidLabPolicyPath $policyPath -AllowSyntheticLabPolicyForContractTests `
             -ArtifactDirectory $scenarioEvidence
         if ($LASTEXITCODE -ne 4) {
-            throw "Android $scenario tampering was not rejected."
+            throw "Android $($scenario.name) tampering was not rejected."
         }
         if (Test-Path -LiteralPath (Join-Path $scenarioEvidence 'android-device-summary.json')) {
-            throw "Android $scenario rejection emitted an uploadable summary."
+            throw "Android $($scenario.name) rejection emitted an uploadable summary."
         }
         Remove-Item Env:DEEP_FAKE_TAMPER_BINDING -ErrorAction SilentlyContinue
         Remove-Item Env:DEEP_FAKE_PRIVATE_JUNIT -ErrorAction SilentlyContinue
     }
 } finally {
+    if ($null -ne $apkArchive) {
+        $apkArchive.Dispose()
+    }
+    if ($null -ne $apkStream) {
+        $apkStream.Dispose()
+    }
     Remove-Item Env:DEEP_FAKE_TAMPER_BINDING -ErrorAction SilentlyContinue
     Remove-Item Env:DEEP_FAKE_PRIVATE_JUNIT -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $sandbox -Recurse -Force
+    for ($attempt = 0; $attempt -lt 5 -and (Test-Path -LiteralPath $sandbox); $attempt++) {
+        try {
+            Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction Stop
+        } catch {
+            Start-Sleep -Milliseconds 100
+        }
+    }
 }

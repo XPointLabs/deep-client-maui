@@ -77,6 +77,47 @@ try {
         throw 'Alternate-separator executable substitution was accepted.'
     }
 
+    $replacement = Join-Path $payload 'replacement.tmp'
+    [IO.File]::WriteAllText($replacement, 'replacement')
+    $lease = Open-StrictPayloadLease `
+        -RepositoryRoot $root `
+        -PayloadRoot $payload `
+        -ExecutablePath $executable
+    try {
+        foreach ($operation in @('write', 'replace', 'delete')) {
+            $job = Start-Job -ArgumentList $operation, $executable, $replacement -ScriptBlock {
+                param($Operation, $Executable, $Replacement)
+                try {
+                    if ($Operation -eq 'write') {
+                        [IO.File]::WriteAllText($Executable, 'concurrent mutation')
+                    } elseif ($Operation -eq 'replace') {
+                        [IO.File]::Replace($Replacement, $Executable, $null)
+                    } else {
+                        [IO.File]::Delete($Executable)
+                    }
+                    return $false
+                } catch {
+                    return $true
+                }
+            }
+            $rejected = Receive-Job -Job $job -Wait
+            Remove-Job -Job $job -Force
+            if ($rejected -ne $true) {
+                throw "Concurrent payload $operation succeeded while strict read leases were held."
+            }
+        }
+        $leasedPostSnapshot = Get-StrictPayloadSnapshot `
+            -RepositoryRoot $root `
+            -PayloadRoot $payload `
+            -ExecutablePath $executable
+        Assert-StrictPayloadSnapshotsEqual -Expected $lease.snapshot -Actual $leasedPostSnapshot
+    } finally {
+        Close-StrictPayloadLease -Lease $lease
+    }
+    if (Test-Path -LiteralPath $replacement) {
+        Remove-Item -LiteralPath $replacement -Force
+    }
+
     $payloadJunction = Join-Path $payload 'linked-outside'
     New-Item -ItemType Junction -Path $payloadJunction -Target $outside | Out-Null
     $payloadJunctionRejected = $false

@@ -3,6 +3,9 @@
   "publicRuntimeBehavior": "Production endpoint validation and release no-stub guards remain unchanged.",
   "testContractChanges": [
     "All three lanes and the validator require one common release invocation plus distinct lane invocation identities.",
+    "Android release evidence now requires deep.survival.android-lab-policy.v1 below .secrets/android-lab with Mr. X approval; caller self-attestation cannot pass.",
+    "Android runner output schema is v3 and the sanitized device summary schema is v2.",
+    "Windows strict execution requires FileShare.Read leases for every payload file; a platform that cannot enforce them is blocked.",
     "A lane result must match its final passed preflight, expected lane, source commit, invocation identities, and freshness window.",
     "Debug physical Android E2E uses network.xpoint.deep.e2e; Release remains network.xpoint.deep.",
     "Live acceptance is explicit not-run unless the lane is requested; a requested lane fails on missing configuration.",
@@ -14,13 +17,15 @@
     "DEEP_STRICT_LIVE",
     "DEEP_E2E_BOOTSTRAP",
     "DEEP_E2E_APPDATA_ROOT",
-    "DEEP_E2E_ARTIFACTS"
+    "DEEP_E2E_ARTIFACTS",
+    "DEEP_ANDROID_LAB_POLICY"
   ],
   "wireFormatChanges": [],
   "storageChanges": [],
   "consumerActions": [
     "deep-tests-e2e must pass the same ReleaseInvocationId to all lane wrappers and Test-StrictClientEvidence.ps1 -RequireComplete.",
-    "A physical Android runner must execute the bound E2E APK on an attested dedicated managed device before Android evidence can pass.",
+    "Mr. X must provision and approve a commit-bound Android policy, receipt, exact trusted tools, exact E2E APK, and exact managed-device identity below .secrets/android-lab.",
+    "A physical Android runner must execute the policy-bound E2E APK on the exact managed device before Android evidence can pass.",
     "Only top-level sanitized JSON and allowlisted Windows UI evidence may be uploaded; raw Android runner, JUnit, logcat, and screenshots remain local quarantine."
   ]
 }

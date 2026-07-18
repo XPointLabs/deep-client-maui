@@ -3,14 +3,14 @@
   "programRevisionSha": "ca5ad9f0c9d4dfb509dedcbf8133524c15867fce5534816da21ff86a07057383",
   "workPackage": "I01-MAUI-STRICT-GATES",
   "repository": "deep-client-maui",
-  "baseSha": "6103f30e6edb94a45e28aaccd667dca3d1fc174d",
+  "baseSha": "be9f138922576395aa425daa3d545b6e194b178a",
   "resultCommit": "resolve exactly from the single local commit reported with this handoff; self-embedding a commit SHA is impossible",
   "resultTree": "resolve with git rev-parse HEAD^{tree} and bind it in the DevOps consumer before execution",
   "dependencyHashes": {
     "deep-client-shared": "94b623f078bd141163887a15116e6f9702510576"
   },
   "featureFlag": "DEEP_STRICT_WINDOWS_UI or DEEP_STRICT_LIVE",
-  "migrationPhase": "I01A.2 contracts and adversarial tests complete; physical Windows/Android/live execution remains pending.",
+  "migrationPhase": "I01A.3 corrective trusted-policy, leased-payload, privacy, and adversarial contracts complete; physical Windows/Android/live execution remains pending.",
   "tests": {
     "passed": 232,
     "failed": 0,
@@ -19,9 +19,9 @@
   },
   "rollback": "Forward-only corrective commit; never restore the weaker validator, production-package device testing, or raw artifact uploads.",
   "blockers": [
-    "Dedicated managed physical Android device and trusted real device runner are unavailable.",
+    "Mr. X approved commit-bound Android policy, receipt, trusted real tools, and exact authorized managed device are not provisioned.",
     "Windows UIA3 still does not observe the authenticated root after Create on this host.",
     "Mandatory three-router live acceptance has not run."
   ],
-  "nextConsumerTask": "DevOps must bind the exact reported result commit/tree, configure the trusted runner and dedicated managed device, then execute strict-release-evidence.yml without changing upload allowlists."
+  "nextConsumerTask": "Mr. X provisions the protected commit-bound Android lab policy and exact authorized device; DevOps binds the reported result commit/tree and executes strict-release-evidence.yml without changing upload allowlists."
 }
