@@ -333,6 +333,12 @@ public sealed class PortableUpdateMetadataVerifierTests
             new TestSignerVerifier(
                 UpdateTrustTestFixture.PackageId,
                 UpdateTrustTestFixture.PackageSignerSha256),
+            new VerifiedAndroidPackageHandoffService(
+                Path.Combine(sandbox.Path, "disabled-handoff"),
+                new TestSignerVerifier(
+                    UpdateTrustTestFixture.PackageId,
+                    UpdateTrustTestFixture.PackageSignerSha256),
+                new UnsupportedAndroidPackageInstallerHandoff("test")),
             sandbox.Path);
 
         var disabledResult = await disabled.VerifyAsync(
@@ -386,7 +392,9 @@ public sealed class PortableUpdateMetadataVerifierTests
             "9dc1502392ce2c1a86441df6308f2db54410eae8",
             new DateTimeOffset(2030, 1, 3, 0, 0, 0, TimeSpan.Zero),
             null,
-            "a".PadLeft(64, 'a'));
+            "a".PadLeft(64, 'a'),
+            "opaque-handoff-token",
+            new DateTimeOffset(2030, 1, 2, 0, 10, 0, TimeSpan.Zero));
         var viewModel = new OfflineUpdateVerificationViewModel(
             new StubOfflineVerifier(success));
         await viewModel.VerifyAsync(
@@ -442,13 +450,20 @@ public sealed class PortableUpdateMetadataVerifierTests
         UpdateTrustTestFixture fixture,
         ITrustedUpdateStateStore store,
         IAndroidPackageSignerVerifier signer,
-        string root) =>
-        new(
+        string root)
+    {
+        var handoff = new VerifiedAndroidPackageHandoffService(
+            Path.Combine(root, "handoff"),
+            signer,
+            new UnsupportedAndroidPackageInstallerHandoff("test"));
+        return new(
             new UpdateTrustConfiguration(true, fixture.RootOne, "insecure test fixture"),
             new PortableUpdateMetadataVerifier(),
             store,
             signer,
+            handoff,
             Path.Combine(root, "snapshots"));
+    }
 
     private static OfflineAndroidPackageRequest Request(
         UpdateMetadataBundle bundle,

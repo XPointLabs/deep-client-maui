@@ -1,4 +1,5 @@
 using Deep.Client.Maui.Core.Services;
+using Deep.Client.Maui.Core.ViewModels;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
 
@@ -92,7 +93,9 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
             var snapshotRoot = Path.Combine(sandbox.Path, "handoff");
             var clock = new ManualTimeProvider(UpdateTrustTestFixture.UpdateStart);
             var signer = scenario == "identity"
-                ? new SequencedSignerVerifier(secondPackageId: "network.xpoint.deep.evil")
+                ? new SequencedSignerVerifier(
+                    firstPackageId: "network.xpoint.deep.evil",
+                    secondPackageId: "network.xpoint.deep.evil")
                 : new SequencedSignerVerifier();
             var installer = new RecordingInstallerHandoff();
             var handoff = new VerifiedAndroidPackageHandoffService(
@@ -161,6 +164,27 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
     }
 
     [Fact]
+    public async Task TimeToLive_CleansSnapshotWithoutAnotherUserAction()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var snapshotRoot = Path.Combine(sandbox.Path, "handoff");
+        var handoff = new VerifiedAndroidPackageHandoffService(
+            snapshotRoot,
+            new SequencedSignerVerifier(),
+            new RecordingInstallerHandoff(),
+            TimeProvider.System,
+            timeToLive: TimeSpan.FromMilliseconds(100));
+
+        _ = await PreserveAsync(fixture, handoff, sandbox.Path);
+        Assert.NotEmpty(Directory.EnumerateFileSystemEntries(snapshotRoot));
+
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
+
+        Assert.Empty(Directory.EnumerateFileSystemEntries(snapshotRoot));
+    }
+
+    [Fact]
     public async Task NewPreservedPackageInvalidatesPreviousHandleAndBoundsStoreToOneSnapshot()
     {
         using var fixture = new UpdateTrustTestFixture();
@@ -196,6 +220,50 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
         Assert.False(result.IsAccepted);
         Assert.Contains("Windows", result.Failure, StringComparison.Ordinal);
         Assert.Contains("unsupported", result.Failure, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ViewModel_NeverRequestsInstallerBeforeExactManualConfirmation()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var sourcePath = Path.Combine(sandbox.Path, "source.apk");
+        await File.WriteAllBytesAsync(sourcePath, fixture.ApkBytes);
+        var signer = new SequencedSignerVerifier();
+        var installer = new RecordingInstallerHandoff();
+        var handoff = new VerifiedAndroidPackageHandoffService(
+            Path.Combine(sandbox.Path, "handoff"),
+            signer,
+            installer,
+            new ManualTimeProvider(UpdateTrustTestFixture.UpdateStart));
+        var verifier = CreateVerifier(fixture, signer, handoff, sandbox.Path);
+        var viewModel = new OfflineUpdateVerificationViewModel(verifier, handoff);
+
+        Assert.False(await viewModel.RequestInstallerHandoffAsync());
+        await viewModel.VerifyAsync(
+            Request(fixture.BuildBundle(), sourcePath),
+            CancellationToken.None);
+        Assert.False(viewModel.CanRequestInstaller);
+        Assert.False(await viewModel.RequestInstallerHandoffAsync());
+        Assert.Equal(0, installer.Calls);
+
+        Assert.False(viewModel.ConfirmExactDetails(
+            UpdateTrustTestFixture.PackageId,
+            "wrong-version",
+            viewModel.SourceCommit,
+            viewModel.Expiry));
+        Assert.True(viewModel.ConfirmExactDetails(
+            UpdateTrustTestFixture.PackageId,
+            UpdateTrustTestFixture.VersionName,
+            viewModel.SourceCommit,
+            viewModel.Expiry));
+        Assert.True(viewModel.CanRequestInstaller);
+
+        Assert.True(await viewModel.RequestInstallerHandoffAsync());
+        Assert.Equal(1, installer.Calls);
+        Assert.False(viewModel.CanRequestInstaller);
+        Assert.False(await viewModel.RequestInstallerHandoffAsync());
+        Assert.Equal(1, installer.Calls);
     }
 
     private static async Task<PreservedAndroidPackageHandle> PreserveAsync(
@@ -248,11 +316,14 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
 
     private sealed class SequencedSignerVerifier : IAndroidPackageSignerVerifier
     {
+        private readonly string firstPackageId;
         private readonly string secondPackageId;
 
         public SequencedSignerVerifier(
+            string firstPackageId = UpdateTrustTestFixture.PackageId,
             string secondPackageId = UpdateTrustTestFixture.PackageId)
         {
+            this.firstPackageId = firstPackageId;
             this.secondPackageId = secondPackageId;
         }
 
@@ -265,7 +336,7 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
             Calls++;
             return Task.FromResult(new AndroidPackageSignerResult(
                 true,
-                Calls == 1 ? UpdateTrustTestFixture.PackageId : secondPackageId,
+                Calls == 1 ? firstPackageId : secondPackageId,
                 UpdateTrustTestFixture.PackageSignerSha256,
                 UpdateTrustTestFixture.VersionCode,
                 UpdateTrustTestFixture.VersionName,

@@ -15,6 +15,9 @@ public sealed class OfflineUpdateUiContractSmokeTests
             "src", "Deep.Client.Maui", "Platforms", "Android", "AndroidManifest.xml");
         var composition = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "MauiProgram.cs");
+        var handoff = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui.Core", "Services",
+            "VerifiedAndroidPackageHandoffService.cs");
 
         Assert.Contains("AutomationId=\"Settings.OfflineUpdate\"", settings, StringComparison.Ordinal);
         Assert.Contains("OnOfflineUpdateClicked", settings, StringComparison.Ordinal);
@@ -26,10 +29,16 @@ public sealed class OfflineUpdateUiContractSmokeTests
         Assert.Contains("Функция выключена", detailCode, StringComparison.Ordinal);
         Assert.Contains("Кнопки обхода проверки нет", detailCode, StringComparison.Ordinal);
         Assert.Contains("Apple", detailCode, StringComparison.Ordinal);
+        Assert.Contains("\"Android\"", detailCode, StringComparison.Ordinal);
+        Assert.Contains("\"Windows\"", detailCode, StringComparison.Ordinal);
         Assert.DoesNotContain("REQUEST_INSTALL_PACKAGES", manifest, StringComparison.Ordinal);
+        Assert.DoesNotContain("FileProvider", manifest, StringComparison.Ordinal);
         Assert.DoesNotContain("PackageInstaller", composition, StringComparison.Ordinal);
         Assert.DoesNotContain("OfflineAndroidUpdateVerifier", composition, StringComparison.Ordinal);
         Assert.DoesNotContain("PortableUpdateMetadataVerifier", composition, StringComparison.Ordinal);
+        Assert.DoesNotContain("VerifiedAndroidPackageHandoffService", composition, StringComparison.Ordinal);
+        Assert.DoesNotContain("Console.", handoff, StringComparison.Ordinal);
+        Assert.DoesNotContain("ILogger", handoff, StringComparison.Ordinal);
     }
 
     private static string ReadWorkspaceFile(params string[] relative)

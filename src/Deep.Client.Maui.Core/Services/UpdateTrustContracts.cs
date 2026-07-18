@@ -77,7 +77,9 @@ public sealed record OfflineAndroidPackageVerification(
     string SourceCommit,
     DateTimeOffset MetadataExpiresAtUtc,
     string? Failure,
-    string? VerifiedSnapshotSha256);
+    string? VerifiedSnapshotSha256,
+    string? HandoffHandle,
+    DateTimeOffset HandoffExpiresAtUtc);
 
 public interface ITrustedUpdateStateStore
 {
@@ -90,6 +92,39 @@ public interface IOfflineAndroidUpdateVerifier
 {
     Task<OfflineAndroidPackageVerification> VerifyAsync(
         OfflineAndroidPackageRequest request,
+        CancellationToken cancellationToken);
+}
+
+public sealed record PreservedAndroidPackageHandle(
+    string Handle,
+    DateTimeOffset ExpiresAtUtc);
+
+public sealed record AndroidPackageInstallerHandoffResult(
+    bool IsAccepted,
+    string? Failure);
+
+public sealed record VerifiedAndroidPackageHandoffResult(
+    bool IsHandedOff,
+    string Status,
+    string? Failure);
+
+public interface IAndroidPackageInstallerHandoff
+{
+    Task<AndroidPackageInstallerHandoffResult> RequestInstallAsync(
+        string privateVerifiedSnapshotPath,
+        CancellationToken cancellationToken);
+}
+
+public interface IVerifiedAndroidPackageHandoffService
+{
+    Task<PreservedAndroidPackageHandle> PreserveVerifiedSnapshotAsync(
+        string verifiedSnapshotPath,
+        VerifiedAndroidTarget target,
+        CancellationToken cancellationToken);
+
+    Task<VerifiedAndroidPackageHandoffResult> HandOffAsync(
+        string handle,
+        bool userConfirmed,
         CancellationToken cancellationToken);
 }
 

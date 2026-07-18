@@ -105,3 +105,31 @@ silent installer. No trusted production root is bundled, so the visible release
 state is “not configured”; tests supply public insecure keys explicitly.
 Android package identity and signer extraction stays behind the native platform
 adapter, while Apple platforms show their exact distribution limitation.
+
+## P02D safe installer handoff boundary
+
+P02D replaces the deleted verification snapshot with a bounded, app-private,
+one-time handoff lifecycle. A successful verification returns only an opaque
+cryptographically random handle, never the source or private file path. The
+private snapshot is limited to one APK, at most 1 GiB, and at most 15 minutes.
+It is deleted after handoff, rejection, tamper, expiry, replacement, and on the
+next service startup after an interrupted process.
+
+Immediately before a platform request, the core reopens the preserved snapshot
+and revalidates its exact length and SHA-256, then repeats Android package ID,
+version, and signer-certificate inspection through the platform verifier. The
+handle is consumed once and replay is rejected. The ViewModel cannot request
+handoff until the user has manually confirmed the exact visible package,
+version, source commit, and expiry values.
+
+No Android installer adapter, FileProvider authority, unknown-sources
+permission, or production DI registration is added in this slice. The future
+Android adapter must use a content URI with a narrowly scoped, temporary,
+read-only grant and must be reviewed with the exact signed release input.
+Windows is explicitly unsupported until it has its own independently verified
+installer contract; an Android APK is never forwarded to Windows packaging.
+
+Session Android references consulted for the platform boundary were its
+`AndroidManifest.xml` FileProvider declaration and `FileProviderUtil.java`.
+They demonstrate general private-file sharing, but not the signed, one-time
+update contract required here, so their broad provider setup was not copied.

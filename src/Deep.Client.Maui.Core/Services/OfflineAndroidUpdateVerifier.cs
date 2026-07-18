@@ -9,6 +9,7 @@ public sealed class OfflineAndroidUpdateVerifier : IOfflineAndroidUpdateVerifier
     private readonly PortableUpdateMetadataVerifier metadataVerifier;
     private readonly ITrustedUpdateStateStore stateStore;
     private readonly IAndroidPackageSignerVerifier packageSignerVerifier;
+    private readonly IVerifiedAndroidPackageHandoffService handoffService;
     private readonly string privateSnapshotRoot;
 
     public OfflineAndroidUpdateVerifier(
@@ -16,6 +17,7 @@ public sealed class OfflineAndroidUpdateVerifier : IOfflineAndroidUpdateVerifier
         PortableUpdateMetadataVerifier metadataVerifier,
         ITrustedUpdateStateStore stateStore,
         IAndroidPackageSignerVerifier packageSignerVerifier,
+        IVerifiedAndroidPackageHandoffService handoffService,
         string privateSnapshotRoot)
     {
         this.configuration = configuration
@@ -26,6 +28,8 @@ public sealed class OfflineAndroidUpdateVerifier : IOfflineAndroidUpdateVerifier
             ?? throw new ArgumentNullException(nameof(stateStore));
         this.packageSignerVerifier = packageSignerVerifier
             ?? throw new ArgumentNullException(nameof(packageSignerVerifier));
+        this.handoffService = handoffService
+            ?? throw new ArgumentNullException(nameof(handoffService));
         ArgumentException.ThrowIfNullOrWhiteSpace(privateSnapshotRoot);
         this.privateSnapshotRoot = Path.GetFullPath(privateSnapshotRoot);
     }
@@ -126,6 +130,10 @@ public sealed class OfflineAndroidUpdateVerifier : IOfflineAndroidUpdateVerifier
                 }
 
                 await stateStore.SaveAsync(verified.State, cancellationToken);
+                var preserved = await handoffService.PreserveVerifiedSnapshotAsync(
+                    snapshotPath,
+                    target,
+                    cancellationToken);
                 return new OfflineAndroidPackageVerification(
                     true,
                     "Пакет проверен. Перед передачей установщику подтвердите версию вручную.",
@@ -137,7 +145,9 @@ public sealed class OfflineAndroidUpdateVerifier : IOfflineAndroidUpdateVerifier
                     target.SourceCommit,
                     target.MetadataExpiresAtUtc,
                     null,
-                    observedHash);
+                    observedHash,
+                    preserved.Handle,
+                    preserved.ExpiresAtUtc);
             }
             finally
             {
@@ -174,7 +184,9 @@ public sealed class OfflineAndroidUpdateVerifier : IOfflineAndroidUpdateVerifier
             string.Empty,
             DateTimeOffset.MinValue,
             failure,
-            null);
+            null,
+            null,
+            DateTimeOffset.MinValue);
 
     private static async Task<string> CopyBoundedSnapshotAsync(
         string sourcePath,
