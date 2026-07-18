@@ -18,7 +18,7 @@ jobs:
           repository: ${{ github.repository_owner }}/deep-client-shared
           token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
           path: deep-client-shared
-          ref: 94b623f078bd141163887a15116e6f9702510576
+          ref: 2e55f78c68699520e49ec0c8d5ddebd4b9817584
       - name: Bind one release invocation
         working-directory: deep-client-maui
         shell: pwsh

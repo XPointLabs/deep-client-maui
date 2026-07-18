@@ -201,16 +201,18 @@ public sealed class ClientLiveAcceptanceTests
         IReadOnlyList<PinnedRouterEndpoint> endpoints)
     {
         var handler = new RouterAvailabilityHandler(endpoints);
-        var router = new XNodeRpcClient(
+        var composition = RoutedProductionCompositionFactory.Create(
+            endpoints,
+            directStorageUrl: null,
             new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) },
-            new XNodeRpcClientOptions(endpoints));
+            TimeProvider.System);
         var runtime = new ClientRuntime(
             new InMemorySessionStore(),
             ClientFeatureFlags.ReleaseDefaults,
             new SystemClock(),
-            new RoutedSessionStorageMessageTransport(router, new RoutedSessionStorageTransportOptions()),
+            composition.SessionMessageTransport,
             requireE2eeTransport: true);
-        return new RoutedRuntimeFixture(runtime, router, handler);
+        return new RoutedRuntimeFixture(runtime, composition.Router, handler);
     }
 
     private static void AssertRoutedStorageEvidence(

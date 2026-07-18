@@ -1,5 +1,8 @@
 using Deep.Client.Maui.Core.Services;
+using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
+using System.Collections.Concurrent;
+using System.Net;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
 
@@ -16,13 +19,13 @@ public sealed class RoutedRuntimeConfigurationTests
     {
         var endpoints = RoutedRuntimeConfiguration.ParseExactlyThree(string.Join(';',
             $"{RouterOne}|http://127.0.0.1:29281",
-            $"{RouterTwo}|http://localhost:29282",
+            $"{RouterTwo}|http://[::1]:29282",
             $"{RouterThree}|https://router-three.example"));
 
         Assert.Equal(3, endpoints.Count);
         Assert.Equal([RouterOne, RouterTwo, RouterThree], endpoints.Select(static endpoint => endpoint.ExpectedRouterId));
         Assert.Equal("http://127.0.0.1:29281/", endpoints[0].BaseUrl);
-        Assert.Equal("http://localhost:29282/", endpoints[1].BaseUrl);
+        Assert.Equal("http://[::1]:29282/", endpoints[1].BaseUrl);
         Assert.Equal("https://router-three.example/", endpoints[2].BaseUrl);
     }
 
@@ -61,7 +64,6 @@ public sealed class RoutedRuntimeConfigurationTests
     [Theory]
     [InlineData("https://service.example")]
     [InlineData("http://127.0.0.1:18102")]
-    [InlineData("http://localhost:18103")]
     public void RequireLiveServiceUrl_AcceptsHttpsOrExplicitLoopbackHttp(string value)
     {
         Assert.True(RoutedRuntimeConfiguration.RequireLiveServiceUrl("TEST_URL", value).IsAbsoluteUri);
@@ -71,7 +73,11 @@ public sealed class RoutedRuntimeConfigurationTests
     [InlineData("")]
     [InlineData("relative")]
     [InlineData("http://service.example")]
+    [InlineData("http://localhost:18103")]
     [InlineData("ftp://127.0.0.1/service")]
+    [InlineData("https://user@service.example")]
+    [InlineData("https://service.example/path?query=value")]
+    [InlineData("https://service.example/#fragment")]
     public void RequireLiveServiceUrl_RejectsMissingRelativeOrCleartextRemoteUrls(string value)
     {
         Assert.Throws<InvalidOperationException>(() =>
@@ -105,4 +111,106 @@ public sealed class RoutedRuntimeConfigurationTests
             $"{RouterTwo}|https://router-two.example",
             $"{RouterThree}|https://router-three.example")
     };
+
+    [Theory]
+    [InlineData("https://router-one.example/base")]
+    [InlineData("https://user@router-one.example/")]
+    [InlineData("https://router-one.example/?query=value")]
+    [InlineData("https://router-one.example/#fragment")]
+    [InlineData("http://localhost:29281/")]
+    public void ParseExactlyThree_RejectsNonCanonicalRouterBaseUrl(string firstUrl)
+    {
+        var value = string.Join(';',
+            $"{RouterOne}|{firstUrl}",
+            $"{RouterTwo}|https://router-two.example/",
+            $"{RouterThree}|https://router-three.example/");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            RoutedRuntimeConfiguration.ParseExactlyThree(value));
+    }
+
+    [Fact]
+    public async Task ProductionFactory_ResolvesRealRoutedTypesAndFailsClosedDuringRouterOutage()
+    {
+        var endpoints = RoutedRuntimeConfiguration.ParseExactlyThree(string.Join(';',
+            $"{RouterOne}|https://router-one.example/",
+            $"{RouterTwo}|https://router-two.example/",
+            $"{RouterThree}|https://router-three.example/"));
+        var handler = new RouterOutageHandler(endpoints);
+        var composition = RoutedProductionCompositionFactory.Create(
+            endpoints,
+            directStorageUrl: null,
+            new HttpClient(handler));
+
+        Assert.IsType<XNodeRpcClient>(composition.RouteProvider);
+        Assert.IsType<RoutedSessionStorageMessageTransport>(composition.SessionMessageTransport);
+        Assert.Same(composition.Router, composition.RouteProvider);
+        Assert.Same(composition.MessageTransport, composition.SessionMessageTransport);
+
+        var exception = await Record.ExceptionAsync(() =>
+            composition.SessionMessageTransport.SendAsync(new OutboundMessageEnvelope(
+                new SessionId("sender"),
+                new SessionId("recipient"),
+                "must-fail-closed",
+                [],
+                DateTimeOffset.UtcNow,
+                null)));
+
+        Assert.NotNull(exception);
+        Assert.True(handler.RequestCount > 0);
+        Assert.Empty(handler.UnexpectedDestinations);
+    }
+
+    [Fact]
+    public void ProductionFactory_RejectsDirectStorageAndNonExactRouterCount()
+    {
+        var valid = RoutedRuntimeConfiguration.ParseExactlyThree(string.Join(';',
+            $"{RouterOne}|https://router-one.example/",
+            $"{RouterTwo}|https://router-two.example/",
+            $"{RouterThree}|https://router-three.example/"));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            RoutedProductionCompositionFactory.Create(
+                valid,
+                "https://storage.example/",
+                new HttpClient()));
+        Assert.Throws<InvalidOperationException>(() =>
+            RoutedProductionCompositionFactory.Create(
+                valid.Take(2),
+                directStorageUrl: null,
+                new HttpClient()));
+    }
+
+    private sealed class RouterOutageHandler(
+        IReadOnlyList<PinnedRouterEndpoint> endpoints) : HttpMessageHandler
+    {
+        private readonly HashSet<string> allowedOrigins = endpoints
+            .Select(static endpoint => new Uri(endpoint.BaseUrl).GetLeftPart(UriPartial.Authority))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentQueue<string> unexpectedDestinations = new();
+        private int requestCount;
+
+        public int RequestCount => Volatile.Read(ref requestCount);
+
+        public IReadOnlyList<string> UnexpectedDestinations => unexpectedDestinations.ToArray();
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref requestCount);
+            var destination = request.RequestUri?.GetLeftPart(UriPartial.Authority) ?? "<missing>";
+            if (!allowedOrigins.Contains(destination))
+            {
+                unexpectedDestinations.Enqueue(destination);
+            }
+
+            return Task.FromException<HttpResponseMessage>(
+                new HttpRequestException(
+                    HttpRequestError.ConnectionError,
+                    "Pinned router API is unavailable.",
+                    inner: null,
+                    statusCode: HttpStatusCode.ServiceUnavailable));
+        }
+    }
 }

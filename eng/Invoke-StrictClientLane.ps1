@@ -22,7 +22,8 @@ param(
     [string]$AndroidLabPolicyPath,
     [string]$MrXPublicKeySha256,
     [switch]$AllowSyntheticLabPolicyForContractTests,
-    [switch]$CaptureStubWelcomeFailure
+    [switch]$CaptureStubWelcomeFailure,
+    [switch]$ValidateLiveConfigurationOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,13 +63,29 @@ function Has-Value {
 }
 
 function Test-StrictLiveUrl {
-    param([string]$Value)
+    param(
+        [string]$Value,
+        [switch]$RequireRootPath
+    )
     $uri = $null
     if ([string]::IsNullOrWhiteSpace($Value) -or
         -not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$uri)) {
         return $false
     }
-    return $uri.Scheme -ceq 'https' -or ($uri.Scheme -ceq 'http' -and $uri.IsLoopback)
+    if ([string]::IsNullOrWhiteSpace($uri.Host) -or
+        -not [string]::IsNullOrEmpty($uri.UserInfo) -or
+        -not [string]::IsNullOrEmpty($uri.Query) -or
+        -not [string]::IsNullOrEmpty($uri.Fragment) -or
+        ($RequireRootPath -and $uri.AbsolutePath -cne '/')) {
+        return $false
+    }
+    if ($uri.Scheme -ceq 'https') {
+        return $true
+    }
+    $literalAddress = $null
+    return $uri.Scheme -ceq 'http' -and
+        [Net.IPAddress]::TryParse($uri.DnsSafeHost, [ref]$literalAddress) -and
+        [Net.IPAddress]::IsLoopback($literalAddress)
 }
 
 function Test-LiveConfiguration {
@@ -78,24 +95,32 @@ function Test-LiveConfiguration {
     } else {
         @($rawRouters.Split(
             @(';', ',', "`n", "`r", "`t", ' '),
-            [StringSplitOptions]::RemoveEmptyEntries -bor [StringSplitOptions]::TrimEntries))
+            [StringSplitOptions]::RemoveEmptyEntries) |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     })
     $parsedRouters = @($routerEntries | ForEach-Object {
-        $parts = @($_.Split('|', 2, [StringSplitOptions]::TrimEntries))
-        if ($parts.Count -ne 2 -or $parts[0] -notmatch '^[0-9a-f]{64}$') {
+        $separator = $_.IndexOf('|')
+        if ($separator -le 0 -or $separator -eq $_.Length - 1) {
+            return $null
+        }
+        $routerId = $_.Substring(0, $separator).Trim()
+        $routerUrl = $_.Substring($separator + 1).Trim()
+        if ($routerId -cnotmatch '^[0-9a-f]{64}$') {
             return $null
         }
         $uri = $null
-        if (-not [Uri]::TryCreate($parts[1], [UriKind]::Absolute, [ref]$uri) -or
-            -not (Test-StrictLiveUrl -Value $parts[1])) {
+        if (-not [Uri]::TryCreate($routerUrl, [UriKind]::Absolute, [ref]$uri) -or
+            -not (Test-StrictLiveUrl -Value $routerUrl -RequireRootPath)) {
             return $null
         }
-        [pscustomobject]@{ routerId = $parts[0]; url = $uri.AbsoluteUri }
+        [pscustomobject]@{ routerId = $routerId; url = $uri.AbsoluteUri }
     })
     $validRouters = $routerEntries.Count -eq 3 -and
         $parsedRouters.Count -eq 3 -and
-        @($parsedRouters.routerId | Sort-Object -Unique).Count -eq 3 -and
-        @($parsedRouters.url | Sort-Object -Unique).Count -eq 3
+        @($parsedRouters | Where-Object { $null -eq $_ }).Count -eq 0 -and
+        @($parsedRouters | ForEach-Object { $_.routerId } | Sort-Object -Unique).Count -eq 3 -and
+        @($parsedRouters | ForEach-Object { $_.url } | Sort-Object -Unique).Count -eq 3
     Add-Check 'routed-message-endpoint' $validRouters $(if ($validRouters) {
         'exactly three distinct pinned router identities and URLs'
     } else {
@@ -115,6 +140,11 @@ function Test-LiveConfiguration {
             'required and must use HTTPS or explicit loopback HTTP'
         })
     }
+}
+
+if ($ValidateLiveConfigurationOnly -and
+    ($Lane -cne 'LiveInfrastructure' -or $Bootstrap -cne 'live')) {
+    throw 'ValidateLiveConfigurationOnly requires Lane=LiveInfrastructure and Bootstrap=live.'
 }
 
 function Write-Preflight {
@@ -1266,6 +1296,10 @@ Write-Preflight $(if ($blocked) { 'failed' } else { 'ready' }) | Out-Null
 if ($blocked) {
     Write-LaneResult 'blocked' $null 'machine-readable preflight'
     exit 2
+}
+if ($ValidateLiveConfigurationOnly) {
+    Write-LaneResult 'passed' $null 'live configuration contract'
+    exit 0
 }
 
 $env:DEEP_STRICT_LIVE = '1'

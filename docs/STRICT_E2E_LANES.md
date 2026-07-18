@@ -43,7 +43,9 @@ Use `-Bootstrap live` only when all live endpoint variables are present.
 Set `XNODE_URLS` to exactly three distinct
 `<64-lowerhex-routerId>|<https-or-loopback-http-url>` entries, plus valid HTTPS
 or explicit-loopback HTTP `DEEP_FILE_URL`, `DEEP_PUSH_URL`, and
-`DEEP_CALL_SIGNALING_BASE_URL`. `DEEP_STORAGE_URL` must be absent. Then run:
+`DEEP_CALL_SIGNALING_BASE_URL`. Router bases must use the root path and omit
+userinfo, query, and fragment; loopback HTTP must use a literal IP rather than a
+hostname. `DEEP_STORAGE_URL` must be absent. Then run:
 
 ```powershell
 .\eng\Invoke-StrictClientLane.ps1 `

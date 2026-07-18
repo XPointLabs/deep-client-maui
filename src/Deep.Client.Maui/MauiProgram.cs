@@ -79,28 +79,27 @@ public static class MauiProgram
 #endif
         var routerBaseUrls = ResolveRouterBaseUrls();
         var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
-        if (routerBaseUrls.Count > 0)
-        {
-            RoutedRuntimeConfiguration.RejectDirectStorageForRoutedComposition(storageBaseUrl);
-        }
-#if !DEBUG
-        if (routerBaseUrls.Count != RoutedRuntimeConfiguration.RequiredRouterCount)
-        {
-            throw new InvalidOperationException(
-                "Production messaging requires exactly three unique pinned XPoint onion routers. Direct storage fallback is disabled.");
-        }
-
-        RoutedRuntimeConfiguration.RejectDirectStorageForRoutedComposition(storageBaseUrl);
+#if DEBUG
+        var routedComposition = routerBaseUrls.Count == 0
+            ? null
+            : RoutedProductionCompositionFactory.Create(
+                routerBaseUrls,
+                storageBaseUrl,
+                CreateRouterHttpClient());
+#else
+        var routedComposition = RoutedProductionCompositionFactory.Create(
+            routerBaseUrls,
+            storageBaseUrl,
+            CreateRouterHttpClient());
 #endif
         var fileConnectIps = ParseIpAddresses(ResolveRuntimeSetting(FileConnectIpsEnv));
 
         builder.Services.AddSingleton(RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting));
-        if (routerBaseUrls.Count > 0)
+        if (routedComposition is not null)
         {
-            builder.Services.AddSingleton(new XNodeRpcClient(
-                CreateRouterHttpClient(),
-                new XNodeRpcClientOptions(routerBaseUrls)));
-            builder.Services.AddSingleton<ITransportRouteProvider>(sp => sp.GetRequiredService<XNodeRpcClient>());
+            builder.Services.AddSingleton(routedComposition.Router);
+            builder.Services.AddSingleton<ITransportRouteProvider>(routedComposition.RouteProvider);
+            builder.Services.AddSingleton<ISessionMessageTransport>(routedComposition.SessionMessageTransport);
         }
         else
         {
@@ -113,16 +112,11 @@ public static class MauiProgram
 #endif
         }
 
+#if DEBUG
+        if (routedComposition is null)
+        {
         builder.Services.AddSingleton<ISessionMessageTransport>(_ =>
         {
-            if (routerBaseUrls.Count > 0)
-            {
-                return new RoutedSessionStorageMessageTransport(
-                    _.GetRequiredService<XNodeRpcClient>(),
-                    new RoutedSessionStorageTransportOptions());
-            }
-
-#if DEBUG
             if (!string.IsNullOrWhiteSpace(storageBaseUrl))
             {
                 return new SessionStorageMessageTransport(
@@ -142,11 +136,9 @@ public static class MauiProgram
             }
 
             return new HttpSessionTransport(CreateServiceHttpClient(), new HttpSessionTransportOptions(baseUrl));
-#else
-            throw new InvalidOperationException(
-                "Release composition requires routed XNODE_URLS transport and has no direct storage fallback.");
-#endif
         });
+        }
+#endif
         builder.Services.AddSingleton(featureFlags);
         builder.Services.AddSingleton<IClock, SystemClock>();
         builder.Services.AddSingleton<IIpCountryLookup>(_ => new IpCountryLookup(

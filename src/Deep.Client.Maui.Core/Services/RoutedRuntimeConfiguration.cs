@@ -1,4 +1,5 @@
 using Deep.Client.Shared.Services;
+using System.Net;
 
 namespace Deep.Client.Maui.Core.Services;
 
@@ -103,12 +104,34 @@ public static class RoutedRuntimeConfiguration
         }
 
         var uri = RequireLiveServiceUrl("XNODE_URLS", endpoint.BaseUrl);
+        if (uri.AbsolutePath != "/")
+        {
+            throw new InvalidOperationException(
+                "XNODE_URLS router base URLs must use the root path.");
+        }
+
         return new PinnedRouterEndpoint(uri.AbsoluteUri, routerId);
     }
 
-    private static bool IsAllowedLiveUri(Uri uri) =>
-        uri.Scheme == Uri.UriSchemeHttps ||
-        (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback);
+    private static bool IsAllowedLiveUri(Uri uri)
+    {
+        if (string.IsNullOrWhiteSpace(uri.Host) ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment))
+        {
+            return false;
+        }
+
+        if (uri.Scheme == Uri.UriSchemeHttps)
+        {
+            return true;
+        }
+
+        return uri.Scheme == Uri.UriSchemeHttp &&
+            IPAddress.TryParse(uri.DnsSafeHost, out var address) &&
+            IPAddress.IsLoopback(address);
+    }
 
     private static string[] Split(string raw) =>
         raw.Split(

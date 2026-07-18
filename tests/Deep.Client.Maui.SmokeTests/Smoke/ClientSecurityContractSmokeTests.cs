@@ -125,14 +125,6 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.True(debugGuardEndIndex > bootstrapIndex);
         Assert.InRange(stubRuntimeIndex, bootstrapIndex + 1, debugGuardEndIndex - 1);
         Assert.Contains(
-            "Release composition requires routed XNODE_URLS transport and has no direct storage fallback.",
-            program,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Production messaging requires exactly three unique pinned XPoint onion routers.",
-            program,
-            StringComparison.Ordinal);
-        Assert.Contains(
             "#if !DEBUG\r\n        if (pins.Count == 0)",
             program,
             StringComparison.Ordinal);

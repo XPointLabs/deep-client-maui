@@ -13,6 +13,10 @@ Primary local references:
 - `../source/session-desktop`
 - shared runtime: `../deep-client-shared`
 
+The strict I01B release-evidence workflow is bound to shared runtime commit
+`2e55f78c68699520e49ec0c8d5ddebd4b9817584`. Local evidence must use that exact
+shared revision so routed DTO/version-confusion checks cannot drift from CI.
+
 ## Porting Principle
 
 Extract the product contract first, then implement it in MAUI-native MVVM. Do not copy Android activity/Compose structure into MAUI if it creates a weaker cross-platform client. A port is valid when the Deep user journey and failure semantics match Session for the accepted scope.

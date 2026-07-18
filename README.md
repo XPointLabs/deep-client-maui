@@ -55,8 +55,11 @@ Runtime transport behavior:
 - Non-Debug builds require exactly three unique authenticated XPoint onion routers and fail
   closed when production trust/configuration is missing.
 - Routed composition requires exactly three lowercase pinned
-  `<64-hex-routerId>|<absolute-url>` entries and rejects any simultaneous
-  `DEEP_STORAGE_URL`.
+  `<64-hex-routerId>|<absolute-url>` entries. Router bases reject
+  userinfo/query/fragment and non-root paths; HTTP is accepted only for a
+  literal loopback IP. Any simultaneous `DEEP_STORAGE_URL` is rejected.
+- `MauiProgram` and Release tests use the same Core production-composition
+  factory for the real route provider and routed session transport.
 - `DEEP_STORAGE_URL` is Debug-only direct-storage diagnostics. It cannot satisfy
   routed release evidence and is never a fallback after router failure.
 - `DEEP_TRANSPORT_BASE_URL` remains Debug-only for a custom diagnostic HTTP message API.
