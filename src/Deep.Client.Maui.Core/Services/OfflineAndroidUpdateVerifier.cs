@@ -153,7 +153,8 @@ public sealed class OfflineAndroidUpdateVerifier : IOfflineAndroidUpdateVerifier
         }
         catch (Exception exception) when (
             exception is InvalidDataException or IOException or UnauthorizedAccessException or
-            CryptographicException)
+            CryptographicException or KeyNotFoundException or InvalidOperationException or
+            FormatException or ArgumentException)
         {
             return Failed(request, exception.Message);
         }

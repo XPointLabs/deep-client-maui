@@ -202,6 +202,62 @@ public sealed class PortableUpdateMetadataVerifierTests
     }
 
     [Fact]
+    public async Task AtomicState_RejectsStaleConcurrentWriterAndPreservesNewestVersions()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var statePath = Path.Combine(sandbox.Path, "state.json");
+        var firstStore = new AtomicTrustedUpdateStateStore(statePath);
+        var secondStore = new AtomicTrustedUpdateStateStore(statePath);
+        var initial = PortableUpdateMetadataVerifier.CreateInitialState(fixture.RootOne);
+        await firstStore.SaveAsync(initial, CancellationToken.None);
+
+        var newest = initial with
+        {
+            Versions = new TrustedMetadataVersions(2, 2, 2, 2)
+        };
+        var stale = initial with
+        {
+            Versions = new TrustedMetadataVersions(1, 1, 1, 1)
+        };
+        await firstStore.SaveAsync(newest, CancellationToken.None);
+
+        var rejected = await Assert.ThrowsAsync<InvalidDataException>(
+            () => secondStore.SaveAsync(stale, CancellationToken.None));
+        Assert.Contains("rollback", rejected.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(newest, await secondStore.LoadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task MalformedMetadata_ReturnsBlockedResultInsteadOfEscapingException()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var apkPath = Path.Combine(sandbox.Path, "candidate.apk");
+        await File.WriteAllBytesAsync(apkPath, fixture.ApkBytes);
+        var malformedRoot = PortableUpdateMetadataVerifier.Canonicalize(
+            """{"signatures":[{"keyid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sig":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"signed":{"_type":"root","expires":"2031-01-01T00:00:00Z","spec_version":"1.0.35","version":2}}"""u8.ToArray());
+        var bundle = fixture.BuildBundle() with
+        {
+            CandidateRoots = new[] { new ReadOnlyMemory<byte>(malformedRoot) }
+        };
+        var verifier = CreateVerifier(
+            fixture,
+            new AtomicTrustedUpdateStateStore(Path.Combine(sandbox.Path, "state.json")),
+            new TestSignerVerifier(
+                UpdateTrustTestFixture.PackageId,
+                UpdateTrustTestFixture.PackageSignerSha256),
+            sandbox.Path);
+
+        var result = await verifier.VerifyAsync(
+            Request(bundle, apkPath),
+            CancellationToken.None);
+
+        Assert.False(result.IsVerified);
+        Assert.Contains("заблокирована", result.Status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void RawMetadata_RejectsWhitespaceBomAndDuplicateObjectKeys()
     {
         using var fixture = new UpdateTrustTestFixture();

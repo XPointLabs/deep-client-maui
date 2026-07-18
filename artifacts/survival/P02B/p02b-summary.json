@@ -13,7 +13,7 @@
     "verificationOverrideAvailable": false,
     "androidArchiveSignerReadByPlatformApi": true,
     "metadataThresholdAndRollbackVerification": true,
-    "appPrivateImmutableVerificationSnapshot": true,
+    "appPrivateSnapshotWithPostInspectionTamperDetection": true,
     "iosAndroidSideloadFlowSupported": false
   },
   "checks": [
@@ -21,7 +21,7 @@
       "name": "exact-p02-public-metadata-compatibility-and-focused-security-tests",
       "configuration": "Debug",
       "status": "passed",
-      "passed": 9,
+      "passed": 11,
       "failed": 0,
       "skipped": 0
     },
@@ -29,7 +29,7 @@
       "name": "view-model-tests",
       "configuration": "Debug",
       "status": "passed",
-      "passed": 172,
+      "passed": 174,
       "failed": 0,
       "skipped": 2,
       "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
@@ -38,7 +38,7 @@
       "name": "view-model-tests",
       "configuration": "Release",
       "status": "passed",
-      "passed": 172,
+      "passed": 174,
       "failed": 0,
       "skipped": 2,
       "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
@@ -105,8 +105,18 @@
   "testArtifact": {
     "kind": "signed-debug-apk",
     "path": "src/Deep.Client.Maui/bin/Debug/net10.0-android/network.xpoint.deep-Signed.apk",
-    "length": 155527453,
-    "sha256": "7618db700ff0a12bdba3c5f369ae2dde7daa572259c098f372321def363d5dda"
+    "length": 155531549,
+    "sha256": "5101d1482e7cc7fc1f4329146134b492f9f6a519969e0081a4466f9518772fe3"
+  },
+  "independentReview": {
+    "initialP0": 0,
+    "initialP1": 2,
+    "initialP2": 1,
+    "correctiveActions": [
+      "Malformed metadata structure exceptions are converted to a blocked verification result.",
+      "Trusted-state writes are serialized per canonical path and reject rollback/conflicting-root writes.",
+      "Snapshot evidence now describes post-inspection tamper detection instead of immutability."
+    ]
   },
   "productionActivationBlockers": [
     "Provision and govern an out-of-band production trusted root before enabling or registering the verifier.",
