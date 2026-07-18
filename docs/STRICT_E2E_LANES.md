@@ -59,7 +59,9 @@ The acceptance verifies the actual `CurrentRoute`: mode `onion-storage`, node
 indices exactly `0,1,2`, the exact pinned identity set, and three unique signed
 relay RPC endpoints. Both routed store and authenticated retrieve must cross the
 router API. A forced router-API outage must fail closed without any request to a
-direct storage endpoint.
+direct storage endpoint. The wrapper always executes this xUnit acceptance in
+`Release`; the rendered Windows and physical Android UI lanes remain explicitly
+Debug-only and do not substitute for that Release transport contract.
 
 ## Android device lane
 

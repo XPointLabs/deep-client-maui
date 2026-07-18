@@ -1305,6 +1305,7 @@ if ($ValidateLiveConfigurationOnly) {
 $env:DEEP_STRICT_LIVE = '1'
 $trxName = 'strict-live-infrastructure.trx'
 dotnet test (Join-Path $repoRoot 'tests\Deep.Client.Maui.ViewModels.Tests\Deep.Client.Maui.ViewModels.Tests.csproj') `
+    --configuration Release `
     --no-restore `
     --filter 'FullyQualifiedName~ClientLiveAcceptanceTests' `
     --logger "trx;LogFileName=$trxName" `

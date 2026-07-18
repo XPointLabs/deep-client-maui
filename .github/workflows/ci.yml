@@ -60,61 +60,35 @@ jobs:
 
   release-transport-guard:
     name: release-transport-guard
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
           path: deep-client-maui
-      - name: Validate non-Debug transport guard
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/deep-client-shared
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          path: deep-client-shared
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.301
+      - name: Restore pinned MAUI workloads
+        working-directory: deep-client-maui
+        run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
+      - name: Execute compiled Release routed composition guard
         shell: pwsh
         working-directory: deep-client-maui
         run: |
-          $source = Get-Content -Raw src/Deep.Client.Maui/MauiProgram.cs
-          $checks = @(
-            @{
-              name = 'debug-only-stub-guard'
-              passed = $source -match '#if DEBUG'
-              message = 'Expected #if DEBUG transport guard in MauiProgram.'
-            },
-            @{
-              name = 'release-message-transport-required'
-              passed = $source -match 'DEEP_TRANSPORT_BASE_URL is required in non-Debug builds'
-              message = 'Expected non-Debug transport requirement message in MauiProgram.'
-            },
-            @{
-              name = 'release-feature-defaults'
-              passed = $source -match 'ClientFeatureFlags.ReleaseDefaults'
-              message = 'Expected release feature defaults wiring in MauiProgram.'
-            },
-            @{
-              name = 'release-call-signaling-required'
-              passed = $source -match 'DEEP_CALL_SIGNALING_BASE_URL is required when calls are enabled in non-Debug builds'
-              message = 'Expected non-Debug call signaling requirement message in MauiProgram.'
-            },
-            @{
-              name = 'release-file-avatar-required'
-              passed = $source -match 'DEEP_FILE_URL is required in non-Debug builds'
-              message = 'Expected non-Debug file/avatar requirement message in MauiProgram.'
-            }
-          )
-          $failed = @($checks | Where-Object { -not $_.passed })
-          New-Item -ItemType Directory -Force -Path artifacts/release-gates | Out-Null
-          [pscustomobject]@{
-            status = if ($failed.Count -eq 0) { 'passed' } else { 'failed' }
-            generatedAt = (Get-Date).ToUniversalTime().ToString('o')
-            commit = '${{ github.sha }}'
-            checks = $checks
-          } | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 artifacts/release-gates/release-transport-guard.json
-          if ($failed.Count -gt 0)
-          {
-            throw ($failed.message -join "`n")
-          }
+          ./eng/Test-ReleaseRoutedComposition.ps1 `
+            -RuntimeIdentifier win-x64 `
+            -ArtifactDirectory artifacts/release-gates
       - name: Upload release transport guard evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: maui-release-transport-guard
-          path: deep-client-maui/artifacts/release-gates/release-transport-guard.json
+          path: deep-client-maui/artifacts/release-gates/release-routed-composition.json
           if-no-files-found: error
 
   android-build:

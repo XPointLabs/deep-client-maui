@@ -18,90 +18,45 @@ public sealed class RoutedCompositionContractSmokeTests
         string? storageUrl,
         bool expectedReady)
     {
-        _ = caseName;
-        var repositoryRoot = FindRepositoryRoot();
-        var artifactDirectory = Path.Combine(
-            repositoryRoot,
-            "artifacts",
-            "contract-tests",
-            Guid.NewGuid().ToString("N"));
-
-        try
+        var result = await RunPreflightAsync(new Dictionary<string, string?>
         {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = OperatingSystem.IsWindows() ? "powershell.exe" : "pwsh",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = repositoryRoot
-            };
-            startInfo.ArgumentList.Add("-NoLogo");
-            startInfo.ArgumentList.Add("-NoProfile");
-            startInfo.ArgumentList.Add("-File");
-            startInfo.ArgumentList.Add(Path.Combine(repositoryRoot, "eng", "Invoke-StrictClientLane.ps1"));
-            startInfo.ArgumentList.Add("-Lane");
-            startInfo.ArgumentList.Add("LiveInfrastructure");
-            startInfo.ArgumentList.Add("-ReleaseInvocationId");
-            startInfo.ArgumentList.Add(Guid.NewGuid().ToString("N"));
-            startInfo.ArgumentList.Add("-Bootstrap");
-            startInfo.ArgumentList.Add("live");
-            startInfo.ArgumentList.Add("-ValidateLiveConfigurationOnly");
-            startInfo.ArgumentList.Add("-ArtifactDirectory");
-            startInfo.ArgumentList.Add(artifactDirectory);
-            SetEnvironment(startInfo, "XNODE_URLS", routerUrls);
-            SetEnvironment(startInfo, "DEEP_STORAGE_URL", storageUrl);
-            SetEnvironment(startInfo, "DEEP_FILE_URL", "https://files.example/");
-            SetEnvironment(startInfo, "DEEP_PUSH_URL", "https://push.example/");
-            SetEnvironment(startInfo, "DEEP_CALL_SIGNALING_BASE_URL", "https://calls.example/");
+            ["XNODE_URLS"] = routerUrls,
+            ["DEEP_STORAGE_URL"] = storageUrl
+        });
+        var expectedExitCode = expectedReady ? 0 : 2;
+        Assert.True(
+            result.ExitCode == expectedExitCode,
+            $"{caseName}: expected exit {expectedExitCode}, got {result.ExitCode}.{Environment.NewLine}" +
+            $"stdout:{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}" +
+            $"stderr:{Environment.NewLine}{result.StandardError}");
 
-            using var process = Process.Start(startInfo);
-            Assert.NotNull(process);
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            await process!.WaitForExitAsync(timeout.Token);
-            var standardOutput = await process.StandardOutput.ReadToEndAsync(timeout.Token);
-            var standardError = await process.StandardError.ReadToEndAsync(timeout.Token);
-            var expectedExitCode = expectedReady ? 0 : 2;
-            Assert.True(
-                process.ExitCode == expectedExitCode,
-                $"{caseName}: expected exit {expectedExitCode}, got {process.ExitCode}.{Environment.NewLine}" +
-                $"stdout:{Environment.NewLine}{standardOutput}{Environment.NewLine}stderr:{Environment.NewLine}{standardError}");
+        var expectedChecks = PassedChecks();
+        expectedChecks["direct-storage-absent"] =
+            string.IsNullOrWhiteSpace(storageUrl) ? "passed" : "blocked";
+        expectedChecks["routed-message-endpoint"] =
+            expectedReady || !string.IsNullOrWhiteSpace(storageUrl) ? "passed" : "blocked";
+        AssertMachineReadableContract(result, expectedReady ? "ready" : "failed", expectedChecks);
+    }
 
-            var preflightPath = Path.Combine(artifactDirectory, "preflight-liveinfrastructure.json");
-            Assert.True(File.Exists(preflightPath), $"{caseName}: preflight JSON was not written.");
-            using var preflight = JsonDocument.Parse(await File.ReadAllTextAsync(preflightPath, timeout.Token));
-            Assert.Equal(
-                expectedReady ? "ready" : "failed",
-                preflight.RootElement.GetProperty("status").GetString());
-
-            var checks = preflight.RootElement
-                .GetProperty("checks")
-                .EnumerateArray()
-                .ToDictionary(
-                    static check => check.GetProperty("name").GetString()!,
-                    static check => check.GetProperty("status").GetString()!,
-                    StringComparer.Ordinal);
-            Assert.Equal(5, checks.Count);
-            Assert.Contains("routed-message-endpoint", checks.Keys);
-            Assert.Contains("direct-storage-absent", checks.Keys);
-            Assert.Equal("passed", checks["DEEP_FILE_URL"]);
-            Assert.Equal("passed", checks["DEEP_PUSH_URL"]);
-            Assert.Equal("passed", checks["DEEP_CALL_SIGNALING_BASE_URL"]);
-            Assert.Equal(
-                string.IsNullOrWhiteSpace(storageUrl) ? "passed" : "blocked",
-                checks["direct-storage-absent"]);
-            Assert.Equal(
-                expectedReady || !string.IsNullOrWhiteSpace(storageUrl) ? "passed" : "blocked",
-                checks["routed-message-endpoint"]);
-        }
-        finally
+    [Theory]
+    [MemberData(nameof(InvalidServiceUrlCases))]
+    public async Task StrictLivePreflight_ProcessRejectsAdversarialServiceUrls(
+        string settingName,
+        string invalidValue)
+    {
+        var result = await RunPreflightAsync(new Dictionary<string, string?>
         {
-            if (Directory.Exists(artifactDirectory))
-            {
-                Directory.Delete(artifactDirectory, recursive: true);
-            }
-        }
+            [settingName] = invalidValue
+        });
+
+        Assert.True(
+            result.ExitCode == 2,
+            $"{settingName}={invalidValue}: expected exit 2, got {result.ExitCode}.{Environment.NewLine}" +
+            $"stdout:{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}" +
+            $"stderr:{Environment.NewLine}{result.StandardError}");
+        var expectedChecks = PassedChecks();
+        expectedChecks[settingName] = "blocked";
+        AssertMachineReadableContract(result, "failed", expectedChecks);
     }
 
     public static TheoryData<string, string?, string?, bool> LiveConfigurationCases => new()
@@ -123,6 +78,29 @@ public sealed class RoutedCompositionContractSmokeTests
         { "hostname-loopback-http", Join($"{RouterOne}|http://localhost:29281/", Router(2), Router(3)), null, false },
         { "remote-cleartext-http", Join($"{RouterOne}|http://router-one.example/", Router(2), Router(3)), null, false }
     };
+
+    public static TheoryData<string, string> InvalidServiceUrlCases
+    {
+        get
+        {
+            var data = new TheoryData<string, string>();
+            foreach (var name in new[]
+                     {
+                         "DEEP_FILE_URL",
+                         "DEEP_PUSH_URL",
+                         "DEEP_CALL_SIGNALING_BASE_URL"
+                     })
+            {
+                data.Add(name, "http://remote.example/");
+                data.Add(name, "https://user@service.example/");
+                data.Add(name, "https://service.example/?query=value");
+                data.Add(name, "https://service.example/#fragment");
+                data.Add(name, "http://localhost:18103/");
+            }
+
+            return data;
+        }
+    }
 
     private static string ValidRouters() => Join(Router(1), Router(2), Router(3));
 
@@ -149,6 +127,173 @@ public sealed class RoutedCompositionContractSmokeTests
         }
     }
 
+    private static async Task<PreflightProcessResult> RunPreflightAsync(
+        IReadOnlyDictionary<string, string?> overrides)
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var artifactDirectory = Path.Combine(
+            repositoryRoot,
+            "artifacts",
+            "contract-tests",
+            Guid.NewGuid().ToString("N"));
+        var releaseInvocationId = Guid.NewGuid().ToString("N");
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = OperatingSystem.IsWindows() ? "powershell.exe" : "pwsh",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = repositoryRoot
+            };
+            foreach (var argument in new[]
+                     {
+                         "-NoLogo",
+                         "-NoProfile",
+                         "-File",
+                         Path.Combine(repositoryRoot, "eng", "Invoke-StrictClientLane.ps1"),
+                         "-Lane",
+                         "LiveInfrastructure",
+                         "-ReleaseInvocationId",
+                         releaseInvocationId,
+                         "-Bootstrap",
+                         "live",
+                         "-ValidateLiveConfigurationOnly",
+                         "-ArtifactDirectory",
+                         artifactDirectory
+                     })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["XNODE_URLS"] = ValidRouters(),
+                ["DEEP_STORAGE_URL"] = null,
+                ["DEEP_FILE_URL"] = "https://files.example/",
+                ["DEEP_PUSH_URL"] = "https://push.example/",
+                ["DEEP_CALL_SIGNALING_BASE_URL"] = "https://calls.example/"
+            };
+            foreach (var (name, value) in overrides)
+            {
+                environment[name] = value;
+            }
+            foreach (var (name, value) in environment)
+            {
+                SetEnvironment(startInfo, name, value);
+            }
+
+            using var process = Process.Start(startInfo);
+            Assert.NotNull(process);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await process!.WaitForExitAsync(timeout.Token);
+            var standardOutput = await process.StandardOutput.ReadToEndAsync(timeout.Token);
+            var standardError = await process.StandardError.ReadToEndAsync(timeout.Token);
+            var preflightPath = Path.Combine(artifactDirectory, "preflight-liveinfrastructure.json");
+            var resultPath = Path.Combine(artifactDirectory, "result-liveinfrastructure.json");
+            Assert.True(File.Exists(preflightPath), "Preflight JSON was not written.");
+            Assert.True(File.Exists(resultPath), "Lane result JSON was not written.");
+            return new PreflightProcessResult(
+                process.ExitCode,
+                standardOutput,
+                standardError,
+                releaseInvocationId,
+                await File.ReadAllTextAsync(preflightPath, timeout.Token),
+                await File.ReadAllTextAsync(resultPath, timeout.Token));
+        }
+        finally
+        {
+            if (Directory.Exists(artifactDirectory))
+            {
+                Directory.Delete(artifactDirectory, recursive: true);
+            }
+        }
+    }
+
+    private static Dictionary<string, string> PassedChecks() => new(StringComparer.Ordinal)
+    {
+        ["routed-message-endpoint"] = "passed",
+        ["direct-storage-absent"] = "passed",
+        ["DEEP_FILE_URL"] = "passed",
+        ["DEEP_PUSH_URL"] = "passed",
+        ["DEEP_CALL_SIGNALING_BASE_URL"] = "passed"
+    };
+
+    private static void AssertMachineReadableContract(
+        PreflightProcessResult result,
+        string expectedPreflightStatus,
+        IReadOnlyDictionary<string, string> expectedChecks)
+    {
+        using var preflight = JsonDocument.Parse(result.PreflightJson);
+        var root = preflight.RootElement;
+        Assert.Equal(
+            new[]
+            {
+                "checks",
+                "generatedAtUtc",
+                "lane",
+                "laneInvocationId",
+                "programRevisionSha",
+                "releaseInvocationId",
+                "schema",
+                "sourceCommitSha",
+                "status"
+            },
+            root.EnumerateObject().Select(static property => property.Name).Order().ToArray());
+        Assert.Equal("deep.survival.strict-preflight.v1", root.GetProperty("schema").GetString());
+        Assert.Matches("^[0-9a-f]{40}$", root.GetProperty("sourceCommitSha").GetString()!);
+        Assert.Equal(result.ReleaseInvocationId, root.GetProperty("releaseInvocationId").GetString());
+        Assert.Matches("^[0-9a-f]{32}$", root.GetProperty("laneInvocationId").GetString()!);
+        Assert.Equal("LiveInfrastructure", root.GetProperty("lane").GetString());
+        Assert.Equal(expectedPreflightStatus, root.GetProperty("status").GetString());
+        Assert.True(DateTimeOffset.TryParse(root.GetProperty("generatedAtUtc").GetString(), out _));
+
+        var checks = root.GetProperty("checks").EnumerateArray().ToArray();
+        Assert.Equal(expectedChecks.Count, checks.Length);
+        foreach (var check in checks)
+        {
+            Assert.Equal(
+                new[] { "detail", "name", "status" },
+                check.EnumerateObject().Select(static property => property.Name).Order().ToArray());
+            var name = check.GetProperty("name").GetString()!;
+            Assert.True(expectedChecks.ContainsKey(name), $"Unexpected preflight check: {name}");
+            Assert.Equal(expectedChecks[name], check.GetProperty("status").GetString());
+            Assert.False(string.IsNullOrWhiteSpace(check.GetProperty("detail").GetString()));
+        }
+
+        using var laneResult = JsonDocument.Parse(result.LaneResultJson);
+        var laneRoot = laneResult.RootElement;
+        Assert.Equal(
+            new[]
+            {
+                "counters",
+                "evidence",
+                "evidenceSha256",
+                "generatedAtUtc",
+                "lane",
+                "laneInvocationId",
+                "programRevisionSha",
+                "releaseInvocationId",
+                "schema",
+                "sourceCommitSha",
+                "status"
+            },
+            laneRoot.EnumerateObject().Select(static property => property.Name).Order().ToArray());
+        Assert.Equal("deep.survival.strict-lane-result.v1", laneRoot.GetProperty("schema").GetString());
+        Assert.Equal(root.GetProperty("sourceCommitSha").GetString(), laneRoot.GetProperty("sourceCommitSha").GetString());
+        Assert.Equal(result.ReleaseInvocationId, laneRoot.GetProperty("releaseInvocationId").GetString());
+        Assert.Equal(root.GetProperty("laneInvocationId").GetString(), laneRoot.GetProperty("laneInvocationId").GetString());
+        Assert.Equal("LiveInfrastructure", laneRoot.GetProperty("lane").GetString());
+        Assert.Equal(expectedPreflightStatus == "ready" ? "passed" : "blocked", laneRoot.GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, laneRoot.GetProperty("counters").ValueKind);
+        Assert.Equal(
+            expectedPreflightStatus == "ready" ? "live configuration contract" : "machine-readable preflight",
+            laneRoot.GetProperty("evidence").GetString());
+        Assert.Equal(string.Empty, laneRoot.GetProperty("evidenceSha256").GetString());
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -161,4 +306,12 @@ public sealed class RoutedCompositionContractSmokeTests
         Assert.NotNull(directory);
         return directory!.FullName;
     }
+
+    private sealed record PreflightProcessResult(
+        int ExitCode,
+        string StandardOutput,
+        string StandardError,
+        string ReleaseInvocationId,
+        string PreflightJson,
+        string LaneResultJson);
 }
