@@ -1,5 +1,6 @@
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Core.ViewModels;
+using System.Security.Cryptography;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
 
@@ -41,8 +42,8 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
 
         Assert.True(handedOff.IsHandedOff);
         Assert.Equal(fixture.ApkBytes, installer.ObservedBytes);
-        Assert.NotEqual(sourcePath, installer.ObservedPath);
-        Assert.Empty(Directory.EnumerateFileSystemEntries(snapshotRoot));
+        Assert.False(handedOff.CleanupPending);
+        AssertNoOwnedPackageSnapshots(snapshotRoot);
 
         var replay = await handoff.HandOffAsync(
             verified.HandoffHandle!,
@@ -76,7 +77,7 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
         Assert.False(result.IsHandedOff);
         Assert.Contains("confirm", result.Failure, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, installer.Calls);
-        Assert.Empty(Directory.EnumerateFileSystemEntries(snapshotRoot));
+        AssertNoOwnedPackageSnapshots(snapshotRoot);
         Assert.False((await handoff.HandOffAsync(
             preserved.Handle,
             userConfirmed: true,
@@ -124,7 +125,7 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
 
             Assert.False(result.IsHandedOff);
             Assert.Equal(0, installer.Calls);
-            Assert.Empty(Directory.EnumerateFileSystemEntries(snapshotRoot));
+            AssertNoOwnedPackageSnapshots(snapshotRoot);
         }
     }
 
@@ -150,7 +151,7 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
             CancellationToken.None);
 
         Assert.False(failed.IsHandedOff);
-        Assert.Empty(Directory.EnumerateFileSystemEntries(snapshotRoot));
+        AssertNoOwnedPackageSnapshots(snapshotRoot);
 
         _ = await PreserveAsync(fixture, handoff, sandbox.Path);
         Assert.NotEmpty(Directory.EnumerateFileSystemEntries(snapshotRoot));
@@ -160,7 +161,7 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
             signer,
             new RecordingInstallerHandoff(),
             clock);
-        Assert.Empty(Directory.EnumerateFileSystemEntries(snapshotRoot));
+        AssertNoOwnedPackageSnapshots(snapshotRoot);
     }
 
     [Fact]
@@ -181,7 +182,7 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
 
         await Task.Delay(TimeSpan.FromMilliseconds(500));
 
-        Assert.Empty(Directory.EnumerateFileSystemEntries(snapshotRoot));
+        AssertNoOwnedPackageSnapshots(snapshotRoot);
     }
 
     [Fact]
@@ -215,7 +216,10 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
     public async Task WindowsInstallerBoundary_IsExplicitlyUnsupported()
     {
         var result = await new UnsupportedAndroidPackageInstallerHandoff("Windows")
-            .RequestInstallAsync("private-snapshot.apk", CancellationToken.None);
+            .RequestInstallAsync(
+                new MemoryStream([0x01]),
+                expectedLength: 1,
+                cancellationToken: CancellationToken.None);
 
         Assert.False(result.IsAccepted);
         Assert.Contains("Windows", result.Failure, StringComparison.Ordinal);
@@ -264,6 +268,261 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
         Assert.False(viewModel.CanRequestInstaller);
         Assert.False(await viewModel.RequestInstallerHandoffAsync());
         Assert.Equal(1, installer.Calls);
+    }
+
+    [Fact]
+    public async Task OwnedChildRoot_NeverDeletesUnrelatedParentSiblingsOrUnmarkedMiswire()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var parentRoot = Path.Combine(sandbox.Path, "app-private");
+        Directory.CreateDirectory(parentRoot);
+        var unrelated = Path.Combine(parentRoot, "user-data.db");
+        await File.WriteAllTextAsync(unrelated, "must survive");
+        var handoff = new VerifiedAndroidPackageHandoffService(
+            parentRoot,
+            new SequencedSignerVerifier(),
+            new RecordingInstallerHandoff(),
+            new ManualTimeProvider(UpdateTrustTestFixture.UpdateStart));
+
+        _ = await PreserveAsync(fixture, handoff, sandbox.Path);
+        _ = await PreserveAsync(fixture, handoff, sandbox.Path);
+
+        Assert.True(File.Exists(unrelated));
+        Assert.Equal("must survive", await File.ReadAllTextAsync(unrelated));
+        Assert.True(Directory.Exists(Path.Combine(
+            parentRoot,
+            VerifiedAndroidPackageHandoffService.OwnedStoreDirectoryName)));
+
+        var miswiredParent = Path.Combine(sandbox.Path, "miswired");
+        var unmarkedStore = Path.Combine(
+            miswiredParent,
+            VerifiedAndroidPackageHandoffService.OwnedStoreDirectoryName);
+        Directory.CreateDirectory(unmarkedStore);
+        var foreign = Path.Combine(unmarkedStore, "foreign.txt");
+        await File.WriteAllTextAsync(foreign, "foreign");
+
+        Assert.Throws<InvalidDataException>(() =>
+            new VerifiedAndroidPackageHandoffService(
+                miswiredParent,
+                new SequencedSignerVerifier(),
+                new RecordingInstallerHandoff()));
+        Assert.Equal("foreign", await File.ReadAllTextAsync(foreign));
+    }
+
+    [Fact]
+    public async Task PreCanceledHandoff_ConsumesHandleCleansSnapshotAndCannotReplay()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var installer = new RecordingInstallerHandoff();
+        var handoff = new VerifiedAndroidPackageHandoffService(
+            Path.Combine(sandbox.Path, "handoff"),
+            new SequencedSignerVerifier(),
+            installer,
+            new ManualTimeProvider(UpdateTrustTestFixture.UpdateStart));
+        var preserved = await PreserveAsync(fixture, handoff, sandbox.Path);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            handoff.HandOffAsync(
+                preserved.Handle,
+                userConfirmed: true,
+                cancellation.Token));
+
+        AssertNoOwnedPackageSnapshots(Path.Combine(sandbox.Path, "handoff"));
+        Assert.False((await handoff.HandOffAsync(
+            preserved.Handle,
+            userConfirmed: true,
+            CancellationToken.None)).IsHandedOff);
+        Assert.Equal(0, installer.Calls);
+    }
+
+    [Fact]
+    public async Task CancellationDuringSignerOrInstaller_CleansAndLeavesNoReplayableState()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        foreach (var phase in new[] { "signer", "installer" })
+        {
+            using var sandbox = new TemporaryDirectory();
+            var entered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var signer = phase == "signer"
+                ? new BlockingSignerVerifier(entered)
+                : new SequencedSignerVerifier();
+            var installer = phase == "installer"
+                ? new BlockingInstallerHandoff(entered)
+                : new RecordingInstallerHandoff();
+            var handoff = new VerifiedAndroidPackageHandoffService(
+                Path.Combine(sandbox.Path, "handoff"),
+                signer,
+                installer,
+                new ManualTimeProvider(UpdateTrustTestFixture.UpdateStart));
+            var preserved = await PreserveAsync(fixture, handoff, sandbox.Path);
+            using var cancellation = new CancellationTokenSource();
+            var task = handoff.HandOffAsync(
+                preserved.Handle,
+                userConfirmed: true,
+                cancellation.Token);
+
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+
+            AssertNoOwnedPackageSnapshots(Path.Combine(sandbox.Path, "handoff"));
+            Assert.False((await handoff.HandOffAsync(
+                preserved.Handle,
+                userConfirmed: true,
+                CancellationToken.None)).IsHandedOff);
+        }
+    }
+
+    [Fact]
+    public async Task AdapterReceivesOnlyHeldReadStreamAndMustReturnExactCopyReceipt()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var parentRoot = Path.Combine(sandbox.Path, "handoff");
+        var dishonest = new DelayedReadInstallerHandoff(returnValidReceipt: false);
+        var handoff = new VerifiedAndroidPackageHandoffService(
+            parentRoot,
+            new SequencedSignerVerifier(),
+            dishonest,
+            new ManualTimeProvider(UpdateTrustTestFixture.UpdateStart));
+        var preserved = await PreserveAsync(fixture, handoff, sandbox.Path);
+
+        var rejected = await handoff.HandOffAsync(
+            preserved.Handle,
+            userConfirmed: true,
+            CancellationToken.None);
+
+        Assert.False(rejected.IsHandedOff);
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => dishonest.ReadCapturedStreamAfterReturnAsync());
+
+        var mutating = new MutationAttemptingInstallerHandoff(parentRoot);
+        handoff = new VerifiedAndroidPackageHandoffService(
+            parentRoot,
+            new SequencedSignerVerifier(),
+            mutating,
+            new ManualTimeProvider(UpdateTrustTestFixture.UpdateStart));
+        preserved = await PreserveAsync(fixture, handoff, sandbox.Path);
+
+        var accepted = await handoff.HandOffAsync(
+            preserved.Handle,
+            userConfirmed: true,
+            CancellationToken.None);
+
+        Assert.True(accepted.IsHandedOff);
+        Assert.True(mutating.WriterWasBlocked);
+        Assert.Equal(fixture.ApkBytes, mutating.ObservedBytes);
+    }
+
+    [Fact]
+    public async Task PreserveFailure_IsReturnedAsConstantPathFreeFailure()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var sourcePath = Path.Combine(sandbox.Path, "source.apk");
+        await File.WriteAllBytesAsync(sourcePath, fixture.ApkBytes);
+        const string privatePath = @"C:\Users\Mr. X\secret\candidate.apk";
+        var signer = new SequencedSignerVerifier();
+        var verifier = CreateVerifier(
+            fixture,
+            signer,
+            new ThrowingHandoffService(
+                new UnauthorizedAccessException($"Access denied: {privatePath}")),
+            sandbox.Path);
+
+        var result = await verifier.VerifyAsync(
+            Request(fixture.BuildBundle(), sourcePath),
+            CancellationToken.None);
+
+        Assert.False(result.IsVerified);
+        Assert.Equal(
+            "Private verified package handoff storage is unavailable.",
+            result.Failure);
+        Assert.DoesNotContain(privatePath, result.Failure, StringComparison.Ordinal);
+        Assert.DoesNotContain(sandbox.Path, result.Failure, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CleanupFailure_IsReportedPendingAndRetriedBeforeNextPreserve()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var parentRoot = Path.Combine(sandbox.Path, "handoff");
+        var handoff = new VerifiedAndroidPackageHandoffService(
+            parentRoot,
+            new SequencedSignerVerifier(),
+            new RecordingInstallerHandoff(),
+            new ManualTimeProvider(UpdateTrustTestFixture.UpdateStart));
+        var preserved = await PreserveAsync(fixture, handoff, sandbox.Path);
+        var ownedPackage = Directory.GetDirectories(
+            Path.Combine(parentRoot, VerifiedAndroidPackageHandoffService.OwnedStoreDirectoryName),
+            "pkg-*").Single();
+        var lockedPath = Path.Combine(ownedPackage, "cleanup-lock");
+        await File.WriteAllTextAsync(lockedPath, "locked");
+        await using var locked = new FileStream(
+            lockedPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read);
+
+        var result = await handoff.HandOffAsync(
+            preserved.Handle,
+            userConfirmed: true,
+            CancellationToken.None);
+
+        Assert.True(result.IsHandedOff);
+        Assert.True(result.CleanupPending);
+        Assert.True(Directory.Exists(ownedPackage));
+
+        await locked.DisposeAsync();
+        _ = await PreserveAsync(fixture, handoff, sandbox.Path);
+        Assert.False(Directory.Exists(ownedPackage));
+    }
+
+    [Fact]
+    public async Task ViewModel_ConvertsHandoffCancellationToControlledRecoverableFailure()
+    {
+        var verified = new OfflineAndroidPackageVerification(
+            true,
+            "verified",
+            "offline media",
+            UpdateTrustTestFixture.TargetPath,
+            UpdateTrustTestFixture.PackageId,
+            UpdateTrustTestFixture.VersionName,
+            UpdateTrustTestFixture.VersionCode,
+            "2d1cefd30a1e12b657288bca704aab4b10980dce",
+            new DateTimeOffset(2030, 1, 3, 0, 0, 0, TimeSpan.Zero),
+            null,
+            "a".PadLeft(64, 'a'),
+            "opaque",
+            new DateTimeOffset(2030, 1, 2, 0, 10, 0, TimeSpan.Zero));
+        var viewModel = new OfflineUpdateVerificationViewModel(
+            new StaticOfflineVerifier(verified),
+            new CancelingHandoffService());
+        var request = new OfflineAndroidPackageRequest(
+            null!,
+            UpdateTrustTestFixture.TargetPath,
+            "offline media",
+            "source.apk",
+            UpdateTrustTestFixture.UpdateStart);
+        await viewModel.VerifyAsync(request);
+        Assert.True(viewModel.ConfirmExactDetails(
+            verified.PackageId,
+            verified.VersionName,
+            verified.SourceCommit,
+            viewModel.Expiry));
+
+        Assert.False(await viewModel.RequestInstallerHandoffAsync());
+        Assert.Contains("cancel", viewModel.Failure, StringComparison.OrdinalIgnoreCase);
+        Assert.False(viewModel.CanRequestInstaller);
+
+        await viewModel.VerifyAsync(request);
+        Assert.True(viewModel.CanConfirm);
     }
 
     private static async Task<PreservedAndroidPackageHandle> PreserveAsync(
@@ -354,22 +613,203 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
         }
 
         public int Calls { get; private set; }
-        public string? ObservedPath { get; private set; }
         public byte[]? ObservedBytes { get; private set; }
 
         public async Task<AndroidPackageInstallerHandoffResult> RequestInstallAsync(
-            string privateVerifiedSnapshotPath,
+            Stream verifiedPackage,
+            long expectedLength,
             CancellationToken cancellationToken)
         {
             Calls++;
-            ObservedPath = privateVerifiedSnapshotPath;
-            ObservedBytes = await File.ReadAllBytesAsync(
-                privateVerifiedSnapshotPath,
-                cancellationToken);
+            using var copy = new MemoryStream();
+            await verifiedPackage.CopyToAsync(copy, cancellationToken);
+            ObservedBytes = copy.ToArray();
             return new AndroidPackageInstallerHandoffResult(
                 accept,
+                ObservedBytes.LongLength,
+                Convert.ToHexString(SHA256.HashData(ObservedBytes)).ToLowerInvariant(),
                 accept ? null : "Synthetic platform rejection.");
         }
+    }
+
+    private sealed class BlockingSignerVerifier : IAndroidPackageSignerVerifier
+    {
+        private readonly TaskCompletionSource entered;
+
+        public BlockingSignerVerifier(TaskCompletionSource entered)
+        {
+            this.entered = entered;
+        }
+
+        public async Task<AndroidPackageSignerResult> VerifySnapshotAsync(
+            string snapshotPath,
+            CancellationToken cancellationToken)
+        {
+            entered.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("Unreachable.");
+        }
+    }
+
+    private sealed class BlockingInstallerHandoff : IAndroidPackageInstallerHandoff
+    {
+        private readonly TaskCompletionSource entered;
+
+        public BlockingInstallerHandoff(TaskCompletionSource entered)
+        {
+            this.entered = entered;
+        }
+
+        public async Task<AndroidPackageInstallerHandoffResult> RequestInstallAsync(
+            Stream verifiedPackage,
+            long expectedLength,
+            CancellationToken cancellationToken)
+        {
+            entered.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("Unreachable.");
+        }
+    }
+
+    private sealed class DelayedReadInstallerHandoff : IAndroidPackageInstallerHandoff
+    {
+        private readonly bool returnValidReceipt;
+        private Stream? captured;
+
+        public DelayedReadInstallerHandoff(bool returnValidReceipt)
+        {
+            this.returnValidReceipt = returnValidReceipt;
+        }
+
+        public async Task<AndroidPackageInstallerHandoffResult> RequestInstallAsync(
+            Stream verifiedPackage,
+            long expectedLength,
+            CancellationToken cancellationToken)
+        {
+            captured = verifiedPackage;
+            if (!returnValidReceipt)
+            {
+                return new AndroidPackageInstallerHandoffResult(true, 0, null, null);
+            }
+            using var copy = new MemoryStream();
+            await verifiedPackage.CopyToAsync(copy, cancellationToken);
+            var bytes = copy.ToArray();
+            return new AndroidPackageInstallerHandoffResult(
+                true,
+                bytes.LongLength,
+                Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
+                null);
+        }
+
+        public async Task ReadCapturedStreamAfterReturnAsync()
+        {
+            var buffer = new byte[1];
+            _ = await captured!.ReadAsync(buffer);
+        }
+    }
+
+    private sealed class MutationAttemptingInstallerHandoff
+        : IAndroidPackageInstallerHandoff
+    {
+        private readonly string parentRoot;
+
+        public MutationAttemptingInstallerHandoff(string parentRoot)
+        {
+            this.parentRoot = parentRoot;
+        }
+
+        public bool WriterWasBlocked { get; private set; }
+        public byte[]? ObservedBytes { get; private set; }
+
+        public async Task<AndroidPackageInstallerHandoffResult> RequestInstallAsync(
+            Stream verifiedPackage,
+            long expectedLength,
+            CancellationToken cancellationToken)
+        {
+            var snapshot = Directory.EnumerateFiles(
+                parentRoot,
+                "*.apk",
+                SearchOption.AllDirectories).Single();
+            try
+            {
+                await File.AppendAllTextAsync(snapshot, "mutation", cancellationToken);
+            }
+            catch (IOException)
+            {
+                WriterWasBlocked = true;
+            }
+
+            using var copy = new MemoryStream();
+            await verifiedPackage.CopyToAsync(copy, cancellationToken);
+            ObservedBytes = copy.ToArray();
+            return new AndroidPackageInstallerHandoffResult(
+                true,
+                ObservedBytes.LongLength,
+                Convert.ToHexString(SHA256.HashData(ObservedBytes)).ToLowerInvariant(),
+                null);
+        }
+    }
+
+    private sealed class ThrowingHandoffService
+        : IVerifiedAndroidPackageHandoffService
+    {
+        private readonly Exception exception;
+
+        public ThrowingHandoffService(Exception exception)
+        {
+            this.exception = exception;
+        }
+
+        public Task<PreservedAndroidPackageHandle> PreserveVerifiedSnapshotAsync(
+            string verifiedSnapshotPath,
+            VerifiedAndroidTarget target,
+            CancellationToken cancellationToken) =>
+            Task.FromException<PreservedAndroidPackageHandle>(exception);
+
+        public Task<VerifiedAndroidPackageHandoffResult> HandOffAsync(
+            string handle,
+            bool userConfirmed,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class StaticOfflineVerifier : IOfflineAndroidUpdateVerifier
+    {
+        private readonly OfflineAndroidPackageVerification result;
+
+        public StaticOfflineVerifier(OfflineAndroidPackageVerification result)
+        {
+            this.result = result;
+        }
+
+        public Task<OfflineAndroidPackageVerification> VerifyAsync(
+            OfflineAndroidPackageRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(result);
+    }
+
+    private sealed class CancelingHandoffService
+        : IVerifiedAndroidPackageHandoffService
+    {
+        public Task<PreservedAndroidPackageHandle> PreserveVerifiedSnapshotAsync(
+            string verifiedSnapshotPath,
+            VerifiedAndroidTarget target,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<VerifiedAndroidPackageHandoffResult> HandOffAsync(
+            string handle,
+            bool userConfirmed,
+            CancellationToken cancellationToken) =>
+            Task.FromCanceled<VerifiedAndroidPackageHandoffResult>(
+                new CancellationToken(canceled: true));
+    }
+
+    private static void AssertNoOwnedPackageSnapshots(string parentRoot)
+    {
+        Assert.Empty(Directory.Exists(parentRoot)
+            ? Directory.EnumerateFiles(parentRoot, "*.apk", SearchOption.AllDirectories)
+            : []);
     }
 
     private sealed class ManualTimeProvider : TimeProvider
