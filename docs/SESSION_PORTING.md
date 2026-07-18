@@ -96,3 +96,12 @@ message, group, or cross-device E2E parity.
 - Contacts and global search beyond local conversation filtering.
 - Join community/open group URL handling.
 - Dedicated full-screen incoming-call notification actions on each operating system.
+
+## P02B offline update behavior
+
+The P02B slice adds a fail-closed Settings entry and a portable verification
+ViewModel. It intentionally does not reproduce an app-store updater or add a
+silent installer. No trusted production root is bundled, so the visible release
+state is “not configured”; tests supply public insecure keys explicitly.
+Android package identity and signer extraction stays behind the native platform
+adapter, while Apple platforms show their exact distribution limitation.

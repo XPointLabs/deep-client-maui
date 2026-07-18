@@ -1,0 +1,25 @@
+{
+  "schema": "deep.maui.p02b.devops-intake.v1",
+  "verifiedBeforeImplementation": true,
+  "devopsCommitSha": "3d2e163e354858937c4b6a8bd530e71b1b929dd9",
+  "mauiBaseSha": "9dc1502392ce2c1a86441df6308f2db54410eae8",
+  "contractSummaryStatus": "passed",
+  "negativeCaseCount": 22,
+  "fixtureOnly": true,
+  "productionKeysPresent": false,
+  "files": [
+    { "path": "lost-online-key-drill.json", "length": 200, "sha256": "0b9b64a26f4f76c689c405f6de865b325d162d1aa3f9d24f47acb598c3d0ab4b" },
+    { "path": "negative-scenarios.json", "length": 3912, "sha256": "ed2155366c1c2cecc00cc6bc0147312499b9bd643a1fe20495db329b7cd1b569" },
+    { "path": "offline-android-verification.json", "length": 1198, "sha256": "e3905b5011b64055f4c71c7d11502eaabff3e32418d819a74d954f75227d0365" },
+    { "path": "public-test-metadata/1.root.json", "length": 2829, "sha256": "6127e2111c2348961630ab2874b5620bc0dbb2f8339d85fb9171b4130b961ad7" },
+    { "path": "public-test-metadata/2.root.json", "length": 3257, "sha256": "6e98c82f01626e8aab1e373a1385578c8c5c4f9342b801cea8989f1b9f608daa" },
+    { "path": "public-test-metadata/android-release.json", "length": 1894, "sha256": "2f315df82d72990f6ebdd2f197baeaf30c6c8bf582a10c820aeef840fb937858" },
+    { "path": "public-test-metadata/snapshot.json", "length": 606, "sha256": "ef862e7fa3b0735c837c678a9a3d900b91fa749ed20e951188c24fb4e0a1de16" },
+    { "path": "public-test-metadata/targets.json", "length": 1493, "sha256": "68f40c2db0b597c52f7d0320f59570d6a654c72ae99317f55813a7707a728457" },
+    { "path": "public-test-metadata/timestamp.json", "length": 469, "sha256": "59d28b6551521f45ef17d7fa65adae64c255f4c289c69f8dbb99f2bc91f6f7f5" },
+    { "path": "root-rotation-drill.json", "length": 481, "sha256": "bda052c7ec752827d79a4c091796fdb044a18bf3ac02ba8dc6d3519d90b98e2d" },
+    { "path": "sbom-reproducibility-contract.json", "length": 600, "sha256": "8fd968670acb4ac4cdd37cc6ee49c372de488beeaeea952373480a13be503a7a" },
+    { "path": "secret-scan-summary.json", "length": 414, "sha256": "c07be72430904a415ce9cdf1a11cdb4d22f347aab7b70faab692fc65800185b4" },
+    { "path": "update-trust-summary.json", "length": 1283, "sha256": "a8c34ca104a1314745fdd9dd129ce5a09b68b4ca533649fe53a2f8d1b3b1fa8e" }
+  ]
+}

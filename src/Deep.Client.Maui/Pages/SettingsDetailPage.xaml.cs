@@ -106,6 +106,9 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             case "network":
                 BuildNetworkSection();
                 break;
+            case "offline-update":
+                BuildOfflineUpdateSection();
+                break;
             case "privacy":
                 BuildPrivacySection();
                 break;
@@ -156,6 +159,27 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         ]));
 
         _ = LoadPathAsync();
+    }
+
+    private void BuildOfflineUpdateSection()
+    {
+        TitleLabel.Text = "Офлайн-обновление";
+        ContentStack.Children.Add(CreateCategory(
+            "Проверка пакета",
+            CreateRow(
+                "Функция выключена",
+                "В этой сборке не задан отдельный доверенный корень обновлений. " +
+                "Пакет нельзя подтвердить или передать установщику без полной проверки метаданных, " +
+                "SHA-256, длины и сертификата подписи Android."),
+            CreateRow(
+                "Безопасный режим",
+                "Ошибка подписи, устаревшие или смешанные метаданные блокируют продолжение. " +
+                "Кнопки обхода проверки нет."),
+            CreateRow(
+                "iPhone и iPad",
+                "Этот поток относится только к Android APK. На устройствах Apple действуют " +
+                "подпись, provisioning и поддерживаемые Apple каналы распространения; " +
+                "офлайн-метаданные не обходят эти ограничения.")));
     }
 
     private async Task LoadPathAsync()

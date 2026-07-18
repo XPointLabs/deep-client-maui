@@ -191,6 +191,18 @@
                                 <TapGestureRecognizer Tapped="OnSessionNetworkClicked" />
                             </Grid.GestureRecognizers>
                         </Grid>
+                        <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" Margin="60,0,12,0" />
+                        <Grid AutomationId="Settings.OfflineUpdate" ColumnDefinitions="52,*,Auto" ColumnSpacing="0" HeightRequest="52" Padding="8,0">
+                            <Path Data="M12,3 V15 M7,10 L12,15 L17,10 M5,20 H19" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2.2" StrokeLineCap="Round" StrokeLineJoin="Round" Fill="Transparent" WidthRequest="28" HeightRequest="28" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
+                                <Label Text="Офлайн-обновление" FontSize="16" />
+                                <Label Text="Проверка подписанного APK" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            </VerticalStackLayout>
+                            <Path Grid.Column="2" Data="M9,5 L16,12 L9,19" Stroke="{StaticResource TextSecondary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnOfflineUpdateClicked" />
+                            </Grid.GestureRecognizers>
+                        </Grid>
                     </VerticalStackLayout>
                 </Border>
 

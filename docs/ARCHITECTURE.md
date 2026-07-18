@@ -126,3 +126,24 @@ Downloads, and foreground/network-restoration maintenance. Production packaging
 is documented in `WINDOWS_RELEASE.md`.
 
 iOS remains in the source tree but is outside the current release phase.
+
+## Offline update verification
+
+`Deep.Client.Maui.Core` contains the portable P02B verifier for exact canonical
+TUF/POUF metadata, threshold signatures, sequential root rotation, expiry,
+rollback, and parent hash/length bindings. It copies a metadata-bound APK into
+an app-private bounded snapshot before calling the narrow
+`IAndroidPackageSignerVerifier` adapter. Android's archive API remains the
+package-signing authority; Core does not implement APK signature cryptography
+or install packages.
+
+No production trusted root or update key is embedded and no update verifier is
+registered in the Release service graph. The Settings row therefore shows an
+explicit fail-closed unavailable state until Mr. X provisions a separately
+reviewed non-production trust configuration. This preserves the exact
+65-descriptor routed Release composition. Verification failure has no override,
+and the ViewModel requires an exact visible version confirmation after success.
+
+iOS, iPadOS, and Mac Catalyst remain subject to Apple signing, provisioning,
+notarization, and supported distribution channels. P02 metadata does not provide
+an iOS sideload bypass.

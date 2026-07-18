@@ -198,6 +198,11 @@ public partial class SettingsPage : ContentPage
         await NavigateToSettingsSectionAsync("network");
     }
 
+    private async void OnOfflineUpdateClicked(object? sender, EventArgs e)
+    {
+        await NavigateToSettingsSectionAsync("offline-update");
+    }
+
     private async void OnPrivacyClicked(object? sender, EventArgs e)
     {
         await NavigateToSettingsSectionAsync("privacy");
