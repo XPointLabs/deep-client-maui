@@ -68,6 +68,25 @@ public static class MauiProgram
         ConfigureWindowsHandlers();
 #endif
 
+        var routerBaseUrls = ResolveRouterBaseUrls();
+        var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
+        ConfigureApplicationServices(
+            builder.Services,
+            routerBaseUrls,
+            storageBaseUrl,
+            CreateRouterHttpClient());
+        return builder.Build();
+    }
+
+    internal static void ConfigureApplicationServices(
+        IServiceCollection services,
+        IReadOnlyList<PinnedRouterEndpoint> routerBaseUrls,
+        string? storageBaseUrl,
+        HttpClient routerHttpClient)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(routerBaseUrls);
+        ArgumentNullException.ThrowIfNull(routerHttpClient);
         var featureFlags = BuildFeatureFlags();
         var pushBaseUrl = ResolveRuntimeSetting(PushBaseUrlEnv);
 #if !DEBUG
@@ -77,30 +96,33 @@ public static class MauiProgram
                 "DEEP_PUSH_URL is required when push notifications are enabled in non-Debug builds.");
         }
 #endif
-        var routerBaseUrls = ResolveRouterBaseUrls();
-        var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
 #if DEBUG
         var routedComposition = routerBaseUrls.Count == 0
             ? null
-            : ConfigureProductionRoutedServices(
-                builder.Services,
+            : RoutedProductionCompositionFactory.Create(
                 routerBaseUrls,
                 storageBaseUrl,
-                CreateRouterHttpClient());
+                routerHttpClient);
 #else
-        var routedComposition = ConfigureProductionRoutedServices(
-            builder.Services,
+        var routedComposition = RoutedProductionCompositionFactory.Create(
             routerBaseUrls,
             storageBaseUrl,
-            CreateRouterHttpClient());
+            routerHttpClient);
 #endif
         var fileConnectIps = ParseIpAddresses(ResolveRuntimeSetting(FileConnectIpsEnv));
 
-        builder.Services.AddSingleton(RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting));
+        services.AddSingleton(RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting));
+        if (routedComposition is not null)
+        {
+            services.AddSingleton(routedComposition);
+            services.AddSingleton(routedComposition.Router);
+            services.AddSingleton<ITransportRouteProvider>(routedComposition.RouteProvider);
+            services.AddSingleton<ISessionMessageTransport>(routedComposition.SessionMessageTransport);
+        }
         if (routedComposition is null)
         {
 #if DEBUG
-            builder.Services.AddSingleton<ITransportRouteProvider>(_ =>
+            services.AddSingleton<ITransportRouteProvider>(_ =>
                 new DirectStorageRouteProvider(storageBaseUrl));
 #else
             throw new InvalidOperationException(
@@ -111,7 +133,7 @@ public static class MauiProgram
 #if DEBUG
         if (routedComposition is null)
         {
-        builder.Services.AddSingleton<ISessionMessageTransport>(_ =>
+        services.AddSingleton<ISessionMessageTransport>(_ =>
         {
             if (!string.IsNullOrWhiteSpace(storageBaseUrl))
             {
@@ -135,12 +157,12 @@ public static class MauiProgram
         });
         }
 #endif
-        builder.Services.AddSingleton(featureFlags);
-        builder.Services.AddSingleton<IClock, SystemClock>();
-        builder.Services.AddSingleton<IIpCountryLookup>(_ => new IpCountryLookup(
+        services.AddSingleton(featureFlags);
+        services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<IIpCountryLookup>(_ => new IpCountryLookup(
             _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_blocks_ipv4")),
             _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_codes.json"))));
-        builder.Services.AddSingleton<IAvatarProfileTransport>(_ =>
+        services.AddSingleton<IAvatarProfileTransport>(_ =>
         {
             var baseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
             if (!string.IsNullOrWhiteSpace(baseUrl))
@@ -156,7 +178,7 @@ public static class MauiProgram
                 "Remote avatar publication is not allowed to be disabled for release startup.");
 #endif
         });
-        builder.Services.AddSingleton<IAttachmentFileTransport>(_ =>
+        services.AddSingleton<IAttachmentFileTransport>(_ =>
         {
             var baseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
             if (!string.IsNullOrWhiteSpace(baseUrl))
@@ -172,45 +194,45 @@ public static class MauiProgram
                 "Remote attachment upload is not allowed to be disabled for release startup.");
 #endif
         });
-        builder.Services.AddSingleton(sp =>
+        services.AddSingleton(sp =>
             new ClientRuntimeBootstrapper(cancellationToken => CreateClientRuntimeAsync(sp, cancellationToken)));
-        builder.Services.AddSingleton(sp =>
+        services.AddSingleton(sp =>
             sp.GetRequiredService<ClientRuntimeBootstrapper>().GetRequiredRuntime());
 
-        builder.Services.AddSingleton<IPushNotificationService, MauiPushNotificationService>();
-        builder.Services.AddSingleton(_ => new PushClientMetadata(
+        services.AddSingleton<IPushNotificationService, MauiPushNotificationService>();
+        services.AddSingleton(_ => new PushClientMetadata(
             PushNotificationCrypto.PackageName,
             AppInfo.Current.VersionString));
-        builder.Services.AddSingleton<IPushSubscriptionTransport>(_ =>
+        services.AddSingleton<IPushSubscriptionTransport>(_ =>
         {
             return string.IsNullOrWhiteSpace(pushBaseUrl)
                 ? new DisabledPushSubscriptionTransport()
                 : new HttpPushSubscriptionTransport(CreateServiceHttpClient(), new HttpPushSubscriptionTransportOptions(pushBaseUrl));
         });
-        builder.Services.AddSingleton<IPushRegistrationCoordinator, PushRegistrationCoordinator>();
-        builder.Services.AddSingleton<SyncPollingPolicy>();
-        builder.Services.AddSingleton<PushRegistrationLifecycleCoordinator>();
-        builder.Services.AddSingleton<ChatOpenUiCache>();
-        builder.Services.AddSingleton<IActiveConversationTracker, ActiveConversationTracker>();
-        builder.Services.AddSingleton<IAccountLogoutCoordinator, MauiAccountLogoutCoordinator>();
-        builder.Services.AddSingleton<IMediaCodecService, MauiMediaCodecService>();
-        builder.Services.AddSingleton<IPermissionsService, MauiPermissionsService>();
-        builder.Services.AddSingleton<IBackgroundTaskService, MauiBackgroundTaskService>();
-        builder.Services.AddSingleton<IRegularBackgroundSyncScheduler, MauiRegularBackgroundSyncScheduler>();
-        builder.Services.AddSingleton<BackgroundSyncSchedulingCoordinator>();
-        builder.Services.AddSingleton<IShareExtensionBridge, MauiShareExtensionBridge>();
-        builder.Services.AddSingleton<INotificationScheduler, MauiNotificationScheduler>();
-        builder.Services.AddSingleton<IPrivacyScreenService, MauiPrivacyScreenService>();
+        services.AddSingleton<IPushRegistrationCoordinator, PushRegistrationCoordinator>();
+        services.AddSingleton<SyncPollingPolicy>();
+        services.AddSingleton<PushRegistrationLifecycleCoordinator>();
+        services.AddSingleton<ChatOpenUiCache>();
+        services.AddSingleton<IActiveConversationTracker, ActiveConversationTracker>();
+        services.AddSingleton<IAccountLogoutCoordinator, MauiAccountLogoutCoordinator>();
+        services.AddSingleton<IMediaCodecService, MauiMediaCodecService>();
+        services.AddSingleton<IPermissionsService, MauiPermissionsService>();
+        services.AddSingleton<IBackgroundTaskService, MauiBackgroundTaskService>();
+        services.AddSingleton<IRegularBackgroundSyncScheduler, MauiRegularBackgroundSyncScheduler>();
+        services.AddSingleton<BackgroundSyncSchedulingCoordinator>();
+        services.AddSingleton<IShareExtensionBridge, MauiShareExtensionBridge>();
+        services.AddSingleton<INotificationScheduler, MauiNotificationScheduler>();
+        services.AddSingleton<IPrivacyScreenService, MauiPrivacyScreenService>();
 #if ANDROID
-        builder.Services.AddSingleton<IAppLockService, AndroidAppLockService>();
+        services.AddSingleton<IAppLockService, AndroidAppLockService>();
 #elif WINDOWS
-        builder.Services.AddSingleton<IAppLockService, WindowsAppLockService>();
+        services.AddSingleton<IAppLockService, WindowsAppLockService>();
 #else
-        builder.Services.AddSingleton<IAppLockService, AppLockService>();
+        services.AddSingleton<IAppLockService, AppLockService>();
 #endif
-        builder.Services.AddSingleton<IAppearanceService, MauiAppearanceService>();
-        builder.Services.AddSingleton<IAppIconService, AppIconService>();
-        builder.Services.AddSingleton<ICallSignalingTransport>(services =>
+        services.AddSingleton<IAppearanceService, MauiAppearanceService>();
+        services.AddSingleton<IAppIconService, AppIconService>();
+        services.AddSingleton<ICallSignalingTransport>(serviceProvider =>
         {
             var baseUrl = ResolveRuntimeSetting(CallSignalingBaseUrlEnv);
             if (!string.IsNullOrWhiteSpace(baseUrl))
@@ -218,7 +240,7 @@ public static class MauiProgram
                 return new HttpCallSignalingTransport(
                     CreateServiceHttpClient(),
                     new HttpCallSignalingTransportOptions(baseUrl),
-                    cancellationToken => services
+                    cancellationToken => serviceProvider
                         .GetRequiredService<ClientRuntime>()
                         .Accounts
                         .GetRecoveryPhraseAsync(cancellationToken));
@@ -236,69 +258,49 @@ public static class MauiProgram
             return new InMemoryCallSignalingTransport();
 #endif
         });
-        builder.Services.AddSingleton<RealtimeCallService>();
-        builder.Services.AddSingleton<ICallService, MauiRealtimeCallService>();
-        builder.Services.AddSingleton<ICallIceConfigurationProvider>(services =>
-            (ICallIceConfigurationProvider)services.GetRequiredService<ICallSignalingTransport>());
-        builder.Services.AddSingleton<CallSessionCoordinator>();
-        builder.Services.AddSingleton<IAttachmentPickerService, MauiAttachmentPickerService>();
-        builder.Services.AddSingleton<IVoiceMessageRecorder, MauiVoiceMessageRecorder>();
-        builder.Services.AddSingleton<INetworkStatusService, MauiConnectivityStatusService>();
-        builder.Services.AddSingleton<AuthNavigationState>();
+        services.AddSingleton<RealtimeCallService>();
+        services.AddSingleton<ICallService, MauiRealtimeCallService>();
+        services.AddSingleton<ICallIceConfigurationProvider>(serviceProvider =>
+            (ICallIceConfigurationProvider)serviceProvider.GetRequiredService<ICallSignalingTransport>());
+        services.AddSingleton<CallSessionCoordinator>();
+        services.AddSingleton<IAttachmentPickerService, MauiAttachmentPickerService>();
+        services.AddSingleton<IVoiceMessageRecorder, MauiVoiceMessageRecorder>();
+        services.AddSingleton<INetworkStatusService, MauiConnectivityStatusService>();
+        services.AddSingleton<AuthNavigationState>();
 
-        builder.Services.AddTransient<OnboardingViewModel>();
-        builder.Services.AddTransient<WelcomeViewModel>();
-        builder.Services.AddTransient<ConversationsViewModel>();
-        builder.Services.AddTransient<ChatViewModel>();
-        builder.Services.AddTransient<GroupChatViewModel>();
-        builder.Services.AddTransient<GroupsViewModel>();
-        builder.Services.AddTransient<AttachmentPickerViewModel>();
-        builder.Services.AddTransient<NotificationRegistrationViewModel>();
-        builder.Services.AddTransient<SettingsViewModel>();
+        services.AddTransient<OnboardingViewModel>();
+        services.AddTransient<WelcomeViewModel>();
+        services.AddTransient<ConversationsViewModel>();
+        services.AddTransient<ChatViewModel>();
+        services.AddTransient<GroupChatViewModel>();
+        services.AddTransient<GroupsViewModel>();
+        services.AddTransient<AttachmentPickerViewModel>();
+        services.AddTransient<NotificationRegistrationViewModel>();
+        services.AddTransient<SettingsViewModel>();
 #if WINDOWS
-        builder.Services.AddSingleton(services => new DesktopWorkspaceViewModel(
-            services.GetRequiredService<ClientRuntime>(),
-            () => services.GetRequiredService<ConversationsViewModel>(),
-            () => services.GetRequiredService<ChatViewModel>(),
-            () => services.GetRequiredService<GroupChatViewModel>()));
+        services.AddSingleton(serviceProvider => new DesktopWorkspaceViewModel(
+            serviceProvider.GetRequiredService<ClientRuntime>(),
+            () => serviceProvider.GetRequiredService<ConversationsViewModel>(),
+            () => serviceProvider.GetRequiredService<ChatViewModel>(),
+            () => serviceProvider.GetRequiredService<GroupChatViewModel>()));
 #endif
 
-        builder.Services.AddSingleton<AppShell>();
-        builder.Services.AddTransient<WelcomePage>();
-        builder.Services.AddTransient<OnboardingPage>();
-        builder.Services.AddTransient<ConversationsPage>();
-        builder.Services.AddTransient<StartConversationPage>();
-        builder.Services.AddTransient<NewConversationPage>();
-        builder.Services.AddTransient<ChatPage>();
-        builder.Services.AddTransient<ContactProfilePage>();
-        builder.Services.AddTransient<GroupChatPage>();
-        builder.Services.AddTransient<GroupsPage>();
-        builder.Services.AddTransient<SettingsPage>();
-        builder.Services.AddTransient<SettingsDetailPage>();
-        builder.Services.AddTransient<CallPage>();
+        services.AddSingleton<AppShell>();
+        services.AddTransient<WelcomePage>();
+        services.AddTransient<OnboardingPage>();
+        services.AddTransient<ConversationsPage>();
+        services.AddTransient<StartConversationPage>();
+        services.AddTransient<NewConversationPage>();
+        services.AddTransient<ChatPage>();
+        services.AddTransient<ContactProfilePage>();
+        services.AddTransient<GroupChatPage>();
+        services.AddTransient<GroupsPage>();
+        services.AddTransient<SettingsPage>();
+        services.AddTransient<SettingsDetailPage>();
+        services.AddTransient<CallPage>();
 #if WINDOWS
-        builder.Services.AddSingleton<DesktopWorkspacePage>();
+        services.AddSingleton<DesktopWorkspacePage>();
 #endif
-
-        return builder.Build();
-    }
-
-    internal static RoutedProductionComposition ConfigureProductionRoutedServices(
-        IServiceCollection services,
-        IEnumerable<PinnedRouterEndpoint> routerEndpoints,
-        string? directStorageUrl,
-        HttpClient routerHttpClient)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-        var composition = RoutedProductionCompositionFactory.Create(
-            routerEndpoints,
-            directStorageUrl,
-            routerHttpClient);
-        services.AddSingleton(composition);
-        services.AddSingleton(composition.Router);
-        services.AddSingleton<ITransportRouteProvider>(composition.RouteProvider);
-        services.AddSingleton<ISessionMessageTransport>(composition.SessionMessageTransport);
-        return composition;
     }
 
 #if ANDROID

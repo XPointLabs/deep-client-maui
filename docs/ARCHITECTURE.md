@@ -60,12 +60,19 @@ and three distinct canonical router URLs. Router bases have a root path and no
 userinfo, query, or fragment; HTTP requires a literal loopback IP, while HTTPS
 uses the existing identity/certificate pinning. `MauiProgram` resolves the route
 provider and message transport through the same Core production factory covered
-by Release tests. CI builds the Windows Release assembly, proves that compiled
-`MauiProgram.CreateMauiApp` calls its production routed registrar exactly once,
-executes that registrar against a real DI container, and checks the resolved
-factory instances, exact three pins, and absence of direct/stub bindings. A
-negative DI mutation proves that unused factory calls cannot satisfy the guard.
-The separate factory outage contract is also executed and reported independently;
+by Release tests. `UseMauiApp` and native handler setup own the framework portion
+of startup. Every Deep-owned service, adapter, ViewModel, and page registration
+is then added by one headless `ConfigureApplicationServices` entrypoint called
+exactly once immediately before `MauiAppBuilder.Build`; no Deep registration is
+allowed after it. CI builds the Windows Release assembly, verifies this dominance
+and adjacency in compiled control flow, executes the exact entrypoint against a
+real final DI container, and binds the complete 65-descriptor Windows Release
+manifest. It also checks resolved factory instances, exact three pins, and the
+absence of direct/stub descriptors or concretes. Conditional/dead entrypoint,
+indirect post-entrypoint registration, and direct/stub post-entrypoint mutation
+fixtures must fail. The verifier intentionally does not start MAUI/COM and does
+not claim to inspect framework-owned registrations created by `UseMauiApp`.
+The separate factory outage contract is executed and reported independently;
 source-text matching is not release evidence. A live route is valid only when its mode is `onion-storage`,
 indices are exactly `0,1,2`, the signed relay identity set matches the pins, and
 relay RPC endpoints are unique. Router API loss fails the operation; there is no
