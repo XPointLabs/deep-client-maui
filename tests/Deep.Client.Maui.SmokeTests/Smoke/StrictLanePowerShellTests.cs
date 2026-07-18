@@ -17,6 +17,12 @@ public sealed class StrictLanePowerShellTests
     }
 
     [Fact]
+    public async Task AndroidLabProvisioningRequiresProtectedSignedAllowlistedBundle()
+    {
+        await RunScriptAsync("Test-AndroidLabProvisioningContract.ps1");
+    }
+
+    [Fact]
     public async Task EvidenceIdentityRejectsCrossLaneMissingMismatchedAndDuplicateInvocations()
     {
         await RunScriptAsync("Test-StrictEvidenceIdentity.ps1");

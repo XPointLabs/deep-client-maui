@@ -10,9 +10,9 @@
     "deep-client-shared": "94b623f078bd141163887a15116e6f9702510576"
   },
   "featureFlag": "DEEP_STRICT_WINDOWS_UI or DEEP_STRICT_LIVE",
-  "migrationPhase": "I01A.3 corrective trusted-policy, leased-payload, privacy, and adversarial contracts complete; physical Windows/Android/live execution remains pending.",
+  "migrationPhase": "I01A.3 plus forward Architect-review corrective: trusted-policy, physical-only inventory, leased-payload, strict JUnit/summary privacy, and adversarial contracts complete; physical Windows/Android/live execution remains pending.",
   "tests": {
-    "passed": 232,
+    "passed": 233,
     "failed": 0,
     "ordinaryNotRun": 2,
     "strictWindowsSkipped": 0

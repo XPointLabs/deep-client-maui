@@ -20,6 +20,7 @@ param(
     [string]$AaptPath,
     [string]$ApkSignerPath,
     [string]$AndroidLabPolicyPath,
+    [string]$MrXPublicKeySha256,
     [switch]$AllowSyntheticLabPolicyForContractTests,
     [switch]$CaptureStubWelcomeFailure
 )
@@ -255,24 +256,42 @@ function Read-SanitizedJUnitCounters {
     $document = [Xml.XmlDocument]::new()
     $document.XmlResolver = $null
     $document.Load($reader)
+    if ($null -ne $document.SelectSingleNode('//comment() | //processing-instruction()')) {
+        throw 'Android JUnit comments and processing instructions are not allowlisted.'
+    }
+    $allowedAttributes = @{
+        testsuites = @('name', 'tests', 'failures', 'errors', 'skipped', 'time')
+        testsuite = @('name', 'id', 'package', 'tests', 'failures', 'errors', 'skipped', 'time')
+        testcase = @('name', 'classname', 'time', 'status', 'assertions')
+        properties = @()
+        property = @('name', 'value')
+    }
     foreach ($node in @($document.SelectNodes('//*'))) {
-        $nodeName = $node.LocalName
-        if ($nodeName -match '(?i)^(system-out|system-err|attachments?|attachment)$') {
-            throw 'Android JUnit contains prohibited output or attachment nodes.'
+        $nodeName = $node.LocalName.ToLowerInvariant()
+        if (-not $allowedAttributes.ContainsKey($nodeName)) {
+            throw 'Android JUnit contains a non-allowlisted element.'
         }
         $isProperty = $nodeName -match '(?i)^property$'
         foreach ($attribute in @($node.Attributes)) {
+            $attributeName = $attribute.LocalName.ToLowerInvariant()
             $value = [string]$attribute.Value
+            if ($attribute.Prefix -or $attribute.NamespaceURI -or
+                $attributeName -notin $allowedAttributes[$nodeName]) {
+                throw 'Android JUnit contains a non-allowlisted attribute.'
+            }
             $propertyNameIsSensitive = $isProperty -and
-                $attribute.LocalName -match '(?i)^(name|key)$' -and
+                $attributeName -eq 'name' -and
                 $value -match '(?i)(password|passphrase|token|secret|mnemonic|seed|private.?key|authorization|bearer|recovery)'
-            $sensitiveValue = $value -match '(?i)(password|passphrase|token|secret|mnemonic|seed\s+phrase|private\s+key|authorization|bearer)\s*[:=]'
-            $attachmentValue = $value -match '(?i)(^|[._-])attachments?($|[._-])'
+            $sensitiveAttributeName = $attributeName -match '(?i)(password|passphrase|token|secret|mnemonic|seed|key|auth|bearer|recovery)'
+            $sensitiveValue = $isProperty -and $attributeName -eq 'value' -and
+                $value -match '(?i)(password|passphrase|token|secret|mnemonic|seed\s+phrase|private\s+key|authorization|bearer|recovery)'
+            $attachmentValue = $attributeName -match '(?i)(attachment|artifact|file|path)' -or
+                $value -match '(?i)(^|[._-])attachments?($|[._-])'
             $absoluteWindowsPath = $value -match '(?i)(^|[\s="''])([a-z]:[\\/]|\\\\)'
-            $absoluteUnixPath = $value -match '(^|[\s="''])/(?!/)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*'
-            $uri = $null
-            $absoluteUri = [Uri]::TryCreate($value.Trim(), [UriKind]::Absolute, [ref]$uri)
-            if ($propertyNameIsSensitive -or $sensitiveValue -or $attachmentValue -or
+            $absoluteUnixPath = $value -match '(^|[\s="'':(])/(?:$|[A-Za-z0-9._~-])'
+            $absoluteUri = $value -match '(?i)[a-z][a-z0-9+.-]{1,31}:(?://|[^\s"''<>]+)'
+            if ($propertyNameIsSensitive -or $sensitiveAttributeName -or
+                $sensitiveValue -or $attachmentValue -or
                 $absoluteWindowsPath -or $absoluteUnixPath -or $absoluteUri) {
                 throw 'Android JUnit contains a prohibited property, path, URI, attachment, or sensitive value.'
             }
@@ -333,6 +352,17 @@ function Test-PrivacySafeVersion {
         $Value -notmatch '(?i)(password|passphrase|token|secret|mnemonic|seed|private.?key|authorization|bearer|recovery)'
 }
 
+function Assert-PrivacySafeSerializedEvidence {
+    param([Parameter(Mandatory)][string]$Serialized)
+    if ($Serialized -match '(?i)([a-z]:[\\/]|\\\\)' -or
+        $Serialized -match '(?i)[a-z][a-z0-9+.-]{1,31}://' -or
+        $Serialized -match '(?i)"[^"]*(password|passphrase|token|secret|mnemonic|seed\s+phrase|private\s+key|authorization|bearer|recovery)[^"]*"' -or
+        $Serialized -match '(?i)"[^"]*(attachment|artifact)[^"]*"' -or
+        $Serialized -match '(?i)(:\s*|,\s*)"/(?:[^"]*)?"') {
+        throw 'Sanitized Android evidence contains a prohibited path, URI, sensitive value, or attachment reference.'
+    }
+}
+
 function Open-ReadOnlyLease {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -363,6 +393,7 @@ function Read-AndroidLabPolicy {
         throw 'A provisioned protected Android lab policy is required.'
     }
     $lease = Open-ReadOnlyLease -Path $Path -ContainmentRoot $repoRoot
+    $signatureLeases = [Collections.Generic.List[object]]::new()
     try {
         $lease.stream.Position = 0
         $reader = [IO.StreamReader]::new($lease.stream, [Text.Encoding]::UTF8, $true, 4096, $true)
@@ -398,12 +429,59 @@ function Read-AndroidLabPolicy {
                 -not (Test-NonZeroSha256 ([string]$policy.approval.receiptSha256))) {
                 throw 'Protected Android lab policy lacks the required Mr. X approval receipt.'
             }
+            if (-not (Test-NonZeroSha256 $MrXPublicKeySha256) -or
+                [string]$policy.signature.algorithm -cne 'Ed25519' -or
+                [string]$policy.signature.publicKeySha256 -cne $MrXPublicKeySha256 -or
+                -not (Test-NonZeroSha256 ([string]$policy.signature.signedPayloadSha256))) {
+                throw 'Protected Android lab policy lacks a pinned Mr. X Ed25519 signature.'
+            }
+            foreach ($field in @('publicKeyRelativePath', 'signatureRelativePath', 'signedPayloadRelativePath')) {
+                $relative = [string]$policy.signature.$field
+                if (-not (Test-CanonicalPolicyRelativePath $relative) -or
+                    -not $relative.StartsWith('.secrets/android-lab/', [StringComparison]::Ordinal)) {
+                    throw 'Protected Android signature path is invalid.'
+                }
+                $signatureLeases.Add((Open-ReadOnlyLease -Path (Join-Path $repoRoot $relative) -ContainmentRoot $repoRoot))
+            }
+            if ($signatureLeases[0].sha256 -cne $MrXPublicKeySha256 -or
+                $signatureLeases[2].sha256 -cne [string]$policy.signature.signedPayloadSha256) {
+                throw 'Protected Android signature material hash is invalid.'
+            }
+            $signedPayload = Get-Content -LiteralPath $signatureLeases[2].path -Raw | ConvertFrom-Json
+            if ([string]$signedPayload.schema -cne [string]$policy.schema -or
+                $signedPayload.provisioned -ne $policy.provisioned -or
+                $signedPayload.synthetic -ne $policy.synthetic -or
+                [string]$signedPayload.sourceCommitSha -cne [string]$policy.sourceCommitSha -or
+                [string]$signedPayload.policyId -cne [string]$policy.policyId -or
+                ($signedPayload.approval | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.approval | ConvertTo-Json -Depth 8 -Compress) -or
+                ($signedPayload.tools | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.tools | ConvertTo-Json -Depth 8 -Compress) -or
+                ($signedPayload.device | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.device | ConvertTo-Json -Depth 8 -Compress) -or
+                ($signedPayload.application | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.application | ConvertTo-Json -Depth 8 -Compress)) {
+                throw 'Mr. X signed payload does not exactly bind policy inventory.'
+            }
+            dotnet run --project (Join-Path $PSScriptRoot 'Deep.AndroidLab.PolicyVerifier\Deep.AndroidLab.PolicyVerifier.csproj') `
+                -c Release --no-build --no-restore -- verify $signatureLeases[0].path $signatureLeases[1].path $signatureLeases[2].path
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Mr. X Ed25519 signature verification failed.'
+            }
         }
+        $requiredDeviceClass = if ($synthetic) { 'managed-emulator' } else { 'physical-managed-dedicated' }
+        $requiredInventoryState = if ($synthetic) { 'synthetic-contract-fixture' } else { 'approved' }
+        $requiredInventoryApprover = if ($synthetic) { 'Synthetic Contract Fixture' } else { 'Mr. X' }
         if ([string]::IsNullOrWhiteSpace([string]$policy.device.serial) -or
             [string]::IsNullOrWhiteSpace([string]$policy.device.fingerprint) -or
             [string]::IsNullOrWhiteSpace([string]$policy.device.product) -or
+            [string]::IsNullOrWhiteSpace([string]$policy.device.hardware) -or
+            [string]::IsNullOrWhiteSpace([string]$policy.device.model) -or
+            [string]$policy.device.kernelQemu -cne $(if ($synthetic) { '1' } else { '0' }) -or
             [int]$policy.device.sdk -lt 26 -or [int]$policy.device.sdk -gt 100 -or
-            [string]$policy.device.class -notin @('managed-emulator', 'managed-physical')) {
+            [string]$policy.device.class -cne $requiredDeviceClass -or
+            $policy.device.dedicated -ne $true -or
+            [string]$policy.device.inventoryState -cne $requiredInventoryState -or
+            [string]$policy.device.inventoryApprovedBy -cne $requiredInventoryApprover -or
+            ($synthetic -and [string]$policy.device.inventoryApprovalReceiptSha256 -cne ('0' * 64)) -or
+            (-not $synthetic -and [string]$policy.device.inventoryApprovalReceiptSha256 -cne
+                [string]$policy.approval.receiptSha256)) {
             throw 'Android lab policy device identity is incomplete or invalid.'
         }
         return [pscustomobject]@{
@@ -413,8 +491,12 @@ function Read-AndroidLabPolicy {
             relativePath = $relativePolicyPath
             sha256 = $lease.sha256
             synthetic = $synthetic
+            signatureLeases = $signatureLeases
         }
     } catch {
+        foreach ($signatureLease in $signatureLeases) {
+            $signatureLease.stream.Dispose()
+        }
         $lease.stream.Dispose()
         throw
     }
@@ -728,6 +810,9 @@ if ($Lane -eq 'AndroidDevice') {
         $policyContext = Read-AndroidLabPolicy -Path $AndroidLabPolicyPath
         $policy = $policyContext.policy
         $androidTrustStreams.Add($policyContext.lease.stream)
+        foreach ($signatureLease in $policyContext.signatureLeases) {
+            $androidTrustStreams.Add($signatureLease.stream)
+        }
         if (-not $policyContext.synthetic) {
             $receiptPath = [IO.Path]::GetFullPath((
                 Join-Path $repoRoot ([string]$policy.approval.receiptRelativePath)))
@@ -860,6 +945,9 @@ if ($Lane -eq 'AndroidDevice') {
     $productionPackageAbsent = $false
     $deviceFingerprint = ''
     $deviceProduct = ''
+    $deviceHardware = ''
+    $deviceModel = ''
+    $deviceKernelQemu = ''
     $deviceSdk = 0
     $deviceClass = ''
     if ($null -ne $adb -and $null -ne $policy) {
@@ -880,19 +968,34 @@ if ($Lane -eq 'AndroidDevice') {
                 '-s', $serial, 'shell', 'getprop', 'ro.build.fingerprint')
             $deviceProduct = Invoke-AdbSingleValue -Adb $adb -Arguments @(
                 '-s', $serial, 'shell', 'getprop', 'ro.product.name')
+            $deviceHardware = Invoke-AdbSingleValue -Adb $adb -Arguments @(
+                '-s', $serial, 'shell', 'getprop', 'ro.hardware')
+            $deviceModel = Invoke-AdbSingleValue -Adb $adb -Arguments @(
+                '-s', $serial, 'shell', 'getprop', 'ro.product.model')
+            $deviceKernelQemu = Invoke-AdbSingleValue -Adb $adb -Arguments @(
+                '-s', $serial, 'shell', 'getprop', 'ro.kernel.qemu')
             $sdkText = Invoke-AdbSingleValue -Adb $adb -Arguments @(
                 '-s', $serial, 'shell', 'getprop', 'ro.build.version.sdk')
             $characteristics = Invoke-AdbSingleValue -Adb $adb -Arguments @(
                 '-s', $serial, 'shell', 'getprop', 'ro.build.characteristics')
             $deviceSdk = [int]$sdkText
-            $deviceClass = if ($characteristics -match '(?i)(^|,)emulator(,|$)') {
+            $emulatorPattern = '(?i)(emulator|sdk[_-]?gphone|generic|goldfish|ranchu|vbox|qemu|simulator)'
+            $emulatorDetected = $characteristics -match $emulatorPattern -or
+                $deviceProduct -match $emulatorPattern -or
+                $deviceHardware -match $emulatorPattern -or
+                $deviceModel -match $emulatorPattern -or
+                $deviceKernelQemu -cne '0'
+            $deviceClass = if ($emulatorDetected) {
                 'managed-emulator'
             } else {
-                'managed-physical'
+                'physical-managed-dedicated'
             }
             $devicePolicyMatched = $reportedSerial -ceq $serial -and
                 $deviceFingerprint -ceq [string]$policy.device.fingerprint -and
                 $deviceProduct -ceq [string]$policy.device.product -and
+                $deviceHardware -ceq [string]$policy.device.hardware -and
+                $deviceModel -ceq [string]$policy.device.model -and
+                $deviceKernelQemu -ceq [string]$policy.device.kernelQemu -and
                 $deviceSdk -eq [int]$policy.device.sdk -and
                 $deviceClass -ceq [string]$policy.device.class
             if (-not $devicePolicyMatched) {
@@ -919,7 +1022,7 @@ if ($Lane -eq 'AndroidDevice') {
         }
     }
     Add-Check 'android-managed-device-policy' $devicePolicyMatched $(if ($devicePolicyMatched) {
-        'serial, fingerprint, product, SDK, and managed-device class exactly matched protected policy'
+        'serial, fingerprint, product, hardware, model, qemu state, SDK, and dedicated physical class exactly matched protected inventory policy'
     } else {
         'caller switches and runner self-attestation cannot satisfy managed-device trust'
     })
@@ -947,6 +1050,8 @@ if ($Lane -eq 'AndroidDevice') {
     $runnerVersion = [string]$trustedTools.runner.version
     $deviceFingerprintSha256 = Get-TextSha256Lower -Value $deviceFingerprint
     $deviceProductSha256 = Get-TextSha256Lower -Value $deviceProduct
+    $deviceHardwareSha256 = Get-TextSha256Lower -Value $deviceHardware
+    $deviceModelSha256 = Get-TextSha256Lower -Value $deviceModel
     $runnerArguments = @(
         '--serial', $serial,
         '--apk', $canonicalApkPath,
@@ -967,6 +1072,9 @@ if ($Lane -eq 'AndroidDevice') {
         '--lab-policy-sha256', $policyContext.sha256,
         '--device-fingerprint-sha256', $deviceFingerprintSha256,
         '--device-product-sha256', $deviceProductSha256,
+        '--device-hardware-sha256', $deviceHardwareSha256,
+        '--device-model-sha256', $deviceModelSha256,
+        '--device-kernel-qemu', $deviceKernelQemu,
         '--device-sdk', [string]$deviceSdk,
         '--device-class', $deviceClass
     )
@@ -1028,6 +1136,9 @@ if ($Lane -eq 'AndroidDevice') {
             $runnerResult.device.serial -ceq $serial -and
             $runnerResult.device.fingerprintSha256 -ceq $deviceFingerprintSha256 -and
             $runnerResult.device.productSha256 -ceq $deviceProductSha256 -and
+            $runnerResult.device.hardwareSha256 -ceq $deviceHardwareSha256 -and
+            $runnerResult.device.modelSha256 -ceq $deviceModelSha256 -and
+            $runnerResult.device.kernelQemu -ceq $deviceKernelQemu -and
             [int]$runnerResult.device.sdk -eq $deviceSdk -and
             $runnerResult.device.class -ceq $deviceClass -and
             $runnerResult.device.dedicatedManaged -eq $true -and
@@ -1045,7 +1156,7 @@ if ($Lane -eq 'AndroidDevice') {
             $runnerExit -eq 0
         if ($contractPassed) {
             $contractStage = 'write-sanitized-summary'
-            [ordered]@{
+            $sanitizedSummary = [ordered]@{
                 schema = 'deep.survival.android-device-summary.v2'
                 sourceCommitSha = $sourceCommitSha
                 releaseInvocationId = $ReleaseInvocationId
@@ -1087,6 +1198,9 @@ if ($Lane -eq 'AndroidDevice') {
                     serialSha256 = Get-TextSha256Lower -Value $serial
                     fingerprintSha256 = $deviceFingerprintSha256
                     productSha256 = $deviceProductSha256
+                    hardwareSha256 = $deviceHardwareSha256
+                    modelSha256 = $deviceModelSha256
+                    kernelQemuIsZero = $deviceKernelQemu -ceq '0'
                     sdk = $deviceSdk
                     class = $deviceClass
                     dedicatedManaged = $true
@@ -1097,8 +1211,9 @@ if ($Lane -eq 'AndroidDevice') {
                 }
                 counters = $counters
                 junitSha256 = $junitSha256
-            } | ConvertTo-Json -Depth 7 |
-                Set-Content -LiteralPath $sanitizedSummaryPath -Encoding utf8
+            } | ConvertTo-Json -Depth 7
+            Assert-PrivacySafeSerializedEvidence -Serialized $sanitizedSummary
+            $sanitizedSummary | Set-Content -LiteralPath $sanitizedSummaryPath -Encoding utf8
         }
     } catch {
         $contractPassed = $false

@@ -10,6 +10,14 @@
     "receiptRelativePath": ".secrets/android-lab/approval.receipt",
     "receiptSha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
+  "signature": {
+    "algorithm": "Ed25519",
+    "publicKeyRelativePath": ".secrets/android-lab/mr-x-public-key.bin",
+    "publicKeySha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "signatureRelativePath": ".secrets/android-lab/policy.signature",
+    "signedPayloadRelativePath": ".secrets/android-lab/signed-payload.json",
+    "signedPayloadSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
   "tools": {
     "runner": {
       "relativePath": ".secrets/android-lab/tools/deep-android-runner.exe",
@@ -37,8 +45,15 @@
     "serial": "PENDING",
     "fingerprint": "PENDING",
     "product": "PENDING",
+    "hardware": "PENDING",
+    "model": "PENDING",
+    "kernelQemu": "0",
     "sdk": 0,
-    "class": "pending"
+    "class": "physical-managed-dedicated",
+    "dedicated": true,
+    "inventoryState": "pending-mr-x-approval",
+    "inventoryApprovedBy": "Mr. X",
+    "inventoryApprovalReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "application": {
     "packageId": "network.xpoint.deep.e2e",

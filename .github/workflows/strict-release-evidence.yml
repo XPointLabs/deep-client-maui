@@ -25,6 +25,18 @@ jobs:
         run: |
           $releaseInvocation = [Guid]::NewGuid().ToString('N')
           "DEEP_RELEASE_INVOCATION_ID=$releaseInvocation" | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Provision signed protected Android lab inventory
+        working-directory: deep-client-maui
+        shell: pwsh
+        run: |
+          dotnet build eng/Deep.AndroidLab.PolicyVerifier/Deep.AndroidLab.PolicyVerifier.csproj `
+            -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned Android policy verifier build failed.' }
+          $policyPath = ./eng/Provision-AndroidLabPolicy.ps1 `
+            -SourceRoot $env:DEEP_ANDROID_LAB_PROTECTED_SOURCE `
+            -ExpectedOwner $env:DEEP_ANDROID_LAB_EXPECTED_OWNER `
+            -MrXPublicKeySha256 $env:DEEP_MR_X_PUBLIC_KEY_SHA256
+          "DEEP_ANDROID_LAB_POLICY=$policyPath" | Add-Content -LiteralPath $env:GITHUB_ENV
       - name: Build Debug clients
         working-directory: deep-client-maui
         shell: pwsh
@@ -72,7 +84,8 @@ jobs:
           ./eng/Invoke-StrictClientLane.ps1 -Lane AndroidDevice `
             -ReleaseInvocationId $env:DEEP_RELEASE_INVOCATION_ID `
             -ApkPath $env:DEEP_ANDROID_APK -AndroidSerial $env:DEEP_ANDROID_SERIAL `
-            -AndroidLabPolicyPath $env:DEEP_ANDROID_LAB_POLICY -ConfigureAdbReverse `
+            -AndroidLabPolicyPath $env:DEEP_ANDROID_LAB_POLICY `
+            -MrXPublicKeySha256 $env:DEEP_MR_X_PUBLIC_KEY_SHA256 -ConfigureAdbReverse `
             -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
       - name: Strict three-router live acceptance
         working-directory: deep-client-maui
@@ -89,7 +102,13 @@ jobs:
             -ReleaseInvocationId $env:DEEP_RELEASE_INVOCATION_ID `
             -AndroidLabPolicyPath $env:DEEP_ANDROID_LAB_POLICY `
             -AndroidApkPath $env:DEEP_ANDROID_APK `
+            -MrXPublicKeySha256 $env:DEEP_MR_X_PUBLIC_KEY_SHA256 `
             -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
+      - name: Clean protected Android lab inventory
+        if: always()
+        working-directory: deep-client-maui
+        shell: pwsh
+        run: ./eng/Provision-AndroidLabPolicy.ps1 -Clean
       - name: Upload sanitized strict evidence
         if: always()
         uses: actions/upload-artifact@v4

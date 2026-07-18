@@ -11,7 +11,7 @@
   "testTotals": {
     "viewModelPassed": 137,
     "ordinaryNotRun": 2,
-    "smokePassed": 83,
+    "smokePassed": 84,
     "windowsContractPassed": 10,
     "windowsCompilePassed": 2,
     "strictWindowsUiPassed": 0,

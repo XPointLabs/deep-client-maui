@@ -5,6 +5,7 @@
     "All three lanes and the validator require one common release invocation plus distinct lane invocation identities.",
     "Android release evidence now requires deep.survival.android-lab-policy.v1 below .secrets/android-lab with Mr. X approval; caller self-attestation cannot pass.",
     "Android runner output schema is v3 and the sanitized device summary schema is v2.",
+    "Non-synthetic Android release policy accepts only physical-managed-dedicated inventory with ro.kernel.qemu=0; managed-emulator is synthetic-contract-only.",
     "Windows strict execution requires FileShare.Read leases for every payload file; a platform that cannot enforce them is blocked.",
     "A lane result must match its final passed preflight, expected lane, source commit, invocation identities, and freshness window.",
     "Debug physical Android E2E uses network.xpoint.deep.e2e; Release remains network.xpoint.deep.",

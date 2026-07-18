@@ -9,6 +9,7 @@ $evidence = Join-Path $sandbox 'evidence'
 New-Item -ItemType Directory -Force -Path $tools, $evidence | Out-Null
 $apkStream = $null
 $apkArchive = $null
+$protectedSandbox = $null
 try {
     $apk = Join-Path $sandbox 'client test.apk'
     $apkStream = [IO.File]::Create($apk)
@@ -79,6 +80,16 @@ public static class SyntheticAndroidTool
                 junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"https://private.example/result\" /></testsuite>";
             else if (privacyMode == "attachment")
                 junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><attachment path=\"result.bin\" /></testsuite>";
+            else if (privacyMode == "embedded-uri")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"prefix https://private.example/result suffix\" /></testsuite>";
+            else if (privacyMode == "sensitive-attribute")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"safe\" token=\"abc\" /></testsuite>";
+            else if (privacyMode == "attachment-attribute")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"safe\" attachment=\"result.bin\" /></testsuite>";
+            else if (privacyMode == "unix-root")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><testcase name=\"safe\" file=\"/\" /></testsuite>";
+            else if (privacyMode == "system-error")
+                junit = "<testsuite tests=\"2\" failures=\"0\" errors=\"0\" skipped=\"0\"><system-err>private</system-err></testsuite>";
             File.WriteAllText(values["--junit"], junit, new UTF8Encoding(true));
 
             var tamper = Environment.GetEnvironmentVariable("DEEP_FAKE_TAMPER_BINDING") ?? "";
@@ -107,6 +118,9 @@ public static class SyntheticAndroidTool
                     "\"serial\":" + Q(serial) + "," +
                     "\"fingerprintSha256\":" + Q(values["--device-fingerprint-sha256"]) + "," +
                     "\"productSha256\":" + Q(values["--device-product-sha256"]) + "," +
+                    "\"hardwareSha256\":" + Q(values["--device-hardware-sha256"]) + "," +
+                    "\"modelSha256\":" + Q(values["--device-model-sha256"]) + "," +
+                    "\"kernelQemu\":" + Q(values["--device-kernel-qemu"]) + "," +
                     "\"sdk\":" + values["--device-sdk"] + "," +
                     "\"class\":" + Q(values["--device-class"]) + "," +
                     "\"dedicatedManaged\":true,\"personalDataAbsent\":true," +
@@ -130,6 +144,9 @@ public static class SyntheticAndroidTool
                 else if (args[4] == "ro.product.name") Console.WriteLine("synthetic_product");
                 else if (args[4] == "ro.build.version.sdk") Console.WriteLine("35");
                 else if (args[4] == "ro.build.characteristics") Console.WriteLine("emulator");
+                else if (args[4] == "ro.hardware") Console.WriteLine("ranchu");
+                else if (args[4] == "ro.product.model") Console.WriteLine("sdk_gphone64_x86_64");
+                else if (args[4] == "ro.kernel.qemu") Console.WriteLine("1");
                 else return 9;
                 return 0;
             }
@@ -227,8 +244,15 @@ public static class SyntheticAndroidTool
             serial = 'safe-serial'
             fingerprint = 'synthetic/fingerprint/value'
             product = 'synthetic_product'
+            hardware = 'ranchu'
+            model = 'sdk_gphone64_x86_64'
+            kernelQemu = '1'
             sdk = 35
             class = 'managed-emulator'
+            dedicated = $true
+            inventoryState = 'synthetic-contract-fixture'
+            inventoryApprovedBy = 'Synthetic Contract Fixture'
+            inventoryApprovalReceiptSha256 = '0' * 64
         }
         application = [ordered]@{
             packageId = 'network.xpoint.deep.e2e'
@@ -239,6 +263,39 @@ public static class SyntheticAndroidTool
         }
     }
     $policy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $policyPath -Encoding utf8
+
+    $protectedSandbox = Join-Path $repoRoot (
+        ".secrets\android-lab\contract-test-{0}" -f [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $protectedSandbox | Out-Null
+    $receiptPath = Join-Path $protectedSandbox 'mr-x-approval.receipt'
+    [IO.File]::WriteAllText($receiptPath, 'synthetic negative physical-policy approval fixture')
+    $realEmulatorPolicy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
+    $realEmulatorPolicy.synthetic = $false
+    $realEmulatorPolicy.approval.state = 'approved'
+    $realEmulatorPolicy.approval.approvedBy = 'Mr. X'
+    $realEmulatorPolicy.approval.receiptRelativePath = & $relative $receiptPath
+    $realEmulatorPolicy.approval.receiptSha256 = (
+        Get-FileHash -LiteralPath $receiptPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $realEmulatorPolicy.device.inventoryState = 'approved'
+    $realEmulatorPolicy.device.inventoryApprovedBy = 'Mr. X'
+    $realEmulatorPolicy.device.inventoryApprovalReceiptSha256 =
+        $realEmulatorPolicy.approval.receiptSha256
+    $realEmulatorPolicyPath = Join-Path $protectedSandbox 'emulator-policy.json'
+    $realEmulatorPolicy | ConvertTo-Json -Depth 8 |
+        Set-Content -LiteralPath $realEmulatorPolicyPath -Encoding utf8
+    $realEmulatorEvidence = Join-Path $sandbox 'evidence-real-emulator-policy'
+    & $engine -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'eng\Invoke-StrictClientLane.ps1') -Lane AndroidDevice `
+        -ReleaseInvocationId $releaseInvocationId -ApkPath $apk `
+        -AndroidLabPolicyPath $realEmulatorPolicyPath -ArtifactDirectory $realEmulatorEvidence
+    if ($LASTEXITCODE -ne 2) {
+        throw 'A non-synthetic managed-emulator policy did not block the physical release lane.'
+    }
+    $realEmulatorPreflight = Get-Content -LiteralPath (
+        Join-Path $realEmulatorEvidence 'preflight-androiddevice.json') -Raw | ConvertFrom-Json
+    if (($realEmulatorPreflight.checks |
+            Where-Object name -eq 'android-lab-policy').status -ne 'blocked') {
+        throw 'A non-synthetic managed-emulator policy passed protected policy validation.'
+    }
 
     $templateEvidence = Join-Path $sandbox 'evidence-template'
     & $engine -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'eng\Invoke-StrictClientLane.ps1') -Lane AndroidDevice `
@@ -334,7 +391,12 @@ public static class SyntheticAndroidTool
         [pscustomobject]@{ name = 'sensitive-property-privacy'; binding = ''; privacy = 'sensitive-property' },
         [pscustomobject]@{ name = 'windows-path-privacy'; binding = ''; privacy = 'windows-path' },
         [pscustomobject]@{ name = 'absolute-uri-privacy'; binding = ''; privacy = 'absolute-uri' },
-        [pscustomobject]@{ name = 'attachment-privacy'; binding = ''; privacy = 'attachment' }
+        [pscustomobject]@{ name = 'attachment-privacy'; binding = ''; privacy = 'attachment' },
+        [pscustomobject]@{ name = 'embedded-uri-privacy'; binding = ''; privacy = 'embedded-uri' },
+        [pscustomobject]@{ name = 'sensitive-attribute-privacy'; binding = ''; privacy = 'sensitive-attribute' },
+        [pscustomobject]@{ name = 'attachment-attribute-privacy'; binding = ''; privacy = 'attachment-attribute' },
+        [pscustomobject]@{ name = 'unix-root-privacy'; binding = ''; privacy = 'unix-root' },
+        [pscustomobject]@{ name = 'system-error-privacy'; binding = ''; privacy = 'system-error' }
     )
     foreach ($scenario in $scenarios) {
         $scenarioEvidence = Join-Path $sandbox ("evidence-{0}" -f $scenario.name)
@@ -360,6 +422,15 @@ public static class SyntheticAndroidTool
     }
     if ($null -ne $apkStream) {
         $apkStream.Dispose()
+    }
+    if (-not [string]::IsNullOrWhiteSpace($protectedSandbox) -and
+        (Test-Path -LiteralPath $protectedSandbox)) {
+        $canonicalProtectedSandbox = [IO.Path]::GetFullPath($protectedSandbox)
+        $expectedProtectedPrefix = [IO.Path]::GetFullPath((Join-Path $repoRoot '.secrets\android-lab\contract-test-'))
+        if (-not $canonicalProtectedSandbox.StartsWith($expectedProtectedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Refusing to clean an unexpected protected contract-test path.'
+        }
+        Remove-Item -LiteralPath $canonicalProtectedSandbox -Recurse -Force
     }
     Remove-Item Env:DEEP_FAKE_TAMPER_BINDING -ErrorAction SilentlyContinue
     Remove-Item Env:DEEP_FAKE_PRIVATE_JUNIT -ErrorAction SilentlyContinue

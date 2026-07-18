@@ -6,6 +6,7 @@ param(
     [string]$ArtifactDirectory,
     [string]$AndroidLabPolicyPath,
     [string]$AndroidApkPath,
+    [string]$MrXPublicKeySha256,
     [switch]$RequireComplete,
     [int]$MaximumAgeHours = 24
 )
@@ -239,6 +240,39 @@ if (Test-Path -LiteralPath $androidSummaryPath -PathType Leaf) {
         }
         $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
         $policyHash = Get-Sha256Lower -Path $policyPath
+        if (-not (Test-NonZeroSha256Value $MrXPublicKeySha256) -or
+            [string]$policy.signature.algorithm -cne 'Ed25519' -or
+            [string]$policy.signature.publicKeySha256 -cne $MrXPublicKeySha256) {
+            throw 'Release policy lacks the externally pinned Mr. X signature identity.'
+        }
+        $publicKeyPath = Join-Path $repoRoot ([string]$policy.signature.publicKeyRelativePath)
+        $signaturePath = Join-Path $repoRoot ([string]$policy.signature.signatureRelativePath)
+        $signedPayloadPath = Join-Path $repoRoot ([string]$policy.signature.signedPayloadRelativePath)
+        foreach ($signatureFile in @($publicKeyPath, $signaturePath, $signedPayloadPath)) {
+            $null = Get-CanonicalContainedPath -Root $repoRoot -Candidate ([IO.Path]::GetFullPath($signatureFile))
+            Assert-NoReparsePointInPath -Root $repoRoot -Candidate $signatureFile
+        }
+        if ((Get-Sha256Lower -Path $publicKeyPath) -cne $MrXPublicKeySha256 -or
+            (Get-Sha256Lower -Path $signedPayloadPath) -cne [string]$policy.signature.signedPayloadSha256) {
+            throw 'Release policy signature material hash mismatch.'
+        }
+        $signedPayload = Get-Content -LiteralPath $signedPayloadPath -Raw | ConvertFrom-Json
+        if ([string]$signedPayload.schema -cne [string]$policy.schema -or
+            $signedPayload.provisioned -ne $policy.provisioned -or
+            $signedPayload.synthetic -ne $policy.synthetic -or
+            [string]$signedPayload.sourceCommitSha -cne [string]$policy.sourceCommitSha -or
+            [string]$signedPayload.policyId -cne [string]$policy.policyId -or
+            ($signedPayload.approval | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.approval | ConvertTo-Json -Depth 8 -Compress) -or
+            ($signedPayload.tools | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.tools | ConvertTo-Json -Depth 8 -Compress) -or
+            ($signedPayload.device | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.device | ConvertTo-Json -Depth 8 -Compress) -or
+            ($signedPayload.application | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.application | ConvertTo-Json -Depth 8 -Compress)) {
+            throw 'Release signed payload does not bind the complete policy semantics.'
+        }
+        dotnet run --project (Join-Path $PSScriptRoot 'Deep.AndroidLab.PolicyVerifier\Deep.AndroidLab.PolicyVerifier.csproj') `
+            -c Release --no-build --no-restore -- verify $publicKeyPath $signaturePath $signedPayloadPath
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Release policy Mr. X signature is invalid.'
+        }
         $receiptRelative = [string]$policy.approval.receiptRelativePath
         if ($receiptRelative.Contains('\') -or
             -not $receiptRelative.StartsWith('.secrets/android-lab/', [StringComparison]::Ordinal) -or
@@ -262,7 +296,17 @@ if (Test-Path -LiteralPath $androidSummaryPath -PathType Leaf) {
             (Test-SafeSummaryVersion ([string]$policy.application.versionName)) -and
             (Test-NonZeroSha256Value ([string]$policy.application.apkSha256)) -and
             (Test-NonZeroSha256Value ([string]$policy.application.signingCertificateSha256)) -and
-            [string]$policy.device.class -in @('managed-emulator', 'managed-physical') -and
+            [string]$policy.device.class -ceq 'physical-managed-dedicated' -and
+            $policy.device.dedicated -eq $true -and
+            [string]$policy.device.kernelQemu -ceq '0' -and
+            -not [string]::IsNullOrWhiteSpace([string]$policy.device.hardware) -and
+            -not [string]::IsNullOrWhiteSpace([string]$policy.device.model) -and
+            ([string]$policy.device.product -notmatch '(?i)(emulator|sdk[_-]?gphone|generic|goldfish|ranchu|vbox|qemu|simulator)') -and
+            ([string]$policy.device.hardware -notmatch '(?i)(emulator|sdk[_-]?gphone|generic|goldfish|ranchu|vbox|qemu|simulator)') -and
+            ([string]$policy.device.model -notmatch '(?i)(emulator|sdk[_-]?gphone|generic|goldfish|ranchu|vbox|qemu|simulator)') -and
+            [string]$policy.device.inventoryState -ceq 'approved' -and
+            [string]$policy.device.inventoryApprovedBy -ceq 'Mr. X' -and
+            [string]$policy.device.inventoryApprovalReceiptSha256 -ceq [string]$policy.approval.receiptSha256 -and
             [int]$policy.device.sdk -ge 26 -and [int]$policy.device.sdk -le 100 -and
             [string]$policy.tools.aapt.kind -in @('aapt', 'aapt2')
         foreach ($role in @('runner', 'adb', 'aapt', 'apksigner')) {
@@ -323,6 +367,9 @@ if (Test-Path -LiteralPath $androidSummaryPath -PathType Leaf) {
             $summary.device.serialSha256 -ceq (Get-TextSha256Lower -Value ([string]$policy.device.serial)) -and
             $summary.device.fingerprintSha256 -ceq (Get-TextSha256Lower -Value ([string]$policy.device.fingerprint)) -and
             $summary.device.productSha256 -ceq (Get-TextSha256Lower -Value ([string]$policy.device.product)) -and
+            $summary.device.hardwareSha256 -ceq (Get-TextSha256Lower -Value ([string]$policy.device.hardware)) -and
+            $summary.device.modelSha256 -ceq (Get-TextSha256Lower -Value ([string]$policy.device.model)) -and
+            $summary.device.kernelQemuIsZero -eq $true -and
             [int]$summary.device.sdk -eq [int]$policy.device.sdk -and
             [string]$summary.device.class -ceq [string]$policy.device.class -and
             $summary.device.dedicatedManaged -eq $true -and

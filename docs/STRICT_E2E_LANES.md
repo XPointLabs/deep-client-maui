@@ -58,10 +58,12 @@ Build the Debug-only E2E APK. Mr. X must provision and approve a commit-bound la
 - the current 40-character Git commit and a nonzero policy ID;
 - an approval receipt signed off by `Mr. X`, including its exact SHA-256;
 - repository-relative paths, exact SHA-256 values, and privacy-safe exact versions for `deep-android-runner.exe`, `adb.exe`, the selected `aapt.exe` or `aapt2.exe`, and `apksigner.bat`;
-- the approved serial, build fingerprint, product, SDK, and `managed-emulator` or `managed-physical` class;
+- the approved inventory serial, build fingerprint, product, hardware, model, SDK, dedicated flag, Mr. X inventory approval, `ro.kernel.qemu=0`, and `physical-managed-dedicated` class;
 - the E2E package, version, APK SHA-256, and signing-certificate SHA-256.
 
-Then attach that exact managed emulator or physical test device and invoke:
+CI does not trust a pre-existing checkout directory. `eng/Provision-AndroidLabPolicy.ps1` materializes an exact allowlisted bundle from `DEEP_ANDROID_LAB_PROTECTED_SOURCE` after checkout, requires a pinned owner, protected non-broad ACLs, read-only regular files with no reparse points or extras, verifies all receipt/tool hashes, and verifies an Ed25519 signature over the complete semantic policy projection. The Mr. X public-key SHA-256 is supplied as the protected deployment pin `DEEP_MR_X_PUBLIC_KEY_SHA256`; the repository contains no invented real key. The verify-only helper uses a locked dependency graph, is built before provisioning, and runs without restore/build at the trust gate. An `if: always()` step removes the destination even after a failed lane.
+
+Then attach that exact dedicated managed physical test device and invoke:
 
 ```powershell
 dotnet build .\src\Deep.Client.Maui\Deep.Client.Maui.csproj `
@@ -75,7 +77,7 @@ dotnet build .\src\Deep.Client.Maui\Deep.Client.Maui.csproj `
   -ConfigureAdbReverse
 ```
 
-Release always keeps `network.xpoint.deep`; the physical Debug lane accepts only `network.xpoint.deep.e2e`. The wrapper, not the caller or runner, opens and hashes the policy-selected tools and APK, checks their exact versions, queries the attached device identity with the trusted `adb`, validates the APK archive/metadata/certificate, and rejects any production package presence. Caller-selected tool paths or serials are optional cross-checks only and cannot establish trust. It never reads, cleans, or modifies the production package.
+Release always keeps `network.xpoint.deep`; the physical Debug lane accepts only `network.xpoint.deep.e2e`. The wrapper, not the caller or runner, opens and hashes the policy-selected tools and APK, checks their exact versions, queries the attached device identity with the trusted `adb`, requires `ro.kernel.qemu=0`, rejects emulator hardware/model/product/characteristic patterns, validates the APK archive/metadata/certificate, and rejects any production package presence. Caller-selected tool paths or serials are optional cross-checks only and cannot establish trust. It never reads, cleans, or modifies the production package.
 
 The preflight supports an explicit `-AndroidSerial` and configures `adb reverse` for local UAT ports when requested. The runner must bind its v3 result to the policy ID/hash, source commit, both invocation IDs, APK SHA-256, package/version, signing certificate, selected serial, fingerprint/product hashes, SDK/class, its own binary hash/exact version, JUnit hash, and cleanup attestations before and after execution. JUnit counters are independently parsed and cross-checked. Any DTD/entity, system output/error, attachment, absolute Windows/Unix path, absolute URI, sensitive property/value, or non-whitespace text blocks sanitization. Raw JUnit, logcat, screenshots, runner result, and runner output remain below `quarantine/raw` and are never uploaded. Only `android-device-summary.json`, containing allowlisted hashes, counters, safe versions, and booleans (not a raw serial or path), is standard evidence.
 
