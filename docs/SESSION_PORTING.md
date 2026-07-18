@@ -125,8 +125,8 @@ and adapter work. The ViewModel converts cancellation into a controlled blocked
 state and requires a fresh verification before retry.
 
 The platform boundary receives an already-open read-only stream while the core
-keeps the underlying file closed to writers. It never receives a filesystem
-path. Before returning success, an adapter must synchronously copy or take
+requests read-only sharing and rehashes that same open handle after the adapter
+returns. It never receives a filesystem path. Before returning success, an adapter must synchronously copy or take
 durable OS ownership of the bytes and return an exact length/SHA-256 receipt;
 missing or mismatched receipts fail closed. The stream is disposed immediately
 after the adapter returns, so delayed reads are not part of the contract.

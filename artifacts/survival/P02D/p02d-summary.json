@@ -1,6 +1,7 @@
 {
   "schema": "deep.survival.p02d.safe-installer-handoff.v1",
-  "status": "passed-with-explicit-platform-adapter-blocker",
+  "status": "superseded-by-p02d-corrective-security-review",
+  "correctiveEvidence": "p02d-corrective-summary.json",
   "sourceBaseSha": "2d1cefd30a1e12b657288bca704aab4b10980dce",
   "redTestCommitSha": "8b357db5295dc675e4972d07ca493387e5552c7c",
   "implementationCommitSha": "bfeaae3bbe1e9086baade86f0c3f4962cacbe4d6",
@@ -14,7 +15,8 @@
     "maximumTimeToLiveSeconds": 900,
     "automaticExpiryCleanup": true,
     "startupOrphanCleanup": true,
-    "cleanupAfterHandoffOrFailure": true,
+    "cleanupAfterHandoffOrFailure": false,
+    "cleanupClaimCorrection": "The initial implementation only attempted best-effort deletion and could not support an absolute cleanup claim. See corrective evidence.",
     "lengthAndSha256RevalidatedBeforeHandoff": true,
     "packageIdVersionAndSignerRevalidatedBeforeHandoff": true,
     "replayRejected": true,

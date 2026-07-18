@@ -1,0 +1,160 @@
+{
+  "schema": "deep.survival.p02d.safe-installer-handoff.v2",
+  "status": "passed-awaiting-independent-corrective-rereview",
+  "sourceBaseSha": "2f7ca871b6e582e4c2734b924e38bf32604d3b00",
+  "correctiveRedTestCommitSha": "8c5761af5924993b25ae396bee7983b729ff4002",
+  "correctiveImplementationCommitSha": "d7a9e1fab830eebab2675a47c2b17021fc1f4e64",
+  "generatedAtUtc": "2026-07-18T18:15:11.0812543Z",
+  "initialIndependentReview": {
+    "verdict": "no-go",
+    "p0": 0,
+    "p1": 4,
+    "p2": 1,
+    "requiredCorrections": [
+      "Own a fixed marker-validated child and never delete the caller-supplied root or unrelated siblings.",
+      "Consume a valid handle before honoring cancellation and clean all claimed paths.",
+      "Remove the filesystem path from the platform boundary and prove synchronous ownership of exact bytes.",
+      "Sanitize preservation and store errors before returning them to UI.",
+      "Replace the absolute deletion claim with explicit pending-cleanup and retry semantics."
+    ]
+  },
+  "securityProperties": {
+    "fixedOwnedChildRoot": ".deep-verified-update-handoff-v1",
+    "storeAndPackageOwnershipMarkersRequired": true,
+    "callerRootOrUnrelatedSiblingsDeleted": false,
+    "unmarkedOrReparsePointPackageDirectoriesDeleted": false,
+    "opaqueHandleBytes": 32,
+    "handlePersistedToDisk": false,
+    "validHandleClaimedBeforeCancellation": true,
+    "preCanceledAndMidOperationReplayRejected": true,
+    "claimedOperationBoundedByTimeToLive": true,
+    "activeHandleMaximum": 1,
+    "maximumSnapshotBytes": 1073741824,
+    "maximumTimeToLiveSeconds": 900,
+    "platformReceivesFilesystemPath": false,
+    "platformReceivesHeldReadOnlyStream": true,
+    "exactOwnedLengthAndSha256ReceiptRequired": true,
+    "streamDisposedImmediatelyAfterAdapterReturn": true,
+    "lengthAndSha256RevalidatedOnSameOpenHandle": true,
+    "packageIdVersionAndSignerRevalidated": true,
+    "preserveFailureReturnedToUiIsConstantAndPathFree": true,
+    "viewModelCancellationIsControlledAndRecoverable": true,
+    "cleanupSemantics": "Deletion is attempted and retried. Failures are returned as CleanupPending, retained for later retry, and retried at startup. Physical secure erasure is not guaranteed.",
+    "silentInstallImplemented": false,
+    "installUnknownSourcesPermissionRequested": false,
+    "androidFileProviderRegistered": false,
+    "productionInstallerAdapterRegistered": false,
+    "windowsAndroidApkHandoffSupported": false,
+    "packagePathsOrMetadataLogged": false
+  },
+  "checks": [
+    {
+      "name": "corrective-red-tests-before-implementation",
+      "status": "failed-as-expected",
+      "commitSha": "8c5761af5924993b25ae396bee7983b729ff4002",
+      "failureClass": "old path-based installer interface did not satisfy stream and receipt contract"
+    },
+    {
+      "name": "focused-p02b-and-p02d-security-tests",
+      "configuration": "Debug",
+      "status": "passed",
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "name": "view-model-tests",
+      "configuration": "Debug",
+      "status": "passed",
+      "passed": 195,
+      "failed": 0,
+      "skipped": 2,
+      "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
+    },
+    {
+      "name": "view-model-tests",
+      "configuration": "Release",
+      "status": "passed",
+      "passed": 195,
+      "failed": 0,
+      "skipped": 2,
+      "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
+    },
+    {
+      "name": "smoke-tests",
+      "configuration": "Debug",
+      "status": "passed",
+      "passed": 119,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "name": "smoke-tests",
+      "configuration": "Release",
+      "status": "passed",
+      "passed": 119,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "name": "android-debug-build",
+      "status": "passed",
+      "warnings": 0,
+      "errors": 0
+    },
+    {
+      "name": "windows-release-build",
+      "runtimeIdentifier": "win-x64",
+      "status": "passed",
+      "warnings": 0,
+      "errors": 0
+    },
+    {
+      "name": "windows-release-routed-composition",
+      "status": "passed",
+      "appOwnedServiceDescriptors": 65,
+      "productionFactoryTestsPassed": 2,
+      "evidence": "release-composition-corrective/release-routed-composition.json"
+    },
+    {
+      "name": "corrective-changed-source-secret-scan",
+      "status": "passed",
+      "scannedFiles": 7,
+      "findingCount": 0,
+      "evidence": "secret-scan-corrective-summary.json"
+    },
+    {
+      "name": "android-release-package",
+      "status": "blocked-not-bypassed",
+      "reason": "protected Platforms/Android/google-services.json is unavailable in this worktree"
+    },
+    {
+      "name": "android-platform-installer-adapter",
+      "status": "blocked-not-registered",
+      "reason": "an independently reviewed PackageInstaller.Session or one-time FileProvider adapter is not yet available"
+    },
+    {
+      "name": "physical-android-install-and-ui",
+      "status": "not-run",
+      "reason": "no authorized attached physical Android device in this iteration"
+    },
+    {
+      "name": "physical-windows-ui",
+      "status": "not-run",
+      "reason": "no interactive physical Windows UI lane was authorized in this iteration"
+    }
+  ],
+  "testArtifact": {
+    "kind": "signed-debug-apk",
+    "path": "src/Deep.Client.Maui/bin/Debug/net10.0-android/network.xpoint.deep-Signed.apk",
+    "length": 155564317,
+    "sha256": "ed4e2ee55d909e35c7c2d74b964409c7caf88e21e39f8639b8e18f0b8e921a98"
+  },
+  "productionActivationBlockers": [
+    "Provision and govern the production trusted root before registering the verifier.",
+    "Implement and independently review an Android adapter that synchronously copies exact stream bytes into a durable PackageInstaller.Session or equivalent one-time OS-owned container and returns an exact receipt.",
+    "Provide protected Android release signing/Firebase configuration through the approved secret channel.",
+    "Complete physical Android and Windows acceptance on representative devices.",
+    "Obtain independent security rereview of the exact corrective commit and later platform adapter."
+  ]
+}
