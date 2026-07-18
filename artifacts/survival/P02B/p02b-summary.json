@@ -1,0 +1,117 @@
+{
+  "schema": "deep.survival.p02b.maui-update-verification.v1",
+  "status": "passed-with-explicit-release-input-blocker",
+  "implementationCommitSha": "39a82f60e1a591c9e238092afca7179ec5f20945",
+  "sourceBaseSha": "9dc1502392ce2c1a86441df6308f2db54410eae8",
+  "devopsP02CommitSha": "3d2e163e354858937c4b6a8bd530e71b1b929dd9",
+  "generatedAtUtc": "2026-07-18T13:34:00Z",
+  "securityProperties": {
+    "productionRootBundled": false,
+    "productionVerifierRegistered": false,
+    "silentInstallImplemented": false,
+    "installUnknownSourcesPermissionRequested": false,
+    "verificationOverrideAvailable": false,
+    "androidArchiveSignerReadByPlatformApi": true,
+    "metadataThresholdAndRollbackVerification": true,
+    "appPrivateImmutableVerificationSnapshot": true,
+    "iosAndroidSideloadFlowSupported": false
+  },
+  "checks": [
+    {
+      "name": "exact-p02-public-metadata-compatibility-and-focused-security-tests",
+      "configuration": "Debug",
+      "status": "passed",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "name": "view-model-tests",
+      "configuration": "Debug",
+      "status": "passed",
+      "passed": 172,
+      "failed": 0,
+      "skipped": 2,
+      "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
+    },
+    {
+      "name": "view-model-tests",
+      "configuration": "Release",
+      "status": "passed",
+      "passed": 172,
+      "failed": 0,
+      "skipped": 2,
+      "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
+    },
+    {
+      "name": "smoke-tests",
+      "configuration": "Debug",
+      "status": "passed",
+      "passed": 119,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "name": "smoke-tests",
+      "configuration": "Release",
+      "status": "passed",
+      "passed": 119,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "name": "android-debug-build",
+      "status": "passed",
+      "warnings": 0,
+      "errors": 0
+    },
+    {
+      "name": "windows-release-routed-composition",
+      "status": "passed",
+      "warnings": 0,
+      "errors": 0,
+      "appOwnedServiceDescriptors": 65,
+      "productionFactoryTestsPassed": 2
+    },
+    {
+      "name": "changed-source-secret-scan",
+      "status": "passed",
+      "scannedFiles": 15,
+      "findingCount": 0,
+      "scope": "all changed production, test and documentation files",
+      "evidenceManifestNote": "p02-intake.json contains only public upstream artifact hashes; it is recorded separately because the scanner conservatively classifies the upstream filename secret-scan-summary.json followed by its public SHA-256 as private-hex-context"
+    },
+    {
+      "name": "android-release-package",
+      "status": "blocked-not-bypassed",
+      "reason": "protected Platforms/Android/google-services.json is unavailable in this worktree"
+    },
+    {
+      "name": "physical-android-install-and-ui",
+      "status": "not-run",
+      "reason": "no authorized attached physical Android device in this iteration"
+    },
+    {
+      "name": "physical-windows-ui",
+      "status": "not-run",
+      "reason": "no interactive physical Windows UI lane was authorized in this iteration"
+    },
+    {
+      "name": "full-repository-secret-scan",
+      "status": "blocked-pre-existing-input",
+      "reason": "the scanner fails closed while parsing a pre-existing truncated ZIP-like tracked/artifact input before reporting findings; the P02B changed-file scope passed separately"
+    }
+  ],
+  "testArtifact": {
+    "kind": "signed-debug-apk",
+    "path": "src/Deep.Client.Maui/bin/Debug/net10.0-android/network.xpoint.deep-Signed.apk",
+    "length": 155527453,
+    "sha256": "7618db700ff0a12bdba3c5f369ae2dde7daa572259c098f372321def363d5dda"
+  },
+  "productionActivationBlockers": [
+    "Provision and govern an out-of-band production trusted root before enabling or registering the verifier.",
+    "Provide protected Android release signing/Firebase configuration through the approved secret channel.",
+    "Complete physical Android and Windows acceptance on representative devices before release.",
+    "Obtain independent security review of the exact release commit and production root ceremony."
+  ]
+}
