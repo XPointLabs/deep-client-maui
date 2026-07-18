@@ -3,9 +3,10 @@
   "status": "passed-with-explicit-release-input-blocker",
   "implementationCommitSha": "39a82f60e1a591c9e238092afca7179ec5f20945",
   "correctiveCommitSha": "f06ac90f22140f8872aeb87875dd516c7ad23bff",
+  "finalCorrectiveCommitSha": "694cd042fc9174b806ad3565374afea6f235b7a5",
   "sourceBaseSha": "9dc1502392ce2c1a86441df6308f2db54410eae8",
   "devopsP02CommitSha": "3d2e163e354858937c4b6a8bd530e71b1b929dd9",
-  "generatedAtUtc": "2026-07-18T14:04:00Z",
+  "generatedAtUtc": "2026-07-18T14:43:00Z",
   "securityProperties": {
     "productionRootBundled": false,
     "productionVerifierRegistered": false,
@@ -22,7 +23,7 @@
       "name": "exact-p02-public-metadata-compatibility-and-focused-security-tests",
       "configuration": "Debug",
       "status": "passed",
-      "passed": 11,
+      "passed": 15,
       "failed": 0,
       "skipped": 0
     },
@@ -30,7 +31,7 @@
       "name": "view-model-tests",
       "configuration": "Debug",
       "status": "passed",
-      "passed": 174,
+      "passed": 179,
       "failed": 0,
       "skipped": 2,
       "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
@@ -39,7 +40,7 @@
       "name": "view-model-tests",
       "configuration": "Release",
       "status": "passed",
-      "passed": 174,
+      "passed": 179,
       "failed": 0,
       "skipped": 2,
       "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
@@ -113,11 +114,14 @@
     "initialP0": 0,
     "initialP1": 2,
     "initialP2": 1,
-    "correctiveActions": [
+      "correctiveActions": [
       "Malformed metadata structure exceptions are converted to a blocked verification result.",
       "Trusted-state writes are serialized per canonical path and reject rollback/conflicting-root writes.",
-      "Snapshot evidence now describes post-inspection tamper detection instead of immutability."
-    ]
+      "Snapshot evidence now describes post-inspection tamper detection instead of immutability.",
+      "Missing or null nested persisted trust-state records are rejected as InvalidDataException and surfaced as a non-bypassable blocked result."
+    ],
+    "finalFocusedTestsPassed": 15,
+    "finalReleaseViewModelTestsPassed": 179
   },
   "productionActivationBlockers": [
     "Provision and govern an out-of-band production trusted root before enabling or registering the verifier.",
