@@ -4,7 +4,8 @@
   "sourceBaseSha": "2f7ca871b6e582e4c2734b924e38bf32604d3b00",
   "correctiveRedTestCommitSha": "8c5761af5924993b25ae396bee7983b729ff4002",
   "correctiveImplementationCommitSha": "d7a9e1fab830eebab2675a47c2b17021fc1f4e64",
-  "generatedAtUtc": "2026-07-18T18:15:11.0812543Z",
+  "finalP2CorrectiveCommitSha": "0c7673eae7e999f56c30d2574ef784836ab5d71a",
+  "generatedAtUtc": "2026-07-18T18:41:19.4699433Z",
   "initialIndependentReview": {
     "verdict": "no-go",
     "p0": 0,
@@ -17,6 +18,13 @@
       "Sanitize preservation and store errors before returning them to UI.",
       "Replace the absolute deletion claim with explicit pending-cleanup and retry semantics."
     ]
+  },
+  "correctiveIndependentReview": {
+    "verdict": "no-go-p2-only",
+    "p0": 0,
+    "p1": 0,
+    "p2": 1,
+    "correctiveAction": "Expired outcomes now use the common post-cleanup return so a failed deletion is surfaced as CleanupPending. Cancellation remains OperationCanceledException and queues any failed deletion internally because no result object exists."
   },
   "securityProperties": {
     "fixedOwnedChildRoot": ".deep-verified-update-handoff-v1",
@@ -39,7 +47,7 @@
     "packageIdVersionAndSignerRevalidated": true,
     "preserveFailureReturnedToUiIsConstantAndPathFree": true,
     "viewModelCancellationIsControlledAndRecoverable": true,
-    "cleanupSemantics": "Deletion is attempted and retried. Failures are returned as CleanupPending, retained for later retry, and retried at startup. Physical secure erasure is not guaranteed.",
+    "cleanupSemantics": "Deletion is attempted and retried. Failures on returned outcomes are reported as CleanupPending. Cancellation propagates OperationCanceledException, so its cleanup state cannot be returned; any failure is queued internally. Pending paths are retried before later preservation and at startup. Physical secure erasure is not guaranteed.",
     "silentInstallImplemented": false,
     "installUnknownSourcesPermissionRequested": false,
     "androidFileProviderRegistered": false,
@@ -58,7 +66,7 @@
       "name": "focused-p02b-and-p02d-security-tests",
       "configuration": "Debug",
       "status": "passed",
-      "passed": 31,
+      "passed": 32,
       "failed": 0,
       "skipped": 0
     },
@@ -66,7 +74,7 @@
       "name": "view-model-tests",
       "configuration": "Debug",
       "status": "passed",
-      "passed": 195,
+      "passed": 196,
       "failed": 0,
       "skipped": 2,
       "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
@@ -75,7 +83,7 @@
       "name": "view-model-tests",
       "configuration": "Release",
       "status": "passed",
-      "passed": 195,
+      "passed": 196,
       "failed": 0,
       "skipped": 2,
       "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
@@ -114,14 +122,14 @@
       "status": "passed",
       "appOwnedServiceDescriptors": 65,
       "productionFactoryTestsPassed": 2,
-      "evidence": "release-composition-corrective/release-routed-composition.json"
+      "evidence": "release-composition-final/release-routed-composition.json"
     },
     {
       "name": "corrective-changed-source-secret-scan",
       "status": "passed",
-      "scannedFiles": 7,
+      "scannedFiles": 3,
       "findingCount": 0,
-      "evidence": "secret-scan-corrective-summary.json"
+      "evidence": "secret-scan-final-summary.json"
     },
     {
       "name": "android-release-package",
@@ -147,8 +155,8 @@
   "testArtifact": {
     "kind": "signed-debug-apk",
     "path": "src/Deep.Client.Maui/bin/Debug/net10.0-android/network.xpoint.deep-Signed.apk",
-    "length": 155564317,
-    "sha256": "ed4e2ee55d909e35c7c2d74b964409c7caf88e21e39f8639b8e18f0b8e921a98"
+    "length": 155121771,
+    "sha256": "f9027e427a4bf2a108f4b38720668b82238b8ae0ac29227cd0a60eda56fbea67"
   },
   "productionActivationBlockers": [
     "Provision and govern the production trusted root before registering the verifier.",
