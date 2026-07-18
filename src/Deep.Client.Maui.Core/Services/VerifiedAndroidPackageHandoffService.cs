@@ -197,18 +197,21 @@ public sealed class VerifiedAndroidPackageHandoffService
             var remaining = claimed.ExpiresAtUtc - timeProvider.GetUtcNow();
             if (remaining <= TimeSpan.Zero)
             {
-                return Blocked("The installer handoff handle expired.");
+                outcome = Blocked("The installer handoff handle expired.");
             }
-            using var expiryCancellation =
-                new CancellationTokenSource(remaining, timeProvider);
-            using var effectiveCancellation =
-                CancellationTokenSource.CreateLinkedTokenSource(
-                    cancellationToken,
-                    expiryCancellation.Token);
-            outcome = await ExecuteClaimedHandoffAsync(
-                claimed,
-                userConfirmed,
-                effectiveCancellation.Token).ConfigureAwait(false);
+            else
+            {
+                using var expiryCancellation =
+                    new CancellationTokenSource(remaining, timeProvider);
+                using var effectiveCancellation =
+                    CancellationTokenSource.CreateLinkedTokenSource(
+                        cancellationToken,
+                        expiryCancellation.Token);
+                outcome = await ExecuteClaimedHandoffAsync(
+                    claimed,
+                    userConfirmed,
+                    effectiveCancellation.Token).ConfigureAwait(false);
+            }
         }
         finally
         {

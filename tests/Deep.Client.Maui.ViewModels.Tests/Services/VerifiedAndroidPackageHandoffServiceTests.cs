@@ -515,6 +515,47 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
     }
 
     [Fact]
+    public async Task ExpiredHandle_WithLockedDeletion_ReturnsCleanupPendingAndRetriesLater()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var parentRoot = Path.Combine(sandbox.Path, "handoff");
+        var clock = new ManualTimeProvider(UpdateTrustTestFixture.UpdateStart);
+        var handoff = new VerifiedAndroidPackageHandoffService(
+            parentRoot,
+            new SequencedSignerVerifier(),
+            new RecordingInstallerHandoff(),
+            clock,
+            timeToLive: TimeSpan.FromMinutes(5));
+        var preserved = await PreserveAsync(fixture, handoff, sandbox.Path);
+        var ownedPackage = Directory.GetDirectories(
+            Path.Combine(parentRoot, VerifiedAndroidPackageHandoffService.OwnedStoreDirectoryName),
+            "pkg-*").Single();
+        var lockedPath = Path.Combine(ownedPackage, "cleanup-lock");
+        await File.WriteAllTextAsync(lockedPath, "locked");
+        await using var locked = new FileStream(
+            lockedPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read);
+        clock.Advance(TimeSpan.FromMinutes(6));
+
+        var expired = await handoff.HandOffAsync(
+            preserved.Handle,
+            userConfirmed: true,
+            CancellationToken.None);
+
+        Assert.False(expired.IsHandedOff);
+        Assert.Contains("expired", expired.Failure, StringComparison.OrdinalIgnoreCase);
+        Assert.True(expired.CleanupPending);
+        Assert.True(Directory.Exists(ownedPackage));
+
+        await locked.DisposeAsync();
+        _ = await PreserveAsync(fixture, handoff, sandbox.Path);
+        Assert.False(Directory.Exists(ownedPackage));
+    }
+
+    [Fact]
     public async Task ViewModel_ConvertsHandoffCancellationToControlledRecoverableFailure()
     {
         var verified = new OfflineAndroidPackageVerification(

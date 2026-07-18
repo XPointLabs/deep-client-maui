@@ -137,7 +137,10 @@ claim: a failed deletion is reported as `CleanupPending`, retained in the
 service retry set, retried before later preservation, and retried from
 ownership-marked entries at startup. Startup fails closed if owned cleanup still
 cannot complete. This is cleanup with retry, not a guarantee that storage blocks
-have been physically erased.
+have been physically erased. For cancellation the service deliberately
+propagates `OperationCanceledException`, so there is no result object on which a
+`CleanupPending` flag could be returned; any failed cancellation cleanup is
+still queued internally and retried by the same later-operation/startup rules.
 
 No Android installer adapter, FileProvider authority, unknown-sources
 permission, or production DI registration is added in this slice. The future
