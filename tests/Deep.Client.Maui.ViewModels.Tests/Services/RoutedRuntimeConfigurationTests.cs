@@ -146,6 +146,7 @@ public sealed class RoutedRuntimeConfigurationTests
         Assert.IsType<RoutedSessionStorageMessageTransport>(composition.SessionMessageTransport);
         Assert.Same(composition.Router, composition.RouteProvider);
         Assert.Same(composition.MessageTransport, composition.SessionMessageTransport);
+        Assert.Equal(endpoints, composition.PinnedRouters);
 
         var exception = await Record.ExceptionAsync(() =>
             composition.SessionMessageTransport.SendAsync(new OutboundMessageEnvelope(

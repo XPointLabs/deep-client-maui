@@ -87,6 +87,16 @@ jobs:
             -AndroidLabPolicyPath $env:DEEP_ANDROID_LAB_POLICY `
             -MrXPublicKeySha256 $env:DEEP_MR_X_PUBLIC_KEY_SHA256 -ConfigureAdbReverse `
             -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
+      - name: Prepare clean-runner Release live acceptance
+        working-directory: deep-client-maui
+        shell: pwsh
+        run: |
+          dotnet restore tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj `
+            -p:Configuration=Release
+          if ($LASTEXITCODE -ne 0) { throw 'Release ViewModel test restore failed.' }
+          dotnet build tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj `
+            --configuration Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Release ViewModel test build failed.' }
       - name: Strict three-router live acceptance
         working-directory: deep-client-maui
         shell: pwsh

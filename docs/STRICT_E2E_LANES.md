@@ -61,7 +61,10 @@ relay RPC endpoints. Both routed store and authenticated retrieve must cross the
 router API. A forced router-API outage must fail closed without any request to a
 direct storage endpoint. The wrapper always executes this xUnit acceptance in
 `Release`; the rendered Windows and physical Android UI lanes remain explicitly
-Debug-only and do not substitute for that Release transport contract.
+Debug-only and do not substitute for that Release transport contract. The
+self-hosted workflow explicitly restores and builds the ViewModel test project
+in Release before invoking the wrapper's `--no-restore` live test command, so a
+clean runner cannot fail merely because Release test assets are absent.
 
 ## Android device lane
 

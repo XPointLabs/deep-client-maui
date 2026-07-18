@@ -5,12 +5,16 @@ namespace Deep.Client.Maui.Core.Services;
 public sealed class RoutedProductionComposition
 {
     internal RoutedProductionComposition(
+        IReadOnlyList<PinnedRouterEndpoint> pinnedRouters,
         XNodeRpcClient router,
         RoutedSessionStorageMessageTransport messageTransport)
     {
+        PinnedRouters = pinnedRouters;
         Router = router;
         MessageTransport = messageTransport;
     }
+
+    public IReadOnlyList<PinnedRouterEndpoint> PinnedRouters { get; }
 
     public XNodeRpcClient Router { get; }
 
@@ -40,6 +44,6 @@ public static class RoutedProductionCompositionFactory
         var transport = new RoutedSessionStorageMessageTransport(
             router,
             new RoutedSessionStorageTransportOptions());
-        return new RoutedProductionComposition(router, transport);
+        return new RoutedProductionComposition(validatedEndpoints, router, transport);
     }
 }

@@ -1,8 +1,10 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('win-x64', 'win-arm64')]
+    [ValidateSet('win-x64')]
     [string]$RuntimeIdentifier = 'win-x64',
-    [string]$ArtifactDirectory
+    [string]$ArtifactDirectory,
+    [switch]$ContractOnlyVerifierFailure,
+    [switch]$ContractOnlyFactoryFailure
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,7 +18,49 @@ $resultPath = Join-Path $ArtifactDirectory 'release-routed-composition.json'
 $sourceCommitSha = (& git -C $repoRoot rev-parse HEAD).Trim()
 $status = 'failed'
 $assemblySha256 = ''
-$failure = ''
+$failure = [System.Collections.Generic.List[string]]::new()
+$compiledDiStatus = 'not-run'
+$factoryStatus = 'not-run'
+
+function Write-GuardEvidence {
+    [ordered]@{
+        schema = 'deep.survival.release-routed-composition.v1'
+        sourceCommitSha = $sourceCommitSha
+        generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        status = $status
+        assemblySha256 = $assemblySha256
+        checks = @(
+            [ordered]@{
+                name = 'compiled-maui-program-routed-di'
+                status = $compiledDiStatus
+            },
+            [ordered]@{
+                name = 'release-production-factory-behavior'
+                status = $factoryStatus
+            }
+        )
+        failure = $failure -join '; '
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $resultPath -Encoding utf8
+}
+
+$contractModes = @($ContractOnlyVerifierFailure, $ContractOnlyFactoryFailure).Where({ $_ }).Count
+if ($contractModes -gt 0) {
+    if ([Environment]::GetEnvironmentVariable('DEEP_RELEASE_GUARD_CONTRACT_TEST') -cne '1' -or
+        $contractModes -ne 1) {
+        throw 'Partial-failure simulation is restricted to one explicit compiled contract test.'
+    }
+    if ($ContractOnlyVerifierFailure) {
+        $compiledDiStatus = 'failed'
+        $factoryStatus = 'passed'
+        $failure.Add('simulated verifier failure')
+    } else {
+        $compiledDiStatus = 'passed'
+        $factoryStatus = 'failed'
+        $failure.Add('simulated factory failure')
+    }
+    Write-GuardEvidence
+    exit 1
+}
 
 try {
     dotnet build `
@@ -35,51 +79,54 @@ try {
     if ($assemblies.Count -ne 1) {
         throw "Expected exactly one freshly built Release MAUI assembly; found $($assemblies.Count)."
     }
-    $AssemblyPath = $assemblies[0].FullName
-    $assemblySha256 = (Get-FileHash -LiteralPath $AssemblyPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $assemblyPath = $assemblies[0].FullName
+    $assemblySha256 = (Get-FileHash -LiteralPath $assemblyPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
-    dotnet run `
-        --project (Join-Path $repoRoot 'eng\Deep.ReleaseCompositionVerifier\Deep.ReleaseCompositionVerifier.csproj') `
-        --configuration Release `
-        -- $AssemblyPath
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Compiled MauiProgram routed binding verification failed.'
+    try {
+        dotnet build `
+            (Join-Path $repoRoot 'eng\Deep.ReleaseCompositionVerifier\Deep.ReleaseCompositionVerifier.csproj') `
+            --configuration Release
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Release DI verifier build failed.'
+        }
+        $verifier = Join-Path $repoRoot (
+            'eng\Deep.ReleaseCompositionVerifier\bin\Release\net10.0\{0}\Deep.ReleaseCompositionVerifier.exe' -f
+            $RuntimeIdentifier)
+        & $verifier $assemblyPath
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Compiled MauiProgram routed DI verification failed.'
+        }
+        $compiledDiStatus = 'passed'
+    } catch {
+        $compiledDiStatus = 'failed'
+        $failure.Add($_.Exception.Message)
     }
 
-    dotnet test `
-        (Join-Path $repoRoot 'tests\Deep.Client.Maui.ViewModels.Tests\Deep.Client.Maui.ViewModels.Tests.csproj') `
-        --configuration Release `
-        --filter 'FullyQualifiedName~RoutedRuntimeConfigurationTests.ProductionFactory_' `
-        --logger 'console;verbosity=minimal'
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Release routed production factory behavior failed.'
+    try {
+        dotnet test `
+            (Join-Path $repoRoot 'tests\Deep.Client.Maui.ViewModels.Tests\Deep.Client.Maui.ViewModels.Tests.csproj') `
+            --configuration Release `
+            --filter 'FullyQualifiedName~RoutedRuntimeConfigurationTests.ProductionFactory_' `
+            --logger 'console;verbosity=minimal'
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Release routed production factory behavior failed.'
+        }
+        $factoryStatus = 'passed'
+    } catch {
+        $factoryStatus = 'failed'
+        $failure.Add($_.Exception.Message)
     }
 
-    $status = 'passed'
+    if ($compiledDiStatus -ceq 'passed' -and $factoryStatus -ceq 'passed') {
+        $status = 'passed'
+    }
 } catch {
-    $failure = $_.Exception.Message
+    $failure.Add($_.Exception.Message)
 } finally {
-    [ordered]@{
-        schema = 'deep.survival.release-routed-composition.v1'
-        sourceCommitSha = $sourceCommitSha
-        generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
-        status = $status
-        assemblySha256 = $assemblySha256
-        checks = @(
-            [ordered]@{
-                name = 'compiled-maui-program-routed-binding'
-                status = $status
-            },
-            [ordered]@{
-                name = 'release-production-factory-behavior'
-                status = $status
-            }
-        )
-        failure = $failure
-    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $resultPath -Encoding utf8
+    Write-GuardEvidence
 }
 
 if ($status -cne 'passed') {
-    Write-Error $failure
+    Write-Error ($failure -join '; ')
     exit 1
 }

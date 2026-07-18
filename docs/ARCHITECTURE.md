@@ -60,10 +60,13 @@ and three distinct canonical router URLs. Router bases have a root path and no
 userinfo, query, or fragment; HTTP requires a literal loopback IP, while HTTPS
 uses the existing identity/certificate pinning. `MauiProgram` resolves the route
 provider and message transport through the same Core production factory covered
-by Release tests. CI builds the Windows Release assembly, inspects the compiled
-`MauiProgram.CreateMauiApp` call graph for the factory and all routed service
-bindings, and executes the factory outage contract; source-text matching is not
-release evidence. A live route is valid only when its mode is `onion-storage`,
+by Release tests. CI builds the Windows Release assembly, proves that compiled
+`MauiProgram.CreateMauiApp` calls its production routed registrar exactly once,
+executes that registrar against a real DI container, and checks the resolved
+factory instances, exact three pins, and absence of direct/stub bindings. A
+negative DI mutation proves that unused factory calls cannot satisfy the guard.
+The separate factory outage contract is also executed and reported independently;
+source-text matching is not release evidence. A live route is valid only when its mode is `onion-storage`,
 indices are exactly `0,1,2`, the signed relay identity set matches the pins, and
 relay RPC endpoints are unique. Router API loss fails the operation; there is no
 direct-storage fallback.

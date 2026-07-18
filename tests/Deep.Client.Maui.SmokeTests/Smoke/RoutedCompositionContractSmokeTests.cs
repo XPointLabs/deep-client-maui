@@ -59,6 +59,125 @@ public sealed class RoutedCompositionContractSmokeTests
         AssertMachineReadableContract(result, "failed", expectedChecks);
     }
 
+    [Fact]
+    public void StrictWorkflow_RestoresAndBuildsReleaseTestsBeforeNoRestoreLiveLane()
+    {
+        var workflow = ReadWorkspaceFile(".github", "workflows", "strict-release-evidence.yml");
+        var prepare = workflow.IndexOf(
+            "- name: Prepare clean-runner Release live acceptance",
+            StringComparison.Ordinal);
+        var live = workflow.IndexOf(
+            "- name: Strict three-router live acceptance",
+            StringComparison.Ordinal);
+
+        Assert.True(prepare >= 0 && live > prepare);
+        var preparationStep = workflow[prepare..live];
+        Assert.Contains(
+            "dotnet restore tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj",
+            preparationStep,
+            StringComparison.Ordinal);
+        Assert.Contains("-p:Configuration=Release", preparationStep, StringComparison.Ordinal);
+        Assert.Contains(
+            "dotnet build tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj",
+            preparationStep,
+            StringComparison.Ordinal);
+        Assert.Contains("--configuration Release --no-restore", preparationStep, StringComparison.Ordinal);
+
+        var lane = ReadWorkspaceFile("eng", "Invoke-StrictClientLane.ps1");
+        var liveTest = lane.IndexOf(
+            "$env:DEEP_STRICT_LIVE = '1'",
+            StringComparison.Ordinal);
+        Assert.True(liveTest >= 0);
+        var liveTestCommand = lane[liveTest..];
+        Assert.Contains("--configuration Release", liveTestCommand, StringComparison.Ordinal);
+        Assert.Contains("--no-restore", liveTestCommand, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true, false, "failed", "passed")]
+    [InlineData(false, true, "passed", "failed")]
+    public async Task ReleaseGuardEvidence_PreservesIndependentPartialFailureStatuses(
+        bool verifierFailure,
+        bool factoryFailure,
+        string expectedVerifierStatus,
+        string expectedFactoryStatus)
+    {
+        var failureSwitch = (verifierFailure, factoryFailure) switch
+        {
+            (true, false) => "-ContractOnlyVerifierFailure",
+            (false, true) => "-ContractOnlyFactoryFailure",
+            _ => throw new InvalidOperationException("Exactly one partial failure is required.")
+        };
+        var repositoryRoot = FindRepositoryRoot();
+        var artifactDirectory = Path.Combine(
+            repositoryRoot,
+            "artifacts",
+            "contract-tests",
+            Guid.NewGuid().ToString("N"));
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = OperatingSystem.IsWindows() ? "powershell.exe" : "pwsh",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = repositoryRoot
+            };
+            foreach (var argument in new[]
+                     {
+                         "-NoLogo",
+                         "-NoProfile",
+                         "-File",
+                         Path.Combine(repositoryRoot, "eng", "Test-ReleaseRoutedComposition.ps1"),
+                         "-ArtifactDirectory",
+                         artifactDirectory,
+                         failureSwitch
+                     })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+            startInfo.Environment["DEEP_RELEASE_GUARD_CONTRACT_TEST"] = "1";
+
+            using var process = Process.Start(startInfo);
+            Assert.NotNull(process);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await process!.WaitForExitAsync(timeout.Token);
+            var standardOutput = await process.StandardOutput.ReadToEndAsync(timeout.Token);
+            var standardError = await process.StandardError.ReadToEndAsync(timeout.Token);
+            Assert.True(
+                process.ExitCode == 1,
+                $"Expected partial failure exit 1, got {process.ExitCode}.{Environment.NewLine}" +
+                $"stdout:{Environment.NewLine}{standardOutput}{Environment.NewLine}" +
+                $"stderr:{Environment.NewLine}{standardError}");
+
+            var evidencePath = Path.Combine(
+                artifactDirectory,
+                "release-routed-composition.json");
+            Assert.True(File.Exists(evidencePath));
+            using var evidence = JsonDocument.Parse(
+                await File.ReadAllTextAsync(evidencePath, timeout.Token));
+            Assert.Equal("failed", evidence.RootElement.GetProperty("status").GetString());
+            var checks = evidence.RootElement
+                .GetProperty("checks")
+                .EnumerateArray()
+                .ToDictionary(
+                    static check => check.GetProperty("name").GetString()!,
+                    static check => check.GetProperty("status").GetString()!,
+                    StringComparer.Ordinal);
+            Assert.Equal(expectedVerifierStatus, checks["compiled-maui-program-routed-di"]);
+            Assert.Equal(expectedFactoryStatus, checks["release-production-factory-behavior"]);
+        }
+        finally
+        {
+            if (Directory.Exists(artifactDirectory))
+            {
+                Directory.Delete(artifactDirectory, recursive: true);
+            }
+        }
+    }
+
     public static TheoryData<string, string?, string?, bool> LiveConfigurationCases => new()
     {
         { "exact-three-storage-absent", ValidRouters(), null, true },
@@ -306,6 +425,9 @@ public sealed class RoutedCompositionContractSmokeTests
         Assert.NotNull(directory);
         return directory!.FullName;
     }
+
+    private static string ReadWorkspaceFile(params string[] parts) =>
+        File.ReadAllText(Path.Combine([FindRepositoryRoot(), .. parts]));
 
     private sealed record PreflightProcessResult(
         int ExitCode,

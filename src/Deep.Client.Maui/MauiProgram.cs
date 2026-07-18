@@ -82,12 +82,14 @@ public static class MauiProgram
 #if DEBUG
         var routedComposition = routerBaseUrls.Count == 0
             ? null
-            : RoutedProductionCompositionFactory.Create(
+            : ConfigureProductionRoutedServices(
+                builder.Services,
                 routerBaseUrls,
                 storageBaseUrl,
                 CreateRouterHttpClient());
 #else
-        var routedComposition = RoutedProductionCompositionFactory.Create(
+        var routedComposition = ConfigureProductionRoutedServices(
+            builder.Services,
             routerBaseUrls,
             storageBaseUrl,
             CreateRouterHttpClient());
@@ -95,13 +97,7 @@ public static class MauiProgram
         var fileConnectIps = ParseIpAddresses(ResolveRuntimeSetting(FileConnectIpsEnv));
 
         builder.Services.AddSingleton(RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting));
-        if (routedComposition is not null)
-        {
-            builder.Services.AddSingleton(routedComposition.Router);
-            builder.Services.AddSingleton<ITransportRouteProvider>(routedComposition.RouteProvider);
-            builder.Services.AddSingleton<ISessionMessageTransport>(routedComposition.SessionMessageTransport);
-        }
-        else
+        if (routedComposition is null)
         {
 #if DEBUG
             builder.Services.AddSingleton<ITransportRouteProvider>(_ =>
@@ -285,6 +281,24 @@ public static class MauiProgram
 #endif
 
         return builder.Build();
+    }
+
+    internal static RoutedProductionComposition ConfigureProductionRoutedServices(
+        IServiceCollection services,
+        IEnumerable<PinnedRouterEndpoint> routerEndpoints,
+        string? directStorageUrl,
+        HttpClient routerHttpClient)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        var composition = RoutedProductionCompositionFactory.Create(
+            routerEndpoints,
+            directStorageUrl,
+            routerHttpClient);
+        services.AddSingleton(composition);
+        services.AddSingleton(composition.Router);
+        services.AddSingleton<ITransportRouteProvider>(composition.RouteProvider);
+        services.AddSingleton<ISessionMessageTransport>(composition.SessionMessageTransport);
+        return composition;
     }
 
 #if ANDROID
