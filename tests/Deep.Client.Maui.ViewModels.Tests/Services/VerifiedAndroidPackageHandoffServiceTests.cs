@@ -294,6 +294,14 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
             parentRoot,
             VerifiedAndroidPackageHandoffService.OwnedStoreDirectoryName)));
 
+        _ = new VerifiedAndroidPackageHandoffService(
+            parentRoot,
+            new SequencedSignerVerifier(),
+            new RecordingInstallerHandoff(),
+            new ManualTimeProvider(UpdateTrustTestFixture.UpdateStart));
+        Assert.True(File.Exists(unrelated));
+        AssertNoOwnedPackageSnapshots(parentRoot);
+
         var miswiredParent = Path.Combine(sandbox.Path, "miswired");
         var unmarkedStore = Path.Combine(
             miswiredParent,
@@ -348,10 +356,10 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
             using var sandbox = new TemporaryDirectory();
             var entered = new TaskCompletionSource(
                 TaskCreationOptions.RunContinuationsAsynchronously);
-            var signer = phase == "signer"
+            IAndroidPackageSignerVerifier signer = phase == "signer"
                 ? new BlockingSignerVerifier(entered)
                 : new SequencedSignerVerifier();
-            var installer = phase == "installer"
+            IAndroidPackageInstallerHandoff installer = phase == "installer"
                 ? new BlockingInstallerHandoff(entered)
                 : new RecordingInstallerHandoff();
             var handoff = new VerifiedAndroidPackageHandoffService(
@@ -376,6 +384,28 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
                 userConfirmed: true,
                 CancellationToken.None)).IsHandedOff);
         }
+    }
+
+    [Fact]
+    public async Task ClaimedSnapshotTimeToLive_CancelsIgnoringAdapterAndCleans()
+    {
+        using var fixture = new UpdateTrustTestFixture();
+        using var sandbox = new TemporaryDirectory();
+        var handoff = new VerifiedAndroidPackageHandoffService(
+            Path.Combine(sandbox.Path, "handoff"),
+            new SequencedSignerVerifier(),
+            new IgnoringCancellationInstallerHandoff(),
+            TimeProvider.System,
+            timeToLive: TimeSpan.FromMilliseconds(100));
+        var preserved = await PreserveAsync(fixture, handoff, sandbox.Path);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            handoff.HandOffAsync(
+                preserved.Handle,
+                userConfirmed: true,
+                CancellationToken.None));
+
+        AssertNoOwnedPackageSnapshots(Path.Combine(sandbox.Path, "handoff"));
     }
 
     [Fact]
@@ -706,6 +736,19 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
             var buffer = new byte[1];
             _ = await captured!.ReadAsync(buffer);
         }
+    }
+
+    private sealed class IgnoringCancellationInstallerHandoff
+        : IAndroidPackageInstallerHandoff
+    {
+        private readonly TaskCompletionSource<AndroidPackageInstallerHandoffResult>
+            never = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<AndroidPackageInstallerHandoffResult> RequestInstallAsync(
+            Stream verifiedPackage,
+            long expectedLength,
+            CancellationToken cancellationToken) =>
+            never.Task;
     }
 
     private sealed class MutationAttemptingInstallerHandoff

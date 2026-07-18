@@ -101,17 +101,21 @@ public sealed record PreservedAndroidPackageHandle(
 
 public sealed record AndroidPackageInstallerHandoffResult(
     bool IsAccepted,
+    long OwnedLength,
+    string? OwnedSha256,
     string? Failure);
 
 public sealed record VerifiedAndroidPackageHandoffResult(
     bool IsHandedOff,
     string Status,
-    string? Failure);
+    string? Failure,
+    bool CleanupPending);
 
 public interface IAndroidPackageInstallerHandoff
 {
     Task<AndroidPackageInstallerHandoffResult> RequestInstallAsync(
-        string privateVerifiedSnapshotPath,
+        Stream verifiedPackage,
+        long expectedLength,
         CancellationToken cancellationToken);
 }
 

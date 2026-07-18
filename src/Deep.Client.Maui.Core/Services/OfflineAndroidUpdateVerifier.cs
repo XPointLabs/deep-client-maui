@@ -130,10 +130,27 @@ public sealed class OfflineAndroidUpdateVerifier : IOfflineAndroidUpdateVerifier
                 }
 
                 await stateStore.SaveAsync(verified.State, cancellationToken);
-                var preserved = await handoffService.PreserveVerifiedSnapshotAsync(
-                    snapshotPath,
-                    target,
-                    cancellationToken);
+                PreservedAndroidPackageHandle preserved;
+                try
+                {
+                    preserved = await handoffService.PreserveVerifiedSnapshotAsync(
+                        snapshotPath,
+                        target,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (
+                    exception is InvalidDataException or IOException or
+                    UnauthorizedAccessException or CryptographicException or
+                    FormatException or ArgumentException)
+                {
+                    return Failed(
+                        request,
+                        "Private verified package handoff storage is unavailable.");
+                }
                 return new OfflineAndroidPackageVerification(
                     true,
                     "Пакет проверен. Перед передачей установщику подтвердите версию вручную.",

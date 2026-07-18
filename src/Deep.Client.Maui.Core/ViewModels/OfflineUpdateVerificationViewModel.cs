@@ -1,4 +1,5 @@
 using Deep.Client.Maui.Core.Services;
+using System.Security.Cryptography;
 
 namespace Deep.Client.Maui.Core.ViewModels;
 
@@ -168,18 +169,36 @@ public sealed class OfflineUpdateVerificationViewModel : ViewModelBase
         handoffHandle = null;
         try
         {
-            var result = await handoffService!.HandOffAsync(
-                handle,
-                userConfirmed: true,
-                cancellationToken);
-            Status = result.Status;
-            Failure = result.Failure ?? string.Empty;
-            IsVerified = false;
-            IsConfirmed = false;
-            return result.IsHandedOff;
+            try
+            {
+                var result = await handoffService!.HandOffAsync(
+                    handle,
+                    userConfirmed: true,
+                    cancellationToken);
+                Status = result.Status;
+                Failure = result.Failure ?? string.Empty;
+                return result.IsHandedOff;
+            }
+            catch (OperationCanceledException)
+            {
+                Status = "Installer handoff was canceled and remains blocked.";
+                Failure = "Installer handoff was canceled; verify the package again to retry.";
+                return false;
+            }
+            catch (Exception exception) when (
+                exception is InvalidDataException or IOException or
+                UnauthorizedAccessException or CryptographicException or
+                InvalidOperationException or FormatException or ArgumentException)
+            {
+                Status = "Installer handoff failed closed.";
+                Failure = "Installer handoff is unavailable; verify the package again to retry.";
+                return false;
+            }
         }
         finally
         {
+            IsVerified = false;
+            IsConfirmed = false;
             RaisePropertyChanged(nameof(CanRequestInstaller));
         }
     }

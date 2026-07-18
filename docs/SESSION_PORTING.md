@@ -111,16 +111,33 @@ adapter, while Apple platforms show their exact distribution limitation.
 P02D replaces the deleted verification snapshot with a bounded, app-private,
 one-time handoff lifecycle. A successful verification returns only an opaque
 cryptographically random handle, never the source or private file path. The
-private snapshot is limited to one APK, at most 1 GiB, and at most 15 minutes.
-It is deleted after handoff, rejection, tamper, expiry, replacement, and on the
-next service startup after an interrupted process.
+service creates a fixed, ownership-marked child below the supplied app-private
+root and only removes marker-validated `pkg-*` children; unrelated siblings and
+unmarked directories are never deleted. The active snapshot is limited to one
+APK, at most 1 GiB, and at most 15 minutes.
 
 Immediately before a platform request, the core reopens the preserved snapshot
 and revalidates its exact length and SHA-256, then repeats Android package ID,
 version, and signer-certificate inspection through the platform verifier. The
-handle is consumed once and replay is rejected. The ViewModel cannot request
-handoff until the user has manually confirmed the exact visible package,
-version, source commit, and expiry values.
+handle is consumed in a short non-cancelable critical section, so cancellation
+cannot leave replayable state, and cancellation is then honored during signer
+and adapter work. The ViewModel converts cancellation into a controlled blocked
+state and requires a fresh verification before retry.
+
+The platform boundary receives an already-open read-only stream while the core
+keeps the underlying file closed to writers. It never receives a filesystem
+path. Before returning success, an adapter must synchronously copy or take
+durable OS ownership of the bytes and return an exact length/SHA-256 receipt;
+missing or mismatched receipts fail closed. The stream is disposed immediately
+after the adapter returns, so delayed reads are not part of the contract.
+
+Deletion is attempted after success, rejection, tamper, expiry, replacement,
+and cancellation. Filesystem semantics do not permit an absolute secure-erasure
+claim: a failed deletion is reported as `CleanupPending`, retained in the
+service retry set, retried before later preservation, and retried from
+ownership-marked entries at startup. Startup fails closed if owned cleanup still
+cannot complete. This is cleanup with retry, not a guarantee that storage blocks
+have been physically erased.
 
 No Android installer adapter, FileProvider authority, unknown-sources
 permission, or production DI registration is added in this slice. The future

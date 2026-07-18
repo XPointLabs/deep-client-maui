@@ -18,6 +18,9 @@ public sealed class OfflineUpdateUiContractSmokeTests
         var handoff = ReadWorkspaceFile(
             "src", "Deep.Client.Maui.Core", "Services",
             "VerifiedAndroidPackageHandoffService.cs");
+        var contracts = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui.Core", "Services",
+            "UpdateTrustContracts.cs");
 
         Assert.Contains("AutomationId=\"Settings.OfflineUpdate\"", settings, StringComparison.Ordinal);
         Assert.Contains("OnOfflineUpdateClicked", settings, StringComparison.Ordinal);
@@ -39,6 +42,10 @@ public sealed class OfflineUpdateUiContractSmokeTests
         Assert.DoesNotContain("VerifiedAndroidPackageHandoffService", composition, StringComparison.Ordinal);
         Assert.DoesNotContain("Console.", handoff, StringComparison.Ordinal);
         Assert.DoesNotContain("ILogger", handoff, StringComparison.Ordinal);
+        Assert.Contains("OwnedStoreDirectoryName", handoff, StringComparison.Ordinal);
+        Assert.Contains("Stream verifiedPackage", contracts, StringComparison.Ordinal);
+        Assert.Contains("OwnedSha256", contracts, StringComparison.Ordinal);
+        Assert.DoesNotContain("string privateVerifiedSnapshotPath", contracts, StringComparison.Ordinal);
     }
 
     private static string ReadWorkspaceFile(params string[] relative)
