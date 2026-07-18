@@ -26,6 +26,23 @@ using Microsoft.UI.Xaml;
 
 namespace Deep.Client.Maui;
 
+internal sealed record ApplicationServiceInputs(
+    ClientFeatureFlags FeatureFlags,
+    IReadOnlyList<PinnedRouterEndpoint> RouterBaseUrls,
+    string? StorageBaseUrl,
+    HttpClient RouterHttpClient,
+    RuntimeEnvironmentOptions RuntimeEnvironment,
+    Func<IServiceProvider, IIpCountryLookup> CountryLookupFactory,
+    Func<IServiceProvider, IAvatarProfileTransport> AvatarTransportFactory,
+    Func<IServiceProvider, IAttachmentFileTransport> AttachmentTransportFactory,
+    Func<IServiceProvider, ClientRuntimeBootstrapper> RuntimeBootstrapperFactory,
+    Func<IServiceProvider, ClientRuntime> RuntimeFactory,
+    Func<IServiceProvider, PushClientMetadata> PushMetadataFactory,
+    Func<IServiceProvider, IPushSubscriptionTransport> PushTransportFactory,
+    Func<IServiceProvider, ICallSignalingTransport> CallTransportFactory,
+    Func<IServiceProvider, ICallIceConfigurationProvider> IceConfigurationFactory,
+    Func<IServiceProvider, DesktopWorkspaceViewModel>? DesktopWorkspaceFactory);
+
 public static class MauiProgram
 {
     internal const string TransportBaseUrlEnv = "DEEP_TRANSPORT_BASE_URL";
@@ -51,14 +68,7 @@ public static class MauiProgram
 
     public static MauiApp CreateMauiApp()
     {
-#if !DEBUG
-        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(E2eBootstrapEnv)) ||
-            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(E2eAppDataRootEnv)) ||
-            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(E2eStrictWindowsEnv)))
-        {
-            throw new InvalidOperationException("E2E bootstrap and app-data overrides are forbidden in Release builds.");
-        }
-#endif
+        ValidateReleaseProcess();
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>();
 #if ANDROID
@@ -68,50 +78,33 @@ public static class MauiProgram
         ConfigureWindowsHandlers();
 #endif
 
-        var routerBaseUrls = ResolveRouterBaseUrls();
-        var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
-        ConfigureApplicationServices(
-            builder.Services,
-            routerBaseUrls,
-            storageBaseUrl,
-            CreateRouterHttpClient());
+        var inputs = ResolveApplicationServiceInputs();
+        ConfigureApplicationServices(builder.Services, inputs);
         return builder.Build();
     }
 
     internal static void ConfigureApplicationServices(
         IServiceCollection services,
-        IReadOnlyList<PinnedRouterEndpoint> routerBaseUrls,
-        string? storageBaseUrl,
-        HttpClient routerHttpClient)
+        ApplicationServiceInputs inputs)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(routerBaseUrls);
-        ArgumentNullException.ThrowIfNull(routerHttpClient);
-        var featureFlags = BuildFeatureFlags();
-        var pushBaseUrl = ResolveRuntimeSetting(PushBaseUrlEnv);
-#if !DEBUG
-        if (featureFlags.PushNotificationsEnabled && string.IsNullOrWhiteSpace(pushBaseUrl))
-        {
-            throw new InvalidOperationException(
-                "DEEP_PUSH_URL is required when push notifications are enabled in non-Debug builds.");
-        }
-#endif
+        ArgumentNullException.ThrowIfNull(inputs);
 #if DEBUG
-        var routedComposition = routerBaseUrls.Count == 0
+        var routedComposition = inputs.RouterBaseUrls.Count == 0
             ? null
             : RoutedProductionCompositionFactory.Create(
-                routerBaseUrls,
-                storageBaseUrl,
-                routerHttpClient);
+                inputs.RouterBaseUrls,
+                inputs.StorageBaseUrl,
+                inputs.RouterHttpClient);
 #else
         var routedComposition = RoutedProductionCompositionFactory.Create(
-            routerBaseUrls,
-            storageBaseUrl,
-            routerHttpClient);
+            inputs.RouterBaseUrls,
+            inputs.StorageBaseUrl,
+            inputs.RouterHttpClient);
 #endif
-        var fileConnectIps = ParseIpAddresses(ResolveRuntimeSetting(FileConnectIpsEnv));
 
-        services.AddSingleton(RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting));
+        services.AddSingleton(inputs.RuntimeEnvironment);
+#if DEBUG
         if (routedComposition is not null)
         {
             services.AddSingleton(routedComposition);
@@ -119,33 +112,26 @@ public static class MauiProgram
             services.AddSingleton<ITransportRouteProvider>(routedComposition.RouteProvider);
             services.AddSingleton<ISessionMessageTransport>(routedComposition.SessionMessageTransport);
         }
-        if (routedComposition is null)
+        else
         {
-#if DEBUG
             services.AddSingleton<ITransportRouteProvider>(_ =>
-                new DirectStorageRouteProvider(storageBaseUrl));
-#else
-            throw new InvalidOperationException(
-                "Release composition cannot create a direct-storage route provider.");
-#endif
+                new DirectStorageRouteProvider(inputs.StorageBaseUrl));
         }
-
-#if DEBUG
         if (routedComposition is null)
         {
         services.AddSingleton<ISessionMessageTransport>(_ =>
         {
-            if (!string.IsNullOrWhiteSpace(storageBaseUrl))
+            if (!string.IsNullOrWhiteSpace(inputs.StorageBaseUrl))
             {
                 return new SessionStorageMessageTransport(
                     CreateServiceHttpClient(),
-                    new SessionStorageMessageTransportOptions(storageBaseUrl));
+                    new SessionStorageMessageTransportOptions(inputs.StorageBaseUrl));
             }
 
             var baseUrl = ResolveRuntimeSetting(TransportBaseUrlEnv);
             if (string.IsNullOrWhiteSpace(baseUrl))
             {
-                if (!featureFlags.StubTransportAllowed)
+                if (!inputs.FeatureFlags.StubTransportAllowed)
                 {
                     throw new InvalidOperationException("Stub transport is disabled by feature flags.");
                 }
@@ -156,59 +142,23 @@ public static class MauiProgram
             return new HttpSessionTransport(CreateServiceHttpClient(), new HttpSessionTransportOptions(baseUrl));
         });
         }
+#else
+        services.AddSingleton(routedComposition);
+        services.AddSingleton(routedComposition.Router);
+        services.AddSingleton<ITransportRouteProvider>(routedComposition.RouteProvider);
+        services.AddSingleton<ISessionMessageTransport>(routedComposition.SessionMessageTransport);
 #endif
-        services.AddSingleton(featureFlags);
+        services.AddSingleton(inputs.FeatureFlags);
         services.AddSingleton<IClock, SystemClock>();
-        services.AddSingleton<IIpCountryLookup>(_ => new IpCountryLookup(
-            _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_blocks_ipv4")),
-            _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_codes.json"))));
-        services.AddSingleton<IAvatarProfileTransport>(_ =>
-        {
-            var baseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
-            if (!string.IsNullOrWhiteSpace(baseUrl))
-            {
-                return new HttpAvatarProfileTransport(CreateFileHttpClient(fileConnectIps), new HttpAvatarProfileTransportOptions(baseUrl));
-            }
-
-#if DEBUG
-            return new DisabledAvatarProfileTransport();
-#else
-            throw new InvalidOperationException(
-                "DEEP_FILE_URL is required in non-Debug builds. " +
-                "Remote avatar publication is not allowed to be disabled for release startup.");
-#endif
-        });
-        services.AddSingleton<IAttachmentFileTransport>(_ =>
-        {
-            var baseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
-            if (!string.IsNullOrWhiteSpace(baseUrl))
-            {
-                return new HttpAttachmentFileTransport(CreateFileHttpClient(fileConnectIps), new HttpAttachmentFileTransportOptions(baseUrl));
-            }
-
-#if DEBUG
-            return new DisabledAttachmentFileTransport();
-#else
-            throw new InvalidOperationException(
-                "DEEP_FILE_URL is required in non-Debug builds. " +
-                "Remote attachment upload is not allowed to be disabled for release startup.");
-#endif
-        });
-        services.AddSingleton(sp =>
-            new ClientRuntimeBootstrapper(cancellationToken => CreateClientRuntimeAsync(sp, cancellationToken)));
-        services.AddSingleton(sp =>
-            sp.GetRequiredService<ClientRuntimeBootstrapper>().GetRequiredRuntime());
+        services.AddSingleton(inputs.CountryLookupFactory);
+        services.AddSingleton(inputs.AvatarTransportFactory);
+        services.AddSingleton(inputs.AttachmentTransportFactory);
+        services.AddSingleton(inputs.RuntimeBootstrapperFactory);
+        services.AddSingleton(inputs.RuntimeFactory);
 
         services.AddSingleton<IPushNotificationService, MauiPushNotificationService>();
-        services.AddSingleton(_ => new PushClientMetadata(
-            PushNotificationCrypto.PackageName,
-            AppInfo.Current.VersionString));
-        services.AddSingleton<IPushSubscriptionTransport>(_ =>
-        {
-            return string.IsNullOrWhiteSpace(pushBaseUrl)
-                ? new DisabledPushSubscriptionTransport()
-                : new HttpPushSubscriptionTransport(CreateServiceHttpClient(), new HttpPushSubscriptionTransportOptions(pushBaseUrl));
-        });
+        services.AddSingleton(inputs.PushMetadataFactory);
+        services.AddSingleton(inputs.PushTransportFactory);
         services.AddSingleton<IPushRegistrationCoordinator, PushRegistrationCoordinator>();
         services.AddSingleton<SyncPollingPolicy>();
         services.AddSingleton<PushRegistrationLifecycleCoordinator>();
@@ -232,36 +182,10 @@ public static class MauiProgram
 #endif
         services.AddSingleton<IAppearanceService, MauiAppearanceService>();
         services.AddSingleton<IAppIconService, AppIconService>();
-        services.AddSingleton<ICallSignalingTransport>(serviceProvider =>
-        {
-            var baseUrl = ResolveRuntimeSetting(CallSignalingBaseUrlEnv);
-            if (!string.IsNullOrWhiteSpace(baseUrl))
-            {
-                return new HttpCallSignalingTransport(
-                    CreateServiceHttpClient(),
-                    new HttpCallSignalingTransportOptions(baseUrl),
-                    cancellationToken => serviceProvider
-                        .GetRequiredService<ClientRuntime>()
-                        .Accounts
-                        .GetRecoveryPhraseAsync(cancellationToken));
-            }
-
-#if DEBUG
-            return new InMemoryCallSignalingTransport();
-#else
-            if (featureFlags.CallsEnabled)
-            {
-                throw new InvalidOperationException(
-                    "DEEP_CALL_SIGNALING_BASE_URL is required when calls are enabled in non-Debug builds.");
-            }
-
-            return new InMemoryCallSignalingTransport();
-#endif
-        });
+        services.AddSingleton(inputs.CallTransportFactory);
         services.AddSingleton<RealtimeCallService>();
         services.AddSingleton<ICallService, MauiRealtimeCallService>();
-        services.AddSingleton<ICallIceConfigurationProvider>(serviceProvider =>
-            (ICallIceConfigurationProvider)serviceProvider.GetRequiredService<ICallSignalingTransport>());
+        services.AddSingleton(inputs.IceConfigurationFactory);
         services.AddSingleton<CallSessionCoordinator>();
         services.AddSingleton<IAttachmentPickerService, MauiAttachmentPickerService>();
         services.AddSingleton<IVoiceMessageRecorder, MauiVoiceMessageRecorder>();
@@ -278,11 +202,7 @@ public static class MauiProgram
         services.AddTransient<NotificationRegistrationViewModel>();
         services.AddTransient<SettingsViewModel>();
 #if WINDOWS
-        services.AddSingleton(serviceProvider => new DesktopWorkspaceViewModel(
-            serviceProvider.GetRequiredService<ClientRuntime>(),
-            () => serviceProvider.GetRequiredService<ConversationsViewModel>(),
-            () => serviceProvider.GetRequiredService<ChatViewModel>(),
-            () => serviceProvider.GetRequiredService<GroupChatViewModel>()));
+        services.AddSingleton(inputs.DesktopWorkspaceFactory!);
 #endif
 
         services.AddSingleton<AppShell>();
@@ -381,6 +301,151 @@ public static class MauiProgram
             ApplyAutomationId);
     }
 #endif
+
+    private static void ValidateReleaseProcess()
+    {
+#if !DEBUG
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(E2eBootstrapEnv)) ||
+            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(E2eAppDataRootEnv)) ||
+            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(E2eStrictWindowsEnv)))
+        {
+            throw new InvalidOperationException("E2E bootstrap and app-data overrides are forbidden in Release builds.");
+        }
+#endif
+    }
+
+    private static ApplicationServiceInputs ResolveApplicationServiceInputs()
+    {
+        var featureFlags = BuildFeatureFlags();
+        var routerBaseUrls = ResolveRouterBaseUrls();
+        var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
+        var fileBaseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
+        var pushBaseUrl = ResolveRuntimeSetting(PushBaseUrlEnv);
+        var callSignalingBaseUrl = ResolveRuntimeSetting(CallSignalingBaseUrlEnv);
+#if !DEBUG
+        if (string.IsNullOrWhiteSpace(fileBaseUrl))
+        {
+            throw new InvalidOperationException(
+                "DEEP_FILE_URL is required in non-Debug builds. " +
+                "Remote file transports cannot be disabled for release startup.");
+        }
+        if (featureFlags.PushNotificationsEnabled && string.IsNullOrWhiteSpace(pushBaseUrl))
+        {
+            throw new InvalidOperationException(
+                "DEEP_PUSH_URL is required when push notifications are enabled in non-Debug builds.");
+        }
+        if (featureFlags.CallsEnabled && string.IsNullOrWhiteSpace(callSignalingBaseUrl))
+        {
+            throw new InvalidOperationException(
+                "DEEP_CALL_SIGNALING_BASE_URL is required when calls are enabled in non-Debug builds.");
+        }
+#endif
+        var fileConnectIps = ParseIpAddresses(ResolveRuntimeSetting(FileConnectIpsEnv));
+        Func<IServiceProvider, IIpCountryLookup> countryLookupFactory =
+            _ => new IpCountryLookup(
+                _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_blocks_ipv4")),
+                _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_codes.json")));
+#if DEBUG
+        Func<IServiceProvider, IAvatarProfileTransport> avatarTransportFactory =
+            string.IsNullOrWhiteSpace(fileBaseUrl)
+                ? _ => new DisabledAvatarProfileTransport()
+                : _ => new HttpAvatarProfileTransport(
+                    CreateFileHttpClient(fileConnectIps),
+                    new HttpAvatarProfileTransportOptions(fileBaseUrl));
+        Func<IServiceProvider, IAttachmentFileTransport> attachmentTransportFactory =
+            string.IsNullOrWhiteSpace(fileBaseUrl)
+                ? _ => new DisabledAttachmentFileTransport()
+                : _ => new HttpAttachmentFileTransport(
+                    CreateFileHttpClient(fileConnectIps),
+                    new HttpAttachmentFileTransportOptions(fileBaseUrl));
+        Func<IServiceProvider, IPushSubscriptionTransport> pushTransportFactory =
+            string.IsNullOrWhiteSpace(pushBaseUrl)
+                ? _ => new DisabledPushSubscriptionTransport()
+                : _ => new HttpPushSubscriptionTransport(
+                    CreateServiceHttpClient(),
+                    new HttpPushSubscriptionTransportOptions(pushBaseUrl));
+        Func<IServiceProvider, ICallSignalingTransport> callTransportFactory =
+            string.IsNullOrWhiteSpace(callSignalingBaseUrl)
+                ? _ => new InMemoryCallSignalingTransport()
+                : serviceProvider => CreateHttpCallSignalingTransport(
+                    serviceProvider,
+                    callSignalingBaseUrl);
+#else
+        Func<IServiceProvider, IAvatarProfileTransport> avatarTransportFactory =
+            _ => new HttpAvatarProfileTransport(
+                CreateFileHttpClient(fileConnectIps),
+                new HttpAvatarProfileTransportOptions(fileBaseUrl!));
+        Func<IServiceProvider, IAttachmentFileTransport> attachmentTransportFactory =
+            _ => new HttpAttachmentFileTransport(
+                CreateFileHttpClient(fileConnectIps),
+                new HttpAttachmentFileTransportOptions(fileBaseUrl!));
+        Func<IServiceProvider, IPushSubscriptionTransport> pushTransportFactory =
+            string.IsNullOrWhiteSpace(pushBaseUrl)
+                ? _ => new DisabledPushSubscriptionTransport()
+                : _ => new HttpPushSubscriptionTransport(
+                    CreateServiceHttpClient(),
+                    new HttpPushSubscriptionTransportOptions(pushBaseUrl));
+        Func<IServiceProvider, ICallSignalingTransport> callTransportFactory =
+            string.IsNullOrWhiteSpace(callSignalingBaseUrl)
+                ? _ => new InMemoryCallSignalingTransport()
+                : serviceProvider => CreateHttpCallSignalingTransport(
+                    serviceProvider,
+                    callSignalingBaseUrl);
+#endif
+        Func<IServiceProvider, ClientRuntimeBootstrapper> runtimeBootstrapperFactory =
+            serviceProvider => new ClientRuntimeBootstrapper(
+                cancellationToken => CreateClientRuntimeAsync(serviceProvider, cancellationToken));
+        Func<IServiceProvider, ClientRuntime> runtimeFactory =
+            serviceProvider => serviceProvider
+                .GetRequiredService<ClientRuntimeBootstrapper>()
+                .GetRequiredRuntime();
+        Func<IServiceProvider, ICallIceConfigurationProvider> iceConfigurationFactory =
+            serviceProvider =>
+                (ICallIceConfigurationProvider)serviceProvider
+                    .GetRequiredService<ICallSignalingTransport>();
+        var appVersion = AppInfo.Current.VersionString;
+        Func<IServiceProvider, PushClientMetadata> pushMetadataFactory =
+            _ => new PushClientMetadata(
+                PushNotificationCrypto.PackageName,
+                appVersion);
+#if WINDOWS
+        Func<IServiceProvider, DesktopWorkspaceViewModel>? desktopWorkspaceFactory =
+            serviceProvider => new DesktopWorkspaceViewModel(
+                serviceProvider.GetRequiredService<ClientRuntime>(),
+                () => serviceProvider.GetRequiredService<ConversationsViewModel>(),
+                () => serviceProvider.GetRequiredService<ChatViewModel>(),
+                () => serviceProvider.GetRequiredService<GroupChatViewModel>());
+#else
+        Func<IServiceProvider, DesktopWorkspaceViewModel>? desktopWorkspaceFactory = null;
+#endif
+        return new ApplicationServiceInputs(
+            featureFlags,
+            routerBaseUrls,
+            storageBaseUrl,
+            CreateRouterHttpClient(),
+            RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting),
+            countryLookupFactory,
+            avatarTransportFactory,
+            attachmentTransportFactory,
+            runtimeBootstrapperFactory,
+            runtimeFactory,
+            pushMetadataFactory,
+            pushTransportFactory,
+            callTransportFactory,
+            iceConfigurationFactory,
+            desktopWorkspaceFactory);
+    }
+
+    private static ICallSignalingTransport CreateHttpCallSignalingTransport(
+        IServiceProvider services,
+        string baseUrl) =>
+        new HttpCallSignalingTransport(
+            CreateServiceHttpClient(),
+            new HttpCallSignalingTransportOptions(baseUrl),
+            cancellationToken => services
+                .GetRequiredService<ClientRuntime>()
+                .Accounts
+                .GetRecoveryPhraseAsync(cancellationToken));
 
     private static ClientFeatureFlags BuildFeatureFlags()
     {

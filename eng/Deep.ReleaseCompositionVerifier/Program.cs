@@ -7,6 +7,7 @@ using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Linq.Expressions;
 
 const string routerOne = "1111111111111111111111111111111111111111111111111111111111111111";
 const string routerTwo = "2222222222222222222222222222222222222222222222222222222222222222";
@@ -40,13 +41,20 @@ try
         BindingFlags.NonPublic | BindingFlags.Static);
 
     VerifyCompiledCompositionControlFlow(createMauiApp, configureApplicationServices);
+    VerifyCreateMauiAppCallAllowlist(createMauiApp, configureApplicationServices);
+    VerifyDeterministicCompositionEntrypoint(configureApplicationServices);
+    VerifyNoReachableForbiddenTransportTokens(createMauiApp);
     AssertCompiledNegativeFixturesAreRejected();
 
-    var services = new ServiceCollection();
     using var routerHttpClient = new HttpClient();
-    configureApplicationServices.Invoke(
-        null,
-        [services, pinnedRouters, null, routerHttpClient]);
+    using var callHttpClient = new HttpClient();
+    var inputs = CreateSyntheticInputs(
+        appAssembly,
+        pinnedRouters,
+        routerHttpClient,
+        callHttpClient);
+    var services = new ServiceCollection();
+    configureApplicationServices.Invoke(null, [services, inputs]);
     using var provider = services.BuildServiceProvider(
         new ServiceProviderOptions
         {
@@ -60,6 +68,7 @@ try
         expectedDescriptorFingerprint);
     AssertPostEntrypointMutationIsRejected(
         configureApplicationServices,
+        inputs,
         pinnedRouters);
 
     Console.WriteLine(
@@ -76,6 +85,75 @@ static MethodInfo RequiredMethod(Type type, string name, BindingFlags flags) =>
     type.GetMethod(name, flags)
     ?? throw new InvalidOperationException($"{type.FullName}.{name} was not found.");
 
+static object CreateSyntheticInputs(
+    Assembly appAssembly,
+    IReadOnlyList<PinnedRouterEndpoint> pinnedRouters,
+    HttpClient routerHttpClient,
+    HttpClient callHttpClient)
+{
+    var runtimeType = appAssembly.GetType(
+        "Deep.Client.Maui.Services.RuntimeEnvironmentOptions",
+        throwOnError: true)!;
+    var runtime = Activator.CreateInstance(
+        runtimeType,
+        [
+            null,
+            null,
+            null,
+            "https://files.example/",
+            "https://push.example/",
+            "https://calls.example/",
+            null,
+            null,
+            null
+        ]) ?? throw new InvalidOperationException("Synthetic runtime options could not be created.");
+    var inputsType = appAssembly.GetType(
+        "Deep.Client.Maui.ApplicationServiceInputs",
+        throwOnError: true)!;
+    var constructor = inputsType.GetConstructors().Single();
+    var parameters = constructor.GetParameters();
+    Func<IServiceProvider, ICallSignalingTransport> callFactory =
+        _ => new HttpCallSignalingTransport(
+            callHttpClient,
+            new HttpCallSignalingTransportOptions("https://calls.example/"),
+            _ => Task.FromResult<string?>(string.Empty));
+    Func<IServiceProvider, ICallIceConfigurationProvider> iceFactory =
+        serviceProvider =>
+            (ICallIceConfigurationProvider)serviceProvider.GetRequiredService<ICallSignalingTransport>();
+    return Activator.CreateInstance(
+        inputsType,
+        [
+            Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults,
+            pinnedRouters,
+            null,
+            routerHttpClient,
+            runtime,
+            CreateDefaultFactory(parameters[5].ParameterType),
+            CreateDefaultFactory(parameters[6].ParameterType),
+            CreateDefaultFactory(parameters[7].ParameterType),
+            CreateDefaultFactory(parameters[8].ParameterType),
+            CreateDefaultFactory(parameters[9].ParameterType),
+            CreateDefaultFactory(parameters[10].ParameterType),
+            CreateDefaultFactory(parameters[11].ParameterType),
+            callFactory,
+            iceFactory,
+            CreateDefaultFactory(parameters[14].ParameterType)
+        ]) ?? throw new InvalidOperationException("Synthetic app service inputs could not be created.");
+}
+
+static Delegate CreateDefaultFactory(Type delegateType)
+{
+    var invoke = delegateType.GetMethod("Invoke")
+        ?? throw new InvalidOperationException($"Not a delegate: {delegateType}.");
+    var parameters = invoke.GetParameters()
+        .Select(parameter => Expression.Parameter(parameter.ParameterType, parameter.Name))
+        .ToArray();
+    return Expression.Lambda(
+        delegateType,
+        Expression.Default(invoke.ReturnType),
+        parameters).Compile();
+}
+
 static void ValidateFinalApplicationComposition(
     IServiceCollection descriptors,
     IServiceProvider provider,
@@ -83,9 +161,10 @@ static void ValidateFinalApplicationComposition(
     string expectedFingerprint)
 {
     Require(descriptors.Count == 65, "Final Windows Release app-owned descriptor count changed.");
+    var descriptorFingerprint = DescriptorFingerprint(descriptors);
     Require(
-        DescriptorFingerprint(descriptors) == expectedFingerprint,
-        "Final Windows Release app-owned descriptor manifest changed.");
+        descriptorFingerprint == expectedFingerprint,
+        $"Final Windows Release app-owned descriptor manifest changed: {descriptorFingerprint}.");
     var routeDescriptors = descriptors
         .Where(static descriptor => descriptor.ServiceType == typeof(ITransportRouteProvider))
         .ToArray();
@@ -169,13 +248,11 @@ static string DescriptorFingerprint(IServiceCollection descriptors)
 
 static void AssertPostEntrypointMutationIsRejected(
     MethodInfo configureApplicationServices,
+    object inputs,
     IReadOnlyList<PinnedRouterEndpoint> expectedRouters)
 {
     var mutated = new ServiceCollection();
-    using var routerHttpClient = new HttpClient();
-    configureApplicationServices.Invoke(
-        null,
-        [mutated, expectedRouters, null, routerHttpClient]);
+    configureApplicationServices.Invoke(null, [mutated, inputs]);
     mutated.AddSingleton<ITransportRouteProvider>(
         new DirectStorageRouteProvider("https://storage.invalid/"));
     mutated.AddSingleton<ISessionMessageTransport>(new StubSessionBackend());
@@ -260,6 +337,144 @@ static void VerifyCompiledCompositionControlFlow(MethodInfo source, MethodInfo e
         "A registration/helper call exists after Build and before return.");
 }
 
+static void VerifyCreateMauiAppCallAllowlist(MethodInfo source, MethodInfo entrypoint)
+{
+    var sourceType = source.DeclaringType
+        ?? throw new InvalidOperationException("CreateMauiApp has no declaring type.");
+    var allowedLocalMethods = new HashSet<(Module Module, int Token)>
+    {
+        MethodIdentity(RequiredMethod(
+            sourceType,
+            "ValidateReleaseProcess",
+            BindingFlags.NonPublic | BindingFlags.Static)),
+        MethodIdentity(RequiredMethod(
+            sourceType,
+            "ConfigureWindowsHandlers",
+            BindingFlags.NonPublic | BindingFlags.Static)),
+        MethodIdentity(RequiredMethod(
+            sourceType,
+            "ResolveApplicationServiceInputs",
+            BindingFlags.NonPublic | BindingFlags.Static)),
+        MethodIdentity(entrypoint)
+    };
+    foreach (var instruction in ReadInstructions(source).Where(
+                 static instruction => instruction.CalledMethod is not null))
+    {
+        var called = instruction.CalledMethod!;
+        if (called.DeclaringType?.Assembly == source.DeclaringType?.Assembly)
+        {
+            Require(
+                called is MethodInfo calledMethod &&
+                allowedLocalMethods.Contains(MethodIdentity(calledMethod)),
+                $"Unexpected same-app helper before final composition: {called.DeclaringType?.FullName}.{called.Name}.");
+            if (called is not MethodInfo localMethod ||
+                MethodIdentity(localMethod) != MethodIdentity(entrypoint))
+            {
+                Require(
+                    called.GetParameters().All(static parameter =>
+                        !IsSensitiveBuilderParameter(parameter.ParameterType)),
+                    $"Pre-composition helper can receive builder/services state: {called.Name}.");
+            }
+            continue;
+        }
+
+        var declaring = called.DeclaringType?.FullName ?? string.Empty;
+        var allowedFrameworkCall =
+            (declaring == "Microsoft.Maui.Hosting.MauiApp" && called.Name == "CreateBuilder") ||
+            (declaring == "Microsoft.Maui.Hosting.MauiAppBuilder" &&
+             called.Name is "get_Services" or "Build") ||
+            (declaring == "Microsoft.Maui.Controls.Hosting.AppHostBuilderExtensions" &&
+             called.Name.StartsWith("UseMaui", StringComparison.Ordinal));
+        Require(
+            allowedFrameworkCall,
+            $"Unexpected CreateMauiApp call target: {declaring}.{called.Name}.");
+    }
+}
+
+static (Module Module, int Token) MethodIdentity(MethodInfo method) =>
+    (method.Module, method.MetadataToken);
+
+static bool IsSensitiveBuilderParameter(Type type) =>
+    type == typeof(object) ||
+    type.FullName is "Microsoft.Maui.Hosting.MauiAppBuilder" or
+        "Microsoft.Extensions.DependencyInjection.IServiceCollection";
+
+static void VerifyDeterministicCompositionEntrypoint(MethodInfo entrypoint)
+{
+    var root = ReadInstructions(entrypoint);
+    var branches = root.Where(static instruction =>
+        instruction.OpCode.FlowControl is FlowControl.Branch or FlowControl.Cond_Branch).ToArray();
+    Require(
+        branches.Length == 0,
+        "Final composition entrypoint contains branch control flow: " +
+        string.Join(", ", branches.Select(static branch =>
+            $"{branch.Offset}:{branch.OpCode.Name}")));
+    Require(
+        root.All(static instruction => instruction.OpCode.OperandType != OperandType.InlineSwitch),
+        "Final composition entrypoint contains a switch.");
+    foreach (var instruction in root)
+    {
+        var member = instruction.ReferencedMember;
+        var declaring = member?.DeclaringType;
+        var declaringName = declaring?.FullName ?? string.Empty;
+        Require(
+            declaring != typeof(Environment) &&
+            declaring != typeof(AppContext) &&
+            !declaringName.StartsWith("System.Reflection", StringComparison.Ordinal) &&
+            !declaringName.StartsWith("System.Dynamic", StringComparison.Ordinal),
+            $"Final composition reads ambient state or uses reflection/dynamic: {declaringName}.{member?.Name}.");
+        Require(
+            member?.Name is not (
+                "ResolveRuntimeSetting" or "ResolveApplicationServiceInputs" or
+                "GetEnvironmentVariable"),
+            $"Final composition contains a config read: {member?.Name}.");
+    }
+    VerifyNoReachableForbiddenTransportTokens(entrypoint);
+}
+
+static void VerifyNoReachableForbiddenTransportTokens(MethodInfo entrypoint)
+{
+    var forbidden = new HashSet<string>(StringComparer.Ordinal)
+    {
+        typeof(DirectStorageRouteProvider).FullName!,
+        typeof(SessionStorageMessageTransport).FullName!,
+        typeof(StubSessionBackend).FullName!
+    };
+    var appAssembly = entrypoint.DeclaringType!.Assembly;
+    var pending = new Stack<MethodInfo>();
+    var visited = new HashSet<(Module Module, int Token)>();
+    pending.Push(entrypoint);
+    while (pending.Count > 0)
+    {
+        var method = pending.Pop();
+        if (!visited.Add((method.Module, method.MetadataToken)))
+        {
+            continue;
+        }
+        if (method.GetMethodBody() is null)
+        {
+            continue;
+        }
+        foreach (var instruction in ReadInstructions(method))
+        {
+            var memberType = instruction.ReferencedMember switch
+            {
+                Type type => type,
+                MemberInfo member => member.DeclaringType,
+                _ => null
+            };
+            Require(
+                memberType is null || !forbidden.Contains(memberType.FullName ?? string.Empty),
+                $"Reachable direct/stub token exists: {memberType?.FullName}.");
+            if (instruction.CalledMethod is MethodInfo called &&
+                called.DeclaringType?.Assembly == appAssembly)
+            {
+                pending.Push(called);
+            }
+        }
+    }
+}
+
 static void AssertCompiledNegativeFixturesAreRejected()
 {
     var marker = RequiredMethod(
@@ -291,6 +506,50 @@ static void AssertCompiledNegativeFixturesAreRejected()
             BindingFlags.Public | BindingFlags.Static),
         marker,
         build);
+    AssertRejected(
+        () => VerifyPreEntrypointBypassFixture(
+            RequiredMethod(
+                typeof(CompiledGuardFixtures),
+                nameof(CompiledGuardFixtures.RegisterExtraBeforeEntrypoint),
+                BindingFlags.Public | BindingFlags.Static)),
+        "pre-entrypoint RegisterExtra bypass");
+    AssertRejected(
+        () => VerifyDeterministicCompositionEntrypoint(
+            RequiredMethod(
+                typeof(CompiledGuardFixtures),
+                nameof(CompiledGuardFixtures.EnvironmentConditionalDirectStub),
+                BindingFlags.Public | BindingFlags.Static)),
+        "environment-conditional direct/stub bypass");
+}
+
+static void VerifyPreEntrypointBypassFixture(MethodInfo source)
+{
+    foreach (var called in ReadInstructions(source)
+                 .Select(static instruction => instruction.CalledMethod)
+                 .Where(static method => method is not null))
+    {
+        if (called!.DeclaringType == typeof(CompiledGuardFixtures) &&
+            called.Name == "RegisterExtra")
+        {
+            Require(
+                called.GetParameters().All(static parameter =>
+                    !IsSensitiveBuilderParameter(parameter.ParameterType)),
+                "Unexpected helper can receive services before final composition.");
+        }
+    }
+}
+
+static void AssertRejected(Action action, string fixture)
+{
+    try
+    {
+        action();
+    }
+    catch (InvalidOperationException)
+    {
+        return;
+    }
+    throw new InvalidOperationException($"Negative fixture was accepted: {fixture}.");
 }
 
 static void AssertControlFlowRejected(MethodInfo source, MethodInfo entrypoint, MethodInfo build)
@@ -448,12 +707,29 @@ static IReadOnlyList<IlInstruction> ReadInstructions(MethodInfo method)
             throw new InvalidOperationException($"Unknown IL opcode 0x{opcodeValue:x4}.");
         }
         MethodBase? calledMethod = null;
+        MemberInfo? referencedMember = null;
         int[] branchTargets = [];
         switch (opcode.OperandType)
         {
             case OperandType.InlineMethod:
                 EnsureAvailable(il, offset, sizeof(int));
                 calledMethod = method.Module.ResolveMethod(BitConverter.ToInt32(il, offset));
+                referencedMember = calledMethod;
+                offset += sizeof(int);
+                break;
+            case OperandType.InlineField:
+                EnsureAvailable(il, offset, sizeof(int));
+                referencedMember = method.Module.ResolveField(BitConverter.ToInt32(il, offset));
+                offset += sizeof(int);
+                break;
+            case OperandType.InlineType:
+                EnsureAvailable(il, offset, sizeof(int));
+                referencedMember = method.Module.ResolveType(BitConverter.ToInt32(il, offset));
+                offset += sizeof(int);
+                break;
+            case OperandType.InlineTok:
+                EnsureAvailable(il, offset, sizeof(int));
+                referencedMember = method.Module.ResolveMember(BitConverter.ToInt32(il, offset));
                 offset += sizeof(int);
                 break;
             case OperandType.ShortInlineBrTarget:
@@ -487,7 +763,13 @@ static IReadOnlyList<IlInstruction> ReadInstructions(MethodInfo method)
                 EnsureAvailable(il, offset, 0);
                 break;
         }
-        instructions.Add(new IlInstruction(start, offset, opcode, calledMethod, branchTargets));
+        instructions.Add(new IlInstruction(
+            start,
+            offset,
+            opcode,
+            calledMethod,
+            referencedMember,
+            branchTargets));
     }
 
     return instructions;
@@ -538,6 +820,7 @@ sealed record IlInstruction(
     int NextOffset,
     OpCode OpCode,
     MethodBase? CalledMethod,
+    MemberInfo? ReferencedMember,
     IReadOnlyList<int> BranchTargets);
 
 static class CompiledGuardFixtures
@@ -580,7 +863,32 @@ static class CompiledGuardFixtures
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
+    public static object RegisterExtraBeforeEntrypoint(IServiceCollection services)
+    {
+        RegisterExtra(services);
+        ApplicationEntrypointMarker();
+        return BuildMarker();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static void EnvironmentConditionalDirectStub(IServiceCollection services)
+    {
+        if (Environment.GetEnvironmentVariable("DEEP_GUARD_BYPASS") == "1")
+        {
+            services.AddSingleton<ITransportRouteProvider>(
+                new DirectStorageRouteProvider("https://storage.invalid/"));
+            services.AddSingleton<ISessionMessageTransport>(new StubSessionBackend());
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static void IndirectRegistrationHelper()
     {
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void RegisterExtra(object services)
+    {
+        _ = services;
     }
 }
