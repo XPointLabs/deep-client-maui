@@ -1,0 +1,139 @@
+{
+  "schema": "deep.survival.p02d.safe-installer-handoff.v1",
+  "status": "passed-with-explicit-platform-adapter-blocker",
+  "sourceBaseSha": "2d1cefd30a1e12b657288bca704aab4b10980dce",
+  "redTestCommitSha": "8b357db5295dc675e4972d07ca493387e5552c7c",
+  "implementationCommitSha": "bfeaae3bbe1e9086baade86f0c3f4962cacbe4d6",
+  "generatedAtUtc": "2026-07-18T17:27:21.5853441Z",
+  "securityProperties": {
+    "rawSourcePathReturned": false,
+    "opaqueHandleBytes": 32,
+    "handlePersistedToDisk": false,
+    "oneActiveSnapshotMaximum": true,
+    "maximumSnapshotBytes": 1073741824,
+    "maximumTimeToLiveSeconds": 900,
+    "automaticExpiryCleanup": true,
+    "startupOrphanCleanup": true,
+    "cleanupAfterHandoffOrFailure": true,
+    "lengthAndSha256RevalidatedBeforeHandoff": true,
+    "packageIdVersionAndSignerRevalidatedBeforeHandoff": true,
+    "replayRejected": true,
+    "exactManualConfirmationRequiredByViewModel": true,
+    "silentInstallImplemented": false,
+    "installUnknownSourcesPermissionRequested": false,
+    "androidFileProviderRegistered": false,
+    "productionInstallerAdapterRegistered": false,
+    "windowsAndroidApkHandoffSupported": false,
+    "packagePathsOrMetadataLogged": false
+  },
+  "checks": [
+    {
+      "name": "red-tests-before-implementation",
+      "status": "failed-as-expected",
+      "commitSha": "8b357db5295dc675e4972d07ca493387e5552c7c",
+      "failureClass": "missing safe handoff boundary types"
+    },
+    {
+      "name": "focused-p02b-and-p02d-security-tests",
+      "configuration": "Debug",
+      "status": "passed",
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "name": "view-model-tests",
+      "configuration": "Debug",
+      "status": "passed",
+      "passed": 187,
+      "failed": 0,
+      "skipped": 2,
+      "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
+    },
+    {
+      "name": "view-model-tests",
+      "configuration": "Release",
+      "status": "passed",
+      "passed": 187,
+      "failed": 0,
+      "skipped": 2,
+      "skipReason": "existing environment-gated live acceptance and direct-storage diagnostic"
+    },
+    {
+      "name": "smoke-tests",
+      "configuration": "Debug",
+      "status": "passed",
+      "passed": 119,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "name": "smoke-tests",
+      "configuration": "Release",
+      "status": "passed",
+      "passed": 119,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "name": "android-debug-build",
+      "status": "passed",
+      "warnings": 0,
+      "errors": 0
+    },
+    {
+      "name": "windows-release-build",
+      "runtimeIdentifier": "win-x64",
+      "status": "passed",
+      "warnings": 0,
+      "errors": 0
+    },
+    {
+      "name": "windows-release-routed-composition",
+      "status": "passed",
+      "appOwnedServiceDescriptors": 65,
+      "productionFactoryTestsPassed": 2,
+      "evidence": "release-composition/release-routed-composition.json"
+    },
+    {
+      "name": "changed-source-secret-scan",
+      "status": "passed",
+      "scannedFiles": 9,
+      "findingCount": 0,
+      "evidence": "secret-scan-summary.json"
+    },
+    {
+      "name": "android-release-package",
+      "status": "blocked-not-bypassed",
+      "reason": "protected Platforms/Android/google-services.json is unavailable in this worktree"
+    },
+    {
+      "name": "android-platform-installer-adapter",
+      "status": "blocked-not-registered",
+      "reason": "an independently reviewed one-time FileProvider/content-URI grant contract is not yet available"
+    },
+    {
+      "name": "physical-android-install-and-ui",
+      "status": "not-run",
+      "reason": "no authorized attached physical Android device in this iteration"
+    },
+    {
+      "name": "physical-windows-ui",
+      "status": "not-run",
+      "reason": "no interactive physical Windows UI lane was authorized in this iteration"
+    }
+  ],
+  "testArtifact": {
+    "kind": "signed-debug-apk",
+    "path": "src/Deep.Client.Maui/bin/Debug/net10.0-android/network.xpoint.deep-Signed.apk",
+    "length": 155109483,
+    "sha256": "b75dd78fa90650ad9f6c220c040501fb5d5ed1e5205bffa6d6607883ea115d03"
+  },
+  "productionActivationBlockers": [
+    "Provision and govern the production trusted root before registering the verifier.",
+    "Implement and independently review the Android content-URI/FileProvider adapter with a temporary read-only grant and no broad installer permission.",
+    "Provide protected Android release signing/Firebase configuration through the approved secret channel.",
+    "Complete physical Android and Windows acceptance on representative devices.",
+    "Obtain independent security review of the exact release commit and platform adapter."
+  ]
+}

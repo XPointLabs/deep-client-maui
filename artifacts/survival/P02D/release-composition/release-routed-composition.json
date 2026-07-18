@@ -1,0 +1,18 @@
+﻿{
+    "schema":  "deep.survival.release-routed-composition.v1",
+    "sourceCommitSha":  "bfeaae3bbe1e9086baade86f0c3f4962cacbe4d6",
+    "generatedAtUtc":  "2026-07-18T17:24:51.9722918+00:00",
+    "status":  "passed",
+    "assemblySha256":  "b9d8774bc3536d9317d27363103d338e0b988083cb6a228dca355bb4901b82e9",
+    "checks":  [
+                   {
+                       "name":  "compiled-maui-program-routed-di",
+                       "status":  "passed"
+                   },
+                   {
+                       "name":  "release-production-factory-behavior",
+                       "status":  "passed"
+                   }
+               ],
+    "failure":  ""
+}
