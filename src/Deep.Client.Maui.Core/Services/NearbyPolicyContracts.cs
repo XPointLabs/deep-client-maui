@@ -1904,7 +1904,14 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 callerCancellationRegistration = default;
                 callerCancellationAttached = false;
                 disposeRegistration = true;
-                callerSuccessLinearized = true;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    cancellationWon = true;
+                }
+                else
+                {
+                    callerSuccessLinearized = true;
+                }
             }
 
             if (disposeRegistration)
