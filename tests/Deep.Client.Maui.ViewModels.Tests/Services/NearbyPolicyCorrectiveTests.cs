@@ -54,11 +54,11 @@ public sealed class NearbyPolicyCorrectiveTests
         {
             BatteryPercent = NearbyPolicyConstants.StartBatteryPercent
         }, raiseChanged: false);
-        var denied = await Assert.ThrowsAsync<NearbyPolicyDeniedException>(() =>
+        var deniedWhileBusy = await Record.ExceptionAsync(() =>
             coordinator.StartAsync(NearbyUserMode.ForegroundEmergency));
         Assert.Equal(
-            NearbyPolicyDenialReason.BatteryAdmissionDenied,
-            denied.Reason);
+            "NearbyCoordinatorBusyException",
+            deniedWhileBusy?.GetType().Name);
         Assert.Equal(active, coordinator.Snapshot);
         Assert.Equal(saved, environment.IntentStore.Saved);
     }
@@ -224,6 +224,30 @@ public sealed class NearbyPolicyCorrectiveTests
     }
 
     [Fact]
+    public async Task StopDuringIntentCommitRollsBackBeforeTransitionCompletes()
+    {
+        var environment = new CorrectiveEnvironment();
+        environment.IntentStore.BlockActiveSave = true;
+        await using var coordinator = environment.CreateCoordinator();
+
+        var starting = coordinator.StartAsync(
+            NearbyUserMode.ForegroundEmergency);
+        await environment.IntentStore.SaveEntered.Task.WaitAsync(
+            TimeSpan.FromSeconds(2));
+        var stopping = coordinator.StopAsync();
+        environment.IntentStore.ReleaseSave();
+        await Task.WhenAll(starting, stopping);
+
+        Assert.Equal(
+            new NearbyModeIntent(NearbyUserMode.Off, null),
+            environment.IntentStore.Saved);
+        Assert.Equal(
+            NearbyEffectiveState.Stopped,
+            coordinator.Snapshot.EffectiveState);
+        Assert.Equal(1, environment.Radio.StopCalls);
+    }
+
+    [Fact]
     public async Task DeadlineSchedulerFaultForcesBoundedStop()
     {
         var environment = new CorrectiveEnvironment();
@@ -304,6 +328,18 @@ public sealed class NearbyPolicyCorrectiveTests
             coordinator.Snapshot.StopReason?.ToString());
         Assert.Equal(NearbyUserMode.Off, coordinator.Snapshot.DesiredMode);
         Assert.False(coordinator.Snapshot.Polling.SuppressManagedNetworkPolling);
+
+        var blocked = await Record.ExceptionAsync(() =>
+            coordinator.StartAsync(NearbyUserMode.ForegroundEmergency));
+        Assert.Equal(
+            "NearbyCoordinatorBusyException",
+            blocked?.GetType().Name);
+
+        environment.Radio.StopException = null;
+        await coordinator.StopAsync();
+        Assert.Equal(
+            NearbyEffectiveState.Stopped,
+            coordinator.Snapshot.EffectiveState);
     }
 
     private sealed class CorrectiveEnvironment
@@ -319,16 +355,29 @@ public sealed class NearbyPolicyCorrectiveTests
 
     private sealed class CorrectiveIntentStore : INearbyModeIntentStore
     {
-        public NearbyModeIntent? Saved { get; private set; }
+        private readonly TaskCompletionSource saveRelease =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task SaveAsync(
+        public NearbyModeIntent? Saved { get; private set; }
+        public bool BlockActiveSave { get; set; }
+        public TaskCompletionSource SaveEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task SaveAsync(
             NearbyModeIntent intent,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (BlockActiveSave && intent.Mode != NearbyUserMode.Off)
+            {
+                SaveEntered.TrySetResult();
+                await saveRelease.Task;
+            }
+
             Saved = intent;
-            return Task.CompletedTask;
         }
+
+        public void ReleaseSave() => saveRelease.TrySetResult();
     }
 
     private sealed class CorrectivePlatform : INearbyPlatformState

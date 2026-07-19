@@ -170,3 +170,20 @@ permission denial/retry/open-settings guidance, and battery/thermal stop
 reasons before a nearby control becomes visible. Production radio registration
 remains blocked on accepted P03D activation, two named physical Android
 devices, measured energy evidence, and Android permission/privacy review.
+
+The corrective coordinator contract serializes a generation through its final
+physical stop: a later start fails busy until that stop and intent rollback
+finish, so an old stop cannot affect a new generation. Adapter callbacks may
+not call the coordinator reentrantly; such calls fail immediately instead of
+waiting on the radio gate. Mode intent is committed only after the adapter
+start, cancellation, capability, policy and monotonic-deadline checks all pass.
+A failed or obsolete start either leaves intent unchanged or rolls it back to
+`Off`.
+
+Deadline scheduler failure forces a stop, and explicit refresh independently
+enforces the monotonic deadline. If the platform adapter throws while stopping,
+the coordinator reports `StopFailed`: desired mode is `Off` and managed-network
+polling is not suppressed, but the physical radio state is explicitly unknown,
+not proven stopped. New starts remain blocked while that uncertainty exists;
+an explicit stop/dispose may retry cleanup. This dormant state is not evidence
+that a radio session is active or that nearby delivery works.

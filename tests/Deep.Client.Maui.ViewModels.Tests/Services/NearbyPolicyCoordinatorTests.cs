@@ -199,7 +199,7 @@ public sealed class NearbyPolicyCoordinatorTests
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]
-    public async Task AdapterExceptionsLeaveObservableStateStopped(
+    public async Task AdapterExceptionsLeaveObservableStateFailClosed(
         bool throwOnStart,
         bool throwOnStop)
     {
@@ -219,7 +219,11 @@ public sealed class NearbyPolicyCoordinatorTests
             await coordinator.StopAsync();
         }
 
-        Assert.Equal(NearbyEffectiveState.Stopped, coordinator.Snapshot.EffectiveState);
+        Assert.Equal(
+            throwOnStop
+                ? NearbyEffectiveState.StopFailed
+                : NearbyEffectiveState.Stopped,
+            coordinator.Snapshot.EffectiveState);
         Assert.False(coordinator.Snapshot.Polling.SuppressManagedNetworkPolling);
     }
 
