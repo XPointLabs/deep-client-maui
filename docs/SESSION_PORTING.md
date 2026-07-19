@@ -189,8 +189,19 @@ reported as success: the snapshot exposes the typed `Failed` persistence state,
 while an explicit off-state persistence transition also returns a sanitized
 typed failure and remains retryable.
 
+The monotonic deadline observer is armed immediately after physical start and
+before active-intent persistence, so a stalled or cancellation-ignoring settings
+store cannot postpone physical deadline stop. Disposal likewise initiates and
+joins physical stop before draining platform events or intent reconciliation.
+Constructor state starts from an infallible `Off` policy without platform,
+capability or clock getters; fallible pre-start admission reads return only the
+fixed typed state-read failure and never start radio.
+
 Deadline scheduler failure forces a stop, and explicit refresh independently
-enforces the monotonic deadline. If the platform adapter throws while stopping,
+enforces the monotonic deadline. An off-state stop publishes both its final
+intent state and cleared transition before its public task completes, allowing
+an immediately following start without a transient busy/pending state. If the
+platform adapter throws while stopping,
 the coordinator reports `StopFailed`: desired mode is `Off` and managed-network
 polling is not suppressed, but the physical radio state is explicitly unknown,
 not proven stopped. New starts remain blocked while that uncertainty exists.
