@@ -425,6 +425,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
     private NearbyCoordinatorLifecycle lifecycle =
         NearbyCoordinatorLifecycle.Running;
     private Action? StartPublishedBeforeLaunchForTesting { get; set; }
+    private Action? DrainBeforeStabilityCheckForTesting { get; set; }
 
     public NearbyPolicyCoordinator(
         INearbyRadioAdapter radio,
@@ -851,6 +852,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             }
 
             await intentTransition.ConfigureAwait(false);
+            DrainBeforeStabilityCheckForTesting?.Invoke();
 
             lock (eventSync)
             {
@@ -872,6 +874,11 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Starts coordinator disposal. The first caller owns and observes the
+    /// operation. Calls made while disposal is already in progress return
+    /// immediately and do not join or observe the owner's result.
+    /// </summary>
     public ValueTask DisposeAsync()
     {
         ThrowIfAdapterReentrant();
@@ -886,7 +893,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
             if (lifecycle == NearbyCoordinatorLifecycle.Disposing)
             {
-                return new ValueTask(disposeTask!);
+                return ValueTask.CompletedTask;
             }
 
             lifecycle = NearbyCoordinatorLifecycle.Disposing;
@@ -906,6 +913,20 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         {
             await StopCurrentAttemptAsync(
                 NearbyStopReason.User).ConfigureAwait(false);
+            NearbyCoordinatorSnapshot stoppedSnapshot;
+            lock (sync)
+            {
+                stoppedSnapshot = snapshot;
+            }
+
+            if (stoppedSnapshot.EffectiveState ==
+                NearbyEffectiveState.StopFailed)
+            {
+                throw new NearbyRadioTransitionException(
+                    NearbyRadioTransitionError.PhysicalStopFailed);
+            }
+
+            DisposePlatformSubscription();
             await DrainCoreAsync().ConfigureAwait(false);
             NearbyCoordinatorSnapshot finalSnapshot;
             lock (sync)
@@ -913,37 +934,11 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 finalSnapshot = snapshot;
             }
 
-            if (finalSnapshot.EffectiveState ==
-                NearbyEffectiveState.StopFailed)
-            {
-                throw new NearbyRadioTransitionException(
-                    NearbyRadioTransitionError.PhysicalStopFailed);
-            }
-
             if (finalSnapshot.IntentPersistenceState ==
                 NearbyIntentPersistenceState.Failed)
             {
                 throw new NearbyRadioTransitionException(
                     NearbyRadioTransitionError.IntentCommitFailed);
-            }
-
-            try
-            {
-                externalCallbackDepth.Value++;
-                try
-                {
-                    platformSubscription?.Dispose();
-                    platformSubscription = null;
-                }
-                finally
-                {
-                    externalCallbackDepth.Value--;
-                }
-            }
-            catch
-            {
-                throw new NearbyRadioTransitionException(
-                    NearbyRadioTransitionError.StateReadFailed);
             }
 
             radioGate.Dispose();
@@ -963,6 +958,28 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             }
 
             completion.TrySetException(exception);
+        }
+    }
+
+    private void DisposePlatformSubscription()
+    {
+        try
+        {
+            externalCallbackDepth.Value++;
+            try
+            {
+                platformSubscription?.Dispose();
+                platformSubscription = null;
+            }
+            finally
+            {
+                externalCallbackDepth.Value--;
+            }
+        }
+        catch
+        {
+            throw new NearbyRadioTransitionException(
+                NearbyRadioTransitionError.StateReadFailed);
         }
     }
 
@@ -1904,6 +1921,11 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         _ = value;
         lock (sync)
         {
+            if (lifecycle != NearbyCoordinatorLifecycle.Running)
+            {
+                return;
+            }
+
             activeAdmission = 0;
         }
 

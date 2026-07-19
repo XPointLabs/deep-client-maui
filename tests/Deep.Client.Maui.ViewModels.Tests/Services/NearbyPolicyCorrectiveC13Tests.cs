@@ -188,17 +188,50 @@ public sealed class NearbyPolicyCorrectiveC13Tests
             "DrainBeforeStabilityCheckForTesting",
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(hookProperty);
+        using var stopFlood = new ManualResetEventSlim();
+        using var floodStarted = new ManualResetEventSlim();
+        Thread? flood = null;
         var injectedEvents = 0;
+        var stabilityChecks = 0;
         hookProperty.SetValue(coordinator, new Action(() =>
         {
-            Interlocked.Increment(ref injectedEvents);
-            platform.RaiseCaptured();
+            Interlocked.Increment(ref stabilityChecks);
+            if (flood is not null)
+            {
+                return;
+            }
+
+            flood = new Thread(() =>
+            {
+                while (!stopFlood.IsSet)
+                {
+                    platform.RaiseCaptured();
+                    Interlocked.Increment(ref injectedEvents);
+                    floodStarted.Set();
+                    Thread.Sleep(1);
+                }
+            });
+            using (ExecutionContext.SuppressFlow())
+            {
+                flood.Start();
+            }
+
+            Assert.True(floodStarted.Wait(TimeSpan.FromSeconds(1)));
         }));
 
-        await coordinator.DisposeAsync().AsTask().WaitAsync(
-            TimeSpan.FromSeconds(2));
+        try
+        {
+            await coordinator.DisposeAsync().AsTask().WaitAsync(
+                TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            stopFlood.Set();
+            Assert.True(flood?.Join(TimeSpan.FromSeconds(1)) ?? true);
+        }
 
-        Assert.InRange(injectedEvents, 1, 2);
+        Assert.InRange(stabilityChecks, 1, 2);
+        Assert.InRange(injectedEvents, 1, 2_000);
         Assert.Equal(1, platform.UnsubscribeCalls);
     }
 

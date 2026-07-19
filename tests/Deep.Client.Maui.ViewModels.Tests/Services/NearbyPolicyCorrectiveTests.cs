@@ -89,7 +89,7 @@ public sealed class NearbyPolicyCorrectiveTests
     }
 
     [Fact]
-    public async Task ConcurrentDisposeDrainsQueuedStopAndIsIdempotent()
+    public async Task ConcurrentDisposeReturnsWhileOwnerDrainsQueuedStop()
     {
         var environment = new CorrectiveEnvironment();
         var coordinator = environment.CreateCoordinator();
@@ -101,26 +101,31 @@ public sealed class NearbyPolicyCorrectiveTests
         });
         await environment.Radio.StopEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
-        var disposals = Enumerable.Range(0, 8)
+        var owner = coordinator.DisposeAsync().AsTask();
+        var concurrentDisposals = Enumerable.Range(0, 7)
             .Select(_ => coordinator.DisposeAsync().AsTask())
             .ToArray();
-        bool allJoinedPhysicalStop;
+        bool ownerJoinedPhysicalStop;
+        bool concurrentCallersReturned;
         Exception?[] errors;
         try
         {
             await Task.Delay(100);
-            allJoinedPhysicalStop = disposals.All(
-                disposal => !disposal.IsCompleted);
+            ownerJoinedPhysicalStop = !owner.IsCompleted;
+            concurrentCallersReturned = concurrentDisposals.All(
+                disposal => disposal.IsCompletedSuccessfully);
         }
         finally
         {
             environment.Radio.ReleaseStop();
-            errors = await Task.WhenAll(disposals.Select(async disposal =>
+            errors = await Task.WhenAll(
+                concurrentDisposals.Prepend(owner).Select(async disposal =>
                 await Record.ExceptionAsync(() =>
                     disposal.WaitAsync(TimeSpan.FromSeconds(2)))));
         }
 
-        Assert.True(allJoinedPhysicalStop);
+        Assert.True(ownerJoinedPhysicalStop);
+        Assert.True(concurrentCallersReturned);
         Assert.All(errors, Assert.Null);
         Assert.Equal(1, environment.Radio.StopCalls);
         await Assert.ThrowsAsync<ObjectDisposedException>(() =>

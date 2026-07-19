@@ -144,6 +144,14 @@ calls return immediately. A successful attempt is exactly once; a failed
 attempt reports only the sanitized state-read error and atomically permits a
 later retry.
 
+Coordinator disposal has the same non-joining concurrency boundary. The first
+`DisposeAsync` caller owns the operation and observes its success or typed
+failure; calls made while that operation is in progress return a completed
+`ValueTask`. Disposal first closes the platform-event queue, bounds physical
+radio cleanup, and unsubscribes outside internal locks before the final drain.
+Captured or racing platform events are ignored once the lifecycle leaves
+`Running`, so an event flood cannot extend the durability drain.
+
 ## Offline update verification
 
 `Deep.Client.Maui.Core` contains the portable P02B verifier for exact canonical
