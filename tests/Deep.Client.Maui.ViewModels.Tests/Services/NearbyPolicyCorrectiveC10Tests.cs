@@ -64,11 +64,11 @@ public sealed class NearbyPolicyCorrectiveC10Tests
         var snapshot = coordinator.Snapshot;
         await coordinator.DisposeAsync();
 
-        Assert.Null(startFailure);
+        Assert.IsType<NearbyCoordinatorBusyException>(startFailure);
         Assert.Null(drainFailure);
-        Assert.Equal(1, environment.Radio.StartCalls);
-        Assert.Equal(1, environment.Radio.StopCalls);
-        Assert.Equal(NearbyEffectiveState.Active, snapshot.EffectiveState);
+        Assert.Equal(0, environment.Radio.StartCalls);
+        Assert.Equal(0, environment.Radio.StopCalls);
+        Assert.Equal(NearbyEffectiveState.Stopped, snapshot.EffectiveState);
     }
 
     [Fact]
