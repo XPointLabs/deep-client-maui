@@ -72,7 +72,16 @@ public enum NearbyStopReason
 public enum NearbyRadioTransitionError
 {
     AdapterStartFailed,
-    IntentCommitFailed
+    IntentCommitFailed,
+    StateReadFailed,
+    PhysicalStopFailed
+}
+
+public enum NearbyIntentPersistenceState
+{
+    Consistent,
+    Pending,
+    Failed
 }
 
 public sealed record NearbyRadioCapability(
@@ -114,7 +123,9 @@ public sealed record NearbyCoordinatorSnapshot(
     NearbyStopReason? StopReason,
     NearbyPolicyResult Policy,
     NearbyPollingPolicyResult Polling,
-    DateTimeOffset? EmergencyEndsAtUtc);
+    DateTimeOffset? EmergencyEndsAtUtc,
+    NearbyIntentPersistenceState IntentPersistenceState =
+        NearbyIntentPersistenceState.Consistent);
 
 public sealed class NearbyPolicyDeniedException : InvalidOperationException
 {
@@ -136,6 +147,10 @@ public sealed class NearbyRadioTransitionException : InvalidOperationException
                 "Nearby radio start failed; effective state is not active.",
             NearbyRadioTransitionError.IntentCommitFailed =>
                 "Nearby mode intent could not be committed; effective state is not active.",
+            NearbyRadioTransitionError.StateReadFailed =>
+                "Nearby device state could not be verified; effective state is not active.",
+            NearbyRadioTransitionError.PhysicalStopFailed =>
+                "Nearby radio stop could not be verified; physical state is unknown.",
             _ => "Nearby transition failed; effective state is not active."
         })
     {
@@ -159,7 +174,7 @@ public sealed class NearbyCoordinatorBusyException : InvalidOperationException
 public sealed class NearbyCoordinatorReentrancyException : InvalidOperationException
 {
     public NearbyCoordinatorReentrancyException()
-        : base("Nearby radio adapters cannot call the coordinator reentrantly.")
+        : base("Nearby external callbacks cannot call the coordinator reentrantly.")
     {
     }
 }
@@ -326,8 +341,9 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 {
     private readonly object sync = new();
     private readonly object eventSync = new();
+    private readonly object intentSync = new();
     private readonly SemaphoreSlim radioGate = new(1, 1);
-    private readonly AsyncLocal<int> adapterCallbackDepth = new();
+    private readonly AsyncLocal<int> externalCallbackDepth = new();
     private readonly INearbyRadioAdapter radio;
     private readonly INearbyPlatformState platform;
     private readonly INearbyClock clock;
@@ -337,6 +353,9 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
     private Task? stopTask;
     private Task? disposeTask;
     private Task lastPlatformTransition = Task.CompletedTask;
+    private Task lastIntentTransition = Task.CompletedTask;
+    private int pendingIntentOperations;
+    private int intentGeneration;
     private int generation;
     private NearbyCoordinatorLifecycle lifecycle =
         NearbyCoordinatorLifecycle.Running;
@@ -397,6 +416,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             ThrowIfNotRunningLocked();
             if (currentAttempt is not null ||
                 stopTask is not null ||
+                Volatile.Read(ref pendingIntentOperations) > 0 ||
                 snapshot.EffectiveState == NearbyEffectiveState.StopFailed)
             {
                 throw new NearbyCoordinatorBusyException();
@@ -463,8 +483,6 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         ThrowIfAdapterReentrant();
         cancellationToken.ThrowIfCancellationRequested();
         NearbyAttempt? attempt;
-        NearbyPolicyResult policy;
-        NearbyStopReason? stopReason = null;
         lock (sync)
         {
             ThrowIfNotRunningLocked();
@@ -474,34 +492,56 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 return;
             }
 
-            if (attempt.Session.EmergencyDeadline is { } deadline &&
-                clock.MonotonicNow >= deadline)
+        }
+
+        NearbyPolicyResult policy;
+        NearbyRadioCapability capability;
+        TimeSpan monotonicNow;
+        try
+        {
+            monotonicNow = clock.MonotonicNow;
+            capability = radio.Capability;
+            policy = NearbyPolicyEvaluator.Evaluate(
+                attempt.Mode,
+                platform.Snapshot,
+                capability,
+                isActive: Snapshot.EffectiveState ==
+                    NearbyEffectiveState.Active,
+                attempt.Duration);
+        }
+        catch
+        {
+            await StopAttemptAsync(
+                attempt,
+                NearbyStopReason.AdapterFailure).ConfigureAwait(false);
+            throw new NearbyRadioTransitionException(
+                NearbyRadioTransitionError.StateReadFailed);
+        }
+
+        NearbyStopReason? stopReason = null;
+        lock (sync)
+        {
+            if (!IsCurrentAttemptLocked(attempt))
             {
-                policy = snapshot.Policy;
+                return;
+            }
+
+            if (attempt.Session.EmergencyDeadline is { } deadline &&
+                monotonicNow >= deadline)
+            {
                 stopReason = NearbyStopReason.DeadlineExpired;
+            }
+            else if (!Equals(capability, attempt.Capability))
+            {
+                stopReason = NearbyStopReason.CapabilityChanged;
+            }
+            else if (!policy.MayStart)
+            {
+                stopReason = StopReasonFor(policy.DenialReason);
             }
             else
             {
-                var capability = radio.Capability;
-                policy = NearbyPolicyEvaluator.Evaluate(
-                    attempt.Mode,
-                    platform.Snapshot,
-                    capability,
-                    isActive: snapshot.EffectiveState ==
-                        NearbyEffectiveState.Active,
-                    attempt.Duration);
-                if (!Equals(capability, attempt.Capability))
-                {
-                    stopReason = NearbyStopReason.CapabilityChanged;
-                }
-                else if (!policy.MayStart)
-                {
-                    stopReason = StopReasonFor(policy.DenialReason);
-                }
-                else
-                {
-                    snapshot = snapshot with { Policy = policy };
-                }
+                snapshot = snapshot with { Policy = policy };
             }
         }
 
@@ -515,9 +555,21 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
     public async Task DrainAsync()
     {
+        ThrowIfAdapterReentrant();
+        lock (sync)
+        {
+            ThrowIfNotRunningLocked();
+        }
+
+        await DrainCoreAsync().ConfigureAwait(false);
+    }
+
+    private async Task DrainCoreAsync()
+    {
         while (true)
         {
             Task platformTransition;
+            Task intentTransition;
             NearbyAttempt? attempt;
             Task? pendingStop;
             lock (eventSync)
@@ -531,12 +583,39 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 pendingStop = stopTask;
             }
 
-            await platformTransition.ConfigureAwait(false);
-            if (attempt?.DeadlineTask is { } deadlineTask &&
-                (deadlineTask.IsCompleted ||
-                 attempt.Session.EmergencyDeadline <= clock.MonotonicNow))
+            lock (intentSync)
             {
-                await deadlineTask.ConfigureAwait(false);
+                intentTransition = lastIntentTransition;
+            }
+
+            await platformTransition.ConfigureAwait(false);
+            if (attempt?.DeadlineTask is { } deadlineTask)
+            {
+                var deadlineReached = deadlineTask.IsCompleted;
+                if (!deadlineReached &&
+                    attempt.Session.EmergencyDeadline is not null)
+                {
+                    try
+                    {
+                        deadlineReached =
+                            attempt.Session.EmergencyDeadline <=
+                            clock.MonotonicNow;
+                    }
+                    catch
+                    {
+                        await StopAttemptAsync(
+                            attempt,
+                            NearbyStopReason.AdapterFailure)
+                            .ConfigureAwait(false);
+                        throw new NearbyRadioTransitionException(
+                            NearbyRadioTransitionError.StateReadFailed);
+                    }
+                }
+
+                if (deadlineReached)
+                {
+                    await deadlineTask.ConfigureAwait(false);
+                }
             }
 
             if (pendingStop is not null)
@@ -544,13 +623,23 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 await pendingStop.ConfigureAwait(false);
             }
 
+            await intentTransition.ConfigureAwait(false);
+
             lock (eventSync)
             {
                 if (ReferenceEquals(
                     platformTransition,
                     lastPlatformTransition))
                 {
-                    return;
+                    lock (intentSync)
+                    {
+                        if (ReferenceEquals(
+                            intentTransition,
+                            lastIntentTransition))
+                        {
+                            return;
+                        }
+                    }
                 }
             }
         }
@@ -580,7 +669,6 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             task = disposeTask;
         }
 
-        platform.Changed -= OnPlatformChanged;
         _ = DisposeCoreAsync(owner);
         return new ValueTask(task);
     }
@@ -589,10 +677,31 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
     {
         try
         {
-            await DrainAsync().ConfigureAwait(false);
+            await DrainCoreAsync().ConfigureAwait(false);
             await StopCurrentAttemptAsync(
                 NearbyStopReason.User).ConfigureAwait(false);
-            await DrainAsync().ConfigureAwait(false);
+            await DrainCoreAsync().ConfigureAwait(false);
+            NearbyCoordinatorSnapshot finalSnapshot;
+            lock (sync)
+            {
+                finalSnapshot = snapshot;
+            }
+
+            if (finalSnapshot.EffectiveState ==
+                NearbyEffectiveState.StopFailed)
+            {
+                throw new NearbyRadioTransitionException(
+                    NearbyRadioTransitionError.PhysicalStopFailed);
+            }
+
+            if (finalSnapshot.IntentPersistenceState ==
+                NearbyIntentPersistenceState.Failed)
+            {
+                throw new NearbyRadioTransitionException(
+                    NearbyRadioTransitionError.IntentCommitFailed);
+            }
+
+            platform.Changed -= OnPlatformChanged;
             radioGate.Dispose();
             lock (sync)
             {
@@ -605,7 +714,8 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         {
             lock (sync)
             {
-                lifecycle = NearbyCoordinatorLifecycle.Disposed;
+                lifecycle = NearbyCoordinatorLifecycle.Running;
+                disposeTask = null;
             }
 
             completion.TrySetException(exception);
@@ -622,8 +732,8 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 callerCancellation);
         try
         {
-            await InvokeAdapterStartAsync(
-                attempt.Session,
+            await InvokeAdapterStartAndSignalAsync(
+                attempt,
                 linkedCancellation.Token).ConfigureAwait(false);
         }
         catch (NearbyCoordinatorReentrancyException)
@@ -695,7 +805,22 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         Task? deadlineDelay = null;
         if (attempt.Session.EmergencyDeadline is { } deadline)
         {
-            var remaining = deadline - clock.MonotonicNow;
+            TimeSpan remaining;
+            try
+            {
+                remaining = deadline - clock.MonotonicNow;
+            }
+            catch
+            {
+                await StopAttemptAsync(
+                    attempt,
+                    NearbyStopReason.AdapterFailure,
+                    awaitStart: false,
+                    persistOff: false).ConfigureAwait(false);
+                throw new NearbyRadioTransitionException(
+                    NearbyRadioTransitionError.StateReadFailed);
+            }
+
             if (remaining <= TimeSpan.Zero)
             {
                 await StopAttemptAsync(
@@ -738,15 +863,13 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             }
         }
 
-        var intentCommitted = false;
         if (intentStore is not null)
         {
             try
             {
-                await intentStore.SaveAsync(
+                await EnqueueIntentSave(
                     new NearbyModeIntent(attempt.Mode, attempt.Duration),
                     linkedCancellation.Token).ConfigureAwait(false);
-                intentCommitted = true;
             }
             catch (OperationCanceledException)
                 when (linkedCancellation.IsCancellationRequested)
@@ -780,11 +903,6 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         if (linkedCancellation.IsCancellationRequested ||
             !IsCurrentAttempt(attempt))
         {
-            if (intentCommitted)
-            {
-                await PersistOffAsync().ConfigureAwait(false);
-            }
-
             if (IsCurrentAttempt(attempt))
             {
                 await StopAttemptAsync(
@@ -802,6 +920,30 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         }
 
         NearbyStopReason? stopReason = null;
+        NearbyPolicyResult? postStartPolicy = null;
+        NearbyRadioCapability? postStartCapability = null;
+        TimeSpan postStartMonotonic = default;
+        try
+        {
+            postStartMonotonic = clock.MonotonicNow;
+            postStartCapability = radio.Capability;
+            postStartPolicy = NearbyPolicyEvaluator.Evaluate(
+                attempt.Mode,
+                platform.Snapshot,
+                postStartCapability,
+                isActive: true,
+                attempt.Duration);
+        }
+        catch
+        {
+            await StopAttemptAsync(
+                attempt,
+                NearbyStopReason.AdapterFailure,
+                awaitStart: false).ConfigureAwait(false);
+            throw new NearbyRadioTransitionException(
+                NearbyRadioTransitionError.StateReadFailed);
+        }
+
         lock (sync)
         {
             if (!IsCurrentAttemptLocked(attempt) ||
@@ -810,25 +952,20 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 stopReason = NearbyStopReason.Cancelled;
             }
             else if (attempt.Session.EmergencyDeadline is { } currentDeadline &&
-                     clock.MonotonicNow >= currentDeadline)
+                     postStartMonotonic >= currentDeadline)
             {
                 stopReason = NearbyStopReason.DeadlineExpired;
             }
             else
             {
-                var policy = NearbyPolicyEvaluator.Evaluate(
-                    attempt.Mode,
-                    platform.Snapshot,
-                    radio.Capability,
-                    isActive: true,
-                    attempt.Duration);
-                if (!Equals(radio.Capability, attempt.Capability))
+                if (!Equals(postStartCapability, attempt.Capability))
                 {
                     stopReason = NearbyStopReason.CapabilityChanged;
                 }
-                else if (!policy.MayStart)
+                else if (!postStartPolicy.MayStart)
                 {
-                    stopReason = StopReasonFor(policy.DenialReason);
+                    stopReason = StopReasonFor(
+                        postStartPolicy.DenialReason);
                 }
                 else
                 {
@@ -836,7 +973,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                         attempt.Mode,
                         NearbyEffectiveState.Active,
                         StopReason: null,
-                        policy,
+                        postStartPolicy,
                         Polling(suppress: true),
                         attempt.EmergencyEndsAtUtc);
                     if (deadlineDelay is not null)
@@ -897,7 +1034,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             if (attempt is null &&
                 snapshot.EffectiveState != NearbyEffectiveState.StopFailed)
             {
-                return PersistOffAsync();
+                return BeginOffPersistenceTransition(reason);
             }
         }
 
@@ -983,6 +1120,65 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         return task;
     }
 
+    private Task BeginOffPersistenceTransition(NearbyStopReason reason)
+    {
+        if (intentStore is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        TaskCompletionSource completion;
+        lock (sync)
+        {
+            if (stopTask is not null)
+            {
+                return stopTask;
+            }
+
+            snapshot = snapshot with
+            {
+                DesiredMode = NearbyUserMode.Off,
+                StopReason = reason,
+                Polling = Polling(suppress: false),
+                EmergencyEndsAtUtc = null
+            };
+            completion = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            stopTask = completion.Task;
+        }
+
+        _ = CompleteOffPersistenceTransitionAsync(completion);
+        return completion.Task;
+    }
+
+    private async Task CompleteOffPersistenceTransitionAsync(
+        TaskCompletionSource completion)
+    {
+        try
+        {
+            await EnqueueIntentSave(
+                new NearbyModeIntent(NearbyUserMode.Off, null),
+                CancellationToken.None).ConfigureAwait(false);
+            completion.TrySetResult();
+        }
+        catch
+        {
+            completion.TrySetException(
+                new NearbyRadioTransitionException(
+                    NearbyRadioTransitionError.IntentCommitFailed));
+        }
+        finally
+        {
+            lock (sync)
+            {
+                if (ReferenceEquals(stopTask, completion.Task))
+                {
+                    stopTask = null;
+                }
+            }
+        }
+    }
+
     private async Task CompleteStopAsync(
         NearbyAttempt? attempt,
         NearbyStopReason reason,
@@ -990,48 +1186,60 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         bool persistOff,
         TaskCompletionSource completion)
     {
-        if (awaitStart && attempt is not null)
+        var physicalStopped = false;
+        try
         {
-            try
+            if (awaitStart && attempt is not null)
             {
-                await attempt.StartTask.ConfigureAwait(false);
+                try
+                {
+                    await attempt.PhysicalStartCompletion.Task
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                }
             }
-            catch
+
+            physicalStopped = await StopRadioAsync(reason).ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+        finally
+        {
+            if (persistOff)
             {
+                _ = EnqueueIntentSave(
+                    new NearbyModeIntent(NearbyUserMode.Off, null),
+                    CancellationToken.None);
             }
-        }
 
-        var physicalStopped = await StopRadioAsync(reason).ConfigureAwait(false);
-        if (persistOff)
-        {
-            await PersistOffAsync().ConfigureAwait(false);
-        }
-        lock (sync)
-        {
-            snapshot = physicalStopped
-                ? StoppedSnapshot(
-                    reason,
-                    NearbyPolicyEvaluator.Evaluate(
+            lock (sync)
+            {
+                var persistenceState = snapshot.IntentPersistenceState;
+                snapshot = physicalStopped
+                    ? StoppedSnapshot(
+                        reason,
+                        OffPolicy(),
+                        persistenceState)
+                    : new NearbyCoordinatorSnapshot(
                         NearbyUserMode.Off,
-                        platform.Snapshot,
-                        radio.Capability,
-                        isActive: false))
-                : new NearbyCoordinatorSnapshot(
-                    NearbyUserMode.Off,
-                    NearbyEffectiveState.StopFailed,
-                    NearbyStopReason.StopFailed,
-                    NearbyPolicyEvaluator.Evaluate(
-                        NearbyUserMode.Off,
-                        platform.Snapshot,
-                        radio.Capability,
-                        isActive: false),
-                    Polling(suppress: false),
-                    EmergencyEndsAtUtc: null);
-            stopTask = null;
-        }
+                        NearbyEffectiveState.StopFailed,
+                        NearbyStopReason.StopFailed,
+                        OffPolicy(),
+                        Polling(suppress: false),
+                        EmergencyEndsAtUtc: null,
+                        persistenceState);
+                if (ReferenceEquals(stopTask, completion.Task))
+                {
+                    stopTask = null;
+                }
+            }
 
-        attempt?.Cancellation.Dispose();
-        completion.TrySetResult();
+            attempt?.Cancellation.Dispose();
+            completion.TrySetResult();
+        }
     }
 
     private async Task<bool> StopRadioAsync(NearbyStopReason reason)
@@ -1041,14 +1249,14 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             await radioGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
-                adapterCallbackDepth.Value++;
+                externalCallbackDepth.Value++;
                 await radio.StopAsync(
                     reason,
                     CancellationToken.None).ConfigureAwait(false);
             }
             finally
             {
-                adapterCallbackDepth.Value--;
+                externalCallbackDepth.Value--;
                 radioGate.Release();
             }
 
@@ -1060,40 +1268,111 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         }
     }
 
-    private async Task InvokeAdapterStartAsync(
-        NearbyRadioSession session,
+    private async Task InvokeAdapterStartAndSignalAsync(
+        NearbyAttempt attempt,
         CancellationToken cancellationToken)
     {
-        await radioGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
-            adapterCallbackDepth.Value++;
-            await radio.StartForegroundAsync(
-                session,
-                cancellationToken).ConfigureAwait(false);
+            await radioGate.WaitAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+            try
+            {
+                externalCallbackDepth.Value++;
+                await radio.StartForegroundAsync(
+                    attempt.Session,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                externalCallbackDepth.Value--;
+                radioGate.Release();
+            }
         }
         finally
         {
-            adapterCallbackDepth.Value--;
-            radioGate.Release();
+            attempt.PhysicalStartCompletion.TrySetResult();
         }
     }
 
-    private async Task PersistOffAsync()
+    private Task EnqueueIntentSave(
+        NearbyModeIntent intent,
+        CancellationToken cancellationToken)
     {
         if (intentStore is null)
         {
-            return;
+            return Task.CompletedTask;
         }
 
+        var operationGeneration = Interlocked.Increment(ref intentGeneration);
+        Interlocked.Increment(ref pendingIntentOperations);
+        lock (sync)
+        {
+            snapshot = snapshot with
+            {
+                IntentPersistenceState = NearbyIntentPersistenceState.Pending
+            };
+        }
+
+        Task operation;
+        lock (intentSync)
+        {
+            operation = RunIntentSaveAsync(
+                lastIntentTransition,
+                intent,
+                cancellationToken);
+            lastIntentTransition = ObserveIntentSaveAsync(
+                operation,
+                operationGeneration);
+        }
+
+        return operation;
+    }
+
+    private async Task RunIntentSaveAsync(
+        Task previous,
+        NearbyModeIntent intent,
+        CancellationToken cancellationToken)
+    {
+        await previous.ConfigureAwait(false);
+        externalCallbackDepth.Value++;
         try
         {
-            await intentStore.SaveAsync(
-                new NearbyModeIntent(NearbyUserMode.Off, null),
-                CancellationToken.None).ConfigureAwait(false);
+            await intentStore!.SaveAsync(intent, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            externalCallbackDepth.Value--;
+        }
+    }
+
+    private async Task ObserveIntentSaveAsync(
+        Task operation,
+        int operationGeneration)
+    {
+        var persistenceState = NearbyIntentPersistenceState.Consistent;
+        try
+        {
+            await operation.ConfigureAwait(false);
         }
         catch
         {
+            persistenceState = NearbyIntentPersistenceState.Failed;
+        }
+        finally
+        {
+            Interlocked.Decrement(ref pendingIntentOperations);
+            if (operationGeneration == Volatile.Read(ref intentGeneration))
+            {
+                lock (sync)
+                {
+                    snapshot = snapshot with
+                    {
+                        IntentPersistenceState = persistenceState
+                    };
+                }
+            }
         }
     }
 
@@ -1131,7 +1410,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
     private void ThrowIfAdapterReentrant()
     {
-        if (adapterCallbackDepth.Value > 0)
+        if (externalCallbackDepth.Value > 0)
         {
             throw new NearbyCoordinatorReentrancyException();
         }
@@ -1165,14 +1444,22 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
     private static NearbyCoordinatorSnapshot StoppedSnapshot(
         NearbyStopReason? reason,
-        NearbyPolicyResult policy) =>
+        NearbyPolicyResult policy,
+        NearbyIntentPersistenceState persistenceState =
+            NearbyIntentPersistenceState.Consistent) =>
         new(
             NearbyUserMode.Off,
             NearbyEffectiveState.Stopped,
             reason,
             policy,
             Polling(suppress: false),
-            EmergencyEndsAtUtc: null);
+            EmergencyEndsAtUtc: null,
+            persistenceState);
+
+    private static NearbyPolicyResult OffPolicy() =>
+        new(
+            MayStart: false,
+            DenialReason: NearbyPolicyDenialReason.ModeOff);
 
     private static NearbyPollingPolicyResult Polling(bool suppress) =>
         new(
@@ -1222,6 +1509,8 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         public DateTimeOffset? EmergencyEndsAtUtc { get; } = emergencyEndsAtUtc;
         public CancellationTokenSource Cancellation { get; } = new();
         public Task StartTask { get; set; } = Task.CompletedTask;
+        public TaskCompletionSource PhysicalStartCompletion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task? DeadlineTask { get; set; }
     }
 }

@@ -174,16 +174,26 @@ devices, measured energy evidence, and Android permission/privacy review.
 The corrective coordinator contract serializes a generation through its final
 physical stop: a later start fails busy until that stop and intent rollback
 finish, so an old stop cannot affect a new generation. Adapter callbacks may
-not call the coordinator reentrantly; such calls fail immediately instead of
-waiting on the radio gate. Mode intent is committed only after the adapter
+not call the coordinator reentrantly; the same fail-fast rule covers intent
+store callbacks and every public awaitable coordinator operation, including
+drain and disposal. Mode intent is committed only after the adapter
 start, cancellation, capability, policy and monotonic-deadline checks all pass.
 A failed or obsolete start either leaves intent unchanged or rolls it back to
 `Off`.
+
+Physical stop does not wait for a fallible or stalled active-intent write after
+the adapter has finished starting. Intent writes remain serialized: the late
+write is followed by an `Off` rollback, new starts stay busy until that
+reconciliation completes, and drain/disposal joins it. A failed write is not
+reported as success: the snapshot exposes the typed `Failed` persistence state,
+while an explicit off-state persistence transition also returns a sanitized
+typed failure and remains retryable.
 
 Deadline scheduler failure forces a stop, and explicit refresh independently
 enforces the monotonic deadline. If the platform adapter throws while stopping,
 the coordinator reports `StopFailed`: desired mode is `Off` and managed-network
 polling is not suppressed, but the physical radio state is explicitly unknown,
-not proven stopped. New starts remain blocked while that uncertainty exists;
-an explicit stop/dispose may retry cleanup. This dormant state is not evidence
-that a radio session is active or that nearby delivery works.
+not proven stopped. New starts remain blocked while that uncertainty exists.
+Disposal cannot report success or dispose the transition gate in this state; an
+explicit stop or later disposal may retry cleanup. This dormant state is not
+evidence that a radio session is active or that nearby delivery works.

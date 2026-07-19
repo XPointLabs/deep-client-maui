@@ -206,7 +206,7 @@ public sealed class NearbyPolicyCoordinatorTests
         var environment = new TestEnvironment();
         environment.Radio.ThrowOnStart = throwOnStart;
         environment.Radio.ThrowOnStop = throwOnStop;
-        await using var coordinator = environment.CreateCoordinator();
+        var coordinator = environment.CreateCoordinator();
 
         if (throwOnStart)
         {
@@ -225,6 +225,13 @@ public sealed class NearbyPolicyCoordinatorTests
                 : NearbyEffectiveState.Stopped,
             coordinator.Snapshot.EffectiveState);
         Assert.False(coordinator.Snapshot.Polling.SuppressManagedNetworkPolling);
+        if (throwOnStop)
+        {
+            environment.Radio.ThrowOnStop = false;
+            await coordinator.StopAsync();
+        }
+
+        await coordinator.DisposeAsync();
     }
 
     [Fact]

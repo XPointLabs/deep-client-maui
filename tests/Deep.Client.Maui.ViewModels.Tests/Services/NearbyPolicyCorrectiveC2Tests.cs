@@ -71,6 +71,23 @@ public sealed class NearbyPolicyCorrectiveC2Tests
     }
 
     [Fact]
+    public async Task DrainClockReadFailureFailStopsWithSanitizedError()
+    {
+        var environment = new C2Environment();
+        var coordinator = environment.CreateCoordinator();
+        await coordinator.StartAsync(NearbyUserMode.ForegroundEmergency);
+        environment.Clock.ThrowMonotonicAfterRadioStart = true;
+
+        var failure = await Record.ExceptionAsync(() => coordinator.DrainAsync());
+
+        Assert.Equal(typeof(NearbyRadioTransitionException), failure?.GetType());
+        Assert.DoesNotContain("clock-secret", failure?.ToString() ?? string.Empty);
+        Assert.Equal(1, environment.Radio.StopCalls);
+        environment.Clock.ThrowMonotonicAfterRadioStart = false;
+        await coordinator.DisposeAsync();
+    }
+
+    [Fact]
     public async Task StopCompletionSurvivesExternalGetterFailureAndClearsTransition()
     {
         var environment = new C2Environment();
@@ -163,6 +180,30 @@ public sealed class NearbyPolicyCorrectiveC2Tests
         }
 
         Assert.Equal(typeof(NearbyCoordinatorReentrancyException), callbackFailure?.GetType());
+        await coordinator.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ActiveIntentCallbackCannotDisposeCoordinatorReentrantly()
+    {
+        var environment = new C2Environment();
+        var coordinator = environment.CreateCoordinator();
+        Exception? callbackFailure = null;
+        environment.IntentStore.OnSave = async intent =>
+        {
+            if (intent.Mode != NearbyUserMode.Off)
+            {
+                environment.IntentStore.OnSave = null;
+                callbackFailure = await Record.ExceptionAsync(() =>
+                    coordinator.DisposeAsync().AsTask());
+            }
+        };
+
+        await coordinator.StartAsync(NearbyUserMode.ForegroundEmergency)
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(typeof(NearbyCoordinatorReentrancyException), callbackFailure?.GetType());
+        await coordinator.StopAsync();
         await coordinator.DisposeAsync();
     }
 
