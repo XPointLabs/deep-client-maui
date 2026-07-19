@@ -65,6 +65,62 @@ public sealed class NearbyPolicyCorrectiveC7Tests
         }
     }
 
+    [Fact]
+    public async Task AsyncCancellationBetweenPrecheckAndUnregisterCannotReturnSuccess()
+    {
+        var environment = new C7Environment();
+        environment.Intent.BlockActive = true;
+        environment.Intent.IgnoreCancellation = true;
+        var coordinator = environment.CreateCoordinator();
+        using var cancellation = new CancellationTokenSource();
+        var starting = coordinator.StartAsync(
+            NearbyUserMode.ForegroundEmergency,
+            cancellationToken: cancellation.Token);
+        await environment.Intent.ActiveEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var blockingCallbackEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var blockingCallbackRelease = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var blockingRegistration = cancellation.Token.Register(() =>
+        {
+            blockingCallbackEntered.TrySetResult();
+            blockingCallbackRelease.Task.GetAwaiter().GetResult();
+        });
+        Task cancellationDispatch = Task.CompletedTask;
+        var attempt = GetAttempt(coordinator);
+        attempt.GetType().GetProperty(
+            "CallerSuccessBeforeUnregisterForTesting",
+            BindingFlags.Instance | BindingFlags.Public)!.SetValue(
+                attempt,
+                new Action(() =>
+                {
+                    cancellationDispatch = cancellation.CancelAsync();
+                    if (!blockingCallbackEntered.Task.Wait(TimeSpan.FromSeconds(2)))
+                    {
+                        throw new TimeoutException(
+                            "Asynchronous cancellation callback did not enter.");
+                    }
+                }));
+
+        Exception? failure;
+        try
+        {
+            environment.Intent.ReleaseActive();
+            failure = await Record.ExceptionAsync(() =>
+                starting.WaitAsync(TimeSpan.FromSeconds(2)));
+        }
+        finally
+        {
+            blockingCallbackRelease.TrySetResult();
+            await cancellationDispatch.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+
+        Assert.IsAssignableFrom<OperationCanceledException>(failure);
+        Assert.Equal(1, environment.Radio.StopCalls);
+        await coordinator.DisposeAsync();
+    }
+
     [Theory]
     [InlineData("explicit", NearbyUserMode.ForegroundEmergency)]
     [InlineData("explicit", NearbyUserMode.ChargingHub)]
@@ -151,14 +207,20 @@ public sealed class NearbyPolicyCorrectiveC7Tests
     private static CancellationTokenSource GetAttemptCancellation(
         NearbyPolicyCoordinator coordinator)
     {
+        var attempt = GetAttempt(coordinator);
+        return Assert.IsType<CancellationTokenSource>(
+            attempt.GetType().GetProperty(
+                "Cancellation",
+                BindingFlags.Instance | BindingFlags.Public)!.GetValue(attempt));
+    }
+
+    private static object GetAttempt(NearbyPolicyCoordinator coordinator)
+    {
         var attempt = typeof(NearbyPolicyCoordinator).GetField(
             "currentAttempt",
             BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(coordinator);
         Assert.NotNull(attempt);
-        return Assert.IsType<CancellationTokenSource>(
-            attempt!.GetType().GetProperty(
-                "Cancellation",
-                BindingFlags.Instance | BindingFlags.Public)!.GetValue(attempt));
+        return attempt;
     }
 
     private static async Task TriggerPlatformStopAsync(

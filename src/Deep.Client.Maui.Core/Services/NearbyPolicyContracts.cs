@@ -1784,6 +1784,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         public Task CallerCancellationCleanup { get; private set; } =
             Task.CompletedTask;
         public Task? DeadlineTask { get; set; }
+        public Action? CallerSuccessBeforeUnregisterForTesting { get; set; }
 
         public void AttachLinkedCancellation(
             CancellationTokenSource cancellation)
@@ -1865,6 +1866,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         {
             CancellationTokenRegistration registration = default;
             var disposeRegistration = false;
+            var cancellationWon = false;
             lock (cancellationSync)
             {
                 if (callerSuccessLinearized)
@@ -1890,16 +1892,19 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 }
 
                 registration = callerCancellationRegistration;
-                if (cancellationToken.CanBeCanceled &&
-                    !registration.Unregister())
+                if (cancellationToken.CanBeCanceled)
                 {
-                    return false;
+                    CallerSuccessBeforeUnregisterForTesting?.Invoke();
+                    if (!registration.Unregister())
+                    {
+                        return false;
+                    }
                 }
 
                 callerCancellationRegistration = default;
                 callerCancellationAttached = false;
-                callerSuccessLinearized = true;
                 disposeRegistration = true;
+                callerSuccessLinearized = true;
             }
 
             if (disposeRegistration)
@@ -1907,7 +1912,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 registration.Dispose();
             }
 
-            return true;
+            return !cancellationWon;
         }
 
         public void SetCancellationDispatch(Task dispatch)
