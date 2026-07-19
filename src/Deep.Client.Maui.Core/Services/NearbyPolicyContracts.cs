@@ -219,60 +219,28 @@ public sealed class NearbyPlatformSubscription(
     Action unsubscribe) : INearbyPlatformSubscription
 {
     private readonly object sync = new();
-    private readonly AsyncLocal<DisposalAttempt?> callbackAttempt = new();
     private Action? unsubscribe = unsubscribe ??
         throw new ArgumentNullException(nameof(unsubscribe));
-    private DisposalAttempt? disposalAttempt;
-    private Action? DisposeAttemptJoinedForTesting { get; set; }
+    private bool unsubscribeInProgress;
 
     public void Dispose()
     {
-        DisposalAttempt attempt;
-        Action? callback = null;
-        var ownsAttempt = false;
+        Action callback;
         lock (sync)
         {
-            if (unsubscribe is null)
+            if (unsubscribe is null || unsubscribeInProgress)
             {
                 return;
             }
 
-            if (disposalAttempt is null)
-            {
-                attempt = new DisposalAttempt();
-                disposalAttempt = attempt;
-                callback = unsubscribe;
-                ownsAttempt = true;
-            }
-            else
-            {
-                attempt = disposalAttempt;
-            }
-        }
-
-        if (!ownsAttempt)
-        {
-            if (ReferenceEquals(callbackAttempt.Value, attempt))
-            {
-                return;
-            }
-
-            DisposeAttemptJoinedForTesting?.Invoke();
-            attempt.Completion.Task.GetAwaiter().GetResult();
-            if (attempt.Failed)
-            {
-                throw SubscriptionFailure();
-            }
-
-            return;
+            unsubscribeInProgress = true;
+            callback = unsubscribe;
         }
 
         var failed = false;
-        var previousAttempt = callbackAttempt.Value;
-        callbackAttempt.Value = attempt;
         try
         {
-            callback!();
+            callback();
         }
         catch
         {
@@ -280,7 +248,6 @@ public sealed class NearbyPlatformSubscription(
         }
         finally
         {
-            callbackAttempt.Value = previousAttempt;
             lock (sync)
             {
                 if (!failed)
@@ -288,12 +255,7 @@ public sealed class NearbyPlatformSubscription(
                     unsubscribe = null;
                 }
 
-                attempt.Failed = failed;
-                attempt.Completion.TrySetResult();
-                if (ReferenceEquals(disposalAttempt, attempt))
-                {
-                    disposalAttempt = null;
-                }
+                unsubscribeInProgress = false;
             }
         }
 
@@ -305,13 +267,6 @@ public sealed class NearbyPlatformSubscription(
 
     private static NearbyRadioTransitionException SubscriptionFailure() =>
         new(NearbyRadioTransitionError.StateReadFailed);
-
-    private sealed class DisposalAttempt
-    {
-        public TaskCompletionSource Completion { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public bool Failed { get; set; }
-    }
 }
 
 public interface INearbyClock
@@ -714,6 +669,11 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Stops physical nearby work and enqueues the durable Off intent.
+    /// Completion does not wait for an already-blocked intent store; inspect
+    /// <see cref="Snapshot"/> and call <see cref="DrainAsync"/> for durability.
+    /// </summary>
     public async Task StopAsync(
         NearbyStopReason reason = NearbyStopReason.User,
         CancellationToken cancellationToken = default)
@@ -815,6 +775,11 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Waits for queued platform and intent transitions. On return, intent
+    /// persistence is no longer Pending; the snapshot reports Consistent or
+    /// Failed, and disposal maps Failed to a typed transition error.
+    /// </summary>
     public async Task DrainAsync()
     {
         ThrowIfAdapterReentrant();

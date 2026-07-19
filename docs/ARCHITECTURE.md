@@ -127,6 +127,23 @@ is documented in `WINDOWS_RELEASE.md`.
 
 iOS remains in the source tree but is outside the current release phase.
 
+### Nearby lifecycle durability
+
+Nearby stop and cancellation first bound physical radio cleanup, then enqueue
+the durable Off intent before completing. A completed `StopAsync` can therefore
+publish a stopped radio with `IntentPersistenceState.Pending` while an earlier
+intent-store call is still blocked. `DrainAsync` is the public durability
+boundary: after it returns, the snapshot reports `Consistent` with the Off
+intent saved, or `Failed`; disposal converts the failed state to the typed
+`IntentCommitFailed` transition error. Disposal still stops the radio before
+waiting on that same durability drain.
+
+Platform subscription disposal never invokes unsubscribe under its monitor.
+While one unsubscribe attempt is running, reentrant and concurrent `Dispose`
+calls return immediately. A successful attempt is exactly once; a failed
+attempt reports only the sanitized state-read error and atomically permits a
+later retry.
+
 ## Offline update verification
 
 `Deep.Client.Maui.Core` contains the portable P02B verifier for exact canonical
