@@ -219,11 +219,17 @@ public sealed class NearbyPlatformSubscription(
     Action unsubscribe) : INearbyPlatformSubscription
 {
     private readonly object sync = new();
+    private readonly AsyncLocal<DisposalAttempt?> callbackAttempt = new();
     private Action? unsubscribe = unsubscribe ??
         throw new ArgumentNullException(nameof(unsubscribe));
+    private DisposalAttempt? disposalAttempt;
+    private Action? DisposeAttemptJoinedForTesting { get; set; }
 
     public void Dispose()
     {
+        DisposalAttempt attempt;
+        Action? callback = null;
+        var ownsAttempt = false;
         lock (sync)
         {
             if (unsubscribe is null)
@@ -231,9 +237,80 @@ public sealed class NearbyPlatformSubscription(
                 return;
             }
 
-            unsubscribe();
-            unsubscribe = null;
+            if (disposalAttempt is null)
+            {
+                attempt = new DisposalAttempt();
+                disposalAttempt = attempt;
+                callback = unsubscribe;
+                ownsAttempt = true;
+            }
+            else
+            {
+                attempt = disposalAttempt;
+            }
         }
+
+        if (!ownsAttempt)
+        {
+            if (ReferenceEquals(callbackAttempt.Value, attempt))
+            {
+                return;
+            }
+
+            DisposeAttemptJoinedForTesting?.Invoke();
+            attempt.Completion.Task.GetAwaiter().GetResult();
+            if (attempt.Failed)
+            {
+                throw SubscriptionFailure();
+            }
+
+            return;
+        }
+
+        var failed = false;
+        var previousAttempt = callbackAttempt.Value;
+        callbackAttempt.Value = attempt;
+        try
+        {
+            callback!();
+        }
+        catch
+        {
+            failed = true;
+        }
+        finally
+        {
+            callbackAttempt.Value = previousAttempt;
+            lock (sync)
+            {
+                if (!failed)
+                {
+                    unsubscribe = null;
+                }
+
+                attempt.Failed = failed;
+                attempt.Completion.TrySetResult();
+                if (ReferenceEquals(disposalAttempt, attempt))
+                {
+                    disposalAttempt = null;
+                }
+            }
+        }
+
+        if (failed)
+        {
+            throw SubscriptionFailure();
+        }
+    }
+
+    private static NearbyRadioTransitionException SubscriptionFailure() =>
+        new(NearbyRadioTransitionError.StateReadFailed);
+
+    private sealed class DisposalAttempt
+    {
+        public TaskCompletionSource Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Failed { get; set; }
     }
 }
 

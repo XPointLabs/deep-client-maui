@@ -1,3 +1,4 @@
+using System.Reflection;
 using Deep.Client.Maui.Core.Services;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
@@ -86,7 +87,7 @@ public sealed class NearbyPolicyCorrectiveC11Tests
             TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFirst = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        using var callersReady = new CountdownEvent(4);
+        using var callersJoined = new CountdownEvent(4);
         var unsubscribeCalls = 0;
         var subscription = new NearbyPlatformSubscription(() =>
         {
@@ -97,17 +98,21 @@ public sealed class NearbyPolicyCorrectiveC11Tests
                 throw new InvalidOperationException("unsubscribe-secret");
             }
         });
+        var joinedHook = typeof(NearbyPlatformSubscription).GetProperty(
+            "DisposeAttemptJoinedForTesting",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(joinedHook);
+        joinedHook.SetValue(
+            subscription,
+            new Action(() => callersJoined.Signal()));
 
         var owner = Task.Run(() => Record.Exception(subscription.Dispose));
         await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
         var callers = Enumerable.Range(0, 4)
             .Select(_ => Task.Run(() =>
-            {
-                callersReady.Signal();
-                return Record.Exception(subscription.Dispose);
-            }))
+                Record.Exception(subscription.Dispose)))
             .ToArray();
-        Assert.True(callersReady.Wait(TimeSpan.FromSeconds(2)));
+        Assert.True(callersJoined.Wait(TimeSpan.FromSeconds(2)));
         releaseFirst.TrySetResult();
 
         var failures = await Task.WhenAll(callers.Prepend(owner))
