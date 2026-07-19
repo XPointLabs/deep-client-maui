@@ -5,7 +5,7 @@ namespace Deep.Client.Maui.ViewModels.Tests.Services;
 public sealed class NearbyPolicyCoordinatorTests
 {
     [Fact]
-    public async Task DefaultAndRestartRemainOffWithoutRestoringSavedIntent()
+    public async Task DefaultRestartAndLifecycleSignalsNeverRestoreSavedIntent()
     {
         var environment = new TestEnvironment();
         environment.IntentStore.Saved = new NearbyModeIntent(
@@ -13,6 +13,12 @@ public sealed class NearbyPolicyCoordinatorTests
             NearbyPolicyConstants.DefaultEmergencyDuration);
 
         await using var coordinator = environment.CreateCoordinator();
+        for (var signal = 0; signal < 4; signal++)
+        {
+            environment.Platform.Set(environment.Platform.Snapshot);
+        }
+
+        await coordinator.DrainAsync();
 
         Assert.Equal(NearbyUserMode.Off, coordinator.Snapshot.DesiredMode);
         Assert.Equal(NearbyEffectiveState.Stopped, coordinator.Snapshot.EffectiveState);
@@ -47,6 +53,7 @@ public sealed class NearbyPolicyCoordinatorTests
     [InlineData("background")]
     [InlineData("permission")]
     [InlineData("bluetooth")]
+    [InlineData("location")]
     [InlineData("battery")]
     [InlineData("thermal")]
     public async Task UnsafePlatformTransitionStopsExactlyOnce(string transition)
@@ -60,6 +67,7 @@ public sealed class NearbyPolicyCoordinatorTests
             "background" => environment.Platform.Snapshot with { IsForeground = false },
             "permission" => environment.Platform.Snapshot with { HasRequiredPermission = false },
             "bluetooth" => environment.Platform.Snapshot with { IsBluetoothEnabled = false },
+            "location" => environment.Platform.Snapshot with { IsLocationAvailable = false },
             "battery" => environment.Platform.Snapshot with { BatteryPercent = 15 },
             "thermal" => environment.Platform.Snapshot with
             {
@@ -136,6 +144,8 @@ public sealed class NearbyPolicyCoordinatorTests
 
         var starting = coordinator.StartAsync(NearbyUserMode.ForegroundEmergency);
         await environment.Radio.StartEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(NearbyEffectiveState.Starting, coordinator.Snapshot.EffectiveState);
+        Assert.False(coordinator.Snapshot.Polling.SuppressManagedNetworkPolling);
         var stopping = coordinator.StopAsync();
         environment.Radio.ReleaseStart();
         await Task.WhenAll(starting, stopping);
@@ -144,6 +154,45 @@ public sealed class NearbyPolicyCoordinatorTests
         Assert.Equal(NearbyUserMode.Off, coordinator.Snapshot.DesiredMode);
         Assert.False(coordinator.Snapshot.Polling.SuppressManagedNetworkPolling);
         Assert.Equal(1, environment.Radio.StartCalls);
+        Assert.Equal(1, environment.Radio.StopCalls);
+        Assert.Equal(1, environment.Radio.MaximumConcurrentCalls);
+    }
+
+    [Fact]
+    public async Task CallerCancellationStopsAttemptAndDoesNotPersistActivity()
+    {
+        var environment = new TestEnvironment();
+        environment.Radio.BlockStart = true;
+        await using var coordinator = environment.CreateCoordinator();
+        using var cancellation = new CancellationTokenSource();
+
+        var starting = coordinator.StartAsync(
+            NearbyUserMode.ForegroundEmergency,
+            cancellationToken: cancellation.Token);
+        await environment.Radio.StartEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await starting);
+        Assert.Equal(NearbyEffectiveState.Stopped, coordinator.Snapshot.EffectiveState);
+        Assert.False(coordinator.Snapshot.Polling.SuppressManagedNetworkPolling);
+        Assert.Equal(1, environment.Radio.StopCalls);
+    }
+
+    [Fact]
+    public async Task CapabilityChangeStopsActiveAttemptFailClosed()
+    {
+        var environment = new TestEnvironment();
+        await using var coordinator = environment.CreateCoordinator();
+        await coordinator.StartAsync(NearbyUserMode.ForegroundEmergency);
+
+        environment.Radio.CapabilityValue = new NearbyRadioCapability(
+            NearbyRadioSupport.DisabledPendingReview,
+            "review required");
+        await coordinator.RefreshAsync();
+
+        Assert.Equal(NearbyEffectiveState.Stopped, coordinator.Snapshot.EffectiveState);
+        Assert.Equal(NearbyStopReason.CapabilityChanged, coordinator.Snapshot.StopReason);
         Assert.Equal(1, environment.Radio.StopCalls);
     }
 
@@ -201,6 +250,15 @@ public sealed class NearbyPolicyCoordinatorTests
         Assert.DoesNotContain(
             environment.IntentStore.Saved.GetType().GetProperties(),
             property => property.Name.Contains("Active", StringComparison.Ordinal));
+
+        await coordinator.StopAsync();
+        await coordinator.StartAsync(
+            NearbyUserMode.ForegroundEmergency,
+            NearbyPolicyConstants.MaximumEmergencyDuration);
+        Assert.Equal(
+            NearbyPolicyConstants.MaximumEmergencyDuration,
+            environment.Radio.LastSession!.EmergencyDeadline -
+            environment.Clock.MonotonicNow);
     }
 
     [Fact]
@@ -362,6 +420,8 @@ public sealed class NearbyPolicyCoordinatorTests
     {
         private readonly TaskCompletionSource releaseStart =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int concurrentCalls;
+        private int maximumConcurrentCalls;
 
         public NearbyRadioCapability CapabilityValue { get; set; } =
             new(NearbyRadioSupport.Supported, "test");
@@ -369,6 +429,8 @@ public sealed class NearbyPolicyCoordinatorTests
         public NearbyRadioCapability Capability => CapabilityValue;
         public int StartCalls { get; private set; }
         public int StopCalls { get; private set; }
+        public int MaximumConcurrentCalls => Volatile.Read(
+            ref maximumConcurrentCalls);
         public bool BlockStart { get; set; }
         public bool IgnoreStartCancellation { get; set; }
         public bool ThrowOnStart { get; set; }
@@ -381,24 +443,32 @@ public sealed class NearbyPolicyCoordinatorTests
             NearbyRadioSession request,
             CancellationToken cancellationToken)
         {
+            EnterCall();
             StartCalls++;
             LastSession = request;
             StartEntered.TrySetResult();
-            if (ThrowOnStart)
+            try
             {
-                throw new InvalidOperationException("radio start failed");
-            }
+                if (ThrowOnStart)
+                {
+                    throw new InvalidOperationException("radio start failed");
+                }
 
-            if (BlockStart)
+                if (BlockStart)
+                {
+                    if (IgnoreStartCancellation)
+                    {
+                        await releaseStart.Task;
+                    }
+                    else
+                    {
+                        await releaseStart.Task.WaitAsync(cancellationToken);
+                    }
+                }
+            }
+            finally
             {
-                if (IgnoreStartCancellation)
-                {
-                    await releaseStart.Task;
-                }
-                else
-                {
-                    await releaseStart.Task.WaitAsync(cancellationToken);
-                }
+                ExitCall();
             }
         }
 
@@ -407,12 +477,40 @@ public sealed class NearbyPolicyCoordinatorTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            StopCalls++;
-            return ThrowOnStop
-                ? Task.FromException(new InvalidOperationException("radio stop failed"))
-                : Task.CompletedTask;
+            EnterCall();
+            try
+            {
+                StopCalls++;
+                return ThrowOnStop
+                    ? Task.FromException(
+                        new InvalidOperationException("radio stop failed"))
+                    : Task.CompletedTask;
+            }
+            finally
+            {
+                ExitCall();
+            }
         }
 
         public void ReleaseStart() => releaseStart.TrySetResult();
+
+        private void EnterCall()
+        {
+            var current = Interlocked.Increment(ref concurrentCalls);
+            while (true)
+            {
+                var maximum = Volatile.Read(ref maximumConcurrentCalls);
+                if (current <= maximum ||
+                    Interlocked.CompareExchange(
+                        ref maximumConcurrentCalls,
+                        current,
+                        maximum) == maximum)
+                {
+                    return;
+                }
+            }
+        }
+
+        private void ExitCall() => Interlocked.Decrement(ref concurrentCalls);
     }
 }

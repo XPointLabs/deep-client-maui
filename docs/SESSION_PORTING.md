@@ -153,3 +153,20 @@ Session Android references consulted for the platform boundary were its
 `AndroidManifest.xml` FileProvider declaration and `FileProviderUtil.java`.
 They demonstrate general private-file sharing, but not the signed, one-time
 update contract required here, so their broad provider setup was not copied.
+
+## P12A nearby policy shell
+
+P12A adds only a deterministic, fail-closed policy coordinator in
+`Deep.Client.Maui.Core` and explicit disabled Android/unsupported Windows radio
+shells. It does not register either adapter, request or declare BLE/Wi-Fi
+permissions, call platform radio APIs, run a foreground service, exchange a
+payload, or claim that nearby messaging works. Every process start remains
+`Off`; saved settings intent cannot restore an active mode or deadline.
+
+The first safe slice deliberately leaves the existing settings ViewModel/page,
+`MauiProgram.cs`, and platform manifests unchanged. A later reviewed UX slice
+must add honest limitation text, approved emergency-duration controls,
+permission denial/retry/open-settings guidance, and battery/thermal stop
+reasons before a nearby control becomes visible. Production radio registration
+remains blocked on accepted P03D activation, two named physical Android
+devices, measured energy evidence, and Android permission/privacy review.
