@@ -11,24 +11,28 @@ public sealed class NearbyPolicyCorrectiveC7Tests
     public async Task CancellationAtPhysicalStartCompletionCannotReturnSuccess(
         NearbyUserMode mode)
     {
-        var environment = new C7Environment();
-        environment.Radio.BlockStart = true;
-        var coordinator = environment.CreateCoordinator();
-        using var cancellation = new CancellationTokenSource();
+        for (var iteration = 0; iteration < 100; iteration++)
+        {
+            var environment = new C7Environment();
+            environment.Radio.BlockStart = true;
+            var coordinator = environment.CreateCoordinator();
+            using var cancellation = new CancellationTokenSource();
 
-        var starting = coordinator.StartAsync(
-            mode,
-            cancellationToken: cancellation.Token);
-        await environment.Radio.StartEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        cancellation.Cancel();
-        environment.Radio.ReleaseStart();
+            var starting = coordinator.StartAsync(
+                mode,
+                cancellationToken: cancellation.Token);
+            await environment.Radio.StartEntered.Task.WaitAsync(
+                TimeSpan.FromSeconds(2));
+            cancellation.Cancel();
+            environment.Radio.ReleaseStart();
 
-        var failure = await Record.ExceptionAsync(() =>
-            starting.WaitAsync(TimeSpan.FromSeconds(2)));
+            var failure = await Record.ExceptionAsync(() =>
+                starting.WaitAsync(TimeSpan.FromSeconds(2)));
 
-        Assert.IsAssignableFrom<OperationCanceledException>(failure);
-        Assert.Equal(1, environment.Radio.StopCalls);
-        await coordinator.DisposeAsync();
+            Assert.IsAssignableFrom<OperationCanceledException>(failure);
+            Assert.Equal(1, environment.Radio.StopCalls);
+            await coordinator.DisposeAsync();
+        }
     }
 
     [Theory]
@@ -37,23 +41,28 @@ public sealed class NearbyPolicyCorrectiveC7Tests
     public async Task CancellationBeforeFinalContinuationCannotReturnSuccess(
         NearbyUserMode mode)
     {
-        var environment = new C7Environment();
-        environment.Intent.BlockActive = true;
-        var coordinator = environment.CreateCoordinator();
-        using var cancellation = new CancellationTokenSource();
-        var starting = coordinator.StartAsync(
-            mode,
-            cancellationToken: cancellation.Token);
-        await environment.Intent.ActiveEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        for (var iteration = 0; iteration < 100; iteration++)
+        {
+            var environment = new C7Environment();
+            environment.Intent.BlockActive = true;
+            environment.Intent.IgnoreCancellation = true;
+            var coordinator = environment.CreateCoordinator();
+            using var cancellation = new CancellationTokenSource();
+            var starting = coordinator.StartAsync(
+                mode,
+                cancellationToken: cancellation.Token);
+            await environment.Intent.ActiveEntered.Task.WaitAsync(
+                TimeSpan.FromSeconds(2));
 
-        environment.Intent.ReleaseActive();
-        cancellation.Cancel();
-        var failure = await Record.ExceptionAsync(() =>
-            starting.WaitAsync(TimeSpan.FromSeconds(2)));
+            cancellation.Cancel();
+            environment.Intent.ReleaseActive();
+            var failure = await Record.ExceptionAsync(() =>
+                starting.WaitAsync(TimeSpan.FromSeconds(2)));
 
-        Assert.IsAssignableFrom<OperationCanceledException>(failure);
-        Assert.Equal(1, environment.Radio.StopCalls);
-        await coordinator.DisposeAsync();
+            Assert.IsAssignableFrom<OperationCanceledException>(failure);
+            Assert.Equal(1, environment.Radio.StopCalls);
+            await coordinator.DisposeAsync();
+        }
     }
 
     [Theory]
@@ -371,6 +380,7 @@ public sealed class NearbyPolicyCorrectiveC7Tests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public bool BlockActive { get; set; }
+        public bool IgnoreCancellation { get; set; }
         public TaskCompletionSource ActiveEntered { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -382,7 +392,14 @@ public sealed class NearbyPolicyCorrectiveC7Tests
             if (BlockActive && intent.Mode != NearbyUserMode.Off)
             {
                 ActiveEntered.TrySetResult();
-                await activeRelease.Task;
+                if (IgnoreCancellation)
+                {
+                    await activeRelease.Task;
+                }
+                else
+                {
+                    await activeRelease.Task.WaitAsync(cancellationToken);
+                }
             }
         }
 
