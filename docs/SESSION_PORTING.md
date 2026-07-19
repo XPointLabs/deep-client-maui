@@ -216,6 +216,15 @@ Constructor state starts from an infallible `Off` policy without platform,
 capability or clock getters; fallible pre-start admission reads return only the
 fixed typed state-read failure and never start radio.
 
+Pre-start admission reserves a serialized token, releases the coordinator lock,
+and reads platform, capability and clock state under the external-callback
+reentrancy guard. It then revalidates that token under the lock before
+publishing a generation. Synchronous reentry and execution-context-flowing
+asynchronous work from a getter fail fast before state or radio changes, while
+a concurrent explicit stop invalidates the pending admission. UTC display
+deadline and monotonic deadline arithmetic are part of the same sanitized
+state-read boundary, including overflow.
+
 Deadline scheduler failure forces a stop, and explicit refresh independently
 enforces the monotonic deadline. An off-state stop publishes both its final
 intent state and cleared transition before its public task completes, allowing

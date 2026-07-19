@@ -78,6 +78,64 @@ public sealed class NearbyPolicyCorrectiveC9Tests
         Assert.Equal(NearbyEffectiveState.Active, snapshot.EffectiveState);
     }
 
+    [Fact]
+    public async Task UnhandledGetterReentryIsSanitizedWithoutPublishingGeneration()
+    {
+        var environment = new C9Environment();
+        var coordinator = environment.CreateCoordinator();
+        environment.Platform.OnSnapshot = () =>
+        {
+            environment.ClearGetterCallbacks();
+            coordinator.StartAsync(NearbyUserMode.ChargingHub)
+                .GetAwaiter().GetResult();
+        };
+
+        var failure = await Record.ExceptionAsync(() =>
+            coordinator.StartAsync(NearbyUserMode.ForegroundEmergency));
+        var transition = Assert.IsType<NearbyRadioTransitionException>(failure);
+
+        Assert.Equal(NearbyRadioTransitionError.StateReadFailed, transition.Error);
+        Assert.Equal(0, environment.Radio.StartCalls);
+        Assert.Equal(0, environment.Radio.StopCalls);
+        Assert.Equal(NearbyUserMode.Off, coordinator.Snapshot.DesiredMode);
+        Assert.Equal(NearbyEffectiveState.Stopped, coordinator.Snapshot.EffectiveState);
+        await coordinator.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ExplicitStopInvalidatesBlockedAdmissionWithoutRadioWork()
+    {
+        var environment = new C9Environment();
+        var coordinator = environment.CreateCoordinator();
+        var getterEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var getterRelease = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        environment.Platform.OnSnapshot = () =>
+        {
+            environment.ClearGetterCallbacks();
+            getterEntered.TrySetResult();
+            getterRelease.Task.GetAwaiter().GetResult();
+        };
+        var starting = Task.Run(() =>
+            coordinator.StartAsync(NearbyUserMode.ForegroundEmergency));
+        await getterEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var stopFailure = await Record.ExceptionAsync(() =>
+            coordinator.StopAsync().WaitAsync(TimeSpan.FromSeconds(2)));
+        getterRelease.TrySetResult();
+        var startFailure = await Record.ExceptionAsync(() =>
+            starting.WaitAsync(TimeSpan.FromSeconds(2)));
+
+        Assert.Null(stopFailure);
+        Assert.IsType<NearbyCoordinatorBusyException>(startFailure);
+        Assert.Equal(0, environment.Radio.StartCalls);
+        Assert.Equal(0, environment.Radio.StopCalls);
+        Assert.Equal(NearbyUserMode.Off, coordinator.Snapshot.DesiredMode);
+        Assert.Equal(NearbyEffectiveState.Stopped, coordinator.Snapshot.EffectiveState);
+        await coordinator.DisposeAsync();
+    }
+
     [Theory]
     [InlineData("utc")]
     [InlineData("monotonic")]

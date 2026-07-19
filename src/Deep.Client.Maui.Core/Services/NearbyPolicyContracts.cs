@@ -388,6 +388,8 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
     private int pendingIntentOperations;
     private int intentGeneration;
     private int generation;
+    private long admissionSequence;
+    private long activeAdmission;
     private NearbyCoordinatorLifecycle lifecycle =
         NearbyCoordinatorLifecycle.Running;
 
@@ -456,81 +458,150 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         TimeSpan? duration = mode == NearbyUserMode.ForegroundEmergency
             ? emergencyDuration ?? NearbyPolicyConstants.DefaultEmergencyDuration
             : null;
-        NearbyAttempt attempt;
+        long admission;
         lock (sync)
         {
             ThrowIfNotRunningLocked();
             if (currentAttempt is not null ||
                 stopTask is not null ||
+                activeAdmission != 0 ||
                 Volatile.Read(ref pendingIntentOperations) > 0 ||
                 snapshot.EffectiveState == NearbyEffectiveState.StopFailed)
             {
                 throw new NearbyCoordinatorBusyException();
             }
 
-            NearbyPlatformSnapshot platformSnapshot;
-            NearbyRadioCapability capability;
-            try
-            {
-                platformSnapshot = platform.Snapshot;
-                capability = radio.Capability;
-            }
-            catch
-            {
-                throw new NearbyRadioTransitionException(
-                    NearbyRadioTransitionError.StateReadFailed);
-            }
-
-            var policy = NearbyPolicyEvaluator.Evaluate(
-                mode,
-                platformSnapshot,
-                capability,
-                isActive: false,
-                duration);
-            if (!policy.MayStart)
-            {
-                throw new NearbyPolicyDeniedException(policy.DenialReason);
-            }
-
-            DateTimeOffset startedAt;
-            TimeSpan? monotonicDeadline;
-            try
-            {
-                startedAt = clock.UtcNow;
-                monotonicDeadline = duration is null
-                    ? null
-                    : clock.MonotonicNow + duration.Value;
-            }
-            catch
-            {
-                throw new NearbyRadioTransitionException(
-                    NearbyRadioTransitionError.StateReadFailed);
-            }
-
-            attempt = new NearbyAttempt(
-                ++generation,
-                mode,
-                duration,
-                capability,
-                new NearbyRadioSession(
-                    mode,
-                    startedAt,
-                    monotonicDeadline),
-                duration is null ? null : startedAt + duration.Value);
-            currentAttempt = attempt;
-            snapshot = new NearbyCoordinatorSnapshot(
-                mode,
-                NearbyEffectiveState.Starting,
-                StopReason: null,
-                policy,
-                Polling(suppress: false),
-                attempt.EmergencyEndsAtUtc);
-            attempt.StartTask = RunStartAsync(
-                attempt,
-                cancellationToken);
+            admission = ++admissionSequence;
+            activeAdmission = admission;
         }
 
+        NearbyAdmissionRead admissionRead;
+        NearbyAttempt? admittedAttempt = null;
+        try
+        {
+            admissionRead = ReadAdmission(mode, duration);
+            lock (sync)
+            {
+                ThrowIfNotRunningLocked();
+                if (activeAdmission != admission ||
+                    currentAttempt is not null ||
+                    stopTask is not null ||
+                    Volatile.Read(ref pendingIntentOperations) > 0 ||
+                    snapshot.EffectiveState == NearbyEffectiveState.StopFailed)
+                {
+                    throw new NearbyCoordinatorBusyException();
+                }
+
+                if (!admissionRead.Policy.MayStart)
+                {
+                    throw new NearbyPolicyDeniedException(
+                        admissionRead.Policy.DenialReason);
+                }
+
+                admittedAttempt = new NearbyAttempt(
+                    ++generation,
+                    mode,
+                    duration,
+                    admissionRead.Capability,
+                    new NearbyRadioSession(
+                        mode,
+                        admissionRead.StartedAtUtc,
+                        admissionRead.MonotonicDeadline),
+                    admissionRead.EmergencyEndsAtUtc);
+                currentAttempt = admittedAttempt;
+                snapshot = new NearbyCoordinatorSnapshot(
+                    mode,
+                    NearbyEffectiveState.Starting,
+                    StopReason: null,
+                    admissionRead.Policy,
+                    Polling(suppress: false),
+                    admittedAttempt.EmergencyEndsAtUtc);
+                activeAdmission = 0;
+            }
+        }
+        catch
+        {
+            ReleaseAdmission(admission);
+            throw;
+        }
+
+        var attempt = admittedAttempt!;
+        attempt.StartTask = RunStartAsync(
+            attempt,
+            cancellationToken);
         await attempt.StartTask.ConfigureAwait(false);
+    }
+
+    private NearbyAdmissionRead ReadAdmission(
+        NearbyUserMode mode,
+        TimeSpan? duration)
+    {
+        try
+        {
+            return InvokeExternalCallback(() =>
+            {
+                var platformSnapshot = platform.Snapshot;
+                var capability = radio.Capability;
+                var policy = NearbyPolicyEvaluator.Evaluate(
+                    mode,
+                    platformSnapshot,
+                    capability,
+                    isActive: false,
+                    duration);
+                if (!policy.MayStart)
+                {
+                    return new NearbyAdmissionRead(
+                        capability,
+                        policy,
+                        StartedAtUtc: default,
+                        MonotonicDeadline: null,
+                        EmergencyEndsAtUtc: null);
+                }
+
+                var startedAt = clock.UtcNow;
+                TimeSpan? monotonicDeadline = duration is null
+                    ? null
+                    : clock.MonotonicNow + duration.Value;
+                DateTimeOffset? emergencyEndsAtUtc = duration is null
+                    ? null
+                    : startedAt + duration.Value;
+                return new NearbyAdmissionRead(
+                    capability,
+                    policy,
+                    startedAt,
+                    monotonicDeadline,
+                    emergencyEndsAtUtc);
+            });
+        }
+        catch
+        {
+            throw new NearbyRadioTransitionException(
+                NearbyRadioTransitionError.StateReadFailed);
+        }
+    }
+
+    private void ReleaseAdmission(long admission)
+    {
+        lock (sync)
+        {
+            if (activeAdmission == admission)
+            {
+                activeAdmission = 0;
+            }
+        }
+    }
+
+    private T InvokeExternalCallback<T>(Func<T> callback)
+    {
+        externalCallbackDepth.Value++;
+        try
+        {
+            return callback();
+        }
+        finally
+        {
+            externalCallbackDepth.Value--;
+        }
     }
 
     public async Task StopAsync(
@@ -542,6 +613,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         lock (sync)
         {
             ThrowIfNotRunningLocked();
+            activeAdmission = 0;
         }
 
         await StopCurrentAttemptAsync(reason).ConfigureAwait(false);
@@ -569,15 +641,25 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         TimeSpan monotonicNow;
         try
         {
-            monotonicNow = clock.MonotonicNow;
-            capability = radio.Capability;
-            policy = NearbyPolicyEvaluator.Evaluate(
-                attempt.Mode,
-                platform.Snapshot,
-                capability,
-                isActive: Snapshot.EffectiveState ==
-                    NearbyEffectiveState.Active,
-                attempt.Duration);
+            var read = InvokeExternalCallback(() =>
+            {
+                var currentMonotonic = clock.MonotonicNow;
+                var currentCapability = radio.Capability;
+                var currentPolicy = NearbyPolicyEvaluator.Evaluate(
+                    attempt.Mode,
+                    platform.Snapshot,
+                    currentCapability,
+                    isActive: Snapshot.EffectiveState ==
+                        NearbyEffectiveState.Active,
+                    attempt.Duration);
+                return (
+                    MonotonicNow: currentMonotonic,
+                    Capability: currentCapability,
+                    Policy: currentPolicy);
+            });
+            monotonicNow = read.MonotonicNow;
+            capability = read.Capability;
+            policy = read.Policy;
         }
         catch
         {
@@ -669,7 +751,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                     {
                         deadlineReached =
                             attempt.Session.EmergencyDeadline <=
-                            clock.MonotonicNow;
+                            InvokeExternalCallback(() => clock.MonotonicNow);
                     }
                     catch
                     {
@@ -930,7 +1012,8 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             TimeSpan remaining;
             try
             {
-                remaining = deadline - clock.MonotonicNow;
+                remaining = deadline -
+                    InvokeExternalCallback(() => clock.MonotonicNow);
             }
             catch
             {
@@ -959,9 +1042,10 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
             try
             {
-                deadlineDelay = clock.DelayAsync(
-                    remaining,
-                    attempt.Cancellation.Token);
+                deadlineDelay = InvokeExternalCallback(() =>
+                    clock.DelayAsync(
+                        remaining,
+                        attempt.Cancellation.Token));
                 if (deadlineDelay.IsCompleted)
                 {
                     await deadlineDelay.ConfigureAwait(false);
@@ -1095,14 +1179,24 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         TimeSpan postStartMonotonic = default;
         try
         {
-            postStartMonotonic = clock.MonotonicNow;
-            postStartCapability = radio.Capability;
-            postStartPolicy = NearbyPolicyEvaluator.Evaluate(
-                attempt.Mode,
-                platform.Snapshot,
-                postStartCapability,
-                isActive: true,
-                attempt.Duration);
+            var read = InvokeExternalCallback(() =>
+            {
+                var currentMonotonic = clock.MonotonicNow;
+                var currentCapability = radio.Capability;
+                var currentPolicy = NearbyPolicyEvaluator.Evaluate(
+                    attempt.Mode,
+                    platform.Snapshot,
+                    currentCapability,
+                    isActive: true,
+                    attempt.Duration);
+                return (
+                    MonotonicNow: currentMonotonic,
+                    Capability: currentCapability,
+                    Policy: currentPolicy);
+            });
+            postStartMonotonic = read.MonotonicNow;
+            postStartCapability = read.Capability;
+            postStartPolicy = read.Policy;
         }
         catch
         {
@@ -1637,6 +1731,11 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
     {
         _ = sender;
         _ = value;
+        lock (sync)
+        {
+            activeAdmission = 0;
+        }
+
         lock (eventSync)
         {
             lastPlatformTransition = ContinuePlatformTransitionAsync(
@@ -1696,6 +1795,13 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         Disposing,
         Disposed
     }
+
+    private sealed record NearbyAdmissionRead(
+        NearbyRadioCapability Capability,
+        NearbyPolicyResult Policy,
+        DateTimeOffset StartedAtUtc,
+        TimeSpan? MonotonicDeadline,
+        DateTimeOffset? EmergencyEndsAtUtc);
 
     private static NearbyCoordinatorSnapshot StoppedSnapshot(
         NearbyStopReason? reason,
