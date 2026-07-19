@@ -203,6 +203,15 @@ cancellation-ignoring intent store later throws a normal exception, and the
 obsolete observer cannot affect a later generation. Cleanup also completes the
 observer signal when another stop won the race, so later caller cancellation
 cannot leave the original start waiting forever.
+
+Stop first publishes the detached generation, conservative `Stopping` snapshot
+and shared completion task under the coordinator lock. Cancellation callbacks
+then run outside that lock through an asynchronously observed cancellation
+source; callback faults are swallowed at the trust boundary and cannot prevent
+the independently started physical stop or `Off` reconciliation. Caller tokens
+are observed separately instead of being directly linked to provider callbacks,
+so a provider exception cannot escape from the caller's own `Cancel()` call.
+
 Constructor state starts from an infallible `Off` policy without platform,
 capability or clock getters; fallible pre-start admission reads return only the
 fixed typed state-read failure and never start radio.
@@ -226,4 +235,7 @@ controlled dormant platform adapters, whereas arbitrary throwing `add/remove`
 accessors cannot prove that a handler was not retained. Subscription failure is
 redacted. Lease-disposal failure is also redacted, does not dispose the
 coordinator gate or claim success, retains the same lease for retry, and leaves
-an idempotent cleanup path after physical and persistence cleanup.
+an idempotent cleanup path after physical and persistence cleanup. Lease
+disposal runs under the same external-callback reentrancy guard as radio and
+intent callbacks, so nested drain/dispose calls fail immediately rather than
+joining their own disposal task.

@@ -772,8 +772,16 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
             try
             {
-                platformSubscription?.Dispose();
-                platformSubscription = null;
+                externalCallbackDepth.Value++;
+                try
+                {
+                    platformSubscription?.Dispose();
+                    platformSubscription = null;
+                }
+                finally
+                {
+                    externalCallbackDepth.Value--;
+                }
             }
             catch
             {
@@ -807,8 +815,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
     {
         using var linkedCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(
-                attempt.Cancellation.Token,
-                callerCancellation);
+                attempt.Cancellation.Token);
         try
         {
             var callerCancellationRegistration = callerCancellation.Register(
@@ -1266,7 +1273,6 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
             currentAttempt = null;
             generation++;
-            attempt.Cancellation.Cancel();
             snapshot = snapshot with
             {
                 DesiredMode = NearbyUserMode.Off,
@@ -1281,13 +1287,39 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             task = stopTask;
         }
 
+        Task? cancellationCallbacks = null;
+        try
+        {
+            cancellationCallbacks = attempt.Cancellation.CancelAsync();
+        }
+        catch
+        {
+        }
+
         _ = CompleteStopAsync(
             attempt,
             reason,
             awaitStart,
             persistOff,
             completion);
+        if (cancellationCallbacks is not null)
+        {
+            _ = ObserveCancellationCallbacksAsync(cancellationCallbacks);
+        }
+
         return task;
+    }
+
+    private static async Task ObserveCancellationCallbacksAsync(
+        Task cancellationCallbacks)
+    {
+        try
+        {
+            await cancellationCallbacks.ConfigureAwait(false);
+        }
+        catch
+        {
+        }
     }
 
     private Task BeginUnknownPhysicalStop(NearbyStopReason reason)
