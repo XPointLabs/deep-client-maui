@@ -85,12 +85,11 @@ public sealed class NearbyPolicyCorrectiveC5Tests
     }
 
     [Fact]
-    public void AddThenThrowAndCompensatingRemoveThrowCannotRetainHandler()
+    public void AtomicRejectedSubscriptionCannotRetainHandler()
     {
         var environment = new C5Environment();
         environment.Platform.AddBeforeThrow = true;
         environment.Platform.ThrowOnAdd = true;
-        environment.Platform.ThrowOnRemove = true;
 
         var failure = Record.Exception(() => environment.CreateCoordinator());
 
@@ -233,29 +232,25 @@ public sealed class NearbyPolicyCorrectiveC5Tests
             BatteryPercent: 80,
             ThermalState: NearbyThermalState.Nominal);
 
-        public event EventHandler<NearbyPlatformSnapshot>? Changed
+        public bool TrySubscribe(
+            EventHandler<NearbyPlatformSnapshot> handler,
+            out INearbyPlatformSubscription? subscription)
         {
-            add
+            if (ThrowOnAdd)
             {
-                if (!ThrowOnAdd || AddBeforeThrow)
-                {
-                    changed += value;
-                }
-
-                if (ThrowOnAdd)
-                {
-                    throw new InvalidOperationException("subscription-secret");
-                }
-            }
-            remove
-            {
-                if (ThrowOnRemove)
+                subscription = null;
+                if (AddBeforeThrow)
                 {
                     throw new InvalidOperationException("subscription-secret");
                 }
 
-                changed -= value;
+                return false;
             }
+
+            changed += handler;
+            subscription = new NearbyPlatformSubscription(
+                () => changed -= handler);
+            return true;
         }
 
         public void Set(NearbyPlatformSnapshot value)

@@ -173,11 +173,10 @@ public sealed class NearbyPolicyCorrectiveC3Tests
                 ? throw new InvalidOperationException("platform-secret")
                 : inner.Snapshot;
 
-            public event EventHandler<NearbyPlatformSnapshot>? Changed
-            {
-                add => inner.Changed += value;
-                remove => inner.Changed -= value;
-            }
+            public bool TrySubscribe(
+                EventHandler<NearbyPlatformSnapshot> handler,
+                out INearbyPlatformSubscription? subscription) =>
+                inner.TrySubscribe(handler, out subscription);
         }
 
         public sealed class RadioProxy(
@@ -214,10 +213,13 @@ public sealed class NearbyPolicyCorrectiveC3Tests
             BatteryPercent: 80,
             ThermalState: NearbyThermalState.Nominal);
 
-        public event EventHandler<NearbyPlatformSnapshot>? Changed
+        public bool TrySubscribe(
+            EventHandler<NearbyPlatformSnapshot> handler,
+            out INearbyPlatformSubscription? subscription)
         {
-            add { }
-            remove { }
+            _ = handler;
+            subscription = new NearbyPlatformSubscription(() => { });
+            return true;
         }
     }
 

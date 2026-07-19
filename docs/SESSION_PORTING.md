@@ -193,10 +193,16 @@ The monotonic deadline observer is armed immediately after physical start and
 before active-intent persistence, so a stalled or cancellation-ignoring settings
 store cannot postpone physical deadline stop. Disposal likewise initiates and
 joins physical stop before draining platform events or intent reconciliation.
-Caller cancellation has the same generation-bound physical-stop observer after
-adapter start, including charging-hub sessions with no deadline; the original
-start completes with a sanitized cancellation only after serialized `Off`
-reconciliation, and the obsolete observer cannot affect a later generation.
+Caller cancellation registers its generation-bound physical-stop observer
+before adapter start, including charging-hub sessions with no deadline. A
+disposed `CancellationTokenSource` does not invalidate an already obtained
+token on the supported .NET runtime; canceled disposed tokens are still denied
+before physical start. The original start completes with a sanitized
+cancellation only after serialized `Off` reconciliation, even when a
+cancellation-ignoring intent store later throws a normal exception, and the
+obsolete observer cannot affect a later generation. Cleanup also completes the
+observer signal when another stop won the race, so later caller cancellation
+cannot leave the original start waiting forever.
 Constructor state starts from an infallible `Off` policy without platform,
 capability or clock getters; fallible pre-start admission reads return only the
 fixed typed state-read failure and never start radio.
@@ -213,8 +219,11 @@ Disposal cannot report success or dispose the transition gate in this state; an
 explicit stop or later disposal may retry cleanup. This dormant state is not
 evidence that a radio session is active or that nearby delivery works.
 
-Platform lifecycle event accessors are also treated as fallible boundaries.
-Constructor subscription failure is redacted and followed by a best-effort
-unsubscribe for partially applied `add`; disposal unsubscribe failure is
-redacted, does not dispose the coordinator gate or claim success, and leaves an
-idempotent retry path after physical and persistence cleanup.
+Platform lifecycle observation uses a failure-atomic `TrySubscribe` contract,
+not C# custom event accessors: false or an exception must retain no handler, and
+success returns an owned subscription lease. This is enforceable for the
+controlled dormant platform adapters, whereas arbitrary throwing `add/remove`
+accessors cannot prove that a handler was not retained. Subscription failure is
+redacted. Lease-disposal failure is also redacted, does not dispose the
+coordinator gate or claim success, retains the same lease for retry, and leaves
+an idempotent cleanup path after physical and persistence cleanup.

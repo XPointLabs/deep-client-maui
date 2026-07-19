@@ -204,7 +204,37 @@ public interface INearbyPlatformState
 {
     NearbyPlatformSnapshot Snapshot { get; }
 
-    event EventHandler<NearbyPlatformSnapshot>? Changed;
+    // Failure is atomic: false or an exception must retain no handler.
+    // A successful lease must support idempotent disposal and retry on failure.
+    bool TrySubscribe(
+        EventHandler<NearbyPlatformSnapshot> handler,
+        out INearbyPlatformSubscription? subscription);
+}
+
+public interface INearbyPlatformSubscription : IDisposable
+{
+}
+
+public sealed class NearbyPlatformSubscription(
+    Action unsubscribe) : INearbyPlatformSubscription
+{
+    private readonly object sync = new();
+    private Action? unsubscribe = unsubscribe ??
+        throw new ArgumentNullException(nameof(unsubscribe));
+
+    public void Dispose()
+    {
+        lock (sync)
+        {
+            if (unsubscribe is null)
+            {
+                return;
+            }
+
+            unsubscribe();
+            unsubscribe = null;
+        }
+    }
 }
 
 public interface INearbyClock
@@ -348,6 +378,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
     private readonly INearbyPlatformState platform;
     private readonly INearbyClock clock;
     private readonly INearbyModeIntentStore? intentStore;
+    private INearbyPlatformSubscription? platformSubscription;
     private NearbyCoordinatorSnapshot snapshot;
     private NearbyAttempt? currentAttempt;
     private Task? stopTask;
@@ -376,18 +407,21 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             OffPolicy());
         try
         {
-            platform.Changed += OnPlatformChanged;
+            if (!platform.TrySubscribe(
+                    OnPlatformChanged,
+                    out platformSubscription) ||
+                platformSubscription is null)
+            {
+                throw new NearbyRadioTransitionException(
+                    NearbyRadioTransitionError.StateReadFailed);
+            }
+        }
+        catch (NearbyRadioTransitionException)
+        {
+            throw;
         }
         catch
         {
-            try
-            {
-                platform.Changed -= OnPlatformChanged;
-            }
-            catch
-            {
-            }
-
             throw new NearbyRadioTransitionException(
                 NearbyRadioTransitionError.StateReadFailed);
         }
@@ -738,7 +772,8 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
             try
             {
-                platform.Changed -= OnPlatformChanged;
+                platformSubscription?.Dispose();
+                platformSubscription = null;
             }
             catch
             {
@@ -776,6 +811,32 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 callerCancellation);
         try
         {
+            var callerCancellationRegistration = callerCancellation.Register(
+                () => ObserveCallerCancellation(attempt));
+            attempt.AttachCallerCancellation(callerCancellationRegistration);
+        }
+        catch
+        {
+            attempt.PhysicalStartCompletion.TrySetResult();
+            await StopAttemptAsync(
+                attempt,
+                NearbyStopReason.Cancelled,
+                awaitStart: false,
+                persistOff: false).ConfigureAwait(false);
+            throw new NearbyRadioTransitionException(
+                NearbyRadioTransitionError.StateReadFailed);
+        }
+
+        if (callerCancellation.IsCancellationRequested)
+        {
+            attempt.PhysicalStartCompletion.TrySetResult();
+            await AwaitCallerCancellationCleanupAsync(attempt)
+                .ConfigureAwait(false);
+            throw new OperationCanceledException(callerCancellation);
+        }
+
+        try
+        {
             await InvokeAdapterStartAndSignalAsync(
                 attempt,
                 linkedCancellation.Token).ConfigureAwait(false);
@@ -802,6 +863,8 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
             if (callerCancellation.IsCancellationRequested)
             {
+                await AwaitCallerCancellationCleanupAsync(attempt)
+                    .ConfigureAwait(false);
                 throw new OperationCanceledException(callerCancellation);
             }
 
@@ -809,6 +872,13 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         }
         catch
         {
+            if (callerCancellation.IsCancellationRequested)
+            {
+                await AwaitCallerCancellationCleanupAsync(attempt)
+                    .ConfigureAwait(false);
+                throw new OperationCanceledException(callerCancellation);
+            }
+
             if (IsCurrentAttempt(attempt))
             {
                 await StopAttemptAsync(
@@ -835,6 +905,8 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
             if (callerCancellation.IsCancellationRequested)
             {
+                await AwaitCallerCancellationCleanupAsync(attempt)
+                    .ConfigureAwait(false);
                 throw new OperationCanceledException(callerCancellation);
             }
 
@@ -844,16 +916,6 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         if (!IsCurrentAttempt(attempt))
         {
             return;
-        }
-
-        var callerCancellationRegistration = callerCancellation.Register(
-            () => ObserveCallerCancellation(attempt));
-        attempt.AttachCallerCancellation(callerCancellationRegistration);
-        if (callerCancellation.IsCancellationRequested)
-        {
-            await AwaitCallerCancellationCleanupAsync(attempt)
-                .ConfigureAwait(false);
-            throw new OperationCanceledException(callerCancellation);
         }
 
         Task? deadlineDelay = null;
@@ -979,6 +1041,15 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                     attempt,
                     NearbyStopReason.StartFailed,
                     awaitStart: false).ConfigureAwait(false);
+                if (callerCancellation.IsCancellationRequested)
+                {
+                    await AwaitCallerCancellationCleanupAsync(
+                        attempt,
+                        physicalStopAlreadyJoined: true)
+                        .ConfigureAwait(false);
+                    throw new OperationCanceledException(callerCancellation);
+                }
+
                 throw new NearbyRadioTransitionException(
                     NearbyRadioTransitionError.IntentCommitFailed);
             }
@@ -1101,7 +1172,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         var cleanup = StopAttemptAsync(
             attempt,
             NearbyStopReason.Cancelled,
-            awaitStart: false);
+            awaitStart: true);
         attempt.SetCallerCancellationCleanup(cleanup);
     }
 
@@ -1699,18 +1770,29 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         public void DisposeCallerCancellation()
         {
             CancellationTokenRegistration registration;
+            var completeObservation = false;
             lock (cancellationSync)
             {
                 registration = callerCancellationRegistration;
                 callerCancellationRegistration = default;
+                if (!CallerCancellationObserved.Task.IsCompleted)
+                {
+                    CallerCancellationCleanup = Task.CompletedTask;
+                    completeObservation = true;
+                }
             }
 
             registration.Unregister();
+            if (completeObservation)
+            {
+                CallerCancellationObserved.TrySetResult();
+            }
         }
 
         public void DisposeResources()
         {
             CancellationTokenRegistration registration;
+            var completeObservation = false;
             lock (cancellationSync)
             {
                 if (resourcesDisposed)
@@ -1721,9 +1803,19 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 resourcesDisposed = true;
                 registration = callerCancellationRegistration;
                 callerCancellationRegistration = default;
+                if (!CallerCancellationObserved.Task.IsCompleted)
+                {
+                    CallerCancellationCleanup = Task.CompletedTask;
+                    completeObservation = true;
+                }
             }
 
             registration.Unregister();
+            if (completeObservation)
+            {
+                CallerCancellationObserved.TrySetResult();
+            }
+
             Cancellation.Dispose();
         }
     }

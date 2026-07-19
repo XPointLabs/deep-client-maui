@@ -56,12 +56,12 @@ public sealed class NearbyPolicyCorrectiveC4Tests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ConstructorSanitizesChangedAddFailureAndUndoesPartialAdd(
-        bool addBeforeThrow)
+    public void ConstructorSanitizesAtomicSubscriptionFailure(
+        bool throwInsteadOfReject)
     {
         var environment = new C4Environment();
         environment.Platform.ThrowOnAdd = true;
-        environment.Platform.AddBeforeThrow = addBeforeThrow;
+        environment.Platform.AddBeforeThrow = throwInsteadOfReject;
 
         var failure = Record.Exception(() => environment.CreateCoordinator());
 
@@ -161,34 +161,37 @@ public sealed class NearbyPolicyCorrectiveC4Tests
             BatteryPercent: 80,
             ThermalState: NearbyThermalState.Nominal);
 
-        public event EventHandler<NearbyPlatformSnapshot>? Changed
+        public bool TrySubscribe(
+            EventHandler<NearbyPlatformSnapshot> handler,
+            out INearbyPlatformSubscription? subscription)
         {
-            add
+            if (ThrowOnAdd)
             {
-                if (ThrowOnAdd && !AddBeforeThrow)
+                subscription = null;
+                if (AddBeforeThrow)
                 {
                     throw new InvalidOperationException("add-secret");
                 }
 
-                changed += value;
-                if (ThrowOnAdd)
-                {
-                    throw new InvalidOperationException("add-secret");
-                }
+                return false;
             }
-            remove
+
+            changed += handler;
+            subscription = new NearbyPlatformSubscription(() =>
             {
                 if (ThrowOnRemove && !RemoveBeforeThrow)
                 {
                     throw new InvalidOperationException("remove-secret");
                 }
 
-                changed -= value;
+                changed -= handler;
                 if (ThrowOnRemove)
                 {
                     throw new InvalidOperationException("remove-secret");
                 }
-            }
+
+            });
+            return true;
         }
     }
 

@@ -330,7 +330,17 @@ public sealed class NearbyPolicyCorrectiveC2Tests
             ? throw new InvalidOperationException("platform-secret")
             : snapshot;
 
-        public event EventHandler<NearbyPlatformSnapshot>? Changed;
+        private event EventHandler<NearbyPlatformSnapshot>? Changed;
+
+        public bool TrySubscribe(
+            EventHandler<NearbyPlatformSnapshot> handler,
+            out INearbyPlatformSubscription? subscription)
+        {
+            Changed += handler;
+            subscription = new NearbyPlatformSubscription(
+                () => Changed -= handler);
+            return true;
+        }
 
         public void Set(NearbyPlatformSnapshot value)
         {
