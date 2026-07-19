@@ -78,6 +78,10 @@ public sealed class NearbyPolicyCorrectiveC6Tests
             synchronousTriggerFailure = await Record.ExceptionAsync(() =>
                 coordinator.DrainAsync().WaitAsync(TimeSpan.FromSeconds(2)));
         }
+        else if (trigger is "explicit" or "caller")
+        {
+            await coordinator.DrainAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
 
         Assert.True(physicalStopObserved);
         Assert.Equal(1, environment.Radio.StopCalls);

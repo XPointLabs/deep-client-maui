@@ -1,4 +1,3 @@
-using System.Reflection;
 using Deep.Client.Maui.Core.Services;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
@@ -50,7 +49,7 @@ public sealed class NearbyPolicyCorrectiveC11Tests
     }
 
     [Fact]
-    public async Task ConcurrentDisposeCallersJoinOneSuccessfulUnsubscribe()
+    public async Task ConcurrentDisposeCallersReturnDuringSuccessfulUnsubscribe()
     {
         var entered = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -69,25 +68,22 @@ public sealed class NearbyPolicyCorrectiveC11Tests
         var callers = Enumerable.Range(0, 8)
             .Select(_ => Task.Run(subscription.Dispose))
             .ToArray();
-        await Task.Delay(50);
-        Assert.All(callers, caller => Assert.False(caller.IsCompleted));
+        await Task.WhenAll(callers).WaitAsync(TimeSpan.FromSeconds(2));
 
         release.TrySetResult();
-        await Task.WhenAll(callers.Append(owner)).WaitAsync(
-            TimeSpan.FromSeconds(2));
+        await owner.WaitAsync(TimeSpan.FromSeconds(2));
         subscription.Dispose();
 
         Assert.Equal(1, unsubscribeCalls);
     }
 
     [Fact]
-    public async Task FailedConcurrentAttemptIsSanitizedAndRetryable()
+    public async Task ConcurrentCallersReturnAndFailedOwnerCanRetry()
     {
         var firstEntered = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFirst = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        using var callersJoined = new CountdownEvent(4);
         var unsubscribeCalls = 0;
         var subscription = new NearbyPlatformSubscription(() =>
         {
@@ -98,37 +94,25 @@ public sealed class NearbyPolicyCorrectiveC11Tests
                 throw new InvalidOperationException("unsubscribe-secret");
             }
         });
-        var joinedHook = typeof(NearbyPlatformSubscription).GetProperty(
-            "DisposeAttemptJoinedForTesting",
-            BindingFlags.Instance | BindingFlags.NonPublic);
-        Assert.NotNull(joinedHook);
-        joinedHook.SetValue(
-            subscription,
-            new Action(() => callersJoined.Signal()));
 
         var owner = Task.Run(() => Record.Exception(subscription.Dispose));
         await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
         var callers = Enumerable.Range(0, 4)
-            .Select(_ => Task.Run(() =>
-                Record.Exception(subscription.Dispose)))
+            .Select(_ => Task.Run(subscription.Dispose))
             .ToArray();
-        Assert.True(callersJoined.Wait(TimeSpan.FromSeconds(2)));
+        await Task.WhenAll(callers).WaitAsync(TimeSpan.FromSeconds(2));
         releaseFirst.TrySetResult();
 
-        var failures = await Task.WhenAll(callers.Prepend(owner))
-            .WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.All(failures, failure =>
-        {
-            var transition =
-                Assert.IsType<NearbyRadioTransitionException>(failure);
-            Assert.Equal(
-                NearbyRadioTransitionError.StateReadFailed,
-                transition.Error);
-            Assert.DoesNotContain(
-                "unsubscribe-secret",
-                transition.ToString(),
-                StringComparison.OrdinalIgnoreCase);
-        });
+        var failure = await owner.WaitAsync(TimeSpan.FromSeconds(2));
+        var transition =
+            Assert.IsType<NearbyRadioTransitionException>(failure);
+        Assert.Equal(
+            NearbyRadioTransitionError.StateReadFailed,
+            transition.Error);
+        Assert.DoesNotContain(
+            "unsubscribe-secret",
+            transition.ToString(),
+            StringComparison.OrdinalIgnoreCase);
         Assert.Equal(1, unsubscribeCalls);
 
         subscription.Dispose();
