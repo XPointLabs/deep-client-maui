@@ -426,6 +426,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         NearbyCoordinatorLifecycle.Running;
     private Action? StartPublishedBeforeLaunchForTesting { get; set; }
     private Action? DrainBeforeStabilityCheckForTesting { get; set; }
+    private Action? PlatformEventAdmittedBeforeEnqueueForTesting { get; set; }
 
     public NearbyPolicyCoordinator(
         INearbyRadioAdapter radio,
@@ -953,7 +954,9 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         {
             lock (sync)
             {
-                lifecycle = NearbyCoordinatorLifecycle.Running;
+                lifecycle = platformSubscription is null
+                    ? NearbyCoordinatorLifecycle.DisposeFailed
+                    : NearbyCoordinatorLifecycle.Running;
                 disposeTask = null;
             }
 
@@ -1919,6 +1922,8 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
     {
         _ = sender;
         _ = value;
+        TaskCompletionSource completion;
+        Task previous;
         lock (sync)
         {
             if (lifecycle != NearbyCoordinatorLifecycle.Running)
@@ -1927,15 +1932,14 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             }
 
             activeAdmission = 0;
-        }
-
-        var completion = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        Task previous;
-        lock (eventSync)
-        {
-            previous = lastPlatformTransition;
-            lastPlatformTransition = completion.Task;
+            PlatformEventAdmittedBeforeEnqueueForTesting?.Invoke();
+            completion = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (eventSync)
+            {
+                previous = lastPlatformTransition;
+                lastPlatformTransition = completion.Task;
+            }
         }
 
         var execution = QueueWithoutExecutionContext(
@@ -2049,6 +2053,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
     {
         Running,
         Disposing,
+        DisposeFailed,
         Disposed
     }
 

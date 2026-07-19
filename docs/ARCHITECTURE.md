@@ -150,7 +150,13 @@ failure; calls made while that operation is in progress return a completed
 `ValueTask`. Disposal first closes the platform-event queue, bounds physical
 radio cleanup, and unsubscribes outside internal locks before the final drain.
 Captured or racing platform events are ignored once the lifecycle leaves
-`Running`, so an event flood cannot extend the durability drain.
+`Running`, so an event flood cannot extend the durability drain. Event
+admission and queue publication share the `sync` then `eventSync` lock order:
+an event admitted before disposal is visible to the final drain, while later
+events are rejected. If disposal fails after the subscription has already
+closed, the coordinator enters a retryable failed-disposal state. Normal
+start, stop, refresh and public drain operations remain closed there; only a
+later `DisposeAsync` owner may retry durability and terminal cleanup.
 
 ## Offline update verification
 
