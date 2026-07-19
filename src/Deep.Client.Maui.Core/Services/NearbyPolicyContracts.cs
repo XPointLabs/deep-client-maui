@@ -374,7 +374,23 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         snapshot = StoppedSnapshot(
             NearbyStopReason.User,
             OffPolicy());
-        platform.Changed += OnPlatformChanged;
+        try
+        {
+            platform.Changed += OnPlatformChanged;
+        }
+        catch
+        {
+            try
+            {
+                platform.Changed -= OnPlatformChanged;
+            }
+            catch
+            {
+            }
+
+            throw new NearbyRadioTransitionException(
+                NearbyRadioTransitionError.StateReadFailed);
+        }
     }
 
     public NearbyCoordinatorSnapshot Snapshot
@@ -720,7 +736,16 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                     NearbyRadioTransitionError.IntentCommitFailed);
             }
 
-            platform.Changed -= OnPlatformChanged;
+            try
+            {
+                platform.Changed -= OnPlatformChanged;
+            }
+            catch
+            {
+                throw new NearbyRadioTransitionException(
+                    NearbyRadioTransitionError.StateReadFailed);
+            }
+
             radioGate.Dispose();
             lock (sync)
             {
@@ -821,6 +846,16 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
             return;
         }
 
+        var callerCancellationRegistration = callerCancellation.Register(
+            () => ObserveCallerCancellation(attempt));
+        attempt.AttachCallerCancellation(callerCancellationRegistration);
+        if (callerCancellation.IsCancellationRequested)
+        {
+            await AwaitCallerCancellationCleanupAsync(attempt)
+                .ConfigureAwait(false);
+            throw new OperationCanceledException(callerCancellation);
+        }
+
         Task? deadlineDelay = null;
         if (attempt.Session.EmergencyDeadline is { } deadline)
         {
@@ -888,11 +923,35 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
         if (intentStore is not null)
         {
+            Task? activeIntentSave = null;
+            lock (sync)
+            {
+                if (IsCurrentAttemptLocked(attempt) &&
+                    !linkedCancellation.IsCancellationRequested)
+                {
+                    activeIntentSave = EnqueueIntentSave(
+                        new NearbyModeIntent(
+                            attempt.Mode,
+                            attempt.Duration),
+                        linkedCancellation.Token);
+                }
+            }
+
+            if (activeIntentSave is null)
+            {
+                if (callerCancellation.IsCancellationRequested)
+                {
+                    await AwaitCallerCancellationCleanupAsync(attempt)
+                        .ConfigureAwait(false);
+                    throw new OperationCanceledException(callerCancellation);
+                }
+
+                return;
+            }
+
             try
             {
-                await EnqueueIntentSave(
-                    new NearbyModeIntent(attempt.Mode, attempt.Duration),
-                    linkedCancellation.Token).ConfigureAwait(false);
+                await activeIntentSave.ConfigureAwait(false);
             }
             catch (OperationCanceledException)
                 when (linkedCancellation.IsCancellationRequested)
@@ -907,6 +966,8 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
                 if (callerCancellation.IsCancellationRequested)
                 {
+                    await AwaitCallerCancellationCleanupAsync(attempt)
+                        .ConfigureAwait(false);
                     throw new OperationCanceledException(callerCancellation);
                 }
 
@@ -936,6 +997,10 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
 
             if (callerCancellation.IsCancellationRequested)
             {
+                await AwaitCallerCancellationCleanupAsync(
+                    attempt,
+                    physicalStopAlreadyJoined: true)
+                    .ConfigureAwait(false);
                 throw new OperationCanceledException(callerCancellation);
             }
 
@@ -1009,7 +1074,55 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 attempt,
                 stopReason.Value,
                 awaitStart: false).ConfigureAwait(false);
+            if (callerCancellation.IsCancellationRequested)
+            {
+                await AwaitCallerCancellationCleanupAsync(
+                    attempt,
+                    physicalStopAlreadyJoined: true)
+                    .ConfigureAwait(false);
+                throw new OperationCanceledException(callerCancellation);
+            }
         }
+        else
+        {
+            if (callerCancellation.IsCancellationRequested)
+            {
+                await AwaitCallerCancellationCleanupAsync(attempt)
+                    .ConfigureAwait(false);
+                throw new OperationCanceledException(callerCancellation);
+            }
+
+            attempt.DisposeCallerCancellation();
+        }
+    }
+
+    private void ObserveCallerCancellation(NearbyAttempt attempt)
+    {
+        var cleanup = StopAttemptAsync(
+            attempt,
+            NearbyStopReason.Cancelled,
+            awaitStart: false);
+        attempt.SetCallerCancellationCleanup(cleanup);
+    }
+
+    private async Task AwaitCallerCancellationCleanupAsync(
+        NearbyAttempt attempt,
+        bool physicalStopAlreadyJoined = false)
+    {
+        if (!physicalStopAlreadyJoined ||
+            attempt.CallerCancellationObserved.Task.IsCompleted)
+        {
+            await attempt.CallerCancellationObserved.Task.ConfigureAwait(false);
+            await attempt.CallerCancellationCleanup.ConfigureAwait(false);
+        }
+
+        Task reconciliation;
+        lock (intentSync)
+        {
+            reconciliation = lastIntentTransition;
+        }
+
+        await reconciliation.ConfigureAwait(false);
     }
 
     private async Task RunDeadlineAsync(
@@ -1267,7 +1380,7 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
                 }
             }
 
-            attempt?.Cancellation.Dispose();
+            attempt?.DisposeResources();
             completion.TrySetResult();
         }
     }
@@ -1531,6 +1644,10 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         NearbyRadioSession session,
         DateTimeOffset? emergencyEndsAtUtc)
     {
+        private readonly object cancellationSync = new();
+        private CancellationTokenRegistration callerCancellationRegistration;
+        private bool resourcesDisposed;
+
         public int Generation { get; } = generation;
         public NearbyUserMode Mode { get; } = mode;
         public TimeSpan? Duration { get; } = duration;
@@ -1541,7 +1658,74 @@ public sealed class NearbyPolicyCoordinator : IAsyncDisposable
         public Task StartTask { get; set; } = Task.CompletedTask;
         public TaskCompletionSource PhysicalStartCompletion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CallerCancellationObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task CallerCancellationCleanup { get; private set; } =
+            Task.CompletedTask;
         public Task? DeadlineTask { get; set; }
+
+        public void AttachCallerCancellation(
+            CancellationTokenRegistration registration)
+        {
+            var unregister = false;
+            lock (cancellationSync)
+            {
+                if (resourcesDisposed)
+                {
+                    unregister = true;
+                }
+                else
+                {
+                    callerCancellationRegistration = registration;
+                }
+            }
+
+            if (unregister)
+            {
+                registration.Unregister();
+            }
+        }
+
+        public void SetCallerCancellationCleanup(Task cleanup)
+        {
+            lock (cancellationSync)
+            {
+                CallerCancellationCleanup = cleanup;
+            }
+
+            CallerCancellationObserved.TrySetResult();
+        }
+
+        public void DisposeCallerCancellation()
+        {
+            CancellationTokenRegistration registration;
+            lock (cancellationSync)
+            {
+                registration = callerCancellationRegistration;
+                callerCancellationRegistration = default;
+            }
+
+            registration.Unregister();
+        }
+
+        public void DisposeResources()
+        {
+            CancellationTokenRegistration registration;
+            lock (cancellationSync)
+            {
+                if (resourcesDisposed)
+                {
+                    return;
+                }
+
+                resourcesDisposed = true;
+                registration = callerCancellationRegistration;
+                callerCancellationRegistration = default;
+            }
+
+            registration.Unregister();
+            Cancellation.Dispose();
+        }
     }
 }
 

@@ -193,6 +193,10 @@ The monotonic deadline observer is armed immediately after physical start and
 before active-intent persistence, so a stalled or cancellation-ignoring settings
 store cannot postpone physical deadline stop. Disposal likewise initiates and
 joins physical stop before draining platform events or intent reconciliation.
+Caller cancellation has the same generation-bound physical-stop observer after
+adapter start, including charging-hub sessions with no deadline; the original
+start completes with a sanitized cancellation only after serialized `Off`
+reconciliation, and the obsolete observer cannot affect a later generation.
 Constructor state starts from an infallible `Off` policy without platform,
 capability or clock getters; fallible pre-start admission reads return only the
 fixed typed state-read failure and never start radio.
@@ -208,3 +212,9 @@ not proven stopped. New starts remain blocked while that uncertainty exists.
 Disposal cannot report success or dispose the transition gate in this state; an
 explicit stop or later disposal may retry cleanup. This dormant state is not
 evidence that a radio session is active or that nearby delivery works.
+
+Platform lifecycle event accessors are also treated as fallible boundaries.
+Constructor subscription failure is redacted and followed by a best-effort
+unsubscribe for partially applied `add`; disposal unsubscribe failure is
+redacted, does not dispose the coordinator gate or claim success, and leaves an
+idempotent retry path after physical and persistence cleanup.
