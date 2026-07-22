@@ -55,10 +55,19 @@
     <GoogleServicesJson Include="Platforms\Android\google-services.json" Condition="Exists('Platforms\Android\google-services.json')" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(DeepSurvivalRuntimeEnv)' == '' Or '$(Configuration)' == 'Release' Or '$(DeepPhysicalE2E)' != 'true'">
     <EmbeddedResource Include="deep.release.env">
       <LogicalName>deep.release.env</LogicalName>
     </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' != 'Release' And '$(DeepPhysicalE2E)' == 'true'">
+    <EmbeddedResource Include="$(DeepSurvivalRuntimeEnv)">
+      <LogicalName>deep.release.env</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="$(DeepWindowsReleaseEnv)" Condition="'$(DeepWindowsReleaseEnv)' != ''">
       <LogicalName>deep.windows.release.env</LogicalName>
     </EmbeddedResource>
@@ -119,6 +128,15 @@
 
   <Target Name="EnsureWindowsRuntimeIdentifier" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(RuntimeIdentifier)' == ''">
     <Error Text="Windows Release builds require -p:RuntimeIdentifierOverride=win-x64 or win-arm64 so the matching pinned Xray binary is packaged." />
+  </Target>
+
+  <Target Name="ValidateDeepSurvivalRuntimeEnvironment" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(DeepPhysicalE2E)' != 'true'"
+           Text="DeepSurvivalRuntimeEnv is accepted only with -p:DeepPhysicalE2E=true." />
+    <Error Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' == 'Release'"
+           Text="DeepSurvivalRuntimeEnv is forbidden for Release builds." />
+    <Error Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' != 'Release' And '$(DeepPhysicalE2E)' == 'true' And !Exists('$(DeepSurvivalRuntimeEnv)')"
+           Text="DeepSurvivalRuntimeEnv does not identify an existing file." />
   </Target>
 
 </Project>
