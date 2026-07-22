@@ -205,10 +205,12 @@ public sealed class ClientLiveAcceptanceTests
             endpoints,
             directStorageUrl: null,
             new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) },
+            new RoutedSessionStorageTransportOptions(
+                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility),
             TimeProvider.System);
         var runtime = new ClientRuntime(
             new InMemorySessionStore(),
-            ClientFeatureFlags.ReleaseDefaults,
+            ClientFeatureFlags.ReleaseDefaults with { MetadataPrivateTransportRequired = false },
             new SystemClock(),
             composition.SessionMessageTransport,
             requireE2eeTransport: true);

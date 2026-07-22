@@ -140,7 +140,9 @@ public sealed class RoutedRuntimeConfigurationTests
         var composition = RoutedProductionCompositionFactory.Create(
             endpoints,
             directStorageUrl: null,
-            new HttpClient(handler));
+            new HttpClient(handler),
+            new RoutedSessionStorageTransportOptions(
+                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility));
 
         Assert.IsType<XNodeRpcClient>(composition.RouteProvider);
         Assert.IsType<RoutedSessionStorageMessageTransport>(composition.SessionMessageTransport);
@@ -163,6 +165,26 @@ public sealed class RoutedRuntimeConfigurationTests
     }
 
     [Fact]
+    public void ProductionFactory_DefaultOpaqueModeFailsClosedWithoutExplicitP03Dependencies()
+    {
+        var endpoints = RoutedRuntimeConfiguration.ParseExactlyThree(string.Join(';',
+            $"{RouterOne}|https://router-one.example/",
+            $"{RouterTwo}|https://router-two.example/",
+            $"{RouterThree}|https://router-three.example/"));
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            RoutedProductionCompositionFactory.Create(
+                endpoints,
+                directStorageUrl: null,
+                new HttpClient(),
+                new RoutedSessionStorageTransportOptions()));
+
+        Assert.Equal(
+            "Opaque P03 routed storage requires explicit capability, crypto and replay dependencies.",
+            error.Message);
+    }
+
+    [Fact]
     public void ProductionFactory_RejectsDirectStorageAndNonExactRouterCount()
     {
         var valid = RoutedRuntimeConfiguration.ParseExactlyThree(string.Join(';',
@@ -174,12 +196,14 @@ public sealed class RoutedRuntimeConfigurationTests
             RoutedProductionCompositionFactory.Create(
                 valid,
                 "https://storage.example/",
-                new HttpClient()));
+                new HttpClient(),
+                new RoutedSessionStorageTransportOptions()));
         Assert.Throws<InvalidOperationException>(() =>
             RoutedProductionCompositionFactory.Create(
                 valid.Take(2),
                 directStorageUrl: null,
-                new HttpClient()));
+                new HttpClient(),
+                new RoutedSessionStorageTransportOptions()));
     }
 
     private sealed class RouterOutageHandler(

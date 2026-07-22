@@ -373,7 +373,10 @@ public sealed class ChatViewModelTests
         var transport = new BlockingMessageTransport();
         var runtime = new ClientRuntime(
             new InMemorySessionStore(),
-            Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults,
+            Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults with
+            {
+                MetadataPrivateTransportRequired = false
+            },
             new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")),
             transport);
         var account = await runtime.Accounts.RegisterAsync("Alice");

@@ -31,6 +31,7 @@ internal sealed record ApplicationServiceInputs(
     IReadOnlyList<PinnedRouterEndpoint> RouterBaseUrls,
     string? StorageBaseUrl,
     HttpClient RouterHttpClient,
+    RoutedSessionStorageTransportOptions RoutedTransportOptions,
     RuntimeEnvironmentOptions RuntimeEnvironment,
     Func<IServiceProvider, IIpCountryLookup> CountryLookupFactory,
     Func<IServiceProvider, IAvatarProfileTransport> AvatarTransportFactory,
@@ -61,6 +62,7 @@ public static class MauiProgram
     internal const string E2eBootstrapEnv = "DEEP_E2E_BOOTSTRAP";
     internal const string E2eAppDataRootEnv = "DEEP_E2E_APPDATA_ROOT";
     internal const string E2eStrictWindowsEnv = "DEEP_STRICT_WINDOWS_UI";
+    internal const string SurvivalEnvironmentEnv = "SURVIVAL_ENV";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
     private const string WindowsReleaseRuntimeEnvFile = "deep.windows.release.env";
     internal const string WipeLocalDataOnNextLaunchKey = "session.wipe-local-on-next-launch";
@@ -95,12 +97,14 @@ public static class MauiProgram
             : RoutedProductionCompositionFactory.Create(
                 inputs.RouterBaseUrls,
                 inputs.StorageBaseUrl,
-                inputs.RouterHttpClient);
+                inputs.RouterHttpClient,
+                inputs.RoutedTransportOptions);
 #else
         var routedComposition = RoutedProductionCompositionFactory.Create(
             inputs.RouterBaseUrls,
             inputs.StorageBaseUrl,
-            inputs.RouterHttpClient);
+            inputs.RouterHttpClient,
+            inputs.RoutedTransportOptions);
 #endif
 
         services.AddSingleton(inputs.RuntimeEnvironment);
@@ -316,7 +320,8 @@ public static class MauiProgram
 
     private static ApplicationServiceInputs ResolveApplicationServiceInputs()
     {
-        var featureFlags = BuildFeatureFlags();
+        var survivalDevelopment = IsSurvivalDevelopmentProfile();
+        var featureFlags = BuildFeatureFlags(survivalDevelopment);
         var routerBaseUrls = ResolveRouterBaseUrls();
         var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
         var fileBaseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
@@ -423,6 +428,7 @@ public static class MauiProgram
             routerBaseUrls,
             storageBaseUrl,
             CreateRouterHttpClient(),
+            BuildRoutedTransportOptions(survivalDevelopment),
             RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting),
             countryLookupFactory,
             avatarTransportFactory,
@@ -447,10 +453,42 @@ public static class MauiProgram
                 .Accounts
                 .GetRecoveryPhraseAsync(cancellationToken));
 
-    private static ClientFeatureFlags BuildFeatureFlags()
+    private static bool IsSurvivalDevelopmentProfile()
+    {
+#if DEEP_PHYSICAL_E2E
+        return string.Equals(
+            ResolveRuntimeSetting(SurvivalEnvironmentEnv),
+            "Development",
+            StringComparison.Ordinal);
+#else
+        return false;
+#endif
+    }
+
+    private static RoutedSessionStorageTransportOptions BuildRoutedTransportOptions(
+        bool survivalDevelopment)
+    {
+#if DEEP_PHYSICAL_E2E
+        if (survivalDevelopment)
+        {
+            return new RoutedSessionStorageTransportOptions(
+                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility);
+        }
+#endif
+        return new RoutedSessionStorageTransportOptions();
+    }
+
+    private static ClientFeatureFlags BuildFeatureFlags(bool survivalDevelopment)
     {
 #if DEBUG
-        return ClientFeatureFlags.Defaults;
+        var featureFlags = ClientFeatureFlags.Defaults;
+#if DEEP_PHYSICAL_E2E
+        if (survivalDevelopment)
+        {
+            return featureFlags with { MetadataPrivateTransportRequired = false };
+        }
+#endif
+        return featureFlags;
 #else
         return ClientFeatureFlags.ReleaseDefaults;
 #endif

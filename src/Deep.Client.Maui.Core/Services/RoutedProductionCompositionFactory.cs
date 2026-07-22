@@ -31,9 +31,11 @@ public static class RoutedProductionCompositionFactory
         IEnumerable<PinnedRouterEndpoint> routerEndpoints,
         string? directStorageUrl,
         HttpClient routerHttpClient,
+        RoutedSessionStorageTransportOptions transportOptions,
         TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(routerHttpClient);
+        ArgumentNullException.ThrowIfNull(transportOptions);
         var validatedEndpoints = RoutedRuntimeConfiguration.ValidateExactlyThree(routerEndpoints);
         RoutedRuntimeConfiguration.RejectDirectStorageForRoutedComposition(directStorageUrl);
 
@@ -43,7 +45,7 @@ public static class RoutedProductionCompositionFactory
             timeProvider);
         var transport = new RoutedSessionStorageMessageTransport(
             router,
-            new RoutedSessionStorageTransportOptions());
+            transportOptions);
         return new RoutedProductionComposition(validatedEndpoints, router, transport);
     }
 }
