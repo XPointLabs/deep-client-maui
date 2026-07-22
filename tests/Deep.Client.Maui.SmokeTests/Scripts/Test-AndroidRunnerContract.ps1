@@ -407,8 +407,13 @@ public static class SyntheticAndroidTool
         [pscustomobject]@{ name = 'artifact-allowed-value-privacy'; binding = ''; privacy = 'artifact-allowed-value' },
         [pscustomobject]@{ name = 'single-letter-uri-privacy'; binding = ''; privacy = 'single-letter-uri' }
     )
+    $scenarioIndex = 0
     foreach ($scenario in $scenarios) {
-        $scenarioEvidence = Join-Path $sandbox ("evidence-{0}" -f $scenario.name)
+        # Keep the synthetic artifact root below legacy Windows MAX_PATH. The
+        # descriptive scenario name remains in assertions, not in filesystem
+        # paths that the generated .NET Framework fixture must open.
+        $scenarioEvidence = Join-Path $sandbox ("e-{0:D2}" -f $scenarioIndex)
+        $scenarioIndex++
         $env:DEEP_FAKE_TAMPER_BINDING = $scenario.binding
         $env:DEEP_FAKE_PRIVATE_JUNIT = $scenario.privacy
         & $engine -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'eng\Invoke-StrictClientLane.ps1') -Lane AndroidDevice `
