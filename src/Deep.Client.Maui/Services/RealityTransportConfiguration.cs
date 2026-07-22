@@ -8,6 +8,7 @@ namespace Deep.Client.Maui;
 internal static class RealityTransportConfiguration
 {
     internal const string BootstrapResource = "deep.bootstrap.json";
+    private const int PhysicalE2EFirstLocalPort = 27891;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -38,6 +39,34 @@ internal static class RealityTransportConfiguration
                 $"http://127.0.0.1:{seed.LocalPort}",
                 seed.RouterId))
             .ToArray();
+    }
+
+    public static RealityBootstrap ApplyLocalPortProfile(
+        RealityBootstrap bootstrap,
+        RealityTransportPortProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(bootstrap);
+        Validate(bootstrap);
+        if (profile == RealityTransportPortProfile.Default)
+        {
+            return bootstrap;
+        }
+        if (profile != RealityTransportPortProfile.PhysicalE2E)
+        {
+            throw new ArgumentOutOfRangeException(nameof(profile));
+        }
+        if (bootstrap.Seeds.Count > ushort.MaxValue - PhysicalE2EFirstLocalPort + 1)
+        {
+            throw new InvalidOperationException("Physical E2E local listener range exceeds the TCP port limit.");
+        }
+
+        var remapped = new RealityBootstrap(
+            bootstrap.Version,
+            bootstrap.Seeds
+                .Select((seed, index) => seed with { LocalPort = PhysicalE2EFirstLocalPort + index })
+                .ToArray());
+        Validate(remapped);
+        return remapped;
     }
 
     public static string BuildXrayConfig(IReadOnlyList<RealitySeed> seeds)
@@ -190,6 +219,12 @@ internal static class RealityTransportConfiguration
     }
 
     private static bool IsPort(int value) => value is > 0 and <= ushort.MaxValue;
+}
+
+internal enum RealityTransportPortProfile
+{
+    Default = 0,
+    PhysicalE2E = 1
 }
 
 internal sealed record RealityBootstrap(int Version, IReadOnlyList<RealitySeed> Seeds);

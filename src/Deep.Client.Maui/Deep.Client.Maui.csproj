@@ -27,6 +27,10 @@
     <NoWarn Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">$(NoWarn);BG8403</NoWarn>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+    <DefineConstants>$(DefineConstants);DEEP_PHYSICAL_E2E</DefineConstants>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
     <AndroidPackageFormats>aab</AndroidPackageFormats>
     <AndroidLinkMode>SdkOnly</AndroidLinkMode>

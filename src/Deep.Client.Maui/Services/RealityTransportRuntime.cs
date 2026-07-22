@@ -28,6 +28,11 @@ internal static class AndroidRealityTransport
             }
 
             var bootstrap = RealityTransportConfiguration.LoadEmbedded(typeof(AndroidRealityTransport).Assembly);
+#if DEEP_PHYSICAL_E2E
+            bootstrap = RealityTransportConfiguration.ApplyLocalPortProfile(
+                bootstrap,
+                RealityTransportPortProfile.PhysicalE2E);
+#endif
             var endpoints = RealityTransportConfiguration.BuildRouterEndpoints(bootstrap);
 
             var seeds = bootstrap.Seeds.ToArray();
