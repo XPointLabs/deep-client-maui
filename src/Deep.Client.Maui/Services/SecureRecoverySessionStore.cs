@@ -420,6 +420,47 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) :
         return inner.DeleteAsync(key, cancellationToken);
     }
 
+    public Task<AtomicBoundedSettingReadOutcome> ReadAtomicBoundedSettingAsync(
+        string key,
+        int maximumValueUtf8Bytes,
+        CancellationToken cancellationToken = default) =>
+        inner.ReadAtomicBoundedSettingAsync(key, maximumValueUtf8Bytes, cancellationToken);
+
+    public Task<AtomicBoundedSettingMutationResult> CreateAtomicBoundedSettingAsync(
+        string key,
+        ReadOnlyMemory<byte> utf8Json,
+        int maximumValueUtf8Bytes,
+        CancellationToken cancellationToken = default) =>
+        inner.CreateAtomicBoundedSettingAsync(
+            key,
+            utf8Json,
+            maximumValueUtf8Bytes,
+            cancellationToken);
+
+    public Task<AtomicBoundedSettingMutationResult> ReplaceAtomicBoundedSettingAsync(
+        string key,
+        AtomicBoundedSettingRevision expectedRevision,
+        ReadOnlyMemory<byte> utf8Json,
+        int maximumValueUtf8Bytes,
+        CancellationToken cancellationToken = default) =>
+        inner.ReplaceAtomicBoundedSettingAsync(
+            key,
+            expectedRevision,
+            utf8Json,
+            maximumValueUtf8Bytes,
+            cancellationToken);
+
+    public Task<AtomicBoundedSettingMutationResult> DeleteAtomicBoundedSettingAsync(
+        string key,
+        AtomicBoundedSettingRevision expectedRevision,
+        int maximumValueUtf8Bytes,
+        CancellationToken cancellationToken = default) =>
+        inner.DeleteAtomicBoundedSettingAsync(
+            key,
+            expectedRevision,
+            maximumValueUtf8Bytes,
+            cancellationToken);
+
     public Task<int> GetSchemaVersionAsync(CancellationToken cancellationToken = default) =>
         inner.GetSchemaVersionAsync(cancellationToken);
 

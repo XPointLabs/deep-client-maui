@@ -10,6 +10,53 @@ namespace Deep.Client.Maui.ViewModels.Tests.Services;
 public sealed class SecureRecoverySessionStoreTests
 {
     [Fact]
+    public async Task AtomicBoundedSettingsOperations_AreForwardedWithCompareAndExchangeSemantics()
+    {
+        using var store = new SecureRecoverySessionStore(new InMemorySessionStore());
+        const string key = "p14.native-composition";
+        const int maximumBytes = 128;
+        var firstValue = "{\"generation\":1}"u8.ToArray();
+        var secondValue = "{\"generation\":2}"u8.ToArray();
+
+        Assert.Equal(
+            AtomicBoundedSettingMutationResult.Applied,
+            await store.CreateAtomicBoundedSettingAsync(key, firstValue, maximumBytes));
+
+        var first = await store.ReadAtomicBoundedSettingAsync(key, maximumBytes);
+        Assert.Equal(AtomicBoundedSettingReadResult.Found, first.Result);
+        Assert.Equal(firstValue, first.GetValueCopy());
+        Assert.NotNull(first.Revision);
+
+        Assert.Equal(
+            AtomicBoundedSettingMutationResult.Applied,
+            await store.ReplaceAtomicBoundedSettingAsync(
+                key,
+                first.Revision!,
+                secondValue,
+                maximumBytes));
+        Assert.Equal(
+            AtomicBoundedSettingMutationResult.Conflict,
+            await store.DeleteAtomicBoundedSettingAsync(
+                key,
+                first.Revision!,
+                maximumBytes));
+
+        var second = await store.ReadAtomicBoundedSettingAsync(key, maximumBytes);
+        Assert.Equal(AtomicBoundedSettingReadResult.Found, second.Result);
+        Assert.Equal(secondValue, second.GetValueCopy());
+        Assert.NotNull(second.Revision);
+        Assert.Equal(
+            AtomicBoundedSettingMutationResult.Applied,
+            await store.DeleteAtomicBoundedSettingAsync(
+                key,
+                second.Revision!,
+                maximumBytes));
+        Assert.Equal(
+            AtomicBoundedSettingReadResult.Missing,
+            (await store.ReadAtomicBoundedSettingAsync(key, maximumBytes)).Result);
+    }
+
+    [Fact]
     public async Task DurableInboxOperations_AreForwardedWithoutLosingCursorOrItems()
     {
         using var store = new SecureRecoverySessionStore(new InMemorySessionStore());
