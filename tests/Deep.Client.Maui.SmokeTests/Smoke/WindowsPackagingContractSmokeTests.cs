@@ -69,6 +69,19 @@ public sealed class WindowsPackagingContractSmokeTests
         Assert.DoesNotContain("-p:RuntimeIdentifier=$RuntimeIdentifier", script, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PhysicalE2ECompileSymbolIsDebugOnly()
+    {
+        var project = ReadWorkspaceFile("src", "Deep.Client.Maui", "Deep.Client.Maui.csproj");
+
+        Assert.Contains("'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'", project, StringComparison.Ordinal);
+        Assert.Contains("DEEP_PHYSICAL_E2E", project, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Condition=\"'$(DeepPhysicalE2E)' == 'true'\"><DefineConstants>",
+            project,
+            StringComparison.Ordinal);
+    }
+
     private static string ReadWorkspaceFile(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

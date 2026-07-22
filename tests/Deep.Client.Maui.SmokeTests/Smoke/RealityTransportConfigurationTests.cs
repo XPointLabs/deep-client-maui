@@ -6,6 +6,43 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class RealityTransportConfigurationTests
 {
     [Fact]
+    public void PhysicalE2EProfileRemapsRoutesAndXrayListenersTogether()
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(CreateBootstrapJson()));
+        var bootstrap = RealityTransportConfiguration.Load(stream);
+
+        var remapped = RealityTransportConfiguration.ApplyLocalPortProfile(
+            bootstrap,
+            RealityTransportPortProfile.PhysicalE2E);
+        var routes = RealityTransportConfiguration.BuildRouterEndpoints(remapped);
+        using var config = JsonDocument.Parse(RealityTransportConfiguration.BuildXrayConfig(remapped.Seeds));
+
+        Assert.Equal([27891, 27892, 27893], remapped.Seeds.Select(seed => seed.LocalPort));
+        Assert.Equal(
+            ["http://127.0.0.1:27891", "http://127.0.0.1:27892", "http://127.0.0.1:27893"],
+            routes.Select(route => route.BaseUrl));
+        Assert.Equal(
+            [27891, 27892, 27893],
+            config.RootElement.GetProperty("inbounds")
+                .EnumerateArray()
+                .Select(inbound => inbound.GetProperty("port").GetInt32()));
+    }
+
+    [Fact]
+    public void DefaultProfilePreservesProductionBootstrapPorts()
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(CreateBootstrapJson()));
+        var bootstrap = RealityTransportConfiguration.Load(stream);
+
+        var configured = RealityTransportConfiguration.ApplyLocalPortProfile(
+            bootstrap,
+            RealityTransportPortProfile.Default);
+
+        Assert.Same(bootstrap, configured);
+        Assert.Equal([17891, 17892, 17893], configured.Seeds.Select(seed => seed.LocalPort));
+    }
+
+    [Fact]
     public void ValidBootstrapBuildsThreePinnedLoopbackRoutesAndRealityOutbounds()
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(CreateBootstrapJson()));
