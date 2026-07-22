@@ -84,6 +84,18 @@ public sealed class RoutedCompositionContractSmokeTests
         Assert.Contains("--configuration Release --no-restore", preparationStep, StringComparison.Ordinal);
 
         var lane = ReadWorkspaceFile("eng", "Invoke-StrictClientLane.ps1");
+        var interactiveDesktop = lane.IndexOf(
+            "Add-Check 'interactive-desktop'",
+            StringComparison.Ordinal);
+        var windowsRunRoot = lane.IndexOf(
+            "$runRoot = Join-Path $ArtifactDirectory",
+            StringComparison.Ordinal);
+        Assert.True(interactiveDesktop >= 0 && windowsRunRoot > interactiveDesktop);
+        Assert.Contains(
+            "WindowsInteractiveSessionProbe]::IsCurrentSessionUnlocked()",
+            lane,
+            StringComparison.Ordinal);
+
         var liveTest = lane.IndexOf(
             "$env:DEEP_STRICT_LIVE = '1'",
             StringComparison.Ordinal);

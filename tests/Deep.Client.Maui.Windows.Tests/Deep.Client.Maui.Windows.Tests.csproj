@@ -20,6 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\eng\WindowsInteractiveSessionProbe.cs"
+             Link="StrictGates\WindowsInteractiveSessionProbe.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsPushNotificationService.cs"
              Link="Platform\WindowsPushNotificationService.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsShareTargetService.cs"

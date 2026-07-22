@@ -728,6 +728,20 @@ function Get-TextSha256Lower {
 if ($Lane -eq 'WindowsUi') {
     $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
     Add-Check 'host-os' $isWindowsHost $(if ($isWindowsHost) { 'Windows' } else { 'Windows is required' })
+    $interactiveDesktop = $false
+    if ($isWindowsHost) {
+        try {
+            Add-Type -Path (Join-Path $PSScriptRoot 'WindowsInteractiveSessionProbe.cs') -ErrorAction Stop
+            $interactiveDesktop = [Deep.Client.Maui.StrictGates.WindowsInteractiveSessionProbe]::IsCurrentSessionUnlocked()
+        } catch {
+            $interactiveDesktop = $false
+        }
+    }
+    Add-Check 'interactive-desktop' $interactiveDesktop $(if ($interactiveDesktop) {
+        'current Windows session is unlocked'
+    } else {
+        'an unlocked interactive Windows session is required for real input'
+    })
     $appExists = -not [string]::IsNullOrWhiteSpace($AppPath) -and (Test-Path -LiteralPath $AppPath -PathType Leaf)
     Add-Check 'maui-executable' $appExists $(if ($appExists) { 'present' } else { 'AppPath is required and must exist' })
     $appPayloadContained = $false
