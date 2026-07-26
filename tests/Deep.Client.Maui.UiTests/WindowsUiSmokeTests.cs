@@ -48,7 +48,10 @@ public sealed class WindowsUiSmokeTests
         session.FocusWindow();
         create!.Focus();
         Assert.True(displayName.Text.Length > 0);
-        create.Click(moveMouse: false);
+        // UIA Invoke is the semantic button activation path. Coordinate-based Click
+        // races MAUI/WinUI focus and layout updates and can land on the host surface
+        // without executing the bound command.
+        create.Invoke();
         var authenticatedControl = session.WaitForAutomationId(
             AuthenticatedControlId,
             TimeSpan.FromSeconds(20))?.AsButton();
