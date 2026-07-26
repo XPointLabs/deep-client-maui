@@ -50,10 +50,13 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("DEEP_FILE_TLS_PUBLIC_KEY_PINS=", releaseEnvironment, StringComparison.Ordinal);
         Assert.Contains("sha256/wgviOsKm6Q2dzxS5lvwSsa+/b3wvm6lyRdOg9zj5CUs=", releaseEnvironment, StringComparison.Ordinal);
         Assert.Contains("sha256/nM7gwVgoneQys6mWu2C/Bo3RGY6NSshlPBbkqlZVzOE=", releaseEnvironment, StringComparison.Ordinal);
-        Assert.Contains("ConfigureCertificatePinning(handler, FileTlsPublicKeyPinsEnv);", program, StringComparison.Ordinal);
+        Assert.Contains(
+            "CreateCertificatePinningValidationCallback(FileTlsPublicKeyPinsEnv)",
+            program,
+            StringComparison.Ordinal);
         Assert.Contains("policyErrors != System.Net.Security.SslPolicyErrors.None", program, StringComparison.Ordinal);
         Assert.DoesNotContain("allowPinnedChainErrors", program, StringComparison.Ordinal);
-        Assert.Contains("handler.ConnectCallback", program, StringComparison.Ordinal);
+        Assert.Contains("connectCallback = (context, cancellationToken) =>", program, StringComparison.Ordinal);
         Assert.Contains("address.AddressFamily", program, StringComparison.Ordinal);
         Assert.Contains("FileConnectFallbackDelay", program, StringComparison.Ordinal);
         Assert.Contains("FileConnectAttemptTimeout", program, StringComparison.Ordinal);
@@ -170,6 +173,9 @@ public sealed class ClientSecurityContractSmokeTests
         var composition = ReadWorkspaceFile(
             "src", "Deep.Client.Maui.Core", "Services",
             "DevLocalMembershipRouteComposition.cs");
+        var httpComposition = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui.Core", "Services",
+            "ApplicationHttpTransportComposition.cs");
 
         Assert.Contains(
             "'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'",
@@ -208,11 +214,24 @@ public sealed class ClientSecurityContractSmokeTests
             program,
             StringComparison.Ordinal);
         Assert.Contains(
-            "ApplicationHttpTransportComposition.Create(",
+            "httpTransportFactories.ServiceTransportFactory",
             program,
             StringComparison.Ordinal);
         Assert.Contains(
-            "serviceTransportFactory",
+            "ApplicationHttpTransportComposition.CreateBoundNetwork(",
+            program,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            httpComposition.Split(
+                "transportFactory.BindNetwork(",
+                StringSplitOptions.None).Length - 1);
+        Assert.Contains(
+            "CreateServiceTransportNetworkHooks()",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "CreateFileTransportNetworkHooks(fileConnectIps)",
             program,
             StringComparison.Ordinal);
         Assert.Contains(

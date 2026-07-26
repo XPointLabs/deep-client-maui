@@ -35,6 +35,7 @@ internal sealed record ApplicationServiceInputs(
     RoutedSessionStorageTransportOptions RoutedTransportOptions,
     RoutedRuntimeEndpointPolicy RoutedEndpointPolicy,
     HttpServiceTransportFactory ServiceTransportFactory,
+    HttpServiceClientOptions ServiceTransportClientOptions,
     DeferredVerifiedMembershipRouteCatalogProvider? MembershipRouteCatalogProvider,
     RuntimeEnvironmentOptions RuntimeEnvironment,
     Func<IServiceProvider, IIpCountryLookup> CountryLookupFactory,
@@ -134,8 +135,8 @@ public static class MauiProgram
             if (!string.IsNullOrWhiteSpace(inputs.StorageBaseUrl))
             {
                 return inputs.ServiceTransportFactory.CreateStorage(
-                    CreateServiceHttpClient(),
-                    new SessionStorageMessageTransportOptions(inputs.StorageBaseUrl));
+                    new SessionStorageMessageTransportOptions(inputs.StorageBaseUrl),
+                    clientOptions: inputs.ServiceTransportClientOptions);
             }
 
             var baseUrl = ResolveRuntimeSettingForComposition(
@@ -152,8 +153,8 @@ public static class MauiProgram
             }
 
             return inputs.ServiceTransportFactory.CreateSession(
-                CreateServiceHttpClient(),
-                new HttpSessionTransportOptions(baseUrl));
+                new HttpSessionTransportOptions(baseUrl),
+                inputs.ServiceTransportClientOptions);
         });
         }
 #else
@@ -351,7 +352,7 @@ public static class MauiProgram
         var routedEndpointPolicy = survivalDevelopment && IsDebugBuild()
             ? RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment
             : RoutedRuntimeEndpointPolicy.Production;
-        var serviceTransportFactory = new HttpServiceTransportFactory(
+        var transportFactory = new HttpServiceTransportFactory(
             survivalDevelopment && IsDebugBuild()
                 ? HttpServiceEndpointPolicy.PhysicalE2eDevelopment
                 : HttpServiceEndpointPolicy.Production);
@@ -403,13 +404,15 @@ public static class MauiProgram
             _ => new IpCountryLookup(
                 _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_blocks_ipv4")),
                 _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_codes.json")));
-        var httpTransportFactories = ApplicationHttpTransportComposition.Create(
-            serviceTransportFactory,
+        var httpTransportFactories = ApplicationHttpTransportComposition.CreateBoundNetwork(
+            transportFactory,
+            CreateFileTransportNetworkHooks(fileConnectIps),
+            CreateServiceTransportNetworkHooks(),
             fileBaseUrl,
             pushBaseUrl,
             callSignalingBaseUrl,
-            () => CreateFileHttpClient(fileConnectIps),
-            CreateServiceHttpClient);
+            CreateFileTransportClientOptions(),
+            CreateServiceTransportClientOptions());
         Func<IServiceProvider, ClientRuntimeBootstrapper> runtimeBootstrapperFactory =
             serviceProvider => new ClientRuntimeBootstrapper(
                 cancellationToken => CreateClientRuntimeAsync(serviceProvider, cancellationToken));
@@ -453,7 +456,8 @@ public static class MauiProgram
             routerHttpClient,
             BuildRoutedTransportOptions(survivalDevelopment),
             routedEndpointPolicy,
-            serviceTransportFactory,
+            httpTransportFactories.ServiceTransportFactory,
+            httpTransportFactories.ServiceClientOptions,
             membershipRouteCatalogProvider,
             RuntimeEnvironmentOptions.FromRuntimeSettings(
                 key => ResolveRuntimeSettingForComposition(
@@ -806,9 +810,6 @@ public static class MauiProgram
         return handler;
     }
 
-    private static HttpClient CreateServiceHttpClient() =>
-        CreateServiceHttpClient(CreateServiceHttpHandler());
-
     private static HttpClient CreateServiceHttpClient(HttpMessageHandler handler)
     {
         return new HttpClient(handler)
@@ -817,35 +818,52 @@ public static class MauiProgram
         };
     }
 
-    private static HttpClient CreateFileHttpClient(IReadOnlyList<System.Net.IPAddress> preferredConnectIps)
+    private static HttpServiceNetworkHooks CreateServiceTransportNetworkHooks() =>
+        new(
+            ServerCertificateValidationCallback:
+                CreateCertificatePinningValidationCallback());
+
+    private static HttpServiceNetworkHooks CreateFileTransportNetworkHooks(
+        IReadOnlyList<System.Net.IPAddress> preferredConnectIps)
     {
-        var handler = new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            ConnectTimeout = TimeSpan.FromSeconds(10),
-            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(30),
-            PooledConnectionLifetime = TimeSpan.FromMinutes(5)
-        };
-        ConfigureCertificatePinning(handler, FileTlsPublicKeyPinsEnv);
+        Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>>?
+            connectCallback = null;
 #if ANDROID || WINDOWS
         if (preferredConnectIps.Count > 0)
         {
-            handler.ConnectCallback = (context, cancellationToken) =>
+            connectCallback = (context, cancellationToken) =>
                 ConnectFileSocketAsync(context, preferredConnectIps, cancellationToken);
         }
 #endif
-
-        var client = new HttpClient(handler)
-        {
-            Timeout = TimeSpan.FromMinutes(2)
-        };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd($"Deep/{AppInfo.Current.VersionString}");
-        return client;
+        return new HttpServiceNetworkHooks(
+            connectCallback,
+            CreateCertificatePinningValidationCallback(FileTlsPublicKeyPinsEnv));
     }
+
+    private static HttpServiceClientOptions CreateServiceTransportClientOptions() =>
+        new(
+            Timeout: TimeSpan.FromSeconds(15),
+            ConnectTimeout: TimeSpan.FromSeconds(5),
+            PooledConnectionIdleTimeout: TimeSpan.FromSeconds(15),
+            PooledConnectionLifetime: TimeSpan.FromMinutes(2));
+
+    private static HttpServiceClientOptions CreateFileTransportClientOptions() =>
+        new(
+            Timeout: TimeSpan.FromMinutes(2),
+            ConnectTimeout: TimeSpan.FromSeconds(10),
+            PooledConnectionIdleTimeout: TimeSpan.FromSeconds(30),
+            PooledConnectionLifetime: TimeSpan.FromMinutes(5),
+            UserAgent: $"Deep/{AppInfo.Current.VersionString}");
 
     private static void ConfigureCertificatePinning(
         SocketsHttpHandler handler,
-        string pinSettingName = TlsPublicKeyPinsEnv)
+        string pinSettingName = TlsPublicKeyPinsEnv) =>
+        handler.SslOptions.RemoteCertificateValidationCallback =
+            CreateCertificatePinningValidationCallback(pinSettingName);
+
+    private static System.Net.Security.RemoteCertificateValidationCallback?
+        CreateCertificatePinningValidationCallback(
+            string pinSettingName = TlsPublicKeyPinsEnv)
     {
         var rawPins = ResolveRuntimeSetting(pinSettingName);
         if (string.IsNullOrWhiteSpace(rawPins) &&
@@ -864,10 +882,10 @@ public static class MauiProgram
 #endif
         if (pins.Count == 0)
         {
-            return;
+            return null;
         }
 
-        handler.SslOptions.RemoteCertificateValidationCallback = (_, certificate, _, policyErrors) =>
+        return (_, certificate, _, policyErrors) =>
         {
             if (policyErrors != System.Net.Security.SslPolicyErrors.None || certificate is null)
             {
