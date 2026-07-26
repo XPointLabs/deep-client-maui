@@ -4,6 +4,8 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 
 public sealed class StrictLanePowerShellTests
 {
+    private static readonly TimeSpan ScriptTimeout = TimeSpan.FromMinutes(20);
+
     [Fact]
     public async Task PathSafetyRejectsSiblingPrefixAndJunction()
     {
@@ -28,7 +30,37 @@ public sealed class StrictLanePowerShellTests
         await RunScriptAsync("Test-StrictEvidenceIdentity.ps1");
     }
 
-    private static async Task RunScriptAsync(string scriptName)
+    [Fact]
+    public async Task ScriptRunnerDrainsStandardOutputAndErrorConcurrently()
+    {
+        await RunScriptAsync(
+            "Test-StrictLanePipeDrainContract.ps1",
+            TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task ScriptRunnerTerminatesHungProcessTreeAtBound()
+    {
+        var exception = await Assert.ThrowsAsync<TimeoutException>(
+            () => RunScriptAsync(
+                "Test-StrictLaneTimeoutContract.ps1",
+                TimeSpan.FromSeconds(3)));
+        Assert.Contains(
+            "TIMEOUT_CHILD_PID=",
+            exception.Message,
+            StringComparison.Ordinal);
+
+        var marker = exception.Message
+            .Split(["TIMEOUT_CHILD_PID="], StringSplitOptions.None)[1]
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)[0];
+        Assert.True(int.TryParse(marker, out var childProcessId));
+        await Task.Delay(250);
+        Assert.False(IsProcessAlive(childProcessId));
+    }
+
+    private static async Task RunScriptAsync(
+        string scriptName,
+        TimeSpan? timeout = null)
     {
         var root = FindWorkspaceRoot();
         var script = Path.Combine(
@@ -49,10 +81,48 @@ public sealed class StrictLanePowerShellTests
         start.ArgumentList.Add("-File");
         start.ArgumentList.Add(script);
         using var process = Process.Start(start) ?? throw new InvalidOperationException("pwsh did not start.");
-        var output = await process.StandardOutput.ReadToEndAsync();
-        var error = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        using var timeoutSource = new CancellationTokenSource(timeout ?? ScriptTimeout);
+        try
+        {
+            await process.WaitForExitAsync(timeoutSource.Token);
+        }
+        catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested)
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // The script exited between timeout observation and termination.
+            }
+
+            await process.WaitForExitAsync();
+            var timedOutOutput = await outputTask;
+            var timedOutError = await errorTask;
+            throw new TimeoutException(
+                $"{scriptName} exceeded {(timeout ?? ScriptTimeout).TotalSeconds:F0} seconds." +
+                $"{Environment.NewLine}{timedOutOutput}{Environment.NewLine}{timedOutError}");
+        }
+
+        var output = await outputTask;
+        var error = await errorTask;
         Assert.True(process.ExitCode == 0, $"{scriptName} failed ({process.ExitCode}).{Environment.NewLine}{output}{Environment.NewLine}{error}");
+    }
+
+    private static bool IsProcessAlive(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     private static string FindWorkspaceRoot()
