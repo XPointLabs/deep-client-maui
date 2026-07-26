@@ -45,14 +45,13 @@ try
     VerifyDeterministicCompositionEntrypoint(configureApplicationServices);
     VerifyNoReachableForbiddenTransportTokens(createMauiApp);
     AssertCompiledNegativeFixturesAreRejected();
+    AssertNameBoundConstructorBindingIsOrderIndependent();
 
     using var routerHttpClient = new HttpClient();
-    using var callHttpClient = new HttpClient();
     var inputs = CreateSyntheticInputs(
         appAssembly,
         pinnedRouters,
-        routerHttpClient,
-        callHttpClient);
+        routerHttpClient);
     var services = new ServiceCollection();
     configureApplicationServices.Invoke(null, [services, inputs]);
     using var provider = services.BuildServiceProvider(
@@ -88,57 +87,113 @@ static MethodInfo RequiredMethod(Type type, string name, BindingFlags flags) =>
 static object CreateSyntheticInputs(
     Assembly appAssembly,
     IReadOnlyList<PinnedRouterEndpoint> pinnedRouters,
-    HttpClient routerHttpClient,
-    HttpClient callHttpClient)
+    HttpClient routerHttpClient)
 {
     var runtimeType = appAssembly.GetType(
         "Deep.Client.Maui.Services.RuntimeEnvironmentOptions",
         throwOnError: true)!;
-    var runtime = Activator.CreateInstance(
-        runtimeType,
-        [
-            null,
-            null,
-            null,
-            "https://files.example/",
-            "https://push.example/",
-            "https://calls.example/",
-            null,
-            null,
-            null
-        ]) ?? throw new InvalidOperationException("Synthetic runtime options could not be created.");
+    var runtimeConstructor = runtimeType.GetConstructors().Single();
+    var runtime = runtimeConstructor.Invoke(BindNamedArguments(
+        runtimeConstructor,
+        new Dictionary<string, Func<Type, object?>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["StorageUrl"] = _ => null,
+            ["TransportUrl"] = _ => null,
+            ["RouterUrls"] = _ => null,
+            ["FileUrl"] = _ => "https://files.example/",
+            ["PushUrl"] = _ => "https://push.example/",
+            ["CallSignalingUrl"] = _ => "https://calls.example/",
+            ["RegistryUrl"] = _ => null,
+            ["StakingBackendUrl"] = _ => null,
+            ["StakingPortalUrl"] = _ => null
+        }));
     var inputsType = appAssembly.GetType(
         "Deep.Client.Maui.ApplicationServiceInputs",
         throwOnError: true)!;
     var constructor = inputsType.GetConstructors().Single();
-    var parameters = constructor.GetParameters();
+    var transportFactory = new HttpServiceTransportFactory(
+        HttpServiceEndpointPolicy.Production);
+    var clientOptions = new HttpServiceClientOptions();
+    Func<IServiceProvider, IAvatarProfileTransport> avatarFactory =
+        _ => transportFactory.CreateAvatar(
+            new HttpAvatarProfileTransportOptions("https://files.example/"),
+            clientOptions);
+    Func<IServiceProvider, IAttachmentFileTransport> attachmentFactory =
+        _ => transportFactory.CreateAttachment(
+            new HttpAttachmentFileTransportOptions("https://files.example/"),
+            clientOptions);
+    Func<IServiceProvider, IPushSubscriptionTransport> pushFactory =
+        _ => transportFactory.CreatePush(
+            new HttpPushSubscriptionTransportOptions("https://push.example/"),
+            clientOptions);
+    var recoveryPhraseProvider = new EmptyCallRecoveryPhraseProvider();
     Func<IServiceProvider, ICallSignalingTransport> callFactory =
-        _ => new HttpCallSignalingTransport(
-            callHttpClient,
+        _ => transportFactory.CreateCallSignaling(
             new HttpCallSignalingTransportOptions("https://calls.example/"),
-            _ => Task.FromResult<string?>(string.Empty));
+            recoveryPhraseProvider,
+            clientOptions: clientOptions);
     Func<IServiceProvider, ICallIceConfigurationProvider> iceFactory =
         serviceProvider =>
             (ICallIceConfigurationProvider)serviceProvider.GetRequiredService<ICallSignalingTransport>();
-    return Activator.CreateInstance(
-        inputsType,
-        [
-            Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults,
-            pinnedRouters,
-            null,
-            routerHttpClient,
-            runtime,
-            CreateDefaultFactory(parameters[5].ParameterType),
-            CreateDefaultFactory(parameters[6].ParameterType),
-            CreateDefaultFactory(parameters[7].ParameterType),
-            CreateDefaultFactory(parameters[8].ParameterType),
-            CreateDefaultFactory(parameters[9].ParameterType),
-            CreateDefaultFactory(parameters[10].ParameterType),
-            CreateDefaultFactory(parameters[11].ParameterType),
-            callFactory,
-            iceFactory,
-            CreateDefaultFactory(parameters[14].ParameterType)
-        ]) ?? throw new InvalidOperationException("Synthetic app service inputs could not be created.");
+    return constructor.Invoke(BindNamedArguments(
+        constructor,
+        new Dictionary<string, Func<Type, object?>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["FeatureFlags"] = _ =>
+                Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults,
+            ["RouterBaseUrls"] = _ => pinnedRouters,
+            ["StorageBaseUrl"] = _ => null,
+            ["RouterHttpClient"] = _ => routerHttpClient,
+            ["RoutedTransportOptions"] = _ =>
+                new RoutedSessionStorageTransportOptions(),
+            ["RoutedEndpointPolicy"] = _ =>
+                RoutedRuntimeEndpointPolicy.Production,
+            ["ServiceTransportFactory"] = _ => transportFactory,
+            ["ServiceTransportClientOptions"] = _ => clientOptions,
+            ["MembershipRouteCatalogProvider"] = _ => null,
+            ["RuntimeEnvironment"] = _ => runtime,
+            ["CountryLookupFactory"] = CreateDefaultFactory,
+            ["AvatarTransportFactory"] = _ => avatarFactory,
+            ["AttachmentTransportFactory"] = _ => attachmentFactory,
+            ["RuntimeBootstrapperFactory"] = CreateDefaultFactory,
+            ["RuntimeFactory"] = CreateDefaultFactory,
+            ["PushMetadataFactory"] = CreateDefaultFactory,
+            ["PushTransportFactory"] = _ => pushFactory,
+            ["CallTransportFactory"] = _ => callFactory,
+            ["IceConfigurationFactory"] = _ => iceFactory,
+            ["DesktopWorkspaceFactory"] = CreateDefaultFactory
+        }));
+}
+
+static object?[] BindNamedArguments(
+    ConstructorInfo constructor,
+    IReadOnlyDictionary<string, Func<Type, object?>> values)
+{
+    var parameters = constructor.GetParameters();
+    var bound = new object?[parameters.Length];
+    for (var index = 0; index < parameters.Length; index++)
+    {
+        var parameter = parameters[index];
+        if (parameter.Name is null ||
+            !values.TryGetValue(parameter.Name, out var create))
+        {
+            throw new InvalidOperationException(
+                $"No synthetic value is bound for {constructor.DeclaringType?.FullName}.{parameter.Name ?? "<unnamed>"}.");
+        }
+
+        bound[index] = create(parameter.ParameterType);
+    }
+
+    var parameterNames = parameters
+        .Select(parameter => parameter.Name!)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var extraNames = values.Keys
+        .Where(name => !parameterNames.Contains(name))
+        .ToArray();
+    Require(
+        extraNames.Length == 0,
+        $"Synthetic bindings contain unknown constructor parameters: {string.Join(", ", extraNames)}.");
+    return bound;
 }
 
 static Delegate CreateDefaultFactory(Type delegateType)
@@ -256,9 +311,12 @@ static void AssertPostEntrypointMutationIsRejected(
     mutated.AddSingleton<ITransportRouteProvider>(
         new DirectStorageRouteProvider("https://storage.invalid/"));
     mutated.AddSingleton<ISessionMessageTransport>(new StubSessionBackend());
-    mutated.TryAddSingleton(new SessionStorageMessageTransport(
-        new HttpClient(),
-        new SessionStorageMessageTransportOptions("https://storage.invalid/")));
+    mutated.TryAddSingleton(
+        new HttpServiceTransportFactory(HttpServiceEndpointPolicy.Production)
+            .CreateStorage(
+                new SessionStorageMessageTransportOptions(
+                    "https://storage.invalid/",
+                    MetadataMode: SessionStorageMetadataMode.LegacyCompatibility)));
     using var provider = mutated.BuildServiceProvider();
 
     try
@@ -520,6 +578,32 @@ static void AssertCompiledNegativeFixturesAreRejected()
                 nameof(CompiledGuardFixtures.EnvironmentConditionalDirectStub),
                 BindingFlags.Public | BindingFlags.Static)),
         "environment-conditional direct/stub bypass");
+}
+
+static void AssertNameBoundConstructorBindingIsOrderIndependent()
+{
+    var constructor = typeof(NameBoundBindingFixture).GetConstructors().Single();
+    var values = new Dictionary<string, Func<Type, object?>>(
+        StringComparer.OrdinalIgnoreCase)
+    {
+        ["First"] = _ => 41,
+        ["Second"] = _ => "bound-by-name"
+    };
+    var fixture = (NameBoundBindingFixture)constructor.Invoke(
+        BindNamedArguments(constructor, values));
+    Require(fixture.First == 41, "Name-bound constructor integer was misbound.");
+    Require(
+        fixture.Second == "bound-by-name",
+        "Name-bound constructor string was misbound.");
+    AssertRejected(
+        () => BindNamedArguments(
+            constructor,
+            new Dictionary<string, Func<Type, object?>>(
+                StringComparer.OrdinalIgnoreCase)
+            {
+                ["First"] = _ => 41
+            }),
+        "missing name-bound constructor value");
 }
 
 static void VerifyPreEntrypointBypassFixture(MethodInfo source)
@@ -822,6 +906,15 @@ sealed record IlInstruction(
     MethodBase? CalledMethod,
     MemberInfo? ReferencedMember,
     IReadOnlyList<int> BranchTargets);
+
+sealed record NameBoundBindingFixture(string Second, int First);
+
+sealed class EmptyCallRecoveryPhraseProvider : ICallRecoveryPhraseProvider
+{
+    public Task<string?> GetRecoveryPhraseAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<string?>(string.Empty);
+}
 
 static class CompiledGuardFixtures
 {
