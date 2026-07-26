@@ -14,6 +14,7 @@ namespace Deep.Client.Maui.UiTests;
 
 public sealed class WindowsUiSmokeTests
 {
+    private const string AuthenticatedControlId = "Conversations.NewConversation";
     private static readonly UiBaseline Baseline = LoadBaseline();
 
     [StrictWindowsUiFact]
@@ -48,11 +49,11 @@ public sealed class WindowsUiSmokeTests
         create!.Focus();
         Assert.True(displayName.Text.Length > 0);
         create.Click(moveMouse: false);
-        var authenticatedRoot =
-            session.WaitForAnyAutomationId(
-                ["Page.DesktopWorkspace", "Page.Conversations", "Conversations.Root"],
-                TimeSpan.FromSeconds(20));
-        Assert.NotNull(authenticatedRoot);
+        var authenticatedControl = session.WaitForAutomationId(
+            AuthenticatedControlId,
+            TimeSpan.FromSeconds(20))?.AsButton();
+        Assert.NotNull(authenticatedControl);
+        Assert.True(authenticatedControl!.IsEnabled);
         Assert.Null(session.FindAutomationId("Welcome.Create"));
 
         session.WriteSuccessEvidence();
@@ -82,7 +83,8 @@ public sealed class WindowsUiSmokeTests
             .. Baseline.Welcome,
             "Page.DesktopWorkspace",
             "Page.Conversations",
-            "Conversations.Root"
+            "Conversations.Root",
+            AuthenticatedControlId
         ];
 
         private readonly Application application;
@@ -184,21 +186,6 @@ public sealed class WindowsUiSmokeTests
 
         public void FocusWindow() => CurrentWindow().Focus();
 
-        public AutomationElement? WaitForAnyAutomationId(IEnumerable<string> automationIds, TimeSpan timeout)
-        {
-            var ids = automationIds.ToArray();
-            var result = Retry.WhileNull(
-                () => ids.Select(FindAutomationId).FirstOrDefault(static element => element is not null),
-                timeout,
-                TimeSpan.FromMilliseconds(200),
-                throwOnTimeout: false);
-            if (result.Result is null)
-            {
-                WriteFailureEvidence("Authenticated root was not found after Create.");
-            }
-            return result.Result;
-        }
-
         public void WriteSuccessEvidence()
         {
             File.WriteAllText(
@@ -216,6 +203,7 @@ public sealed class WindowsUiSmokeTests
                         nonzeroWindow = CurrentWindow().Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero,
                         baseline = Baseline.Welcome,
                         createInvoked = true,
+                        authenticatedControl = AuthenticatedControlId,
                         authenticatedRootObserved = true
                     },
                     new JsonSerializerOptions { WriteIndented = true }),
