@@ -97,7 +97,7 @@ jobs:
           dotnet build tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj `
             --configuration Release --no-restore
           if ($LASTEXITCODE -ne 0) { throw 'Release ViewModel test build failed.' }
-      - name: Strict three-router live acceptance
+      - name: Strict pinned-router live acceptance
         working-directory: deep-client-maui
         shell: pwsh
         run: |

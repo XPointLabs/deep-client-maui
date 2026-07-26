@@ -52,9 +52,9 @@ Platform caveats/workarounds are documented in `docs/ARCHITECTURE.md`.
 Runtime transport behavior:
 
 - Debug builds can use local stub mode for deterministic UI behavior.
-- Non-Debug builds require exactly three unique authenticated XPoint onion routers and fail
+- Non-Debug builds require at least three (and at most sixteen) unique authenticated XPoint onion routers and fail
   closed when production trust/configuration is missing.
-- Routed composition requires exactly three lowercase pinned
+- Routed composition requires between three and sixteen lowercase pinned
   `<64-hex-routerId>|<absolute-url>` entries. Router bases reject
   userinfo/query/fragment and non-root paths; HTTP is accepted only for a
   literal loopback IP. Any simultaneous `DEEP_STORAGE_URL` is rejected.

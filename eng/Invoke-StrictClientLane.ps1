@@ -116,15 +116,16 @@ function Test-LiveConfiguration {
         }
         [pscustomobject]@{ routerId = $routerId; url = $uri.AbsoluteUri }
     })
-    $validRouters = $routerEntries.Count -eq 3 -and
-        $parsedRouters.Count -eq 3 -and
+    $maximumRouterCount = 16
+    $validRouters = $routerEntries.Count -ge 3 -and $routerEntries.Count -le $maximumRouterCount -and
+        $parsedRouters.Count -eq $routerEntries.Count -and
         @($parsedRouters | Where-Object { $null -eq $_ }).Count -eq 0 -and
-        @($parsedRouters | ForEach-Object { $_.routerId } | Sort-Object -Unique).Count -eq 3 -and
-        @($parsedRouters | ForEach-Object { $_.url } | Sort-Object -Unique).Count -eq 3
+        @($parsedRouters | ForEach-Object { $_.routerId } | Sort-Object -Unique).Count -eq $routerEntries.Count -and
+        @($parsedRouters | ForEach-Object { $_.url } | Sort-Object -Unique).Count -eq $routerEntries.Count
     Add-Check 'routed-message-endpoint' $validRouters $(if ($validRouters) {
-        'exactly three distinct pinned router identities and URLs'
+        'between three and sixteen distinct pinned router identities and URLs'
     } else {
-        'XNODE_URLS must contain exactly three distinct <64-lowerhex-routerId>|<https-or-loopback-http-url> entries'
+        'XNODE_URLS must contain between three and sixteen distinct <64-lowerhex-routerId>|<https-or-loopback-http-url> entries'
     })
     $directStorageAbsent = -not (Has-Value 'DEEP_STORAGE_URL')
     Add-Check 'direct-storage-absent' $directStorageAbsent $(if ($directStorageAbsent) {

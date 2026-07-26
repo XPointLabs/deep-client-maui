@@ -43,7 +43,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains(
             "XNODE_URLS=4cb5abf6ad79fbf5abbccafcc269d85cd2651ed4b885b5869f241aedf0a5ba29|http://127.0.0.1:41801;" +
             "7422b9887598068e32c4448a949adb290d0f4e35b9e01b0ee5f1a1e600fe2674|http://127.0.0.1:41802;" +
-            "f381626e41e7027ea431bfe3009e94bdd25a746beec468948d6c3c7c5dc9a54b|http://127.0.0.1:41803",
+            "f381626e41e7027ea431bfe3009e94bdd25a746beec468948d6c3c7c5dc9a54b|http://127.0.0.1:41803;" +
+            "fd50b8e3b144ea244fbf7737f550bc8dd0c2650bbc1aada833ca17ff8dbf329b|http://127.0.0.1:41804;" +
+            "fde4fba030ad002f7c2f7d4c331f49d13fb0ec747eceebec634f1ff4cbca9def|http://127.0.0.1:41805;" +
+            "b4c92afb3ba57f3ab959ffe6d319c98484a2155a0f4c65b2c37011ffd197b075|http://127.0.0.1:41806",
             environment,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_FILE_URL=http://127.0.0.1:41821", environment, StringComparison.Ordinal);
@@ -81,7 +84,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
 
         Assert.Contains("$androidPackage = 'network.xpoint.deep.e2e'", script, StringComparison.Ordinal);
         Assert.Contains("$productionPackage = 'network.xpoint.deep'", script, StringComparison.Ordinal);
-        Assert.Contains("$reversePorts = @(41545) + @(41801..41803) + @(41810..41823)", script, StringComparison.Ordinal);
+        Assert.Contains("$reversePorts = @(41545) + @(41801..41806) + @(41810..41823)", script, StringComparison.Ordinal);
         Assert.Contains("-p:DeepPhysicalE2E=true", script, StringComparison.Ordinal);
         Assert.Contains("-p:DeepSurvivalRuntimeEnv=", script, StringComparison.Ordinal);
         Assert.DoesNotContain("uninstall", script, StringComparison.OrdinalIgnoreCase);

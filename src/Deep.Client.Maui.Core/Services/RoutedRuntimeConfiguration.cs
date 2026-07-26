@@ -5,23 +5,24 @@ namespace Deep.Client.Maui.Core.Services;
 
 public static class RoutedRuntimeConfiguration
 {
-    public const int RequiredRouterCount = 3;
+    public const int MinimumRouterCount = 3;
+    public const int MaximumRouterCount = 16;
 
-    public static IReadOnlyList<PinnedRouterEndpoint> ParseExactlyThree(string raw)
+    public static IReadOnlyList<PinnedRouterEndpoint> ParseAtLeastThree(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
             throw new InvalidOperationException(
-                "XNODE_URLS must contain exactly three pinned router entries.");
+                $"XNODE_URLS must contain between {MinimumRouterCount} and {MaximumRouterCount} pinned router entries.");
         }
 
         var endpoints = Split(raw)
             .Select(ParseEndpoint)
             .ToArray();
-        return ValidateExactlyThree(endpoints);
+        return ValidateAtLeastThree(endpoints);
     }
 
-    public static IReadOnlyList<PinnedRouterEndpoint> ValidateExactlyThree(
+    public static IReadOnlyList<PinnedRouterEndpoint> ValidateAtLeastThree(
         IEnumerable<PinnedRouterEndpoint> endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -29,28 +30,28 @@ public static class RoutedRuntimeConfiguration
             .Select(static endpoint => NormalizeEndpoint(endpoint))
             .ToArray();
 
-        if (normalized.Length != RequiredRouterCount)
+        if (normalized.Length < MinimumRouterCount || normalized.Length > MaximumRouterCount)
         {
             throw new InvalidOperationException(
-                "XNODE_URLS must contain exactly three pinned router entries.");
+                $"XNODE_URLS must contain between {MinimumRouterCount} and {MaximumRouterCount} pinned router entries.");
         }
 
         if (normalized
                 .Select(static endpoint => endpoint.ExpectedRouterId)
                 .Distinct(StringComparer.Ordinal)
-                .Count() != RequiredRouterCount)
+                .Count() != normalized.Length)
         {
             throw new InvalidOperationException(
-                "XNODE_URLS must contain exactly three unique lowercase router IDs.");
+                "XNODE_URLS must contain unique lowercase router IDs.");
         }
 
         if (normalized
                 .Select(static endpoint => endpoint.BaseUrl)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Count() != RequiredRouterCount)
+                .Count() != normalized.Length)
         {
             throw new InvalidOperationException(
-                "XNODE_URLS must contain exactly three unique absolute router URLs.");
+                "XNODE_URLS must contain unique absolute router URLs.");
         }
 
         return normalized;

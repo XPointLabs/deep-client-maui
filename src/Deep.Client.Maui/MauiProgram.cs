@@ -585,13 +585,13 @@ public static class MauiProgram
         var raw = ResolveRuntimeSetting(RouterBaseUrlsEnv);
         if (!string.IsNullOrWhiteSpace(raw))
         {
-            return RoutedRuntimeConfiguration.ParseExactlyThree(raw);
+            return RoutedRuntimeConfiguration.ParseAtLeastThree(raw);
         }
 
 #if ANDROID
-        return RoutedRuntimeConfiguration.ValidateExactlyThree(AndroidRealityTransport.Start());
+        return RoutedRuntimeConfiguration.ValidateAtLeastThree(AndroidRealityTransport.Start());
 #elif WINDOWS
-        return RoutedRuntimeConfiguration.ValidateExactlyThree(WindowsRealityTransport.Start());
+        return RoutedRuntimeConfiguration.ValidateAtLeastThree(WindowsRealityTransport.Start());
 #else
         return [];
 #endif
@@ -963,7 +963,7 @@ public static class MauiProgram
 #else
         if (string.Equals(key, RouterBaseUrlsEnv, StringComparison.Ordinal))
         {
-            _ = RoutedRuntimeConfiguration.ParseExactlyThree(value);
+            _ = RoutedRuntimeConfiguration.ParseAtLeastThree(value);
             return value;
         }
 

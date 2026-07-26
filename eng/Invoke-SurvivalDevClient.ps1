@@ -16,7 +16,7 @@ $physicalE2eProperty = '-p:DeepPhysicalE2E=true'
 $runtimeEnvironmentProperty = "-p:DeepSurvivalRuntimeEnv=$runtimeEnvironment"
 $androidPackage = 'network.xpoint.deep.e2e'
 $productionPackage = 'network.xpoint.deep'
-$reversePorts = @(41545) + @(41801..41803) + @(41810..41823)
+$reversePorts = @(41545) + @(41801..41806) + @(41810..41823)
 
 function Resolve-Adb {
     if (-not [string]::IsNullOrWhiteSpace($AdbPath) -and (Test-Path -LiteralPath $AdbPath -PathType Leaf)) {

@@ -61,7 +61,7 @@ These must not regress:
 - Group create/open/send/member management flows must preserve shared group rules.
 - Sign-out must clear authenticated navigation state and honor configured local wipe behavior.
 - Non-Debug startup must not silently replace real transport with stub transport.
-- Non-Debug routed startup requires exactly three unique lowercase pinned router
+- Non-Debug routed startup requires between three and sixteen unique lowercase pinned router
   identities and URLs, rejects `DEEP_STORAGE_URL`, and has no direct-storage
   fallback after router failure.
 

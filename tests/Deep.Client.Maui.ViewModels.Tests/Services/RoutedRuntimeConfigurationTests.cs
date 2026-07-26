@@ -15,15 +15,16 @@ public sealed class RoutedRuntimeConfigurationTests
     private const string RouterAlpha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     [Fact]
-    public void ParseExactlyThree_AcceptsUniqueLowercasePinsAndCanonicalizesUrls()
+    public void ParseAtLeastThree_AcceptsRedundantUniqueLowercasePinsAndCanonicalizesUrls()
     {
-        var endpoints = RoutedRuntimeConfiguration.ParseExactlyThree(string.Join(';',
+        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
             $"{RouterOne}|http://127.0.0.1:29281",
             $"{RouterTwo}|http://[::1]:29282",
-            $"{RouterThree}|https://router-three.example"));
+            $"{RouterThree}|https://router-three.example",
+            $"{RouterFour}|https://router-four.example"));
 
-        Assert.Equal(3, endpoints.Count);
-        Assert.Equal([RouterOne, RouterTwo, RouterThree], endpoints.Select(static endpoint => endpoint.ExpectedRouterId));
+        Assert.Equal(4, endpoints.Count);
+        Assert.Equal([RouterOne, RouterTwo, RouterThree, RouterFour], endpoints.Select(static endpoint => endpoint.ExpectedRouterId));
         Assert.Equal("http://127.0.0.1:29281/", endpoints[0].BaseUrl);
         Assert.Equal("http://[::1]:29282/", endpoints[1].BaseUrl);
         Assert.Equal("https://router-three.example/", endpoints[2].BaseUrl);
@@ -31,13 +32,13 @@ public sealed class RoutedRuntimeConfigurationTests
 
     [Theory]
     [MemberData(nameof(InvalidRouterSets))]
-    public void ParseExactlyThree_RejectsNonExactDuplicateOrUntrustedRouterSets(string value)
+    public void ParseAtLeastThree_RejectsTooSmallDuplicateOrUntrustedRouterSets(string value)
     {
-        Assert.Throws<InvalidOperationException>(() => RoutedRuntimeConfiguration.ParseExactlyThree(value));
+        Assert.Throws<InvalidOperationException>(() => RoutedRuntimeConfiguration.ParseAtLeastThree(value));
     }
 
     [Fact]
-    public void ValidateExactlyThree_RejectsCanonicalUrlAliases()
+    public void ValidateAtLeastThree_RejectsCanonicalUrlAliases()
     {
         var endpoints = new[]
         {
@@ -47,7 +48,7 @@ public sealed class RoutedRuntimeConfigurationTests
         };
 
         Assert.Throws<InvalidOperationException>(() =>
-            RoutedRuntimeConfiguration.ValidateExactlyThree(endpoints));
+            RoutedRuntimeConfiguration.ValidateAtLeastThree(endpoints));
     }
 
     [Fact]
@@ -91,11 +92,6 @@ public sealed class RoutedRuntimeConfigurationTests
             $"{RouterTwo}|https://router-two.example"),
         string.Join(';',
             $"{RouterOne}|https://router-one.example",
-            $"{RouterTwo}|https://router-two.example",
-            $"{RouterThree}|https://router-three.example",
-            $"{RouterFour}|https://router-four.example"),
-        string.Join(';',
-            $"{RouterOne}|https://router-one.example",
             $"{RouterOne}|https://router-two.example",
             $"{RouterThree}|https://router-three.example"),
         string.Join(';',
@@ -112,13 +108,24 @@ public sealed class RoutedRuntimeConfigurationTests
             $"{RouterThree}|https://router-three.example")
     };
 
+    [Fact]
+    public void ParseAtLeastThree_RejectsRouterSetsAboveTheConfiguredMaximum()
+    {
+        var routers = Enumerable.Range(1, RoutedRuntimeConfiguration.MaximumRouterCount + 1)
+            .Select(index =>
+                $"{index.ToString("x64")}|https://router-{index}.example/");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';', routers)));
+    }
+
     [Theory]
     [InlineData("https://router-one.example/base")]
     [InlineData("https://user@router-one.example/")]
     [InlineData("https://router-one.example/?query=value")]
     [InlineData("https://router-one.example/#fragment")]
     [InlineData("http://localhost:29281/")]
-    public void ParseExactlyThree_RejectsNonCanonicalRouterBaseUrl(string firstUrl)
+    public void ParseAtLeastThree_RejectsNonCanonicalRouterBaseUrl(string firstUrl)
     {
         var value = string.Join(';',
             $"{RouterOne}|{firstUrl}",
@@ -126,13 +133,13 @@ public sealed class RoutedRuntimeConfigurationTests
             $"{RouterThree}|https://router-three.example/");
 
         Assert.Throws<InvalidOperationException>(() =>
-            RoutedRuntimeConfiguration.ParseExactlyThree(value));
+            RoutedRuntimeConfiguration.ParseAtLeastThree(value));
     }
 
     [Fact]
     public async Task ProductionFactory_ResolvesRealRoutedTypesAndFailsClosedDuringRouterOutage()
     {
-        var endpoints = RoutedRuntimeConfiguration.ParseExactlyThree(string.Join(';',
+        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
             $"{RouterOne}|https://router-one.example/",
             $"{RouterTwo}|https://router-two.example/",
             $"{RouterThree}|https://router-three.example/"));
@@ -167,7 +174,7 @@ public sealed class RoutedRuntimeConfigurationTests
     [Fact]
     public void ProductionFactory_DefaultOpaqueModeFailsClosedWithoutExplicitP03Dependencies()
     {
-        var endpoints = RoutedRuntimeConfiguration.ParseExactlyThree(string.Join(';',
+        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
             $"{RouterOne}|https://router-one.example/",
             $"{RouterTwo}|https://router-two.example/",
             $"{RouterThree}|https://router-three.example/"));
@@ -185,9 +192,9 @@ public sealed class RoutedRuntimeConfigurationTests
     }
 
     [Fact]
-    public void ProductionFactory_RejectsDirectStorageAndNonExactRouterCount()
+    public void ProductionFactory_RejectsDirectStorageAndTooFewRouters()
     {
-        var valid = RoutedRuntimeConfiguration.ParseExactlyThree(string.Join(';',
+        var valid = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
             $"{RouterOne}|https://router-one.example/",
             $"{RouterTwo}|https://router-two.example/",
             $"{RouterThree}|https://router-three.example/"));
@@ -204,6 +211,25 @@ public sealed class RoutedRuntimeConfigurationTests
                 directStorageUrl: null,
                 new HttpClient(),
                 new RoutedSessionStorageTransportOptions()));
+    }
+
+    [Fact]
+    public void ProductionFactory_AcceptsRedundantPinnedRouters()
+    {
+        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
+            $"{RouterOne}|https://router-one.example/",
+            $"{RouterTwo}|https://router-two.example/",
+            $"{RouterThree}|https://router-three.example/",
+            $"{RouterFour}|https://router-four.example/"));
+
+        var composition = RoutedProductionCompositionFactory.Create(
+            endpoints,
+            directStorageUrl: null,
+            new HttpClient(),
+            new RoutedSessionStorageTransportOptions(
+                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility));
+
+        Assert.Equal(endpoints, composition.PinnedRouters);
     }
 
     private sealed class RouterOutageHandler(

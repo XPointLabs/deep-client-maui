@@ -31,7 +31,7 @@ fast unit tests.
 secure storage adapters, media/picker integration, push callbacks, app lock,
 Reality sidecars, and OS activation ingress.
 
-Release builds require real transports, exactly three unique pinned Reality
+Release builds require real transports, between three and sixteen unique pinned Reality
 bootstrap nodes, TLS public-key pins, encrypted local persistence, and E2EE.
 Routed composition rejects `DEEP_STORAGE_URL`; direct storage and custom direct
 HTTP transports are Debug-only diagnostics and cannot be selected by a Release
@@ -55,8 +55,8 @@ through local Reality listeners. Inbox synchronization verifies authenticated
 storage responses, decrypts envelopes, rejects replay, persists domain state,
 and acknowledges only after durable processing.
 
-The routed runtime accepts exactly three distinct lowercase pinned identities
-and three distinct canonical router URLs. Router bases have a root path and no
+The routed runtime accepts between three and sixteen distinct lowercase pinned identities
+and canonical router URLs. Router bases have a root path and no
 userinfo, query, or fragment; HTTP requires a literal loopback IP, while HTTPS
 uses the existing identity/certificate pinning. `MauiProgram` resolves the route
 provider and message transport through the same Core production factory covered
@@ -77,7 +77,7 @@ derived from them. The guard verifies entrypoint dominance and adjacency in
 compiled control flow, scans the reachable Release call graph for direct/stub
 tokens, executes the exact entrypoint against a real final DI container, and
 binds the complete 65-descriptor Windows Release manifest. It also checks
-resolved factory instances, exact three pins, and the absence of direct/stub
+resolved factory instances, the configured pinned set, and the absence of direct/stub
 descriptors or concretes. Conditional/dead entrypoint, pre-entrypoint
 `RegisterExtra(builder.Services)`, environment-conditional direct/stub,
 indirect post-entrypoint registration, and post-entrypoint descriptor mutation

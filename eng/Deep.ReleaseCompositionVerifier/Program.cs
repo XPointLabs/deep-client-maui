@@ -208,7 +208,7 @@ static void ValidateFinalApplicationComposition(
         "Factory message transport is not the final DI transport.");
     Require(
         compositions[0].PinnedRouters.SequenceEqual(expectedRouters),
-        "Final composition does not contain the exact three expected pins.");
+        "Final composition does not contain the expected synthetic pin set.");
 
     var forbidden = new[]
     {

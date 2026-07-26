@@ -23,7 +23,7 @@ public sealed class ClientLiveAcceptanceTests
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(routerUrls))
         {
-            missing.Add("XNODE_URLS (exactly three pinned routers; direct storage is a separate contract lane)");
+            missing.Add("XNODE_URLS (at least three pinned routers; direct storage is a separate contract lane)");
         }
         if (string.IsNullOrWhiteSpace(fileUrl))
         {
@@ -42,7 +42,7 @@ public sealed class ClientLiveAcceptanceTests
             string.IsNullOrWhiteSpace(storageUrl),
             "DEEP_STORAGE_URL must be absent; direct storage cannot satisfy routed release evidence.");
 
-        var endpoints = RoutedRuntimeConfiguration.ParseExactlyThree(routerUrls!);
+        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(routerUrls!);
         _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_FILE_URL", fileUrl);
         _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_PUSH_URL", pushUrl);
         _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_CALL_SIGNALING_BASE_URL", callUrl);
@@ -224,9 +224,12 @@ public sealed class ClientLiveAcceptanceTests
         var route = Assert.IsType<TransportRouteSnapshot>(fixture.Router.CurrentRoute);
         Assert.Equal("onion-storage", route.Mode);
         Assert.Equal([0, 1, 2], route.Nodes.Select(static node => node.Index));
-        Assert.Equal(
-            endpoints.Select(static endpoint => endpoint.ExpectedRouterId).Order(StringComparer.Ordinal),
-            route.Nodes.Select(static node => node.RouterId).Order(StringComparer.Ordinal));
+        Assert.Equal(3, route.Nodes.Count);
+        var pinnedRouterIds = endpoints
+            .Select(static endpoint => endpoint.ExpectedRouterId)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.All(route.Nodes, node => Assert.Contains(node.RouterId, pinnedRouterIds));
+        Assert.Equal(3, route.Nodes.Select(static node => node.RouterId).Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(
             3,
             route.Nodes

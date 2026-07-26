@@ -42,7 +42,7 @@ Use `-Bootstrap live` only when all live endpoint variables are present.
 
 ## Live client acceptance
 
-Set `XNODE_URLS` to exactly three distinct
+Set `XNODE_URLS` to between three and sixteen distinct
 `<64-lowerhex-routerId>|<https-or-loopback-http-url>` entries, plus valid HTTPS
 or explicit-loopback HTTP `DEEP_FILE_URL`, `DEEP_PUSH_URL`, and
 `DEEP_CALL_SIGNALING_BASE_URL`. Router bases must use the root path and omit
@@ -58,7 +58,7 @@ hostname. `DEEP_STORAGE_URL` must be absent. Then run:
 Without `DEEP_STRICT_LIVE=1`, the live xUnit acceptance test is explicitly reported as `NOT-RUN` instead of silently passing.
 `DEEP_STORAGE_URL` cannot satisfy this release lane. Direct storage has a separate opt-in diagnostic contract (`DEEP_STRICT_DIRECT_STORAGE=1`) and is never routed evidence.
 The acceptance verifies the actual `CurrentRoute`: mode `onion-storage`, node
-indices exactly `0,1,2`, the exact pinned identity set, and three unique signed
+indices exactly `0,1,2`, three distinct identities from the pinned set, and three unique signed
 relay RPC endpoints. Both routed store and authenticated retrieve must cross the
 router API. A forced router-API outage must fail closed without any request to a
 direct storage endpoint. The wrapper always executes this xUnit acceptance in
@@ -112,6 +112,6 @@ The preflight supports an explicit `-AndroidSerial` and configures `adb reverse`
   -RequireComplete
 ```
 
-The validator is the only release gate and sets `productionReady` explicitly. It revalidates the protected real policy, receipt, tools, exact APK, safe summary, and all three fresh lane identities against a clean current commit. Normal developer CI and synthetic contracts only publish `NOT-RUN`/blocked evidence; direct `dotnet test`, a copied result, a synthetic policy, or skipped tests cannot satisfy this gate. `productionReady` remains false until the real Windows rendered lane, approved physical Android lane, and routed live three-node lane all pass in one invocation.
+The validator is the only release gate and sets `productionReady` explicitly. It revalidates the protected real policy, receipt, tools, exact APK, safe summary, and all three fresh lane identities against a clean current commit. Normal developer CI and synthetic contracts only publish `NOT-RUN`/blocked evidence; direct `dotnet test`, a copied result, a synthetic policy, or skipped tests cannot satisfy this gate. `productionReady` remains false until the real Windows rendered lane, approved physical Android lane, and routed live lane (whose selected route has three nodes) all pass in one invocation.
 
 Rollback is forward-only: stop promotion, preserve rejected raw evidence only in the local quarantine, and ship a reviewed corrective commit. Do not restore hash-only Windows checks, caller self-attestation, synthetic release evidence, weaker JUnit filtering, production package testing, raw artifact upload, or pass-by-return behavior. Mr. X owns policy approval and the final release decision.

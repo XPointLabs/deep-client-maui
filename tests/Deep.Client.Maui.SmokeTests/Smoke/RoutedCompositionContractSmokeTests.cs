@@ -67,7 +67,7 @@ public sealed class RoutedCompositionContractSmokeTests
             "- name: Prepare clean-runner Release live acceptance",
             StringComparison.Ordinal);
         var live = workflow.IndexOf(
-            "- name: Strict three-router live acceptance",
+            "- name: Strict pinned-router live acceptance",
             StringComparison.Ordinal);
 
         Assert.True(prepare >= 0 && live > prepare);
@@ -192,12 +192,12 @@ public sealed class RoutedCompositionContractSmokeTests
 
     public static TheoryData<string, string?, string?, bool> LiveConfigurationCases => new()
     {
-        { "exact-three-storage-absent", ValidRouters(), null, true },
-        { "literal-loopback-http", Join($"{RouterOne}|http://127.0.0.1:29281/", Router(2), Router(3)), null, true },
+        { "six-pinned-routers-storage-absent", ValidRouters(), null, true },
+        { "literal-loopback-http", Join($"{RouterOne}|http://127.0.0.1:29281/", Router(2), Router(3), Router(4), Router(5), Router(6)), null, true },
         { "direct-storage-present", ValidRouters(), "https://storage.example/", false },
         { "zero-routers", null, null, false },
         { "two-routers", Join(Router(1), Router(2)), null, false },
-        { "four-routers", Join(Router(1), Router(2), Router(3), Router(4)), null, false },
+        { "four-routers", Join(Router(1), Router(2), Router(3), Router(4)), null, true },
         { "uppercase-router-id", Join($"{new string('A', 64)}|https://router-one.example/", Router(2), Router(3)), null, false },
         { "duplicate-router-id", Join(Router(1), $"{RouterOne}|https://router-two.example/", Router(3)), null, false },
         { "duplicate-router-url", Join(Router(1), $"{RouterTwo}|https://router-one.example/", Router(3)), null, false },
@@ -233,7 +233,7 @@ public sealed class RoutedCompositionContractSmokeTests
         }
     }
 
-    private static string ValidRouters() => Join(Router(1), Router(2), Router(3));
+    private static string ValidRouters() => Join(Router(1), Router(2), Router(3), Router(4), Router(5), Router(6));
 
     private static string Router(int index) => index switch
     {
@@ -241,6 +241,8 @@ public sealed class RoutedCompositionContractSmokeTests
         2 => $"{RouterTwo}|https://router-two.example/",
         3 => $"{RouterThree}|https://router-three.example/",
         4 => $"{RouterFour}|https://router-four.example/",
+        5 => $"{new string('5', 64)}|https://router-five.example/",
+        6 => $"{new string('6', 64)}|https://router-six.example/",
         _ => throw new ArgumentOutOfRangeException(nameof(index))
     };
 

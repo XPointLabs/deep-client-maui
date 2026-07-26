@@ -36,7 +36,7 @@ public static class RoutedProductionCompositionFactory
     {
         ArgumentNullException.ThrowIfNull(routerHttpClient);
         ArgumentNullException.ThrowIfNull(transportOptions);
-        var validatedEndpoints = RoutedRuntimeConfiguration.ValidateExactlyThree(routerEndpoints);
+        var validatedEndpoints = RoutedRuntimeConfiguration.ValidateAtLeastThree(routerEndpoints);
         RoutedRuntimeConfiguration.RejectDirectStorageForRoutedComposition(directStorageUrl);
 
         var router = new XNodeRpcClient(
