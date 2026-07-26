@@ -135,6 +135,17 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("IsExplicitLoopbackHttp(uri)", program, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PersistentRuntimeFactoryUsesTheExecutableCompositionCoveredByRuntimeTests()
+    {
+        var program = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
+
+        Assert.Contains(
+            "return PersistentClientRuntimeComposer.Create(",
+            program,
+            StringComparison.Ordinal);
+    }
+
     private static string ReadWorkspaceFile(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

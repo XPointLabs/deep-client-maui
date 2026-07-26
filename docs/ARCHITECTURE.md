@@ -107,14 +107,25 @@ The current Windows boundary is a bounded, per-dispatch child-process
 supervisor in `Deep.Client.Maui.Outbox`. The worker executable must live at the
 fixed app-relative path
 `outbox-worker/Deep.Client.Maui.OutboxWorker.exe`, remain below a non-reparse
-trusted root, and match the exact SHA-256 supplied in
-`DEEP_OUTBOX_WORKER_SHA256`. Each invocation uses private inherited standard
-handles, a fresh 256-bit session key and nonce, HMAC-SHA-256 request/response
-binding, length-bounded frames, a one-slot nonblocking admission gate, and a
-Windows Job Object with kill-on-close. Timeout, cancellation, crash, malformed
-receipt, failed receipt, executor disposal, or hash drift returns no trusted
-receipt and completes only after the child process has exited. Worker stderr is
-drained without retention. No worker is resident while the app is idle.
+trusted root that the client principal cannot add to, modify, or delete from.
+The executable must match `DEEP_OUTBOX_WORKER_SHA256`; every regular file under
+the bounded deployment root must also match the deterministic digest supplied
+in `DEEP_OUTBOX_WORKER_BUNDLE_SHA256`. All attested files remain open with
+write/delete sharing denied from verification through worker termination.
+The bundle digest is SHA-256 over the ASCII domain
+`Deep.ExternalTransportOutbox.Bundle.v1\0`, followed for each ordinally sorted
+root-relative `/` path by its big-endian UTF-8 path length, big-endian file
+length, UTF-8 path bytes, and file bytes.
+Each invocation inherits only its three private standard handles, uses a fresh
+256-bit session key and nonce, HMAC-SHA-256 request/response binding, and a
+bounded binary outer envelope so a maximum-size ciphertext is not base64
+expanded twice. The process is created suspended, assigned to a preconfigured
+kill-on-close Windows Job Object, and only then resumed; worker or descendant
+code cannot execute before Job membership. Timeout, cancellation, crash,
+malformed receipt, failed receipt, executor disposal, or hash drift returns no
+trusted receipt and completes only after the entire Job has terminated. Worker
+stderr is drained without retention. No worker is resident while the app is
+idle.
 
 This is a platform execution boundary, not production outbox activation.
 There is currently no production worker binary, packaged worker hash, or

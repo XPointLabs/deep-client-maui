@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using Deep.Client.Maui.Outbox;
 using Deep.Client.Shared.Services;
 
@@ -8,9 +9,22 @@ var mode = args
 var pidFile = args
     .FirstOrDefault(static argument => argument.StartsWith("--pid-file=", StringComparison.Ordinal))
     ?["--pid-file=".Length..];
+var childPidFile = args
+    .FirstOrDefault(static argument =>
+        argument.StartsWith("--child-pid-file=", StringComparison.Ordinal))
+    ?["--child-pid-file=".Length..];
 if (!string.IsNullOrWhiteSpace(pidFile))
 {
     await File.WriteAllTextAsync(pidFile, Environment.ProcessId.ToString());
+}
+if (mode == "child-hang")
+{
+    if (!string.IsNullOrWhiteSpace(childPidFile))
+    {
+        await File.WriteAllTextAsync(childPidFile, Environment.ProcessId.ToString());
+    }
+    await Task.Delay(Timeout.InfiniteTimeSpan);
+    return;
 }
 
 using var context = await ExternalTransportOutboxWorkerProtocol.ReadRequestAsync(
@@ -23,6 +37,24 @@ if (context.Request.Operation == ExternalTransportOutboxWorkerOperation.Probe)
 
 switch (mode)
 {
+    case "spawn-child-hang":
+    {
+        var child = new ProcessStartInfo
+        {
+            FileName = Environment.ProcessPath
+                ?? throw new InvalidOperationException("Worker path is unavailable."),
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        child.ArgumentList.Add("--mode=child-hang");
+        if (!string.IsNullOrWhiteSpace(childPidFile))
+        {
+            child.ArgumentList.Add($"--child-pid-file={childPidFile}");
+        }
+        Process.Start(child)?.Dispose();
+        await Task.Delay(Timeout.InfiniteTimeSpan);
+        return;
+    }
     case "hang":
         await Task.Delay(Timeout.InfiniteTimeSpan);
         return;

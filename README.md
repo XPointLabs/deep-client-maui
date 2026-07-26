@@ -67,7 +67,9 @@ Runtime transport behavior:
 Persistent transport outbox is fail-closed. `DEEP_PERSISTENT_TRANSPORT_OUTBOX=1`
 is accepted only when the fixed Windows worker
 `outbox-worker/Deep.Client.Maui.OutboxWorker.exe` matches the exact
-`DEEP_OUTBOX_WORKER_SHA256` value and completes an authenticated live probe.
+`DEEP_OUTBOX_WORKER_SHA256` value, the complete worker directory matches
+`DEEP_OUTBOX_WORKER_BUNDLE_SHA256`, the deployment root is not writable by the
+client principal, and the worker completes an authenticated live probe.
 Otherwise the effective feature remains disabled and normal message transport
 continues. No production worker is packaged yet, and Android intentionally has
 no executor registration; see `docs/ARCHITECTURE.md`.

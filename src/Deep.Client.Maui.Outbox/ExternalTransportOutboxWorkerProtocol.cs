@@ -49,7 +49,14 @@ public static class ExternalTransportOutboxWorkerProtocol
     public const int Version = 1;
     public const int NonceBytes = 32;
     public const int SessionKeyBytes = 32;
-    public const int MaximumFrameBytes = 1_500_000;
+    public const int MaximumRequestFrameBytes = 1_500_000;
+    public const int MaximumResponseFrameBytes = 32_768;
+
+    private const byte EnvelopeVersion = 1;
+    private const byte RequestEnvelopeKind = 1;
+    private const byte ResponseEnvelopeKind = 2;
+    private const int MacBytes = 32;
+    private const int BinaryEnvelopeHeaderBytes = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -76,10 +83,13 @@ public static class ExternalTransportOutboxWorkerProtocol
         byte[]? frame = null;
         try
         {
-            frame = JsonSerializer.SerializeToUtf8Bytes(
-                new RequestEnvelope(keyCopy, payload, mac),
-                JsonOptions);
-            await WriteFrameAsync(stream, frame, cancellationToken).ConfigureAwait(false);
+            frame = CreateRequestFrame(keyCopy, payload, mac);
+            await WriteFrameAsync(
+                    stream,
+                    frame,
+                    MaximumRequestFrameBytes,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -98,26 +108,22 @@ public static class ExternalTransportOutboxWorkerProtocol
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        var frame = await ReadFrameAsync(stream, cancellationToken).ConfigureAwait(false);
-        RequestEnvelope? envelope = null;
+        var frame = await ReadFrameAsync(
+                stream,
+                MaximumRequestFrameBytes,
+                cancellationToken)
+            .ConfigureAwait(false);
+        byte[]? sessionKey = null;
+        byte[]? payload = null;
+        byte[]? mac = null;
         var transferredSessionKey = false;
         try
         {
-            envelope = JsonSerializer.Deserialize<RequestEnvelope>(frame, JsonOptions)
-                ?? throw new InvalidDataException("Invalid worker request.");
-            if (envelope.SessionKey is null
-                || envelope.SessionKey.Length != SessionKeyBytes
-                || envelope.Payload is null
-                || envelope.Mac is null
-                || envelope.Mac.Length != 32)
-            {
-                throw new InvalidDataException("Invalid worker request.");
-            }
-
-            var expectedMac = HMACSHA256.HashData(envelope.SessionKey, envelope.Payload);
+            ParseRequestFrame(frame, out sessionKey, out payload, out mac);
+            var expectedMac = HMACSHA256.HashData(sessionKey, payload);
             try
             {
-                if (!CryptographicOperations.FixedTimeEquals(expectedMac, envelope.Mac))
+                if (!CryptographicOperations.FixedTimeEquals(expectedMac, mac))
                 {
                     throw new InvalidDataException("Invalid worker request.");
                 }
@@ -128,12 +134,16 @@ public static class ExternalTransportOutboxWorkerProtocol
             }
 
             var request = JsonSerializer.Deserialize<ExternalTransportOutboxWorkerRequest>(
-                    envelope.Payload,
+                    payload,
                     JsonOptions)
                 ?? throw new InvalidDataException("Invalid worker request.");
             ValidateRequest(request);
             transferredSessionKey = true;
-            return new(request, envelope.SessionKey);
+            return new(request, sessionKey);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
@@ -141,9 +151,17 @@ public static class ExternalTransportOutboxWorkerProtocol
         }
         finally
         {
-            if (!transferredSessionKey && envelope?.SessionKey is not null)
+            if (!transferredSessionKey && sessionKey is not null)
             {
-                CryptographicOperations.ZeroMemory(envelope.SessionKey);
+                CryptographicOperations.ZeroMemory(sessionKey);
+            }
+            if (payload is not null)
+            {
+                CryptographicOperations.ZeroMemory(payload);
+            }
+            if (mac is not null)
+            {
+                CryptographicOperations.ZeroMemory(mac);
             }
             CryptographicOperations.ZeroMemory(frame);
         }
@@ -167,8 +185,13 @@ public static class ExternalTransportOutboxWorkerProtocol
         byte[]? frame = null;
         try
         {
-            frame = JsonSerializer.SerializeToUtf8Bytes(new ResponseEnvelope(payload, mac), JsonOptions);
-            await WriteFrameAsync(stream, frame, cancellationToken).ConfigureAwait(false);
+            frame = CreateResponseFrame(payload, mac);
+            await WriteFrameAsync(
+                    stream,
+                    frame,
+                    MaximumResponseFrameBytes,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -192,22 +215,20 @@ public static class ExternalTransportOutboxWorkerProtocol
             throw new ArgumentException("The worker session key has an invalid length.", nameof(sessionKey));
         }
 
-        var frame = await ReadFrameAsync(stream, cancellationToken).ConfigureAwait(false);
+        var frame = await ReadFrameAsync(
+                stream,
+                MaximumResponseFrameBytes,
+                cancellationToken)
+            .ConfigureAwait(false);
+        byte[]? payload = null;
+        byte[]? mac = null;
         try
         {
-            var envelope = JsonSerializer.Deserialize<ResponseEnvelope>(frame, JsonOptions)
-                ?? throw new InvalidDataException("Invalid worker response.");
-            if (envelope.Payload is null
-                || envelope.Mac is null
-                || envelope.Mac.Length != 32)
-            {
-                throw new InvalidDataException("Invalid worker response.");
-            }
-
-            var expectedMac = HMACSHA256.HashData(sessionKey.Span, envelope.Payload);
+            ParseResponseFrame(frame, out payload, out mac);
+            var expectedMac = HMACSHA256.HashData(sessionKey.Span, payload);
             try
             {
-                if (!CryptographicOperations.FixedTimeEquals(expectedMac, envelope.Mac))
+                if (!CryptographicOperations.FixedTimeEquals(expectedMac, mac))
                 {
                     throw new InvalidDataException("Invalid worker response.");
                 }
@@ -218,11 +239,15 @@ public static class ExternalTransportOutboxWorkerProtocol
             }
 
             var response = JsonSerializer.Deserialize<ExternalTransportOutboxWorkerResponse>(
-                    envelope.Payload,
+                    payload,
                     JsonOptions)
                 ?? throw new InvalidDataException("Invalid worker response.");
             ValidateResponse(response);
             return response;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
@@ -230,16 +255,115 @@ public static class ExternalTransportOutboxWorkerProtocol
         }
         finally
         {
+            if (payload is not null)
+            {
+                CryptographicOperations.ZeroMemory(payload);
+            }
+            if (mac is not null)
+            {
+                CryptographicOperations.ZeroMemory(mac);
+            }
             CryptographicOperations.ZeroMemory(frame);
         }
+    }
+
+    private static byte[] CreateRequestFrame(
+        ReadOnlySpan<byte> sessionKey,
+        ReadOnlySpan<byte> payload,
+        ReadOnlySpan<byte> mac)
+    {
+        var length = checked(
+            BinaryEnvelopeHeaderBytes
+            + SessionKeyBytes
+            + payload.Length
+            + MacBytes);
+        var frame = new byte[length];
+        frame[0] = EnvelopeVersion;
+        frame[1] = RequestEnvelopeKind;
+        BinaryPrimitives.WriteInt32BigEndian(frame.AsSpan(2, sizeof(int)), payload.Length);
+        sessionKey.CopyTo(frame.AsSpan(BinaryEnvelopeHeaderBytes, SessionKeyBytes));
+        payload.CopyTo(frame.AsSpan(BinaryEnvelopeHeaderBytes + SessionKeyBytes, payload.Length));
+        mac.CopyTo(frame.AsSpan(length - MacBytes, MacBytes));
+        return frame;
+    }
+
+    private static byte[] CreateResponseFrame(
+        ReadOnlySpan<byte> payload,
+        ReadOnlySpan<byte> mac)
+    {
+        var length = checked(BinaryEnvelopeHeaderBytes + payload.Length + MacBytes);
+        var frame = new byte[length];
+        frame[0] = EnvelopeVersion;
+        frame[1] = ResponseEnvelopeKind;
+        BinaryPrimitives.WriteInt32BigEndian(frame.AsSpan(2, sizeof(int)), payload.Length);
+        payload.CopyTo(frame.AsSpan(BinaryEnvelopeHeaderBytes, payload.Length));
+        mac.CopyTo(frame.AsSpan(length - MacBytes, MacBytes));
+        return frame;
+    }
+
+    private static void ParseRequestFrame(
+        ReadOnlySpan<byte> frame,
+        out byte[] sessionKey,
+        out byte[] payload,
+        out byte[] mac)
+    {
+        var minimumLength = BinaryEnvelopeHeaderBytes + SessionKeyBytes + MacBytes + 1;
+        if (frame.Length < minimumLength
+            || frame[0] != EnvelopeVersion
+            || frame[1] != RequestEnvelopeKind)
+        {
+            throw new InvalidDataException("Invalid worker request.");
+        }
+
+        var payloadLength = BinaryPrimitives.ReadInt32BigEndian(frame.Slice(2, sizeof(int)));
+        if (payloadLength <= 0
+            || frame.Length != BinaryEnvelopeHeaderBytes
+                + SessionKeyBytes
+                + payloadLength
+                + MacBytes)
+        {
+            throw new InvalidDataException("Invalid worker request.");
+        }
+
+        sessionKey = frame.Slice(BinaryEnvelopeHeaderBytes, SessionKeyBytes).ToArray();
+        payload = frame.Slice(
+                BinaryEnvelopeHeaderBytes + SessionKeyBytes,
+                payloadLength)
+            .ToArray();
+        mac = frame[^MacBytes..].ToArray();
+    }
+
+    private static void ParseResponseFrame(
+        ReadOnlySpan<byte> frame,
+        out byte[] payload,
+        out byte[] mac)
+    {
+        var minimumLength = BinaryEnvelopeHeaderBytes + MacBytes + 1;
+        if (frame.Length < minimumLength
+            || frame[0] != EnvelopeVersion
+            || frame[1] != ResponseEnvelopeKind)
+        {
+            throw new InvalidDataException("Invalid worker response.");
+        }
+
+        var payloadLength = BinaryPrimitives.ReadInt32BigEndian(frame.Slice(2, sizeof(int)));
+        if (payloadLength <= 0
+            || frame.Length != BinaryEnvelopeHeaderBytes + payloadLength + MacBytes)
+        {
+            throw new InvalidDataException("Invalid worker response.");
+        }
+
+        payload = frame.Slice(BinaryEnvelopeHeaderBytes, payloadLength).ToArray();
+        mac = frame[^MacBytes..].ToArray();
     }
 
     private static async Task WriteFrameAsync(
         Stream stream,
         byte[] frame,
+        int maximumFrameBytes,
         CancellationToken cancellationToken)
     {
-        if (frame.Length is <= 0 or > MaximumFrameBytes)
+        if (frame.Length is <= 0 || frame.Length > maximumFrameBytes)
         {
             throw new InvalidDataException("Invalid worker frame.");
         }
@@ -253,12 +377,13 @@ public static class ExternalTransportOutboxWorkerProtocol
 
     private static async Task<byte[]> ReadFrameAsync(
         Stream stream,
+        int maximumFrameBytes,
         CancellationToken cancellationToken)
     {
         var prefix = new byte[sizeof(int)];
         await stream.ReadExactlyAsync(prefix, cancellationToken).ConfigureAwait(false);
         var length = BinaryPrimitives.ReadInt32BigEndian(prefix);
-        if (length is <= 0 or > MaximumFrameBytes)
+        if (length is <= 0 || length > maximumFrameBytes)
         {
             throw new InvalidDataException("Invalid worker frame.");
         }
@@ -348,7 +473,4 @@ public static class ExternalTransportOutboxWorkerProtocol
         }
     }
 
-    private sealed record RequestEnvelope(byte[] SessionKey, byte[] Payload, byte[] Mac);
-
-    private sealed record ResponseEnvelope(byte[] Payload, byte[] Mac);
 }

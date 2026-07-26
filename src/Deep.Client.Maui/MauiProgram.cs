@@ -66,6 +66,8 @@ public static class MauiProgram
     internal const string SurvivalEnvironmentEnv = "SURVIVAL_ENV";
     internal const string PersistentTransportOutboxEnv = "DEEP_PERSISTENT_TRANSPORT_OUTBOX";
     internal const string ExternalOutboxWorkerSha256Env = "DEEP_OUTBOX_WORKER_SHA256";
+    internal const string ExternalOutboxWorkerBundleSha256Env =
+        "DEEP_OUTBOX_WORKER_BUNDLE_SHA256";
     private const string ExternalOutboxWorkerDirectory = "outbox-worker";
     private const string ExternalOutboxWorkerFileName = "Deep.Client.Maui.OutboxWorker.exe";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
@@ -668,20 +670,16 @@ public static class MauiProgram
             .ConfigureAwait(false);
         try
         {
-            return ClientRuntime.CreatePersistent(
+            return PersistentClientRuntimeComposer.Create(
                 stateDbPath,
                 outboxActivation.EffectiveFeatureFlags,
                 services.GetRequiredService<IClock>(),
                 services.GetRequiredService<ISessionMessageTransport>(),
-                groupSyncTransport: null,
-                avatarProfiles: services.GetRequiredService<IAvatarProfileTransport>(),
-                legacyInMemoryStatePath: legacyStatePath,
-                sqlCipherKey: stateDbKey,
-                storeDecorator: store => new SecureRecoverySessionStore(
-                    store,
-                    outboxActivation.Executor as IDisposable),
+                services.GetRequiredService<IAvatarProfileTransport>(),
+                legacyStatePath,
+                stateDbKey,
                 requireE2eeTransport: true,
-                transportOutboxExecutor: outboxActivation.Executor);
+                outboxActivation.Executor);
         }
         catch
         {
@@ -699,15 +697,21 @@ public static class MauiProgram
         }
 #if WINDOWS
         var rawHash = ResolveRuntimeSetting(ExternalOutboxWorkerSha256Env);
-        if (string.IsNullOrWhiteSpace(rawHash) || rawHash.Length != 64)
+        var rawBundleHash = ResolveRuntimeSetting(ExternalOutboxWorkerBundleSha256Env);
+        if (string.IsNullOrWhiteSpace(rawHash)
+            || rawHash.Length != 64
+            || string.IsNullOrWhiteSpace(rawBundleHash)
+            || rawBundleHash.Length != 64)
         {
             return null;
         }
 
         byte[] expectedHash;
+        byte[] expectedBundleHash;
         try
         {
             expectedHash = Convert.FromHexString(rawHash);
+            expectedBundleHash = Convert.FromHexString(rawBundleHash);
         }
         catch (FormatException)
         {
@@ -719,6 +723,7 @@ public static class MauiProgram
             Path.Combine(trustedRoot, ExternalOutboxWorkerFileName),
             trustedRoot,
             expectedHash,
+            expectedBundleHash,
             TransportOutboxDispatcher.DefaultAttemptTimeout,
             maximumConcurrentExecutions: 1);
 #else

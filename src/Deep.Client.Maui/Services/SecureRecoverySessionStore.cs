@@ -13,6 +13,7 @@ internal sealed class SecureRecoverySessionStore(
     ILocalSessionStore,
     IOneToOneConversationOpenRepository,
     IMessageSyncRepository,
+    ITransportOutboxRepository,
     IDisposable
 {
     private const string SecureRecoveryPhraseKey = "deep.account.recovery-phrase.v1";
@@ -462,6 +463,63 @@ internal sealed class SecureRecoverySessionStore(
             expectedRevision,
             maximumValueUtf8Bytes,
             cancellationToken);
+
+    public Task<TransportOutboxCommitResult> PrepareTransportOutboxAsync(
+        TransportOutboxPreparedItem item,
+        CancellationToken cancellationToken = default) =>
+        RequireTransportOutboxRepository().PrepareTransportOutboxAsync(item, cancellationToken);
+
+    public Task<TransportOutboxReadSnapshot> ReadTransportOutboxAsync(
+        OutboxAccountScope accountScope,
+        OutboxLogicalId logicalId,
+        CancellationToken cancellationToken = default) =>
+        RequireTransportOutboxRepository().ReadTransportOutboxAsync(
+            accountScope,
+            logicalId,
+            cancellationToken);
+
+    public Task<TransportOutboxCommitResult> ApplyTransportOutboxTransitionAsync(
+        OutboxAccountScope accountScope,
+        TransportOutboxTransition transition,
+        CancellationToken cancellationToken = default) =>
+        RequireTransportOutboxRepository().ApplyTransportOutboxTransitionAsync(
+            accountScope,
+            transition,
+            cancellationToken);
+
+    public Task<IReadOnlyList<TransportOutboxItemSnapshot>> ListReadyTransportOutboxAsync(
+        OutboxAccountScope accountScope,
+        DateTimeOffset now,
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        RequireTransportOutboxRepository().ListReadyTransportOutboxAsync(
+            accountScope,
+            now,
+            limit,
+            cancellationToken);
+
+    public Task<int> ExpireDueTransportOutboxAsync(
+        OutboxAccountScope accountScope,
+        DateTimeOffset now,
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        RequireTransportOutboxRepository().ExpireDueTransportOutboxAsync(
+            accountScope,
+            now,
+            limit,
+            cancellationToken);
+
+    public Task PurgeTransportOutboxScopeAsync(
+        OutboxAccountScope accountScope,
+        CancellationToken cancellationToken = default) =>
+        RequireTransportOutboxRepository().PurgeTransportOutboxScopeAsync(
+            accountScope,
+            cancellationToken);
+
+    private ITransportOutboxRepository RequireTransportOutboxRepository() =>
+        inner as ITransportOutboxRepository
+        ?? throw new InvalidOperationException(
+            "The secured session store requires transport outbox persistence support.");
 
     public Task<int> GetSchemaVersionAsync(CancellationToken cancellationToken = default) =>
         inner.GetSchemaVersionAsync(cancellationToken);

@@ -102,8 +102,9 @@ message, group, or cross-device E2E parity.
 The Windows external-process supervisor is a tested platform safety primitive,
 not a Session parity or delivery claim. Hostile test workers cover hang, crash,
 malformed response, explicit rejection, cancellation, capacity exhaustion,
-hard timeout, and shutdown cleanup. Production activation remains NO-GO until a
-routed worker adapter and signed packaged helper exist.
+hard timeout, maximum-size IPC, launch-time bundle locking, child-before-Job
+prevention, descendant cleanup, and shutdown cleanup. Production activation
+remains NO-GO until a routed worker adapter and signed packaged helper exist.
 
 Android remains NO-GO for persistent outbox activation. No same-process Android
 component is presented as independently killable. The required separate-process

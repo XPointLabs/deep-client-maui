@@ -74,6 +74,28 @@ public sealed class ProcessExternalTransportOutboxExecutorTests
     }
 
     [Fact]
+    public async Task PublicConfigurationRejectsUserWritableDeploymentRoot()
+    {
+        var executable = WorkerExecutablePath();
+        var executableHash = SHA256.HashData(File.ReadAllBytes(executable));
+        var bundleHash = await ProcessExternalTransportOutboxExecutor
+            .ComputeBundleSha256ForTestsAsync(AppContext.BaseDirectory, executable);
+        var options = new ProcessExternalTransportOutboxExecutorOptions(
+            executable,
+            AppContext.BaseDirectory,
+            executableHash,
+            bundleHash,
+            TimeSpan.FromSeconds(2));
+
+        var result = await ProcessExternalTransportOutboxExecutor.BootstrapAsync(
+            enabled: true,
+            options);
+
+        Assert.Equal(ExternalTransportOutboxBootstrapStatus.AttestationFailed, result.Status);
+        Assert.Null(result.Executor);
+    }
+
+    [Fact]
     public async Task AttestedProbeAndDurableDispatchSucceed()
     {
         using var executor = await ReadyExecutorAsync("durable");
@@ -85,6 +107,44 @@ public sealed class ProcessExternalTransportOutboxExecutorTests
         Assert.Equal(
             TransportOutboxAttemptState.Durable,
             persisted.Item?.Attempts.Single().State);
+    }
+
+    [Fact]
+    public async Task MaximumCiphertextBundleFitsAuthenticatedRequestFrame()
+    {
+        using var executor = await ReadyExecutorAsync("durable");
+        var (result, persisted) = await DispatchAsync(
+            executor,
+            ciphertextBundleBytes: TransportOutboxLimits.MaxCiphertextBundleBytes);
+
+        Assert.Equal(1, result.DurableCount);
+        Assert.Equal(TransportOutboxState.Durable, persisted.Item?.State);
+    }
+
+    [Fact]
+    public async Task BundleFilesRemainDenyWriteAndDeleteLockedAcrossLaunchBoundary()
+    {
+        var lockObserved = false;
+        var options = WorkerOptions(
+            "durable",
+            afterBundleLockedBeforeLaunch: () =>
+            {
+                AssertDenyWriteDeleteLock(WorkerExecutablePath());
+                AssertDenyWriteDeleteLock(
+                    Path.Combine(
+                        AppContext.BaseDirectory,
+                        "Deep.Client.Maui.OutboxWorker.TestHost.runtimeconfig.json"));
+                lockObserved = true;
+            });
+
+        var result = await ProcessExternalTransportOutboxExecutor.BootstrapAsync(
+            enabled: true,
+            options);
+        using var executor = Assert.IsType<ProcessExternalTransportOutboxExecutor>(
+            result.Executor);
+
+        Assert.Equal(ExternalTransportOutboxBootstrapStatus.Ready, result.Status);
+        Assert.True(lockObserved);
     }
 
     [Fact]
@@ -164,6 +224,28 @@ public sealed class ProcessExternalTransportOutboxExecutorTests
     }
 
     [Fact]
+    public async Task InstantDescendantIsInJobBeforeWorkerCanExecuteAndIsKilled()
+    {
+        var childPidPath = TemporaryPath();
+        try
+        {
+            using var executor = await ReadyExecutorAsync(
+                "spawn-child-hang",
+                maximumDispatchDuration: TimeSpan.FromSeconds(1),
+                childPidPath: childPidPath);
+
+            var (result, _) = await DispatchAsync(executor);
+
+            Assert.Equal(1, result.OutcomeUnknownCount);
+            await AssertProcessExitedAsync(childPidPath);
+        }
+        finally
+        {
+            File.Delete(childPidPath);
+        }
+    }
+
+    [Fact]
     public async Task ExecutorDisposalKillsActiveWorkerAndLeavesNoCapacityAdmission()
     {
         var pidPath = TemporaryPath();
@@ -218,11 +300,16 @@ public sealed class ProcessExternalTransportOutboxExecutorTests
     private static async Task<ProcessExternalTransportOutboxExecutor> ReadyExecutorAsync(
         string mode,
         string? pidPath = null,
-        TimeSpan? maximumDispatchDuration = null)
+        TimeSpan? maximumDispatchDuration = null,
+        string? childPidPath = null)
     {
         var result = await ProcessExternalTransportOutboxExecutor.BootstrapAsync(
             enabled: true,
-            WorkerOptions(mode, pidPath: pidPath, maximumDispatchDuration: maximumDispatchDuration));
+            WorkerOptions(
+                mode,
+                pidPath: pidPath,
+                maximumDispatchDuration: maximumDispatchDuration,
+                childPidPath: childPidPath));
         Assert.Equal(ExternalTransportOutboxBootstrapStatus.Ready, result.Status);
         return Assert.IsType<ProcessExternalTransportOutboxExecutor>(result.Executor);
     }
@@ -231,34 +318,64 @@ public sealed class ProcessExternalTransportOutboxExecutorTests
         string mode,
         byte[]? expectedHash = null,
         string? pidPath = null,
-        TimeSpan? maximumDispatchDuration = null)
+        TimeSpan? maximumDispatchDuration = null,
+        Action? afterBundleLockedBeforeLaunch = null,
+        string? childPidPath = null)
     {
-        var executable = Path.Combine(
-            AppContext.BaseDirectory,
-            OperatingSystem.IsWindows()
-                ? "Deep.Client.Maui.OutboxWorker.TestHost.exe"
-                : "Deep.Client.Maui.OutboxWorker.TestHost");
+        var executable = WorkerExecutablePath();
         expectedHash ??= SHA256.HashData(File.ReadAllBytes(executable));
+        var expectedBundleHash = ProcessExternalTransportOutboxExecutor
+            .ComputeBundleSha256ForTestsAsync(AppContext.BaseDirectory, executable)
+            .GetAwaiter()
+            .GetResult();
         var arguments = new List<string> { $"--mode={mode}" };
         if (!string.IsNullOrWhiteSpace(pidPath))
         {
             arguments.Add($"--pid-file={pidPath}");
         }
+        if (!string.IsNullOrWhiteSpace(childPidPath))
+        {
+            arguments.Add($"--child-pid-file={childPidPath}");
+        }
 
-        return new(
+        return new ProcessExternalTransportOutboxExecutorOptions(
             executable,
             AppContext.BaseDirectory,
             expectedHash,
+            expectedBundleHash,
             maximumDispatchDuration ?? TimeSpan.FromSeconds(2),
             maximumConcurrentExecutions: 1,
-            arguments);
+            arguments,
+            allowWritableTrustedRootForTests: true,
+            afterBundleLockedBeforeLaunchForTests: afterBundleLockedBeforeLaunch);
+    }
+
+    private static string WorkerExecutablePath() =>
+        Path.Combine(
+            AppContext.BaseDirectory,
+            OperatingSystem.IsWindows()
+                ? "Deep.Client.Maui.OutboxWorker.TestHost.exe"
+                : "Deep.Client.Maui.OutboxWorker.TestHost");
+
+    private static void AssertDenyWriteDeleteLock(string path)
+    {
+        Assert.True(File.Exists(path));
+        _ = Assert.ThrowsAny<IOException>(
+            () => new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Write,
+                FileShare.ReadWrite | FileShare.Delete));
+        _ = Assert.ThrowsAny<IOException>(
+            () => File.Move(path, path + ".race", overwrite: true));
     }
 
     private static async Task<(
         TransportOutboxDispatchBatchResult Result,
         TransportOutboxReadSnapshot Persisted)> DispatchAsync(
         ProcessExternalTransportOutboxExecutor executor,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int ciphertextBundleBytes = 96)
     {
         var store = new InMemorySessionStore();
         using var runtime = new ClientRuntime(
@@ -271,7 +388,7 @@ public sealed class ProcessExternalTransportOutboxExecutorTests
             OutboxAccountScope.FromBytes(Bytes(TransportOutboxLimits.AccountScopeBytes, 0x11)),
             OutboxLogicalId.FromBytes(Bytes(TransportOutboxLimits.LogicalIdBytes, 0x22)),
             OutboxDedupMaterial.FromBytes(Bytes(TransportOutboxLimits.DedupMaterialBytes, 0x33)),
-            Bytes(96, 0x44),
+            Bytes(ciphertextBundleBytes, 0x44),
             Now,
             Now.AddHours(1),
             Now);

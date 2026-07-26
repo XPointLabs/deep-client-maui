@@ -1,8 +1,11 @@
+using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 using Microsoft.Win32.SafeHandles;
@@ -30,6 +33,7 @@ public sealed record ExternalTransportOutboxBootstrapResult(
 public sealed class ProcessExternalTransportOutboxExecutorOptions
 {
     private readonly byte[] expectedSha256;
+    private readonly byte[] expectedBundleSha256;
     private readonly string[] arguments;
     private readonly ReadOnlyCollection<string> readOnlyArguments;
 
@@ -37,19 +41,45 @@ public sealed class ProcessExternalTransportOutboxExecutorOptions
         string workerExecutablePath,
         string trustedRootDirectory,
         ReadOnlySpan<byte> expectedSha256,
+        ReadOnlySpan<byte> expectedBundleSha256,
         TimeSpan maximumDispatchDuration,
         int maximumConcurrentExecutions = 1,
         IEnumerable<string>? arguments = null)
+        : this(
+            workerExecutablePath,
+            trustedRootDirectory,
+            expectedSha256,
+            expectedBundleSha256,
+            maximumDispatchDuration,
+            maximumConcurrentExecutions,
+            arguments,
+            allowWritableTrustedRootForTests: false)
+    {
+    }
+
+    internal ProcessExternalTransportOutboxExecutorOptions(
+        string workerExecutablePath,
+        string trustedRootDirectory,
+        ReadOnlySpan<byte> expectedSha256,
+        ReadOnlySpan<byte> expectedBundleSha256,
+        TimeSpan maximumDispatchDuration,
+        int maximumConcurrentExecutions,
+        IEnumerable<string>? arguments,
+        bool allowWritableTrustedRootForTests,
+        Action? afterBundleLockedBeforeLaunchForTests = null)
     {
         WorkerExecutablePath = Path.GetFullPath(
             workerExecutablePath ?? throw new ArgumentNullException(nameof(workerExecutablePath)));
         TrustedRootDirectory = Path.GetFullPath(
             trustedRootDirectory ?? throw new ArgumentNullException(nameof(trustedRootDirectory)));
         this.expectedSha256 = expectedSha256.ToArray();
+        this.expectedBundleSha256 = expectedBundleSha256.ToArray();
         MaximumDispatchDuration = maximumDispatchDuration;
         MaximumConcurrentExecutions = maximumConcurrentExecutions;
         this.arguments = arguments?.ToArray() ?? [];
         readOnlyArguments = Array.AsReadOnly(this.arguments);
+        AllowWritableTrustedRootForTests = allowWritableTrustedRootForTests;
+        AfterBundleLockedBeforeLaunchForTests = afterBundleLockedBeforeLaunchForTests;
     }
 
     public string WorkerExecutablePath { get; }
@@ -62,7 +92,13 @@ public sealed class ProcessExternalTransportOutboxExecutorOptions
 
     public byte[] GetExpectedSha256Copy() => expectedSha256.ToArray();
 
+    public byte[] GetExpectedBundleSha256Copy() => expectedBundleSha256.ToArray();
+
     public IReadOnlyList<string> Arguments => readOnlyArguments;
+
+    internal bool AllowWritableTrustedRootForTests { get; }
+
+    internal Action? AfterBundleLockedBeforeLaunchForTests { get; }
 }
 
 /// <summary>
@@ -74,6 +110,11 @@ public sealed class ProcessExternalTransportOutboxExecutor :
     IDisposable
 {
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(3);
+    private const int MaximumBundleFiles = 256;
+    private const long MaximumBundleBytes = 512L * 1024 * 1024;
+    private const int MaximumRelativePathUtf8Bytes = 512;
+    private static readonly byte[] BundleHashDomain =
+        "Deep.ExternalTransportOutbox.Bundle.v1\0"u8.ToArray();
     private readonly ProcessExternalTransportOutboxExecutorOptions options;
     private readonly SemaphoreSlim capacity;
     private readonly CancellationTokenSource shutdown = new();
@@ -113,7 +154,11 @@ public sealed class ProcessExternalTransportOutboxExecutor :
         {
             return new(ExternalTransportOutboxBootstrapStatus.InvalidConfiguration, null);
         }
-        if (!await VerifyAttestationAsync(options, cancellationToken).ConfigureAwait(false))
+        using var verifiedBundle = await VerifyAndLockBundleAsync(
+                options,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (verifiedBundle is null)
         {
             return new(ExternalTransportOutboxBootstrapStatus.AttestationFailed, null);
         }
@@ -124,11 +169,17 @@ public sealed class ProcessExternalTransportOutboxExecutor :
             await executor.InvokeWorkerAsync(
                     request: CreateProbeRequest(),
                     hardTimeout: Min(ProbeTimeout, options.MaximumDispatchDuration),
-                    cancellationToken)
+                    cancellationToken,
+                    verifiedBundle)
                 .ConfigureAwait(false);
             return new(ExternalTransportOutboxBootstrapStatus.Ready, executor);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            executor.Dispose();
+            throw;
+        }
+        catch when (options.AllowWritableTrustedRootForTests)
         {
             executor.Dispose();
             throw;
@@ -201,43 +252,47 @@ public sealed class ProcessExternalTransportOutboxExecutor :
     private async Task<TransportOutboxAdapterReceipt> InvokeWorkerAsync(
         ExternalTransportOutboxWorkerRequest request,
         TimeSpan hardTimeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        VerifiedWorkerBundle? bootstrapBundle = null)
     {
         if (hardTimeout <= TimeSpan.Zero || hardTimeout > MaximumDispatchDuration)
         {
             throw new ArgumentOutOfRangeException(nameof(hardTimeout));
         }
-        if (!await VerifyAttestationAsync(options, cancellationToken).ConfigureAwait(false))
+        using var dispatchBundle = bootstrapBundle is null
+            ? await VerifyAndLockBundleAsync(options, cancellationToken).ConfigureAwait(false)
+            : null;
+        var verifiedBundle = bootstrapBundle ?? dispatchBundle;
+        if (verifiedBundle is null)
         {
             throw new ExternalTransportOutboxExecutionException();
         }
+        options.AfterBundleLockedBeforeLaunchForTests?.Invoke();
 
-        using var process = StartWorker(options);
-        using var job = WindowsKillOnCloseJob.CreateAndAssign(process);
-        var stderrDrain = DrainWithoutRetentionAsync(process.StandardError.BaseStream);
+        using var worker = SuspendedJobWorker.Start(options);
+        var process = worker.Process;
+        var stderrDrain = DrainWithoutRetentionAsync(worker.StandardError);
         var sessionKey = RandomNumberGenerator.GetBytes(
             ExternalTransportOutboxWorkerProtocol.SessionKeyBytes);
         try
         {
-            var responseTask = ExchangeAsync(process, request, sessionKey);
-            var exitTask = process.WaitForExitAsync();
+            var responseTask = ExchangeAsync(worker, request, sessionKey);
             var timeoutTask = Task.Delay(hardTimeout);
             var cancellationTask = Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             var winner = await Task.WhenAny(
                     responseTask,
-                    exitTask,
                     timeoutTask,
                     cancellationTask)
                 .ConfigureAwait(false);
 
             if (winner == cancellationTask)
             {
-                await StopWorkerConfirmedAsync(process, job, stderrDrain).ConfigureAwait(false);
+                await StopWorkerConfirmedAsync(worker, stderrDrain).ConfigureAwait(false);
                 throw new OperationCanceledException(cancellationToken);
             }
-            if (winner == timeoutTask || winner == exitTask)
+            if (winner == timeoutTask)
             {
-                await StopWorkerConfirmedAsync(process, job, stderrDrain).ConfigureAwait(false);
+                await StopWorkerConfirmedAsync(worker, stderrDrain).ConfigureAwait(false);
                 throw new ExternalTransportOutboxExecutionException();
             }
 
@@ -246,13 +301,18 @@ public sealed class ProcessExternalTransportOutboxExecutor :
             {
                 response = await responseTask.ConfigureAwait(false);
             }
+            catch when (options.AllowWritableTrustedRootForTests)
+            {
+                await StopWorkerConfirmedAsync(worker, stderrDrain).ConfigureAwait(false);
+                throw;
+            }
             catch
             {
-                await StopWorkerConfirmedAsync(process, job, stderrDrain).ConfigureAwait(false);
+                await StopWorkerConfirmedAsync(worker, stderrDrain).ConfigureAwait(false);
                 throw new ExternalTransportOutboxExecutionException();
             }
 
-            await StopWorkerConfirmedAsync(process, job, stderrDrain).ConfigureAwait(false);
+            await StopWorkerConfirmedAsync(worker, stderrDrain).ConfigureAwait(false);
             if (!CryptographicOperations.FixedTimeEquals(request.Nonce, response.Nonce)
                 || !response.Success)
             {
@@ -277,74 +337,32 @@ public sealed class ProcessExternalTransportOutboxExecutor :
     }
 
     private static async Task<ExternalTransportOutboxWorkerResponse> ExchangeAsync(
-        Process process,
+        SuspendedJobWorker worker,
         ExternalTransportOutboxWorkerRequest request,
         byte[] sessionKey)
     {
         await ExternalTransportOutboxWorkerProtocol.WriteRequestAsync(
-                process.StandardInput.BaseStream,
+                worker.StandardInput,
                 request,
                 sessionKey)
             .ConfigureAwait(false);
-        process.StandardInput.Close();
+        worker.CloseStandardInput();
         return await ExternalTransportOutboxWorkerProtocol.ReadResponseAsync(
-                process.StandardOutput.BaseStream,
+                worker.StandardOutput,
                 sessionKey)
             .ConfigureAwait(false);
     }
 
-    private static Process StartWorker(ProcessExternalTransportOutboxExecutorOptions options)
-    {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = options.WorkerExecutablePath,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            WorkingDirectory = options.TrustedRootDirectory
-        };
-        var systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
-        var windowsDirectory = Environment.GetEnvironmentVariable("WINDIR");
-        startInfo.Environment.Clear();
-        if (!string.IsNullOrWhiteSpace(systemRoot))
-        {
-            startInfo.Environment["SystemRoot"] = systemRoot;
-        }
-        if (!string.IsNullOrWhiteSpace(windowsDirectory))
-        {
-            startInfo.Environment["WINDIR"] = windowsDirectory;
-        }
-        foreach (var argument in options.Arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        try
-        {
-            return Process.Start(startInfo) ?? throw new ExternalTransportOutboxExecutionException();
-        }
-        catch (ExternalTransportOutboxExecutionException)
-        {
-            throw;
-        }
-        catch
-        {
-            throw new ExternalTransportOutboxExecutionException();
-        }
-    }
-
     private static async Task StopWorkerConfirmedAsync(
-        Process process,
-        WindowsKillOnCloseJob job,
+        SuspendedJobWorker worker,
         Task stderrDrain)
     {
+        var process = worker.Process;
         try
         {
             if (!process.HasExited)
             {
-                job.Terminate();
+                worker.Terminate();
             }
         }
         catch
@@ -393,9 +411,11 @@ public sealed class ProcessExternalTransportOutboxExecutor :
     private static bool ValidateOptions(ProcessExternalTransportOutboxExecutorOptions options)
     {
         var expectedHash = options.GetExpectedSha256Copy();
+        var expectedBundleHash = options.GetExpectedBundleSha256Copy();
         try
         {
             return expectedHash.Length == 32
+                && expectedBundleHash.Length == 32
                 && options.MaximumDispatchDuration > TimeSpan.Zero
                 && options.MaximumDispatchDuration <= TimeSpan.FromMinutes(5)
                 && options.MaximumConcurrentExecutions is >= 1 and <= 4
@@ -414,37 +434,70 @@ public sealed class ProcessExternalTransportOutboxExecutor :
         finally
         {
             CryptographicOperations.ZeroMemory(expectedHash);
+            CryptographicOperations.ZeroMemory(expectedBundleHash);
         }
     }
 
-    private static async Task<bool> VerifyAttestationAsync(
+    internal static async Task<byte[]> ComputeBundleSha256ForTestsAsync(
+        string trustedRootDirectory,
+        string workerExecutablePath,
+        CancellationToken cancellationToken = default)
+    {
+        using var bundle = await OpenAndHashBundleAsync(
+                Path.GetFullPath(trustedRootDirectory),
+                Path.GetFullPath(workerExecutablePath),
+                FileShare.ReadWrite | FileShare.Delete,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return bundle.GetBundleHashCopy();
+    }
+
+    private static async Task<VerifiedWorkerBundle?> VerifyAndLockBundleAsync(
         ProcessExternalTransportOutboxExecutorOptions options,
         CancellationToken cancellationToken)
     {
+        VerifiedWorkerBundle? bundle = null;
         try
         {
             if (!ValidateOptions(options))
             {
-                return false;
+                return null;
+            }
+            if (!options.AllowWritableTrustedRootForTests
+                && SuspendedJobWorker.CanCurrentProcessModifyDirectory(
+                    options.TrustedRootDirectory))
+            {
+                return null;
             }
 
+            bundle = await OpenAndHashBundleAsync(
+                    options.TrustedRootDirectory,
+                    options.WorkerExecutablePath,
+                    FileShare.Read,
+                    cancellationToken)
+                .ConfigureAwait(false);
             var expectedHash = options.GetExpectedSha256Copy();
-            await using var stream = new FileStream(
-                options.WorkerExecutablePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                bufferSize: 64 * 1024,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var actualHash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+            var expectedBundleHash = options.GetExpectedBundleSha256Copy();
+            var actualHash = bundle.GetExecutableHashCopy();
+            var actualBundleHash = bundle.GetBundleHashCopy();
             try
             {
-                return CryptographicOperations.FixedTimeEquals(expectedHash, actualHash);
+                if (!CryptographicOperations.FixedTimeEquals(expectedHash, actualHash)
+                    || !CryptographicOperations.FixedTimeEquals(
+                        expectedBundleHash,
+                        actualBundleHash))
+                {
+                    bundle.Dispose();
+                    bundle = null;
+                }
+                return bundle;
             }
             finally
             {
                 CryptographicOperations.ZeroMemory(expectedHash);
+                CryptographicOperations.ZeroMemory(expectedBundleHash);
                 CryptographicOperations.ZeroMemory(actualHash);
+                CryptographicOperations.ZeroMemory(actualBundleHash);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -453,8 +506,165 @@ public sealed class ProcessExternalTransportOutboxExecutor :
         }
         catch
         {
-            return false;
+            bundle?.Dispose();
+            return null;
         }
+    }
+
+    private static async Task<VerifiedWorkerBundle> OpenAndHashBundleAsync(
+        string trustedRootDirectory,
+        string workerExecutablePath,
+        FileShare share,
+        CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(trustedRootDirectory)
+            || !File.Exists(workerExecutablePath)
+            || !IsPathInsideRoot(workerExecutablePath, trustedRootDirectory)
+            || HasReparsePoint(workerExecutablePath, trustedRootDirectory))
+        {
+            throw new InvalidDataException("The outbox worker bundle is invalid.");
+        }
+
+        var paths = EnumerateBundleFiles(trustedRootDirectory)
+            .OrderBy(
+                path => Path.GetRelativePath(trustedRootDirectory, path),
+                StringComparer.Ordinal)
+            .ToArray();
+        if (paths.Length is <= 0 or > MaximumBundleFiles)
+        {
+            throw new InvalidDataException("The outbox worker bundle is invalid.");
+        }
+
+        var streams = new List<FileStream>(paths.Length);
+        using var bundleHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        using var executableHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        bundleHash.AppendData(BundleHashDomain);
+        var executableFound = false;
+        long totalBytes = 0;
+        var buffer = new byte[64 * 1024];
+        var metadata = new byte[sizeof(int) + sizeof(long)];
+        try
+        {
+            foreach (var path in paths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IsPathInsideRoot(path, trustedRootDirectory)
+                    || HasReparsePoint(path, trustedRootDirectory))
+                {
+                    throw new InvalidDataException("The outbox worker bundle is invalid.");
+                }
+
+                var relativePath = Path
+                    .GetRelativePath(trustedRootDirectory, path)
+                    .Replace(Path.DirectorySeparatorChar, '/');
+                var relativePathBytes = Encoding.UTF8.GetBytes(relativePath);
+                if (relativePathBytes.Length is <= 0 or > MaximumRelativePathUtf8Bytes)
+                {
+                    throw new InvalidDataException("The outbox worker bundle is invalid.");
+                }
+
+                var stream = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    share,
+                    bufferSize: buffer.Length,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                streams.Add(stream);
+                if (stream.Length < 0
+                    || (totalBytes = checked(totalBytes + stream.Length)) > MaximumBundleBytes)
+                {
+                    throw new InvalidDataException("The outbox worker bundle is invalid.");
+                }
+
+                BinaryPrimitives.WriteInt32BigEndian(
+                    metadata.AsSpan(0, sizeof(int)),
+                    relativePathBytes.Length);
+                BinaryPrimitives.WriteInt64BigEndian(
+                    metadata.AsSpan(sizeof(int)),
+                    stream.Length);
+                bundleHash.AppendData(metadata);
+                bundleHash.AppendData(relativePathBytes);
+
+                var isExecutable = string.Equals(
+                    path,
+                    workerExecutablePath,
+                    StringComparison.OrdinalIgnoreCase);
+                executableFound |= isExecutable;
+                int read;
+                while ((read = await stream
+                    .ReadAsync(buffer, cancellationToken)
+                    .ConfigureAwait(false)) != 0)
+                {
+                    bundleHash.AppendData(buffer.AsSpan(0, read));
+                    if (isExecutable)
+                    {
+                        executableHash.AppendData(buffer.AsSpan(0, read));
+                    }
+                }
+                CryptographicOperations.ZeroMemory(relativePathBytes);
+            }
+
+            if (!executableFound)
+            {
+                throw new InvalidDataException("The outbox worker bundle is invalid.");
+            }
+            return new VerifiedWorkerBundle(
+                streams,
+                bundleHash.GetHashAndReset(),
+                executableHash.GetHashAndReset());
+        }
+        catch
+        {
+            foreach (var stream in streams)
+            {
+                stream.Dispose();
+            }
+            throw;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(buffer);
+            CryptographicOperations.ZeroMemory(metadata);
+        }
+    }
+
+    private static IReadOnlyList<string> EnumerateBundleFiles(string root)
+    {
+        var files = new List<string>();
+        var pending = new Stack<(string Path, int Depth)>();
+        pending.Push((root, 0));
+        var directories = 0;
+        while (pending.TryPop(out var current))
+        {
+            if (++directories > MaximumBundleFiles)
+            {
+                throw new InvalidDataException("The outbox worker bundle is invalid.");
+            }
+            foreach (var entry in Directory.EnumerateFileSystemEntries(current.Path))
+            {
+                var attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new InvalidDataException("The outbox worker bundle is invalid.");
+                }
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    if (current.Depth >= 8)
+                    {
+                        throw new InvalidDataException("The outbox worker bundle is invalid.");
+                    }
+                    pending.Push((entry, current.Depth + 1));
+                    continue;
+                }
+                files.Add(entry);
+                if (files.Count > MaximumBundleFiles)
+                {
+                    throw new InvalidDataException("The outbox worker bundle is invalid.");
+                }
+            }
+        }
+        return files;
     }
 
     private static bool IsPathInsideRoot(string path, string root)
@@ -601,27 +811,304 @@ public sealed class ProcessExternalTransportOutboxExecutor :
         }
     }
 
-    private sealed class WindowsKillOnCloseJob : IDisposable
+    private sealed class VerifiedWorkerBundle(
+        IReadOnlyList<FileStream> lockedFiles,
+        byte[] bundleHash,
+        byte[] executableHash) : IDisposable
     {
+        private readonly IReadOnlyList<FileStream> lockedFiles = lockedFiles;
+        private readonly byte[] bundleHash = bundleHash;
+        private readonly byte[] executableHash = executableHash;
+        private int disposed;
+
+        public byte[] GetBundleHashCopy() => bundleHash.ToArray();
+
+        public byte[] GetExecutableHashCopy() => executableHash.ToArray();
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+            {
+                return;
+            }
+            foreach (var stream in lockedFiles)
+            {
+                stream.Dispose();
+            }
+            CryptographicOperations.ZeroMemory(bundleHash);
+            CryptographicOperations.ZeroMemory(executableHash);
+        }
+    }
+
+    private sealed class SuspendedJobWorker : IDisposable
+    {
+        private const uint CreateSuspended = 0x00000004;
+        private const uint CreateNoWindow = 0x08000000;
+        private const uint CreateUnicodeEnvironment = 0x00000400;
+        private const uint ExtendedStartupInfoPresent = 0x00080000;
+        private const uint StartfUseStdHandles = 0x00000100;
+        private const uint HandleFlagInherit = 0x00000001;
         private const uint JobObjectLimitKillOnJobClose = 0x00002000;
         private const int JobObjectExtendedLimitInformationClass = 9;
-        private readonly SafeFileHandle handle;
+        private const uint DeleteAccess = 0x00010000;
+        private const uint FileAddFile = 0x00000002;
+        private const uint FileAddSubdirectory = 0x00000004;
+        private const uint FileWriteAttributes = 0x00000100;
+        private const uint WriteDac = 0x00040000;
+        private const uint WriteOwner = 0x00080000;
+        private const uint OpenExisting = 3;
+        private const uint FileFlagBackupSemantics = 0x02000000;
+        private const uint FileShareAll = 0x00000007;
+        private const uint StillActive = 259;
 
-        private WindowsKillOnCloseJob(SafeFileHandle handle)
+        private readonly SafeFileHandle jobHandle;
+        private readonly SafeFileHandle nativeProcessHandle;
+        private readonly Stream standardInput;
+        private int standardInputClosed;
+        private int disposed;
+
+        private SuspendedJobWorker(
+            Process process,
+            SafeFileHandle jobHandle,
+            SafeFileHandle nativeProcessHandle,
+            Stream standardInput,
+            Stream standardOutput,
+            Stream standardError)
         {
-            this.handle = handle;
+            Process = process;
+            this.jobHandle = jobHandle;
+            this.nativeProcessHandle = nativeProcessHandle;
+            this.standardInput = standardInput;
+            StandardOutput = standardOutput;
+            StandardError = standardError;
         }
 
-        public static WindowsKillOnCloseJob CreateAndAssign(Process process)
+        public Process Process { get; }
+
+        public Stream StandardInput => standardInput;
+
+        public Stream StandardOutput { get; }
+
+        public Stream StandardError { get; }
+
+        public static bool CanCurrentProcessModifyDirectory(string path)
+        {
+            return CanOpenDirectoryForAccess(path, FileAddFile)
+                || CanOpenDirectoryForAccess(path, FileAddSubdirectory)
+                || CanOpenDirectoryForAccess(path, FileWriteAttributes)
+                || CanOpenDirectoryForAccess(path, DeleteAccess)
+                || CanOpenDirectoryForAccess(path, WriteDac)
+                || CanOpenDirectoryForAccess(path, WriteOwner);
+        }
+
+        private static bool CanOpenDirectoryForAccess(string path, uint desiredAccess)
+        {
+            using var handle = CreateFileW(
+                path,
+                desiredAccess,
+                FileShareAll,
+                IntPtr.Zero,
+                OpenExisting,
+                FileFlagBackupSemantics,
+                IntPtr.Zero);
+            return !handle.IsInvalid;
+        }
+
+        public static SuspendedJobWorker Start(
+            ProcessExternalTransportOutboxExecutorOptions options)
+        {
+            SafeFileHandle? job = null;
+            SafeFileHandle? processHandle = null;
+            SafeFileHandle? threadHandle = null;
+            SafePipeHandle? childStdin = null;
+            SafePipeHandle? parentStdin = null;
+            SafePipeHandle? parentStdout = null;
+            SafePipeHandle? childStdout = null;
+            SafePipeHandle? parentStderr = null;
+            SafePipeHandle? childStderr = null;
+            Process? process = null;
+            Stream? input = null;
+            Stream? output = null;
+            Stream? error = null;
+            try
+            {
+                job = CreateKillOnCloseJob();
+                CreateAnonymousPipe(out childStdin, out parentStdin, parentIsReadEnd: false);
+                CreateAnonymousPipe(out childStdout, out parentStdout, parentIsReadEnd: true);
+                CreateAnonymousPipe(out childStderr, out parentStderr, parentIsReadEnd: true);
+
+                var startupInfo = new StartupInfoEx
+                {
+                    StartupInfo = new StartupInfo
+                    {
+                        Cb = Marshal.SizeOf<StartupInfoEx>(),
+                        Flags = StartfUseStdHandles,
+                        StandardInput = childStdin.DangerousGetHandle(),
+                        StandardOutput = childStdout.DangerousGetHandle(),
+                        StandardError = childStderr.DangerousGetHandle()
+                    }
+                };
+                using var inheritedHandles = ProcessThreadAttributeList.Create(
+                    startupInfo.StartupInfo.StandardInput,
+                    startupInfo.StartupInfo.StandardOutput,
+                    startupInfo.StartupInfo.StandardError);
+                startupInfo.AttributeList = inheritedHandles.Pointer;
+                var commandLine = BuildCommandLine(
+                    options.WorkerExecutablePath,
+                    options.Arguments);
+                var environment = CreateRestrictedEnvironmentBlock();
+                ProcessInformation processInformation;
+                try
+                {
+                    if (!CreateProcessW(
+                        options.WorkerExecutablePath,
+                        commandLine,
+                        IntPtr.Zero,
+                        IntPtr.Zero,
+                        inheritHandles: true,
+                        CreateSuspended
+                            | CreateNoWindow
+                            | CreateUnicodeEnvironment
+                            | ExtendedStartupInfoPresent,
+                        environment,
+                        options.TrustedRootDirectory,
+                        ref startupInfo,
+                        out processInformation))
+                    {
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(environment);
+                }
+
+                processHandle = new SafeFileHandle(
+                    processInformation.ProcessHandle,
+                    ownsHandle: true);
+                threadHandle = new SafeFileHandle(
+                    processInformation.ThreadHandle,
+                    ownsHandle: true);
+                childStdin.Dispose();
+                childStdin = null;
+                childStdout.Dispose();
+                childStdout = null;
+                childStderr.Dispose();
+                childStderr = null;
+
+                if (!AssignProcessToJobObject(job, processHandle))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                process = Process.GetProcessById(unchecked((int)processInformation.ProcessId));
+                input = new AnonymousPipeClientStream(PipeDirection.Out, parentStdin);
+                parentStdin = null;
+                output = new AnonymousPipeClientStream(PipeDirection.In, parentStdout);
+                parentStdout = null;
+                error = new AnonymousPipeClientStream(PipeDirection.In, parentStderr);
+                parentStderr = null;
+
+                if (ResumeThread(threadHandle) == uint.MaxValue)
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+                threadHandle.Dispose();
+                threadHandle = null;
+
+                var result = new SuspendedJobWorker(
+                    process,
+                    job,
+                    processHandle,
+                    input,
+                    output,
+                    error);
+                process = null;
+                job = null;
+                processHandle = null;
+                input = null;
+                output = null;
+                error = null;
+                return result;
+            }
+            catch
+            {
+                if (job is not null && !job.IsInvalid)
+                {
+                    _ = TerminateJobObject(job, 0xDE);
+                }
+                else if (processHandle is not null && !processHandle.IsInvalid)
+                {
+                    _ = TerminateProcess(processHandle, 0xDE);
+                }
+                if (processHandle is not null && !processHandle.IsInvalid
+                    && GetExitCodeProcess(processHandle, out var exitCode)
+                    && exitCode == StillActive)
+                {
+                    _ = WaitForSingleObject(processHandle, 5000);
+                }
+                if (options.AllowWritableTrustedRootForTests)
+                {
+                    throw;
+                }
+                throw new ExternalTransportOutboxExecutionException();
+            }
+            finally
+            {
+                error?.Dispose();
+                output?.Dispose();
+                input?.Dispose();
+                process?.Dispose();
+                childStderr?.Dispose();
+                parentStderr?.Dispose();
+                childStdout?.Dispose();
+                parentStdout?.Dispose();
+                childStdin?.Dispose();
+                parentStdin?.Dispose();
+                threadHandle?.Dispose();
+                processHandle?.Dispose();
+                job?.Dispose();
+            }
+        }
+
+        public void CloseStandardInput()
+        {
+            if (Interlocked.Exchange(ref standardInputClosed, 1) == 0)
+            {
+                standardInput.Dispose();
+            }
+        }
+
+        public void Terminate()
+        {
+            if (!TerminateJobObject(jobHandle, 0xDE))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+            {
+                return;
+            }
+            CloseStandardInput();
+            StandardOutput.Dispose();
+            StandardError.Dispose();
+            Process.Dispose();
+            nativeProcessHandle.Dispose();
+            jobHandle.Dispose();
+        }
+
+        private static SafeFileHandle CreateKillOnCloseJob()
         {
             var rawHandle = CreateJobObjectW(IntPtr.Zero, null);
             if (rawHandle == IntPtr.Zero)
             {
-                TryKill(process);
-                throw new ExternalTransportOutboxExecutionException();
+                throw new Win32Exception(Marshal.GetLastWin32Error());
             }
-
-            var safeHandle = new SafeFileHandle(rawHandle, ownsHandle: true);
+            var handle = new SafeFileHandle(rawHandle, ownsHandle: true);
             try
             {
                 var information = new JobObjectExtendedLimitInformation
@@ -637,53 +1124,119 @@ public sealed class ProcessExternalTransportOutboxExecutor :
                 {
                     Marshal.StructureToPtr(information, pointer, fDeleteOld: false);
                     if (!SetInformationJobObject(
-                            safeHandle,
+                            handle,
                             JobObjectExtendedLimitInformationClass,
                             pointer,
-                            (uint)size)
-                        || !AssignProcessToJobObject(safeHandle, process.Handle))
+                            (uint)size))
                     {
-                        TryKill(process);
-                        throw new ExternalTransportOutboxExecutionException();
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
                     }
                 }
                 finally
                 {
                     Marshal.FreeHGlobal(pointer);
                 }
-
-                return new WindowsKillOnCloseJob(safeHandle);
+                return handle;
             }
             catch
             {
-                safeHandle.Dispose();
+                handle.Dispose();
                 throw;
             }
         }
 
-        public void Terminate()
+        private static void CreateAnonymousPipe(
+            out SafePipeHandle childEnd,
+            out SafePipeHandle parentEnd,
+            bool parentIsReadEnd)
         {
-            if (!TerminateJobObject(handle, 0xDE))
+            var attributes = new SecurityAttributes
             {
+                Length = Marshal.SizeOf<SecurityAttributes>(),
+                InheritHandle = true
+            };
+            if (!CreatePipe(out var read, out var write, ref attributes, 0))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            if (parentIsReadEnd)
+            {
+                parentEnd = read;
+                childEnd = write;
+            }
+            else
+            {
+                childEnd = read;
+                parentEnd = write;
+            }
+            if (!SetHandleInformation(parentEnd, HandleFlagInherit, 0))
+            {
+                childEnd.Dispose();
+                parentEnd.Dispose();
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             }
         }
 
-        public void Dispose() => handle.Dispose();
-
-        private static void TryKill(Process process)
+        private static StringBuilder BuildCommandLine(
+            string executablePath,
+            IReadOnlyList<string> arguments)
         {
-            try
+            var commandLine = new StringBuilder();
+            AppendQuotedArgument(commandLine, executablePath);
+            foreach (var argument in arguments)
             {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                    process.WaitForExit();
-                }
+                commandLine.Append(' ');
+                AppendQuotedArgument(commandLine, argument);
             }
-            catch
+            return commandLine;
+        }
+
+        private static void AppendQuotedArgument(StringBuilder builder, string value)
+        {
+            builder.Append('"');
+            var backslashes = 0;
+            foreach (var character in value)
             {
-                // The caller fails closed and never treats this as a receipt.
+                if (character == '\\')
+                {
+                    backslashes++;
+                    continue;
+                }
+                if (character == '"')
+                {
+                    builder.Append('\\', checked(backslashes * 2 + 1));
+                    builder.Append('"');
+                    backslashes = 0;
+                    continue;
+                }
+                builder.Append('\\', backslashes);
+                backslashes = 0;
+                builder.Append(character);
+            }
+            builder.Append('\\', checked(backslashes * 2));
+            builder.Append('"');
+        }
+
+        private static IntPtr CreateRestrictedEnvironmentBlock()
+        {
+            var entries = new SortedDictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+            AddEnvironmentVariable(entries, "SystemRoot");
+            AddEnvironmentVariable(entries, "WINDIR");
+            var block = string.Concat(
+                entries.Select(static pair => $"{pair.Key}={pair.Value}\0")) + "\0";
+            return Marshal.StringToHGlobalUni(block);
+        }
+
+        private static void AddEnvironmentVariable(
+            IDictionary<string, string> entries,
+            string name)
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrWhiteSpace(value)
+                && value.IndexOf('\0') < 0)
+            {
+                entries[name] = value;
             }
         }
 
@@ -702,11 +1255,234 @@ public sealed class ProcessExternalTransportOutboxExecutor :
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool AssignProcessToJobObject(
             SafeFileHandle job,
-            IntPtr process);
+            SafeFileHandle process);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool TerminateJobObject(SafeFileHandle job, uint exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool TerminateProcess(SafeFileHandle process, uint exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint ResumeThread(SafeFileHandle thread);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(
+            SafeFileHandle handle,
+            uint milliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetExitCodeProcess(
+            SafeFileHandle process,
+            out uint exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreatePipe(
+            out SafePipeHandle readPipe,
+            out SafePipeHandle writePipe,
+            ref SecurityAttributes pipeAttributes,
+            uint size);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetHandleInformation(
+            SafePipeHandle handle,
+            uint mask,
+            uint flags);
+
+        [DllImport(
+            "kernel32.dll",
+            CharSet = CharSet.Unicode,
+            SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreateProcessW(
+            string applicationName,
+            StringBuilder commandLine,
+            IntPtr processAttributes,
+            IntPtr threadAttributes,
+            [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
+            uint creationFlags,
+            IntPtr environment,
+            string currentDirectory,
+            ref StartupInfoEx startupInfo,
+            out ProcessInformation processInformation);
+
+        [DllImport(
+            "kernel32.dll",
+            CharSet = CharSet.Unicode,
+            SetLastError = true)]
+        private static extern SafeFileHandle CreateFileW(
+            string fileName,
+            uint desiredAccess,
+            uint shareMode,
+            IntPtr securityAttributes,
+            uint creationDisposition,
+            uint flagsAndAttributes,
+            IntPtr templateFile);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SecurityAttributes
+        {
+            public int Length;
+            public IntPtr SecurityDescriptor;
+            [MarshalAs(UnmanagedType.Bool)]
+            public bool InheritHandle;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct StartupInfo
+        {
+            public int Cb;
+            public string? Reserved;
+            public string? Desktop;
+            public string? Title;
+            public uint X;
+            public uint Y;
+            public uint XSize;
+            public uint YSize;
+            public uint XCountChars;
+            public uint YCountChars;
+            public uint FillAttribute;
+            public uint Flags;
+            public ushort ShowWindow;
+            public ushort Reserved2Length;
+            public IntPtr Reserved2;
+            public IntPtr StandardInput;
+            public IntPtr StandardOutput;
+            public IntPtr StandardError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct StartupInfoEx
+        {
+            public StartupInfo StartupInfo;
+            public IntPtr AttributeList;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ProcessInformation
+        {
+            public IntPtr ProcessHandle;
+            public IntPtr ThreadHandle;
+            public uint ProcessId;
+            public uint ThreadId;
+        }
+
+        private sealed class ProcessThreadAttributeList : IDisposable
+        {
+            private const nuint ProcThreadAttributeHandleList = 0x00020002;
+            private readonly IntPtr handles;
+            private int disposed;
+
+            private ProcessThreadAttributeList(IntPtr pointer, IntPtr handles)
+            {
+                Pointer = pointer;
+                this.handles = handles;
+            }
+
+            public IntPtr Pointer { get; }
+
+            public static ProcessThreadAttributeList Create(params IntPtr[] inheritedHandles)
+            {
+                UIntPtr requiredBytes = UIntPtr.Zero;
+                _ = InitializeProcThreadAttributeList(
+                    IntPtr.Zero,
+                    1,
+                    0,
+                    ref requiredBytes);
+                if (requiredBytes == UIntPtr.Zero)
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                var attributeList = Marshal.AllocHGlobal(checked((int)requiredBytes.ToUInt64()));
+                var handleList = IntPtr.Zero;
+                var initialized = false;
+                try
+                {
+                    handleList = Marshal.AllocHGlobal(
+                        checked(inheritedHandles.Length * IntPtr.Size));
+                    if (!InitializeProcThreadAttributeList(
+                        attributeList,
+                        1,
+                        0,
+                        ref requiredBytes))
+                    {
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
+                    }
+                    initialized = true;
+                    for (var index = 0; index < inheritedHandles.Length; index++)
+                    {
+                        Marshal.WriteIntPtr(
+                            handleList,
+                            checked(index * IntPtr.Size),
+                            inheritedHandles[index]);
+                    }
+                    if (!UpdateProcThreadAttribute(
+                        attributeList,
+                        0,
+                        (UIntPtr)ProcThreadAttributeHandleList,
+                        handleList,
+                        (UIntPtr)checked(inheritedHandles.Length * IntPtr.Size),
+                        IntPtr.Zero,
+                        IntPtr.Zero))
+                    {
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
+                    }
+                    return new ProcessThreadAttributeList(attributeList, handleList);
+                }
+                catch
+                {
+                    if (initialized)
+                    {
+                        DeleteProcThreadAttributeList(attributeList);
+                    }
+                    if (handleList != IntPtr.Zero)
+                    {
+                        Marshal.FreeHGlobal(handleList);
+                    }
+                    Marshal.FreeHGlobal(attributeList);
+                    throw;
+                }
+            }
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref disposed, 1) != 0)
+                {
+                    return;
+                }
+                DeleteProcThreadAttributeList(Pointer);
+                Marshal.FreeHGlobal(handles);
+                Marshal.FreeHGlobal(Pointer);
+            }
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            private static extern bool InitializeProcThreadAttributeList(
+                IntPtr attributeList,
+                int attributeCount,
+                uint flags,
+                ref UIntPtr size);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            private static extern bool UpdateProcThreadAttribute(
+                IntPtr attributeList,
+                uint flags,
+                UIntPtr attribute,
+                IntPtr value,
+                UIntPtr size,
+                IntPtr previousValue,
+                IntPtr returnSize);
+
+            [DllImport("kernel32.dll")]
+            private static extern void DeleteProcThreadAttributeList(IntPtr attributeList);
+        }
 
         [StructLayout(LayoutKind.Sequential)]
         private struct JobObjectBasicLimitInformation
