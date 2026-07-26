@@ -20,6 +20,9 @@ public sealed class ClientLiveAcceptanceTests
         var fileUrl = Environment.GetEnvironmentVariable("DEEP_FILE_URL");
         var pushUrl = Environment.GetEnvironmentVariable("DEEP_PUSH_URL");
         var callUrl = Environment.GetEnvironmentVariable("DEEP_CALL_SIGNALING_BASE_URL");
+        var endpointPolicy = StrictLiveEndpointPolicy.Resolve(
+            Environment.GetEnvironmentVariable(StrictLiveEndpointPolicy.PhysicalE2eEnvironmentVariable));
+        var serviceEndpointPolicy = StrictLiveEndpointPolicy.ResolveHttpServicePolicy(endpointPolicy);
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(routerUrls))
         {
@@ -42,17 +45,18 @@ public sealed class ClientLiveAcceptanceTests
             string.IsNullOrWhiteSpace(storageUrl),
             "DEEP_STORAGE_URL must be absent; direct storage cannot satisfy routed release evidence.");
 
-        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(routerUrls!);
-        _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_FILE_URL", fileUrl);
-        _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_PUSH_URL", pushUrl);
-        _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_CALL_SIGNALING_BASE_URL", callUrl);
-        var aliceFixture = CreateRoutedRuntime(endpoints);
-        var bobFixture = CreateRoutedRuntime(endpoints);
+        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(routerUrls!, endpointPolicy);
+        _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_FILE_URL", fileUrl, endpointPolicy);
+        _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_PUSH_URL", pushUrl, endpointPolicy);
+        _ = RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_CALL_SIGNALING_BASE_URL", callUrl, endpointPolicy);
+        var aliceFixture = CreateRoutedRuntime(endpoints, endpointPolicy);
+        var bobFixture = CreateRoutedRuntime(endpoints, endpointPolicy);
         var aliceRuntime = aliceFixture.Runtime;
         var bobRuntime = bobFixture.Runtime;
         var attachmentFiles = new HttpAttachmentFileTransport(
             new HttpClient(),
-            new HttpAttachmentFileTransportOptions(fileUrl!));
+            new HttpAttachmentFileTransportOptions(fileUrl!),
+            serviceEndpointPolicy);
         var attachmentBytes = Encoding.UTF8.GetBytes($"client-live-attachment-{Guid.NewGuid():N}");
 
         var aliceOnboarding = new OnboardingViewModel(aliceRuntime) { DisplayName = "Alice Live Client" };
@@ -69,13 +73,16 @@ public sealed class ClientLiveAcceptanceTests
 
         var alicePhrase = await aliceRuntime.Accounts.GetRecoveryPhraseAsync();
         var bobPhrase = await bobRuntime.Accounts.GetRecoveryPhraseAsync();
-        var aliceCalls = new ClientCallService(CreateCallService(callUrl!, alicePhrase));
-        var bobCalls = new ClientCallService(CreateCallService(callUrl!, bobPhrase));
+        var aliceCalls = new ClientCallService(CreateCallService(callUrl!, alicePhrase, serviceEndpointPolicy));
+        var bobCalls = new ClientCallService(CreateCallService(callUrl!, bobPhrase, serviceEndpointPolicy));
 
         var bobNotifications = new NotificationRegistrationViewModel(new PushRegistrationCoordinator(
             bobRuntime,
             new LocalPushNotificationService("fcm", $"client-live-fcm-{Guid.NewGuid():N}"),
-            new HttpPushSubscriptionTransport(new HttpClient(), new HttpPushSubscriptionTransportOptions(pushUrl!)),
+            new HttpPushSubscriptionTransport(
+                new HttpClient(),
+                new HttpPushSubscriptionTransportOptions(pushUrl!),
+                serviceEndpointPolicy),
             bobRuntime.Clock));
         await bobNotifications.RegisterAsync();
 
@@ -198,7 +205,8 @@ public sealed class ClientLiveAcceptanceTests
     }
 
     private static RoutedRuntimeFixture CreateRoutedRuntime(
-        IReadOnlyList<PinnedRouterEndpoint> endpoints)
+        IReadOnlyList<PinnedRouterEndpoint> endpoints,
+        RoutedRuntimeEndpointPolicy endpointPolicy)
     {
         var handler = new RouterAvailabilityHandler(endpoints);
         var composition = RoutedProductionCompositionFactory.Create(
@@ -207,7 +215,8 @@ public sealed class ClientLiveAcceptanceTests
             new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) },
             new RoutedSessionStorageTransportOptions(
                 MetadataMode: SessionStorageMetadataMode.LegacyCompatibility),
-            TimeProvider.System);
+            TimeProvider.System,
+            endpointPolicy);
         var runtime = new ClientRuntime(
             new InMemorySessionStore(),
             ClientFeatureFlags.ReleaseDefaults with { MetadataPrivateTransportRequired = false },
@@ -248,11 +257,15 @@ public sealed class ClientLiveAcceptanceTests
         Assert.Equal(0, fixture.RouterHandler.UnexpectedDestinationRequests);
     }
 
-    private static RealtimeCallService CreateCallService(string callUrl, string? recoveryPhrase) =>
+    private static RealtimeCallService CreateCallService(
+        string callUrl,
+        string? recoveryPhrase,
+        HttpServiceEndpointPolicy serviceEndpointPolicy) =>
         new(new HttpCallSignalingTransport(
             new HttpClient(),
             new HttpCallSignalingTransportOptions(callUrl),
-            _ => Task.FromResult(recoveryPhrase)));
+            _ => Task.FromResult(recoveryPhrase),
+            endpointPolicy: serviceEndpointPolicy));
 
     private static async Task WaitForAsync(Func<bool> condition)
     {

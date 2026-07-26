@@ -60,6 +60,56 @@ public sealed class RoutedCompositionContractSmokeTests
     }
 
     [Fact]
+    public async Task StrictLivePreflight_DefaultRejectsLanHttpAndExactPhysicalE2eOptInAcceptsIt()
+    {
+        var lanRouters = string.Join(';',
+            $"{RouterOne}|http://192.168.1.44:41801/",
+            $"{RouterTwo}|http://192.168.1.44:41802/",
+            $"{RouterThree}|http://192.168.1.44:41803/");
+        const string lanService = "http://192.168.1.44:41810/api";
+        var lanConfiguration = new Dictionary<string, string?>
+        {
+            ["XNODE_URLS"] = lanRouters,
+            ["DEEP_FILE_URL"] = lanService,
+            ["DEEP_PUSH_URL"] = lanService,
+            ["DEEP_CALL_SIGNALING_BASE_URL"] = lanService
+        };
+
+        var defaultResult = await RunPreflightAsync(lanConfiguration);
+        Assert.Equal(2, defaultResult.ExitCode);
+        var blockedChecks = PassedChecks();
+        blockedChecks["routed-message-endpoint"] = "blocked";
+        blockedChecks["DEEP_FILE_URL"] = "blocked";
+        blockedChecks["DEEP_PUSH_URL"] = "blocked";
+        blockedChecks["DEEP_CALL_SIGNALING_BASE_URL"] = "blocked";
+        AssertMachineReadableContract(defaultResult, "failed", blockedChecks);
+        Assert.Equal(
+            "XNODE_URLS must contain between three and sixteen distinct <64-lowerhex-routerId>|<url> entries; " +
+            "required and must use HTTPS or explicit loopback HTTP; canonical development-local IPv4 HTTP requires DEEP_STRICT_LIVE_PHYSICAL_E2E=1",
+            GetPreflightCheckDetail(defaultResult, "routed-message-endpoint"));
+        Assert.Equal(
+            "required and must use HTTPS or explicit loopback HTTP; canonical development-local IPv4 HTTP requires DEEP_STRICT_LIVE_PHYSICAL_E2E=1",
+            GetPreflightCheckDetail(defaultResult, "DEEP_FILE_URL"));
+
+        lanConfiguration["DEEP_STRICT_LIVE_PHYSICAL_E2E"] = "1";
+        var physicalResult = await RunPreflightAsync(lanConfiguration);
+        Assert.Equal(0, physicalResult.ExitCode);
+        AssertMachineReadableContract(physicalResult, "ready", PassedChecks());
+        Assert.Equal(
+            "between three and sixteen distinct pinned router identities and URLs; configured with HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP (physical E2E opt-in)",
+            GetPreflightCheckDetail(physicalResult, "routed-message-endpoint"));
+        Assert.Equal(
+            "configured with HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP (physical E2E opt-in)",
+            GetPreflightCheckDetail(physicalResult, "DEEP_FILE_URL"));
+        Assert.Equal(
+            "configured with HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP (physical E2E opt-in)",
+            GetPreflightCheckDetail(physicalResult, "DEEP_PUSH_URL"));
+        Assert.Equal(
+            "configured with HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP (physical E2E opt-in)",
+            GetPreflightCheckDetail(physicalResult, "DEEP_CALL_SIGNALING_BASE_URL"));
+    }
+
+    [Fact]
     public void StrictWorkflow_RestoresAndBuildsReleaseTestsBeforeNoRestoreLiveLane()
     {
         var workflow = ReadWorkspaceFile(".github", "workflows", "strict-release-evidence.yml");
@@ -307,7 +357,8 @@ public sealed class RoutedCompositionContractSmokeTests
                 ["DEEP_STORAGE_URL"] = null,
                 ["DEEP_FILE_URL"] = "https://files.example/",
                 ["DEEP_PUSH_URL"] = "https://push.example/",
-                ["DEEP_CALL_SIGNALING_BASE_URL"] = "https://calls.example/"
+                ["DEEP_CALL_SIGNALING_BASE_URL"] = "https://calls.example/",
+                ["DEEP_STRICT_LIVE_PHYSICAL_E2E"] = null
             };
             foreach (var (name, value) in overrides)
             {
@@ -353,6 +404,19 @@ public sealed class RoutedCompositionContractSmokeTests
         ["DEEP_PUSH_URL"] = "passed",
         ["DEEP_CALL_SIGNALING_BASE_URL"] = "passed"
     };
+
+    private static string GetPreflightCheckDetail(
+        PreflightProcessResult result,
+        string checkName)
+    {
+        using var preflight = JsonDocument.Parse(result.PreflightJson);
+        return preflight.RootElement
+            .GetProperty("checks")
+            .EnumerateArray()
+            .Single(check => check.GetProperty("name").GetString() == checkName)
+            .GetProperty("detail")
+            .GetString()!;
+    }
 
     private static void AssertMachineReadableContract(
         PreflightProcessResult result,

@@ -68,6 +68,15 @@ self-hosted workflow explicitly restores and builds the ViewModel test project
 in Release before invoking the wrapper's `--no-restore` live test command, so a
 clean runner cannot fail merely because Release test assets are absent.
 
+For a development-only physical survival compose that exposes canonical local
+IPv4 HTTP endpoints (for example `192.168.1.44`), set
+`DEEP_STRICT_LIVE_PHYSICAL_E2E=1` in addition to `DEEP_STRICT_LIVE=1`. This
+exact-value opt-in passes `RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment`
+through the live harness's pinned-router parser, file/push/call service URL
+checks, and routed composition factory. When absent (or set to any value other
+than exactly `1`), the harness preserves the Production policy and rejects LAN
+HTTP. This changes no application production or Release default.
+
 ## Android device lane
 
 Build the Debug-only E2E APK. Mr. X must provision and approve a commit-bound lab policy plus all referenced files below the ignored `.secrets/android-lab/` directory. Start from `eng/policies/android-lab-policy.template.json`, but do not edit that checked-in blocking template into a credential: copy it to the protected directory and fill exact values there. The policy binds:
