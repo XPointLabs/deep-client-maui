@@ -232,6 +232,32 @@ public sealed class RoutedRuntimeConfigurationTests
         Assert.Equal(endpoints, composition.PinnedRouters);
     }
 
+    [Fact]
+    public async Task VerifiedFactory_UsesOnlyMembershipProviderAndFailsClosed()
+    {
+        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
+            $"{RouterOne}|https://router-one.example/",
+            $"{RouterTwo}|https://router-two.example/",
+            $"{RouterThree}|https://router-three.example/"));
+        var routerHandler = new RouterOutageHandler(endpoints);
+        var provider = new FailingMembershipProvider();
+        using var composition = RoutedProductionCompositionFactory.CreateVerified(
+            endpoints,
+            directStorageUrl: null,
+            new HttpClient(routerHandler),
+            new RoutedSessionStorageTransportOptions(
+                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility),
+            provider);
+
+        var error = await Assert.ThrowsAsync<MembershipRouteCatalogException>(
+            () => composition.Router.RefreshRouteAsync("opaque-target"));
+
+        Assert.Equal("Verified membership catalog unavailable.", error.Message);
+        Assert.Equal(1, provider.RequestCount);
+        Assert.Equal(0, routerHandler.RequestCount);
+        Assert.Same(provider, composition.MembershipRouteCatalogProvider);
+    }
+
     private sealed class RouterOutageHandler(
         IReadOnlyList<PinnedRouterEndpoint> endpoints) : HttpMessageHandler
     {
@@ -262,6 +288,21 @@ public sealed class RoutedRuntimeConfigurationTests
                     "Pinned router API is unavailable.",
                     inner: null,
                     statusCode: HttpStatusCode.ServiceUnavailable));
+        }
+    }
+
+    private sealed class FailingMembershipProvider : IMembershipRouteCatalogProvider
+    {
+        private int requestCount;
+
+        public int RequestCount => Volatile.Read(ref requestCount);
+
+        public Task<MembershipRouteCatalogSnapshot> GetCatalogAsync(
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref requestCount);
+            throw new MembershipRouteCatalogException(
+                "Verified membership catalog unavailable.");
         }
     }
 }

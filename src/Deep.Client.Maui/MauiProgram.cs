@@ -33,6 +33,7 @@ internal sealed record ApplicationServiceInputs(
     string? StorageBaseUrl,
     HttpClient RouterHttpClient,
     RoutedSessionStorageTransportOptions RoutedTransportOptions,
+    DeferredVerifiedMembershipRouteCatalogProvider? MembershipRouteCatalogProvider,
     RuntimeEnvironmentOptions RuntimeEnvironment,
     Func<IServiceProvider, IIpCountryLookup> CountryLookupFactory,
     Func<IServiceProvider, IAvatarProfileTransport> AvatarTransportFactory,
@@ -68,6 +69,10 @@ public static class MauiProgram
     internal const string ExternalOutboxWorkerSha256Env = "DEEP_OUTBOX_WORKER_SHA256";
     internal const string ExternalOutboxWorkerBundleSha256Env =
         "DEEP_OUTBOX_WORKER_BUNDLE_SHA256";
+    internal const string DevLocalMembershipTrustUrlEnv =
+        "DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_URL";
+    internal const string DevLocalMembershipTrustSha256Env =
+        "DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_SHA256";
     private const string ExternalOutboxWorkerDirectory = "outbox-worker";
     private const string ExternalOutboxWorkerFileName = "Deep.Client.Maui.OutboxWorker.exe";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
@@ -101,17 +106,9 @@ public static class MauiProgram
 #if DEBUG
         var routedComposition = inputs.RouterBaseUrls.Count == 0
             ? null
-            : RoutedProductionCompositionFactory.Create(
-                inputs.RouterBaseUrls,
-                inputs.StorageBaseUrl,
-                inputs.RouterHttpClient,
-                inputs.RoutedTransportOptions);
+            : CreateRoutedComposition(inputs);
 #else
-        var routedComposition = RoutedProductionCompositionFactory.Create(
-            inputs.RouterBaseUrls,
-            inputs.StorageBaseUrl,
-            inputs.RouterHttpClient,
-            inputs.RoutedTransportOptions);
+        var routedComposition = CreateRoutedComposition(inputs);
 #endif
 
         services.AddSingleton(inputs.RuntimeEnvironment);
@@ -234,6 +231,21 @@ public static class MauiProgram
 #endif
     }
 
+    private static RoutedProductionComposition CreateRoutedComposition(
+        ApplicationServiceInputs inputs) =>
+        inputs.MembershipRouteCatalogProvider is null
+            ? RoutedProductionCompositionFactory.Create(
+                inputs.RouterBaseUrls,
+                inputs.StorageBaseUrl,
+                inputs.RouterHttpClient,
+                inputs.RoutedTransportOptions)
+            : RoutedProductionCompositionFactory.CreateVerified(
+                inputs.RouterBaseUrls,
+                inputs.StorageBaseUrl,
+                inputs.RouterHttpClient,
+                inputs.RoutedTransportOptions,
+                inputs.MembershipRouteCatalogProvider);
+
 #if ANDROID
     private static void ConfigureAndroidHandlers()
     {
@@ -330,6 +342,17 @@ public static class MauiProgram
         var survivalDevelopment = IsSurvivalDevelopmentProfile();
         var featureFlags = BuildFeatureFlags(survivalDevelopment);
         var routerBaseUrls = ResolveRouterBaseUrls();
+        var membershipConfiguration =
+            DevLocalMembershipRouteConfiguration.Resolve(
+                ResolveRuntimeSetting(DevLocalMembershipTrustUrlEnv),
+                ResolveRuntimeSetting(DevLocalMembershipTrustSha256Env),
+                explicitDevelopmentProfile: survivalDevelopment,
+                productionBuild: !IsDebugBuild());
+        if (membershipConfiguration is not null && routerBaseUrls.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "Development membership routing requires configured routed transport.");
+        }
         var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
         var fileBaseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
         var pushBaseUrl = ResolveRuntimeSetting(PushBaseUrlEnv);
@@ -430,12 +453,23 @@ public static class MauiProgram
 #else
         Func<IServiceProvider, DesktopWorkspaceViewModel>? desktopWorkspaceFactory = null;
 #endif
+        var routerHttpClient = CreateRouterHttpClient();
+        var membershipRouteCatalogProvider = membershipConfiguration is null
+            ? null
+            : new DeferredVerifiedMembershipRouteCatalogProvider(
+                membershipConfiguration,
+                routerHttpClient,
+                new FileMembershipRouteArtifactCache(Path.Combine(
+                    ResolveAppDataDirectory(),
+                    "membership-route",
+                    "catalog-v1.json")));
         return new ApplicationServiceInputs(
             featureFlags,
             routerBaseUrls,
             storageBaseUrl,
-            CreateRouterHttpClient(),
+            routerHttpClient,
             BuildRoutedTransportOptions(survivalDevelopment),
+            membershipRouteCatalogProvider,
             RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting),
             countryLookupFactory,
             avatarTransportFactory,
@@ -467,6 +501,15 @@ public static class MauiProgram
             ResolveRuntimeSetting(SurvivalEnvironmentEnv),
             "Development",
             StringComparison.Ordinal);
+#else
+        return false;
+#endif
+    }
+
+    private static bool IsDebugBuild()
+    {
+#if DEBUG
+        return true;
 #else
         return false;
 #endif
@@ -679,7 +722,10 @@ public static class MauiProgram
                 legacyStatePath,
                 stateDbKey,
                 requireE2eeTransport: true,
-                outboxActivation.Executor);
+                outboxActivation.Executor,
+                services.GetService<RoutedProductionComposition>()
+                    ?.MembershipRouteCatalogProvider as
+                    DeferredVerifiedMembershipRouteCatalogProvider);
         }
         catch
         {

@@ -89,6 +89,14 @@
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
     <AndroidLibrary Include="Platforms\Android\Jars\libXray.aar" />
     <ProguardConfiguration Include="Platforms\Android\proguard.cfg" />
+    <AndroidResource Remove="Platforms\Android\Resources\xml\network_security_config_physical_e2e.xml" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+    <AndroidResource Remove="Platforms\Android\Resources\xml\network_security_config.xml" />
+    <AndroidResource Include="Platforms\Android\Resources\xml\network_security_config_physical_e2e.xml">
+      <Link>Resources\xml\network_security_config.xml</Link>
+    </AndroidResource>
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(RuntimeIdentifier)' == 'win-x64'">

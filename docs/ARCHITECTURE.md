@@ -151,6 +151,31 @@ and physical-device hostile-worker/battery evidence. Until that exists, an
 Android request resolves to `UnsupportedPlatform` and the normal runtime
 continues with persistent transport outbox disabled.
 
+## Development verified membership routing
+
+Normal routed composition remains dormant with respect to membership-route
+catalogs. A Debug physical-E2E build using the explicit Survival Development
+profile may opt in only when both
+`DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_URL` and
+`DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_SHA256` are present. Supplying only one value
+fails startup. The URL must be the exact catalog path on a literal local IPv4
+HTTP origin, and the pin must be a canonical lowercase SHA-256 value. Release,
+ordinary Debug, remote HTTP/HTTPS bootstrap roots, and unpinned/TOFU activation
+are rejected.
+
+The verified provider is injected into `XNodeRpcClient` with
+`RequireMembershipRouteSelection=true`. It initially fails closed and is bound
+exactly once after runtime creation to the same encrypted `SqliteSessionStore`
+already owned by `ClientRuntime`; no second database owner or key lifecycle is
+created. It uses the dev-local bootstrap overload, Sodium Ed25519 verification,
+enabled membership trust, and a bounded persistent artifact cache below
+app-private data. Pin, artifact, cache, or verification failure aborts routed
+dispatch without logging the URL, pin, identity, or artifact.
+
+Android cleartext is broadened only in non-Release
+`DeepPhysicalE2E=true` packages. The normal and Release network-security
+resource is unchanged and keeps its deny-by-default cleartext policy.
+
 Groups use the same transport and persistence guarantees for state and messages.
 Attachments are encrypted before upload; ordinary images are compressed for
 inline media while document mode preserves the source file.

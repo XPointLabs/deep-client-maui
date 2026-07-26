@@ -78,6 +78,20 @@ Build the Debug-only E2E APK. Mr. X must provision and approve a commit-bound la
 - the approved inventory serial, build fingerprint, product, hardware, model, SDK, dedicated flag, Mr. X inventory approval, `ro.kernel.qemu=0`, and `physical-managed-dedicated` class;
 - the E2E package, version, APK SHA-256, and signing-certificate SHA-256.
 
+For the verified development membership route lane, the embedded survival
+environment must include both of the following or neither:
+
+```text
+DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_URL=http://<literal-local-ipv4>:<port>/api/network/membership-route-catalog
+DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_SHA256=<64-lowercase-hex>
+```
+
+This opt-in is accepted only by a non-Release `DeepPhysicalE2E=true` build with
+`SURVIVAL_ENV=Development`. One missing value, a remote/hostname/HTTPS URL, a
+different path, or a pin mismatch fails closed. The pin binds the exact
+downloaded artifact; there is no remote trust root or TOFU fallback. Omitting
+both values preserves the existing pinned-router path.
+
 CI does not trust a pre-existing checkout directory. `eng/Provision-AndroidLabPolicy.ps1` materializes an exact allowlisted bundle from `DEEP_ANDROID_LAB_PROTECTED_SOURCE` after checkout, rejects reparse points in every existing source/destination ancestor, requires a pinned owner, and permits write access only to that owner, Local System, and Builtin Administrators by resolved SID. Every source file is regular/read-only, and both source and destination are re-enumerated against the exact signed file set with no extras. The script verifies all receipt/tool hashes and an Ed25519 signature over the complete semantic policy projection. The Mr. X public-key SHA-256 is supplied as the protected deployment pin `DEEP_MR_X_PUBLIC_KEY_SHA256`; the repository contains no invented real key. The verify-only helper uses a locked dependency graph, is built before provisioning, and runs without restore/build at the trust gate. An `if: always()` step removes the destination even after a failed lane.
 
 Then attach that exact dedicated managed physical test device and invoke:

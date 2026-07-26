@@ -14,6 +14,7 @@ internal sealed class SecureRecoverySessionStore(
     IOneToOneConversationOpenRepository,
     IMessageSyncRepository,
     ITransportOutboxRepository,
+    IMembershipTrustRepository,
     IDisposable
 {
     private const string SecureRecoveryPhraseKey = "deep.account.recovery-phrase.v1";
@@ -520,6 +521,45 @@ internal sealed class SecureRecoverySessionStore(
         inner as ITransportOutboxRepository
         ?? throw new InvalidOperationException(
             "The secured session store requires transport outbox persistence support.");
+
+    public Task<MembershipTrustReadSnapshot> ReadMembershipTrustAsync(
+        string opaqueProfileKey,
+        MembershipTrustDomain domain,
+        CancellationToken cancellationToken = default) =>
+        RequireMembershipTrustRepository().ReadMembershipTrustAsync(
+            opaqueProfileKey,
+            domain,
+            cancellationToken);
+
+    public Task<MembershipTrustCommitResult> CommitMembershipTrustAsync(
+        MembershipTrustRecord record,
+        ulong? expectedHeadRevision,
+        CancellationToken cancellationToken = default) =>
+        RequireMembershipTrustRepository().CommitMembershipTrustAsync(
+            record,
+            expectedHeadRevision,
+            cancellationToken);
+
+    public Task<MembershipTrustClockReadSnapshot> ReadMembershipTrustClockAsync(
+        string opaqueProfileKey,
+        CancellationToken cancellationToken = default) =>
+        RequireMembershipTrustRepository().ReadMembershipTrustClockAsync(
+            opaqueProfileKey,
+            cancellationToken);
+
+    public Task<MembershipTrustClockCommitResult> CommitMembershipTrustClockAsync(
+        MembershipTrustClockRecord record,
+        ulong? expectedRevision,
+        CancellationToken cancellationToken = default) =>
+        RequireMembershipTrustRepository().CommitMembershipTrustClockAsync(
+            record,
+            expectedRevision,
+            cancellationToken);
+
+    private IMembershipTrustRepository RequireMembershipTrustRepository() =>
+        inner as IMembershipTrustRepository
+        ?? throw new InvalidOperationException(
+            "The secured session store requires membership trust persistence support.");
 
     public Task<int> GetSchemaVersionAsync(CancellationToken cancellationToken = default) =>
         inner.GetSchemaVersionAsync(cancellationToken);

@@ -21,6 +21,8 @@ public sealed class PersistentClientRuntimeComposerTests
         var statePath = Path.Combine(directory, "client-state.db");
         var legacyPath = Path.Combine(directory, "client-state.json");
         var executor = new ReadyExecutor();
+        using var membershipProvider =
+            DevLocalMembershipRouteCompositionTests.CreateProviderForCompositionTest();
         try
         {
             using var runtime = PersistentClientRuntimeComposer.Create(
@@ -32,9 +34,11 @@ public sealed class PersistentClientRuntimeComposerTests
                 legacyPath,
                 new string('A', 64),
                 requireE2eeTransport: true,
-                executor);
+                executor,
+                membershipProvider);
 
             Assert.NotNull(runtime.TransportOutbox);
+            Assert.True(membershipProvider.IsBound);
             var item = TransportOutboxPreparedItem.Create(
                 OutboxAccountScope.FromBytes(Bytes(TransportOutboxLimits.AccountScopeBytes, 0x11)),
                 OutboxLogicalId.FromBytes(Bytes(TransportOutboxLimits.LogicalIdBytes, 0x22)),

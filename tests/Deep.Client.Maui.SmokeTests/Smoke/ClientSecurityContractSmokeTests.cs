@@ -144,6 +144,55 @@ public sealed class ClientSecurityContractSmokeTests
             "return PersistentClientRuntimeComposer.Create(",
             program,
             StringComparison.Ordinal);
+        var composer = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Services",
+            "PersistentClientRuntimeComposer.cs");
+        Assert.Contains("membershipRouteCatalogProvider.Bind(", composer, StringComparison.Ordinal);
+        Assert.Contains(
+            "secureStore = new SecureRecoverySessionStore(",
+            composer,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PhysicalE2eMembershipCleartextIsBuildAndRuntimeGated()
+    {
+        var project = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Deep.Client.Maui.csproj");
+        var productionPolicy = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Platforms", "Android", "Resources",
+            "xml", "network_security_config.xml");
+        var physicalPolicy = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Platforms", "Android", "Resources",
+            "xml", "network_security_config_physical_e2e.xml");
+        var composition = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui.Core", "Services",
+            "DevLocalMembershipRouteComposition.cs");
+
+        Assert.Contains(
+            "'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'",
+            project,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<AndroidResource Remove=\"Platforms\\Android\\Resources\\xml\\network_security_config.xml\"",
+            project,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<AndroidResource Remove=\"Platforms\\Android\\Resources\\xml\\network_security_config_physical_e2e.xml\"",
+            project,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<base-config cleartextTrafficPermitted=\"false\"",
+            productionPolicy,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<base-config cleartextTrafficPermitted=\"true\"",
+            physicalPolicy,
+            StringComparison.Ordinal);
+        Assert.Contains("productionBuild", composition, StringComparison.Ordinal);
+        Assert.Contains("explicitDevelopmentProfile", composition, StringComparison.Ordinal);
+        Assert.Contains("MembershipRouteEndpointPolicy.DevLocalHttp", composition, StringComparison.Ordinal);
+        Assert.Contains("new SodiumEd25519MembershipSignatureVerifier()", composition, StringComparison.Ordinal);
     }
 
     private static string ReadWorkspaceFile(params string[] parts)
