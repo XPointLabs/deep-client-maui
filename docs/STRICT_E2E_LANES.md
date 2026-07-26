@@ -152,6 +152,45 @@ The preflight supports an explicit `-AndroidSerial` and configures `adb reverse`
 
 `-AllowSyntheticLabPolicyForContractTests` exists only for the repository's compiled synthetic security fixture. It must be explicit, emits `synthetic=true`, and is always rejected by the release validator. The checked-in template, missing Mr. X receipt, missing exact tool/APK/device bindings, personal devices, or runner self-attestation remain `blocked`; building an APK is never counted as execution.
 
+## Physical Android ↔ Windows rendered flow (opt-in)
+
+`DEEP_STRICT_CROSS_PLATFORM_UI=1` enables the separate Debug/live rendered
+acceptance in `Deep.Client.Maui.UiTests`. It uses FlaUI UIA3 only against the
+PID returned by the Windows process it starts, and `adb -s <exact-serial>` plus
+`uiautomator dump` for Android. It does not use Appium, WinAppDriver, an
+emulator, a mock transport, a text selector, or a coordinate script. A tap
+centre is derived only from the bounds of one exact resource-id in a fresh
+dumped tree; every Windows action begins with one exact AutomationId.
+
+The lane is `NOT-RUN` unless an unlocked Windows desktop and approved physical
+device have all of these inputs: `DEEP_E2E_BOOTSTRAP=live`,
+`DEEP_MAUI_EXE`, `DEEP_E2E_APPDATA_ROOT`, `DEEP_E2E_ARTIFACTS`,
+`DEEP_E2E_ANDROID_SERIAL`, `DEEP_E2E_ANDROID_APK`, `DEEP_E2E_AAPT`, and
+`DEEP_E2E_ATTACHMENT_FIXTURE`. The supplied APK must be the installed
+`network.xpoint.deep.e2e` package at the exact `aapt` version. It also requires
+`DEEP_E2E_ANDROID_SELECTORS_JSON`, a role-to-exact-resource-id map for every
+app control used by the test; exact system-picker resource IDs in
+`DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID`,
+`DEEP_E2E_ANDROID_PICKER_FILE_ID`, and
+`DEEP_E2E_ANDROID_PICKER_CONFIRM_ID`; and exact Windows common-dialog
+AutomationIds in `DEEP_E2E_WINDOWS_SAVE_FILENAME_AUTOMATION_ID` and
+`DEEP_E2E_WINDOWS_SAVE_CONFIRM_AUTOMATION_ID`.
+
+It creates separate identities, records only identity hashes, rejects an
+invalid ID before a contact can open, makes reciprocal contacts, and verifies
+unique text in both directions. A unique fixture is pushed through the Android
+system picker, then opened/saved in Windows, SHA-256 checked, deleted,
+re-downloaded/decrypted, and checked again. Both clients cold restart; Windows
+must have a distinct PID while retaining the same per-run isolated app-data
+root, and marked messages must render again.
+
+Only `cross-platform-ui-result.json` is standard evidence: status, safe
+package/version values, hashes, and booleans. It never contains serials,
+identities, messages, paths, raw XML, screenshots, picker content, or ADB
+output. Missing prerequisites/locked desktop are `NOT-RUN`; invalid configured
+selectors, emulator/metadata mismatch, missing UI state, or SHA mismatch fail.
+There is no selector, coordinate, or deterministic-pass fallback.
+
 ## Release evidence gate
 
 `.github/workflows/strict-release-evidence.yml` derives exactly one just-built Windows executable and E2E APK after cleaning their relevant output roots, invokes all three wrappers with the same release invocation on the dedicated self-hosted Windows/device lab, and then runs:

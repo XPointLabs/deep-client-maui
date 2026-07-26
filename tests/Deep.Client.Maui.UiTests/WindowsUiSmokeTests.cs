@@ -74,7 +74,9 @@ public sealed class WindowsUiSmokeTests
 
     private sealed record UiBaseline(string[] Welcome);
 
-    private sealed class WindowsUiTestSession : IDisposable
+    // The physical Android↔Windows lane deliberately reuses this exact-PID UIA3 session;
+    // it must not attach to an arbitrary desktop window.
+    internal sealed class WindowsUiTestSession : IDisposable
     {
         private const string AppPathKey = "DEEP_MAUI_EXE";
         private const string ArtifactDirectoryKey = "DEEP_E2E_ARTIFACTS";
@@ -107,7 +109,25 @@ public sealed class WindowsUiSmokeTests
             this.artifactDirectory = artifactDirectory;
         }
 
-        public static WindowsUiTestSession CreateStrict()
+        internal int ProcessId => application.ProcessId;
+
+        public static WindowsUiTestSession CreateStrict() => CreateStrict(appDataDirectoryOverride: null);
+
+        internal static WindowsUiTestSession CreateStrictWithIsolatedAppData()
+        {
+            return CreateStrict(CreateIsolatedAppDataDirectory());
+        }
+
+        internal static string CreateIsolatedAppDataDirectory()
+        {
+            var root = RequireDirectorySetting(AppDataDirectoryKey);
+            return Path.Combine(root, $"cross-platform-{Guid.NewGuid():N}");
+        }
+
+        internal static WindowsUiTestSession CreateStrictWithAppData(string appDataDirectory) =>
+            CreateStrict(Path.GetFullPath(appDataDirectory));
+
+        private static WindowsUiTestSession CreateStrict(string? appDataDirectoryOverride)
         {
             if (!System.OperatingSystem.IsWindows())
             {
@@ -116,7 +136,7 @@ public sealed class WindowsUiSmokeTests
 
             var appPath = RequireExistingFile(AppPathKey);
             var artifactDirectory = RequireDirectorySetting(ArtifactDirectoryKey);
-            var appDataDirectory = RequireDirectorySetting(AppDataDirectoryKey);
+            var appDataDirectory = appDataDirectoryOverride ?? RequireDirectorySetting(AppDataDirectoryKey);
             Directory.CreateDirectory(artifactDirectory);
             Directory.CreateDirectory(appDataDirectory);
 
@@ -186,6 +206,40 @@ public sealed class WindowsUiSmokeTests
 
         public AutomationElement? FindAutomationId(string automationId) =>
             CurrentWindow().FindFirstDescendant(condition => condition.ByAutomationId(automationId));
+
+        internal AutomationElement? WaitForAutomationIdWithName(string automationId, string name, TimeSpan timeout)
+        {
+            var result = Retry.WhileNull(
+                () => CurrentWindow()
+                    .FindAllDescendants(condition => condition.ByAutomationId(automationId))
+                    .SingleOrDefault(candidate => string.Equals(candidate.Properties.Name.ValueOrDefault, name, StringComparison.Ordinal)),
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            return result.Result;
+        }
+
+        internal void ActivateExact(AutomationElement element)
+        {
+            if (element.Patterns.Invoke.IsSupported)
+            {
+                element.Patterns.Invoke.Pattern.Invoke();
+                return;
+            }
+
+            // A click is permitted only after the exact AutomationId found this element.
+            FlaUI.Core.Input.Mouse.Click(element.GetClickablePoint());
+        }
+
+        internal AutomationElement? WaitForDesktopAutomationId(string automationId, TimeSpan timeout)
+        {
+            var result = Retry.WhileNull(
+                () => automation.GetDesktop().FindFirstDescendant(condition => condition.ByAutomationId(automationId)),
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            return result.Result;
+        }
 
         public void FocusWindow() => CurrentWindow().Focus();
 
