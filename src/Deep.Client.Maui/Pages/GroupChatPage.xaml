@@ -14,7 +14,7 @@
     <ContentPage.Resources>
         <DataTemplate x:Key="GroupChatPlainTextMessageTemplate" x:DataType="vm:GroupChatMessageItem">
             <Grid Padding="2,0,2,4">
-                <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
+                <Border AutomationId="GroupChat.MessageBubble" SemanticProperties.Description="Входящее сообщение" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
                     <Border.Behaviors>
                         <controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" />
                     </Border.Behaviors>
@@ -23,7 +23,7 @@
                         <Label AutomationId="GroupChat.MessageBody" Text="{Binding Body}" FontSize="15" LineBreakMode="WordWrap" />
                         <HorizontalStackLayout Spacing="6" HorizontalOptions="End">
                             <Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" />
-                            <Label Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}">
+                            <Label AutomationId="GroupChat.DeliveryStatus" Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}">
                                 <Label.Triggers>
                                     <DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger>
                                     <DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger>
@@ -32,7 +32,7 @@
                         </HorizontalStackLayout>
                     </VerticalStackLayout>
                     <Border.Triggers>
-                        <DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /></DataTrigger>
+                        <DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /><Setter Property="SemanticProperties.Description" Value="Исходящее сообщение" /></DataTrigger>
                     </Border.Triggers>
                 </Border>
             </Grid>
@@ -40,7 +40,7 @@
 
         <DataTemplate x:Key="GroupChatTextMessageTemplate" x:DataType="vm:GroupChatMessageItem">
             <Grid Padding="2,0,2,4">
-                <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
+                <Border AutomationId="GroupChat.MessageBubble" SemanticProperties.Description="Входящее сообщение" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
                     <Border.Behaviors>
                         <controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" />
                     </Border.Behaviors>
@@ -68,7 +68,7 @@
                         </FlexLayout>
                         <HorizontalStackLayout Spacing="6" HorizontalOptions="End">
                             <Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" VerticalOptions="End" />
-                            <Label Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}">
+                            <Label AutomationId="GroupChat.DeliveryStatus" Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}">
                                 <Label.Triggers>
                                     <DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger>
                                     <DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger>
@@ -80,6 +80,7 @@
                         <DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}">
                             <Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" />
                             <Setter Property="HorizontalOptions" Value="End" />
+                            <Setter Property="SemanticProperties.Description" Value="Исходящее сообщение" />
                         </DataTrigger>
                     </Border.Triggers>
                 </Border>
@@ -88,7 +89,7 @@
 
         <DataTemplate x:Key="GroupChatImageMessageTemplate" x:DataType="vm:GroupChatMessageItem">
             <Grid Padding="2,0,2,4">
-                <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="6" HorizontalOptions="Start" MaximumWidthRequest="318">
+                <Border AutomationId="GroupChat.MessageBubble" SemanticProperties.Description="Входящее сообщение" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="6" HorizontalOptions="Start" MaximumWidthRequest="318">
                     <Border.Behaviors>
                         <controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" />
                     </Border.Behaviors>
@@ -100,7 +101,7 @@
                                 <Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="2" />
                             </VerticalStackLayout>
                         </Border>
-                        <Border Padding="0" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 14">
+                        <Border AutomationId="GroupChat.AttachmentCard" Padding="0" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 14">
                             <Grid WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}">
                                 <Image Source="{Binding ImagePreviewPath}" Aspect="AspectFill" IsVisible="{Binding HasImagePreview}" WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}" />
                                 <Grid IsVisible="{Binding IsImagePreviewLoading}" BackgroundColor="{StaticResource PanelBackgroundAlt}">
@@ -117,7 +118,7 @@
                                 <TapGestureRecognizer Tapped="OnAttachmentTapped" />
                             </Border.GestureRecognizers>
                         </Border>
-                        <Label Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" Margin="5,0" FontSize="15" LineBreakMode="WordWrap" />
+                        <Label AutomationId="GroupChat.MessageBody" Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" Margin="5,0" FontSize="15" LineBreakMode="WordWrap" />
                         <FlexLayout Margin="5,0" Direction="Row" Wrap="Wrap" AlignItems="Center" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}">
                             <BindableLayout.ItemTemplate>
                                 <DataTemplate x:DataType="vm:MessageReactionChip">
@@ -127,7 +128,7 @@
                         </FlexLayout>
                         <HorizontalStackLayout Margin="5,0" Spacing="6" HorizontalOptions="End">
                             <Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" />
-                            <Label Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}">
+                            <Label AutomationId="GroupChat.DeliveryStatus" Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}">
                                 <Label.Triggers>
                                     <DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger>
                                     <DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger>
@@ -136,7 +137,7 @@
                         </HorizontalStackLayout>
                     </VerticalStackLayout>
                     <Border.Triggers>
-                        <DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /></DataTrigger>
+                        <DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /><Setter Property="SemanticProperties.Description" Value="Исходящее сообщение" /></DataTrigger>
                     </Border.Triggers>
                 </Border>
             </Grid>
@@ -144,12 +145,12 @@
 
         <DataTemplate x:Key="GroupChatVoiceMessageTemplate" x:DataType="vm:GroupChatMessageItem">
             <Grid Padding="2,0,2,4">
-                <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
+                <Border AutomationId="GroupChat.MessageBubble" SemanticProperties.Description="Входящее сообщение" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
                     <Border.Behaviors><controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" /></Border.Behaviors>
                     <VerticalStackLayout Spacing="4">
                         <Label Text="{Binding SenderLabel}" IsVisible="{Binding ShowSenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation" />
                         <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}"><VerticalStackLayout Spacing="2"><Label Text="Ответ" FontSize="10" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" /><Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="2" /></VerticalStackLayout></Border>
-                        <Border Style="{StaticResource AttachmentCard}">
+                        <Border AutomationId="GroupChat.AttachmentCard" Style="{StaticResource AttachmentCard}">
                             <Grid ColumnDefinitions="38,*,Auto" ColumnSpacing="9">
                                 <Border AutomationId="GroupChat.VoicePlayButton" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
                                     <Grid WidthRequest="18" HeightRequest="18" HorizontalOptions="Center" VerticalOptions="Center"><Path Data="M10,7 L23,18 L10,29 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoiceIdle}" /><Path Data="M8,6 H11 V22 H8 Z M17,6 H20 V22 H17 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoicePlaying}" /></Grid>
@@ -163,32 +164,32 @@
                                 <Path Grid.Column="2" Data="M12,4 C10.3,4 9,5.3 9,7 V12 C9,13.7 10.3,15 12,15 C13.7,15 15,13.7 15,12 V7 C15,5.3 13.7,4 12,4 Z M7,11 C7,13.8 9.2,16 12,16 C14.8,16 17,13.8 17,11 M12,16 V20" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.6" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="End" />
                             </Grid>
                         </Border>
-                        <Label Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" FontSize="15" LineBreakMode="WordWrap" />
+                        <Label AutomationId="GroupChat.MessageBody" Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" FontSize="15" LineBreakMode="WordWrap" />
                         <FlexLayout Direction="Row" Wrap="Wrap" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}"><BindableLayout.ItemTemplate><DataTemplate x:DataType="vm:MessageReactionChip"><Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2"><Border.GestureRecognizers><TapGestureRecognizer Tapped="OnReactionChipTapped" /></Border.GestureRecognizers><HorizontalStackLayout Spacing="4"><Label Text="{Binding Emoji}" FontSize="14" /><Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" /></HorizontalStackLayout></Border></DataTemplate></BindableLayout.ItemTemplate></FlexLayout>
-                        <HorizontalStackLayout Spacing="6" HorizontalOptions="End"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}"><Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger><DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger></Label.Triggers></Label></HorizontalStackLayout>
+                        <HorizontalStackLayout Spacing="6" HorizontalOptions="End"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label AutomationId="GroupChat.DeliveryStatus" Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}"><Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger><DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger></Label.Triggers></Label></HorizontalStackLayout>
                     </VerticalStackLayout>
-                    <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /></DataTrigger></Border.Triggers>
+                    <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /><Setter Property="SemanticProperties.Description" Value="Исходящее сообщение" /></DataTrigger></Border.Triggers>
                 </Border>
             </Grid>
         </DataTemplate>
 
         <DataTemplate x:Key="GroupChatAttachmentMessageTemplate" x:DataType="vm:GroupChatMessageItem">
             <Grid Padding="2,0,2,4">
-                <Border Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
+                <Border AutomationId="GroupChat.MessageBubble" SemanticProperties.Description="Входящее сообщение" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
                     <Border.Behaviors><controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" /></Border.Behaviors>
                     <VerticalStackLayout Spacing="4">
                         <Label Text="{Binding SenderLabel}" IsVisible="{Binding ShowSenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" LineBreakMode="TailTruncation" />
                         <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}"><VerticalStackLayout Spacing="2"><Label Text="Ответ" FontSize="10" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" /><Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="2" /></VerticalStackLayout></Border>
-                        <Border Style="{StaticResource AttachmentCard}">
-                            <Grid ColumnDefinitions="42,*,Auto" ColumnSpacing="9"><Border WidthRequest="38" HeightRequest="38" Background="{StaticResource PrimaryColorMuted}" StrokeThickness="0" StrokeShape="RoundRectangle 19"><Path Data="M8,5 H19 L24,10 V27 H8 Z M19,5 V10 H24 M11,18 H21 M11,22 H18" Stroke="White" StrokeThickness="1.8" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" /></Border><VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center"><Label Text="{Binding AttachmentTitle}" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" /><Label Text="{Binding AttachmentSubtitle}" FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" /></VerticalStackLayout><Path Grid.Column="2" Data="M9,5 L16,12 L9,19" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" /></Grid>
+                        <Border AutomationId="GroupChat.AttachmentCard" Style="{StaticResource AttachmentCard}">
+                            <Grid ColumnDefinitions="42,*,Auto" ColumnSpacing="9"><Border WidthRequest="38" HeightRequest="38" Background="{StaticResource PrimaryColorMuted}" StrokeThickness="0" StrokeShape="RoundRectangle 19"><Path Data="M8,5 H19 L24,10 V27 H8 Z M19,5 V10 H24 M11,18 H21 M11,22 H18" Stroke="White" StrokeThickness="1.8" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" /></Border><VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center"><Label AutomationId="GroupChat.AttachmentFilename" Text="{Binding AttachmentTitle}" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" /><Label Text="{Binding AttachmentSubtitle}" FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" /></VerticalStackLayout><Path Grid.Column="2" Data="M9,5 L16,12 L9,19" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" /></Grid>
                             <Border.Behaviors><controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" /></Border.Behaviors>
                             <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnAttachmentTapped" /></Border.GestureRecognizers>
                         </Border>
-                        <Label Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" FontSize="15" LineBreakMode="WordWrap" />
+                        <Label AutomationId="GroupChat.MessageBody" Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" FontSize="15" LineBreakMode="WordWrap" />
                         <FlexLayout Direction="Row" Wrap="Wrap" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}"><BindableLayout.ItemTemplate><DataTemplate x:DataType="vm:MessageReactionChip"><Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2"><Border.GestureRecognizers><TapGestureRecognizer Tapped="OnReactionChipTapped" /></Border.GestureRecognizers><HorizontalStackLayout Spacing="4"><Label Text="{Binding Emoji}" FontSize="14" /><Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" /></HorizontalStackLayout></Border></DataTemplate></BindableLayout.ItemTemplate></FlexLayout>
-                        <HorizontalStackLayout Spacing="6" HorizontalOptions="End"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}"><Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger><DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger></Label.Triggers></Label></HorizontalStackLayout>
+                        <HorizontalStackLayout Spacing="6" HorizontalOptions="End"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label AutomationId="GroupChat.DeliveryStatus" Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}"><Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger><DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger></Label.Triggers></Label></HorizontalStackLayout>
                     </VerticalStackLayout>
-                    <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /></DataTrigger></Border.Triggers>
+                    <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /><Setter Property="SemanticProperties.Description" Value="Исходящее сообщение" /></DataTrigger></Border.Triggers>
                 </Border>
             </Grid>
         </DataTemplate>
@@ -299,21 +300,21 @@
                     <Button Grid.Column="2" Text="×" SemanticProperties.Description="Отменить ответ" Command="{Binding CancelReplyCommand}" WidthRequest="38" HeightRequest="38" Padding="0" Style="{StaticResource GhostButton}" />
                 </Grid>
             </Border>
-            <Border Grid.Row="1" Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,7" IsVisible="{Binding HasStagedAttachments}">
+            <Border AutomationId="GroupChat.StagedAttachmentRow" Grid.Row="1" Background="{StaticResource PanelBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,7" IsVisible="{Binding HasStagedAttachments}">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                     <HorizontalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding StagedAttachments}">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate x:DataType="domain:AttachmentMetadata">
-                                <Border Background="{StaticResource PanelBackgroundAlt}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="9,5">
+                                <Border AutomationId="GroupChat.StagedAttachmentItem" Background="{StaticResource PanelBackgroundAlt}" Stroke="{StaticResource DividerColor}" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="9,5">
                                     <HorizontalStackLayout Spacing="6">
                                         <Path Data="M8,5 H18 L23,10 V25 H8 Z M18,5 V10 H23" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.7" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
-                                        <Label Text="{Binding FileName}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" WidthRequest="150" />
+                                         <Label AutomationId="GroupChat.StagedAttachmentFilename" Text="{Binding FileName}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="1" WidthRequest="150" />
                                     </HorizontalStackLayout>
                                 </Border>
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>
                     </HorizontalStackLayout>
-                    <Button Grid.Column="1" Text="Очистить" Command="{Binding ClearAttachmentsCommand}" WidthRequest="96" Style="{StaticResource SecondaryButton}" />
+                    <Button Grid.Column="1" AutomationId="GroupChat.RemoveStagedAttachment" Text="Очистить" Command="{Binding ClearAttachmentsCommand}" WidthRequest="96" Style="{StaticResource SecondaryButton}" />
                 </Grid>
             </Border>
             <Border x:Name="VoiceRecordingPanel" Grid.Row="2" Style="{StaticResource VoiceRecordingPanel}" IsVisible="{Binding IsRecordingVoice}">
@@ -414,14 +415,14 @@
                         </VerticalStackLayout>
                     </Grid>
                     <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" Margin="44,0,0,0" />
-                    <Grid Style="{StaticResource SheetActionRow}">
+                    <Grid AutomationId="GroupChat.AttachmentOpen" Style="{StaticResource SheetActionRow}">
                         <Border Style="{StaticResource SheetIconCircle}">
                             <Path Data="M5,12 H19 M13,6 L19,12 L13,18" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                         </Border>
                         <Label Grid.Column="1" Text="Открыть" FontSize="15" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnOpenAttachmentClicked" /></Grid.GestureRecognizers>
                     </Grid>
-                    <Grid x:Name="SaveRow" Style="{StaticResource SheetActionRow}">
+                    <Grid x:Name="SaveRow" AutomationId="GroupChat.AttachmentSave" Style="{StaticResource SheetActionRow}">
                         <Border Style="{StaticResource SheetIconCircle}">
                             <Path Data="M12,4 V16 M7,11 L12,16 L17,11 M6,20 H18" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                         </Border>
@@ -535,12 +536,12 @@
                         <Label Grid.Column="1" Text="Ответить" FontSize="15" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnReplySelectedMessage" /></Grid.GestureRecognizers>
                     </Grid>
-                    <Grid x:Name="OpenMediaRow" HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
+                    <Grid x:Name="OpenMediaRow" AutomationId="GroupChat.MessageAttachmentOpen" HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
                         <Path Data="M5,7 H23 V21 H5 Z M8,18 L12,14 L15,17 L17,15 L22,20 M10,10 A2,2 0 1 0 10,14 A2,2 0 1 0 10,10" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
                         <Label Grid.Column="1" Text="Открыть фото" FontSize="15" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnOpenSelectedMessageAttachment" /></Grid.GestureRecognizers>
                     </Grid>
-                    <Grid x:Name="SaveAttachmentRow" HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
+                    <Grid x:Name="SaveAttachmentRow" AutomationId="GroupChat.MessageAttachmentSave" HeightRequest="46" ColumnDefinitions="32,*" Padding="10,0">
                         <Path Data="M12,4 V16 M7,11 L12,16 L17,11 M6,20 H18" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
                         <Label Grid.Column="1" Text="Сохранить на устройство" FontSize="15" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers><TapGestureRecognizer Tapped="OnSaveSelectedMessageAttachment" /></Grid.GestureRecognizers>

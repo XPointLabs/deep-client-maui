@@ -26,7 +26,7 @@
             BackgroundColor="{StaticResource PageBackground}"
             IsVisible="{Binding IsConversationListVisible}">
             <Grid AutomationId="DesktopWorkspace.ListPane" Grid.Row="0" HeightRequest="56" Padding="14,6,10,6" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                <Border WidthRequest="40" HeightRequest="40" Padding="0" StrokeThickness="0" Background="{StaticResource AvatarAccentColor}" StrokeShape="RoundRectangle 20">
+                <Border AutomationId="DesktopWorkspace.ProfileSettings" SemanticProperties.Description="Открыть профиль и настройки" WidthRequest="40" HeightRequest="40" Padding="0" StrokeThickness="0" Background="{StaticResource AvatarAccentColor}" StrokeShape="RoundRectangle 20">
                     <Label Text="{Binding ConversationList.AccountInitial}" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="16" />
                     <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnOpenSettingsClicked" /></Border.GestureRecognizers>
                 </Border>
@@ -82,7 +82,7 @@
                     </CollectionView.EmptyView>
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:ConversationListItem">
-                            <Border x:Name="ConversationRow" Padding="10,8" StrokeThickness="0" Background="{StaticResource PageBackground}" SemanticProperties.Description="{Binding Title}">
+                            <Border x:Name="ConversationRow" AutomationId="DesktopWorkspace.ConversationRow" Padding="10,8" StrokeThickness="0" Background="{StaticResource PageBackground}" SemanticProperties.Description="Диалог">
                                 <Border.Triggers>
                                     <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
                                         <Setter Property="Background" Value="{StaticResource PressedBackground}" />
@@ -196,14 +196,15 @@
                         ItemsUpdatingScrollMode="KeepLastItemInView">
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="vm:ChatMessageItem">
-                                <Border Margin="12,3" Padding="10,7" MaximumWidthRequest="620" HorizontalOptions="Start" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8">
+                                <Border AutomationId="DesktopWorkspace.DirectMessageBubble" SemanticProperties.Description="Входящее сообщение" Margin="12,3" Padding="10,7" MaximumWidthRequest="620" HorizontalOptions="Start" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8">
                                     <Border.Behaviors>
                                         <controls:MessageContextGestureBehavior Invoked="OnDirectMessageContextRequested" />
                                     </Border.Behaviors>
                                     <Border.Triggers>
-                                        <DataTrigger TargetType="Border" Binding="{Binding IsOutgoing}" Value="True">
-                                            <Setter Property="HorizontalOptions" Value="End" />
-                                            <Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" />
+                                         <DataTrigger TargetType="Border" Binding="{Binding IsOutgoing}" Value="True">
+                                             <Setter Property="HorizontalOptions" Value="End" />
+                                             <Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" />
+                                             <Setter Property="SemanticProperties.Description" Value="Исходящее сообщение" />
                                         </DataTrigger>
                                     </Border.Triggers>
                                     <VerticalStackLayout Spacing="5">
@@ -226,10 +227,10 @@
                                         <Image Source="{Binding ImagePreviewPath}" IsVisible="{Binding HasImagePreview}" WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}" MaximumWidthRequest="420" MaximumHeightRequest="320" Aspect="AspectFill">
                                             <Image.GestureRecognizers><TapGestureRecognizer Tapped="OnDirectAttachmentTapped" /></Image.GestureRecognizers>
                                         </Image>
-                                        <Label Text="{Binding AttachmentSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding HasNonVoiceAttachments}">
+                                        <Label AutomationId="DesktopWorkspace.DirectAttachmentFilename" Text="{Binding AttachmentSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding HasNonVoiceAttachments}">
                                             <Label.GestureRecognizers><TapGestureRecognizer Tapped="OnDirectAttachmentTapped" /></Label.GestureRecognizers>
                                         </Label>
-                                        <Label Text="{Binding Body}" FontSize="14" LineBreakMode="WordWrap" IsVisible="{Binding HasVisibleBody}" />
+                                        <Label AutomationId="DesktopWorkspace.DirectMessageBody" Text="{Binding Body}" FontSize="14" LineBreakMode="WordWrap" IsVisible="{Binding HasVisibleBody}" />
                                         <FlexLayout BindableLayout.ItemsSource="{Binding ReactionChips}" Direction="Row" Wrap="Wrap" AlignItems="Start" IsVisible="{Binding HasReactions}">
                                             <BindableLayout.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:MessageReactionChip">
@@ -242,7 +243,7 @@
                                         </FlexLayout>
                                         <HorizontalStackLayout HorizontalOptions="End" Spacing="5">
                                             <Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" />
-                                            <Label Text="{Binding StatusGlyph}" FontSize="10" TextColor="{StaticResource PrimaryColor}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" />
+                                            <Label AutomationId="DesktopWorkspace.DirectDeliveryStatus" Text="{Binding StatusGlyph}" FontSize="10" TextColor="{StaticResource PrimaryColor}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" />
                                         </HorizontalStackLayout>
                                     </VerticalStackLayout>
                                 </Border>
@@ -255,8 +256,8 @@
                             <VerticalStackLayout Spacing="1"><Label Text="Ответ" FontSize="11" TextColor="{StaticResource PrimaryColor}" /><Label Text="{Binding DirectChat.ReplyingToPreview}" FontSize="12" MaxLines="1" LineBreakMode="TailTruncation" /></VerticalStackLayout>
                             <Button Grid.Column="1" Text="×" Style="{StaticResource GhostButton}" WidthRequest="34" Padding="0" Command="{Binding DirectChat.CancelReplyCommand}" />
                         </Grid>
-                        <Grid Padding="12,5" ColumnDefinitions="*,Auto" BackgroundColor="{StaticResource PanelBackgroundAlt}" IsVisible="{Binding DirectChat.HasStagedAttachments}">
-                            <Label Text="{Binding DirectChat.StagedAttachmentSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <Grid AutomationId="DesktopWorkspace.DirectStagedAttachmentRow" Padding="12,5" ColumnDefinitions="*,Auto" BackgroundColor="{StaticResource PanelBackgroundAlt}" IsVisible="{Binding DirectChat.HasStagedAttachments}">
+                            <Label AutomationId="DesktopWorkspace.DirectStagedAttachmentFilename" Text="{Binding DirectChat.StagedAttachmentSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
                             <Button Grid.Column="1" Text="×" Style="{StaticResource GhostButton}" WidthRequest="34" Padding="0" Command="{Binding DirectChat.ClearAttachmentsCommand}" />
                         </Grid>
                         <Border x:Name="DirectVoiceRecordingPanel" Style="{StaticResource VoiceRecordingPanel}" IsVisible="{Binding DirectChat.IsRecordingVoice}">
@@ -288,14 +289,15 @@
                         ItemsUpdatingScrollMode="KeepLastItemInView">
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="vm:GroupChatMessageItem">
-                                <Border Margin="12,3" Padding="10,7" MaximumWidthRequest="620" HorizontalOptions="Start" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8">
+                                <Border AutomationId="DesktopWorkspace.GroupMessageBubble" SemanticProperties.Description="Входящее сообщение" Margin="12,3" Padding="10,7" MaximumWidthRequest="620" HorizontalOptions="Start" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8">
                                     <Border.Behaviors>
                                         <controls:MessageContextGestureBehavior Invoked="OnGroupMessageContextRequested" />
                                     </Border.Behaviors>
                                     <Border.Triggers>
-                                        <DataTrigger TargetType="Border" Binding="{Binding IsOutgoing}" Value="True">
-                                            <Setter Property="HorizontalOptions" Value="End" />
-                                            <Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" />
+                                         <DataTrigger TargetType="Border" Binding="{Binding IsOutgoing}" Value="True">
+                                             <Setter Property="HorizontalOptions" Value="End" />
+                                             <Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" />
+                                             <Setter Property="SemanticProperties.Description" Value="Исходящее сообщение" />
                                         </DataTrigger>
                                     </Border.Triggers>
                                     <VerticalStackLayout Spacing="5">
@@ -317,8 +319,8 @@
                                         <Image Source="{Binding ImagePreviewPath}" IsVisible="{Binding HasImagePreview}" WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}" MaximumWidthRequest="420" MaximumHeightRequest="320" Aspect="AspectFill">
                                             <Image.GestureRecognizers><TapGestureRecognizer Tapped="OnGroupAttachmentTapped" /></Image.GestureRecognizers>
                                         </Image>
-                                        <Label Text="{Binding AttachmentSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding HasNonVoiceAttachments}"><Label.GestureRecognizers><TapGestureRecognizer Tapped="OnGroupAttachmentTapped" /></Label.GestureRecognizers></Label>
-                                        <Label Text="{Binding Body}" FontSize="14" LineBreakMode="WordWrap" IsVisible="{Binding HasVisibleBody}" />
+                                        <Label AutomationId="DesktopWorkspace.GroupAttachmentFilename" Text="{Binding AttachmentSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding HasNonVoiceAttachments}"><Label.GestureRecognizers><TapGestureRecognizer Tapped="OnGroupAttachmentTapped" /></Label.GestureRecognizers></Label>
+                                        <Label AutomationId="DesktopWorkspace.GroupMessageBody" Text="{Binding Body}" FontSize="14" LineBreakMode="WordWrap" IsVisible="{Binding HasVisibleBody}" />
                                         <FlexLayout BindableLayout.ItemsSource="{Binding ReactionChips}" Direction="Row" Wrap="Wrap" AlignItems="Start" IsVisible="{Binding HasReactions}">
                                             <BindableLayout.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:MessageReactionChip">
@@ -329,7 +331,7 @@
                                                 </DataTemplate>
                                             </BindableLayout.ItemTemplate>
                                         </FlexLayout>
-                                        <HorizontalStackLayout HorizontalOptions="End" Spacing="5"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label Text="{Binding StatusGlyph}" FontSize="10" TextColor="{StaticResource PrimaryColor}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" /></HorizontalStackLayout>
+                                        <HorizontalStackLayout HorizontalOptions="End" Spacing="5"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label AutomationId="DesktopWorkspace.GroupDeliveryStatus" Text="{Binding StatusGlyph}" FontSize="10" TextColor="{StaticResource PrimaryColor}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" /></HorizontalStackLayout>
                                     </VerticalStackLayout>
                                 </Border>
                             </DataTemplate>
@@ -457,8 +459,8 @@
                         </HorizontalStackLayout>
                         <Button Text="Ответить" Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnContextReplyClicked" />
                         <Button x:Name="CopyMessageButton" Text="Копировать" Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnContextCopyClicked" />
-                        <Button x:Name="OpenAttachmentButton" Text="Открыть вложение" Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnContextOpenAttachmentClicked" />
-                        <Button x:Name="SaveAttachmentButton" Text="Сохранить как..." Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnContextSaveAttachmentClicked" />
+                        <Button x:Name="OpenAttachmentButton" AutomationId="DesktopWorkspace.AttachmentOpen" Text="Открыть вложение" Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnContextOpenAttachmentClicked" />
+                        <Button x:Name="SaveAttachmentButton" AutomationId="DesktopWorkspace.AttachmentSave" Text="Сохранить как..." Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnContextSaveAttachmentClicked" />
                         <Button x:Name="ShareAttachmentButton" Text="Поделиться" Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnContextShareAttachmentClicked" />
                         <Button x:Name="CopyAttachmentNameButton" Text="Копировать имя файла" Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnContextCopyAttachmentNameClicked" />
                         <Button Text="Удалить" Style="{StaticResource GhostButton}" TextColor="{StaticResource DangerColor}" HorizontalOptions="Fill" Clicked="OnContextDeleteClicked" />

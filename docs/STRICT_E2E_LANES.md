@@ -20,6 +20,26 @@ Each lane generates its own distinct lane invocation. A result is valid only wit
 
 ## Windows UIA3 spike
 
+### Stable selector contract
+
+Android and Windows E2E must select only fixed `AutomationId` values. IDs never
+contain session IDs, message content, filenames, attachment keys, or other user
+data; repeated message/list templates deliberately reuse a role selector.
+
+| Surface | Selectors |
+| --- | --- |
+| Inbox | `Conversations.ProfileSettings`, `Conversations.ConversationRow`, `Conversations.Refresh`; desktop equivalents are `DesktopWorkspace.ProfileSettings`, `DesktopWorkspace.ConversationRow`, and `DesktopWorkspace.ConversationList` |
+| Direct chat | `Chat.MessageBubble`, `Chat.MessageBody`, `Chat.DeliveryStatus`, `Chat.AttachmentCard`, `Chat.AttachmentFilename`, `Chat.StagedAttachmentRow`, `Chat.StagedAttachmentFilename`, `Chat.RemoveStagedAttachment`, `Chat.AttachmentOpen`, `Chat.AttachmentSave`, `Chat.MessageAttachmentOpen`, `Chat.MessageAttachmentSave` |
+| Group chat | `GroupChat.MessageBubble`, `GroupChat.MessageBody`, `GroupChat.DeliveryStatus`, `GroupChat.AttachmentCard`, `GroupChat.AttachmentFilename`, `GroupChat.StagedAttachmentRow`, `GroupChat.StagedAttachmentFilename`, `GroupChat.RemoveStagedAttachment`, `GroupChat.AttachmentOpen`, `GroupChat.AttachmentSave`, `GroupChat.MessageAttachmentOpen`, `GroupChat.MessageAttachmentSave` |
+| Desktop detail | `DesktopWorkspace.DirectMessageBubble`, `DesktopWorkspace.DirectMessageBody`, `DesktopWorkspace.DirectDeliveryStatus`, `DesktopWorkspace.GroupMessageBubble`, `DesktopWorkspace.GroupMessageBody`, `DesktopWorkspace.GroupDeliveryStatus`, `DesktopWorkspace.AttachmentOpen`, `DesktopWorkspace.AttachmentSave` |
+
+`MessageBubble` exposes the fixed semantic role `Входящее сообщение` or
+`Исходящее сообщение`; delivery status retains its accessible status description.
+Attachment open/save selectors are emitted only by app-owned action sheets.
+Every plain-text and rich-text template exposes bubble/body/status selectors.
+Image and voice templates additionally expose `AttachmentCard`; document
+attachment templates also expose `AttachmentFilename`.
+
 Build the Debug Windows app first, then invoke:
 
 ```powershell

@@ -19,7 +19,7 @@
         </Border>
 
         <Grid x:Name="HeaderBar" Grid.Row="1" Style="{StaticResource CompactHeader}" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-            <Grid WidthRequest="42" HeightRequest="42" VerticalOptions="Center">
+            <Grid AutomationId="Conversations.ProfileSettings" SemanticProperties.Description="Открыть профиль и настройки" WidthRequest="42" HeightRequest="42" VerticalOptions="Center">
                 <Border WidthRequest="40" HeightRequest="40" Padding="0" StrokeThickness="0" Background="{StaticResource AvatarAccentColor}" HorizontalOptions="Center" VerticalOptions="Center" StrokeShape="RoundRectangle 20">
                     <Grid>
                         <Image x:Name="ProfileAvatarImage" Aspect="AspectFill" IsVisible="False" />
@@ -78,7 +78,7 @@
                     </CollectionView.EmptyView>
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:ConversationListItem">
-                            <Border x:Name="RowCard" Style="{StaticResource ConversationRowBorder}">
+                            <Border x:Name="RowCard" AutomationId="Conversations.ConversationRow" SemanticProperties.Description="Диалог" Style="{StaticResource ConversationRowBorder}">
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Tapped="OnConversationTapped" />
                                 </Border.GestureRecognizers>
