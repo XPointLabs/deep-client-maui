@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
-using System.Text.Json;
+using System.Text;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 
@@ -35,7 +35,23 @@ public sealed record ExternalTransportOutboxWorkerRequestContext(
     ExternalTransportOutboxWorkerRequest Request,
     byte[] SessionKey) : IDisposable
 {
-    public void Dispose() => CryptographicOperations.ZeroMemory(SessionKey);
+    public void Dispose()
+    {
+        CryptographicOperations.ZeroMemory(SessionKey);
+        CryptographicOperations.ZeroMemory(Request.Nonce);
+        Zero(Request.LogicalId);
+        Zero(Request.AttemptId);
+        Zero(Request.DedupMaterial);
+        Zero(Request.CiphertextBundle);
+    }
+
+    private static void Zero(byte[]? value)
+    {
+        if (value is not null)
+        {
+            CryptographicOperations.ZeroMemory(value);
+        }
+    }
 }
 
 /// <summary>
@@ -49,20 +65,40 @@ public static class ExternalTransportOutboxWorkerProtocol
     public const int Version = 1;
     public const int NonceBytes = 32;
     public const int SessionKeyBytes = 32;
-    public const int MaximumRequestFrameBytes = 1_500_000;
-    public const int MaximumResponseFrameBytes = 32_768;
 
     private const byte EnvelopeVersion = 1;
     private const byte RequestEnvelopeKind = 1;
     private const byte ResponseEnvelopeKind = 2;
     private const int MacBytes = 32;
     private const int BinaryEnvelopeHeaderBytes = 6;
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        MaxDepth = 8
-    };
+    private const int CommonRequestPayloadBytes = sizeof(int) + sizeof(byte) + NonceBytes;
+    private const int DispatchRequestFixedPayloadBytes =
+        CommonRequestPayloadBytes
+        + TransportOutboxLimits.LogicalIdBytes
+        + TransportOutboxLimits.AttemptIdBytes
+        + TransportOutboxLimits.DedupMaterialBytes
+        + sizeof(long)
+        + sizeof(int);
+    private const int ResponseFixedPayloadBytes =
+        sizeof(int)
+        + NonceBytes
+        + sizeof(byte)
+        + sizeof(byte)
+        + sizeof(int) * 3;
+    private const int MaximumErrorCodeBytes = 64;
+    public const int MaximumRequestPayloadBytes =
+        DispatchRequestFixedPayloadBytes + TransportOutboxLimits.MaxCiphertextBundleBytes;
+    public const int MaximumResponsePayloadBytes =
+        ResponseFixedPayloadBytes
+        + MaximumErrorCodeBytes
+        + TransportOutboxLimits.MaxEvidenceBytes * 2;
+    public const int MaximumRequestFrameBytes =
+        BinaryEnvelopeHeaderBytes
+        + SessionKeyBytes
+        + MaximumRequestPayloadBytes
+        + MacBytes;
+    public const int MaximumResponseFrameBytes =
+        BinaryEnvelopeHeaderBytes + MaximumResponsePayloadBytes + MacBytes;
 
     public static async Task WriteRequestAsync(
         Stream stream,
@@ -77,7 +113,7 @@ public static class ExternalTransportOutboxWorkerProtocol
             throw new ArgumentException("The worker session key has an invalid length.", nameof(sessionKey));
         }
 
-        var payload = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
+        var payload = EncodeRequest(request);
         var mac = HMACSHA256.HashData(sessionKey.Span, payload);
         var keyCopy = sessionKey.ToArray();
         byte[]? frame = null;
@@ -133,10 +169,7 @@ public static class ExternalTransportOutboxWorkerProtocol
                 CryptographicOperations.ZeroMemory(expectedMac);
             }
 
-            var request = JsonSerializer.Deserialize<ExternalTransportOutboxWorkerRequest>(
-                    payload,
-                    JsonOptions)
-                ?? throw new InvalidDataException("Invalid worker request.");
+            var request = DecodeRequest(payload);
             ValidateRequest(request);
             transferredSessionKey = true;
             return new(request, sessionKey);
@@ -180,7 +213,7 @@ public static class ExternalTransportOutboxWorkerProtocol
             throw new ArgumentException("The worker session key has an invalid length.", nameof(sessionKey));
         }
 
-        var payload = JsonSerializer.SerializeToUtf8Bytes(response, JsonOptions);
+        var payload = EncodeResponse(response);
         var mac = HMACSHA256.HashData(sessionKey.Span, payload);
         byte[]? frame = null;
         try
@@ -238,10 +271,7 @@ public static class ExternalTransportOutboxWorkerProtocol
                 CryptographicOperations.ZeroMemory(expectedMac);
             }
 
-            var response = JsonSerializer.Deserialize<ExternalTransportOutboxWorkerResponse>(
-                    payload,
-                    JsonOptions)
-                ?? throw new InvalidDataException("Invalid worker response.");
+            var response = DecodeResponse(payload);
             ValidateResponse(response);
             return response;
         }
@@ -264,6 +294,284 @@ public static class ExternalTransportOutboxWorkerProtocol
                 CryptographicOperations.ZeroMemory(mac);
             }
             CryptographicOperations.ZeroMemory(frame);
+        }
+    }
+
+    private static byte[] EncodeRequest(ExternalTransportOutboxWorkerRequest request)
+    {
+        var dispatch = request.Operation == ExternalTransportOutboxWorkerOperation.Dispatch;
+        var payload = new byte[dispatch
+            ? checked(DispatchRequestFixedPayloadBytes + request.CiphertextBundle!.Length)
+            : CommonRequestPayloadBytes];
+        var offset = 0;
+        WriteInt32(payload, ref offset, request.ProtocolVersion);
+        payload[offset++] = (byte)request.Operation;
+        WriteBytes(payload, ref offset, request.Nonce);
+        if (!dispatch)
+        {
+            return payload;
+        }
+
+        WriteBytes(payload, ref offset, request.LogicalId!);
+        WriteBytes(payload, ref offset, request.AttemptId!);
+        WriteBytes(payload, ref offset, request.DedupMaterial!);
+        WriteInt64(payload, ref offset, request.ExpiresAtUnixMilliseconds!.Value);
+        WriteInt32(payload, ref offset, request.CiphertextBundle!.Length);
+        WriteBytes(payload, ref offset, request.CiphertextBundle);
+        return payload;
+    }
+
+    private static ExternalTransportOutboxWorkerRequest DecodeRequest(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length < CommonRequestPayloadBytes
+            || payload.Length > MaximumRequestPayloadBytes)
+        {
+            throw new InvalidDataException("Invalid worker request.");
+        }
+
+        var offset = 0;
+        var version = ReadInt32(payload, ref offset);
+        var operation = (ExternalTransportOutboxWorkerOperation)payload[offset++];
+        var nonce = ReadBytes(payload, ref offset, NonceBytes);
+        if (operation == ExternalTransportOutboxWorkerOperation.Probe)
+        {
+            if (payload.Length != CommonRequestPayloadBytes)
+            {
+                CryptographicOperations.ZeroMemory(nonce);
+                throw new InvalidDataException("Invalid worker request.");
+            }
+            var probe = new ExternalTransportOutboxWorkerRequest(
+                version,
+                operation,
+                nonce,
+                null,
+                null,
+                null,
+                null,
+                null);
+            try
+            {
+                ValidateRequest(probe);
+                return probe;
+            }
+            catch
+            {
+                CryptographicOperations.ZeroMemory(nonce);
+                throw;
+            }
+        }
+        if (operation != ExternalTransportOutboxWorkerOperation.Dispatch
+            || payload.Length < DispatchRequestFixedPayloadBytes)
+        {
+            CryptographicOperations.ZeroMemory(nonce);
+            throw new InvalidDataException("Invalid worker request.");
+        }
+
+        byte[]? logicalId = null;
+        byte[]? attemptId = null;
+        byte[]? dedupMaterial = null;
+        byte[]? ciphertext = null;
+        try
+        {
+            logicalId = ReadBytes(payload, ref offset, TransportOutboxLimits.LogicalIdBytes);
+            attemptId = ReadBytes(payload, ref offset, TransportOutboxLimits.AttemptIdBytes);
+            dedupMaterial = ReadBytes(payload, ref offset, TransportOutboxLimits.DedupMaterialBytes);
+            var expiresAt = ReadInt64(payload, ref offset);
+            var ciphertextLength = ReadInt32(payload, ref offset);
+            if (ciphertextLength is <= 0 or > TransportOutboxLimits.MaxCiphertextBundleBytes
+                || payload.Length - offset != ciphertextLength)
+            {
+                throw new InvalidDataException("Invalid worker request.");
+            }
+            ciphertext = ReadBytes(payload, ref offset, ciphertextLength);
+            var request = new ExternalTransportOutboxWorkerRequest(
+                version,
+                operation,
+                nonce,
+                logicalId,
+                attemptId,
+                dedupMaterial,
+                ciphertext,
+                expiresAt);
+            ValidateRequest(request);
+            return request;
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(nonce);
+            Zero(logicalId);
+            Zero(attemptId);
+            Zero(dedupMaterial);
+            Zero(ciphertext);
+            throw;
+        }
+    }
+
+    private static byte[] EncodeResponse(ExternalTransportOutboxWorkerResponse response)
+    {
+        var error = response.ErrorCode is null
+            ? null
+            : Encoding.ASCII.GetBytes(response.ErrorCode);
+        var payloadLength = checked(
+            ResponseFixedPayloadBytes
+            + (error?.Length ?? 0)
+            + (response.AcceptedEvidence?.Length ?? 0)
+            + (response.DurableEvidence?.Length ?? 0));
+        var payload = new byte[payloadLength];
+        var offset = 0;
+        WriteInt32(payload, ref offset, response.ProtocolVersion);
+        WriteBytes(payload, ref offset, response.Nonce);
+        payload[offset++] = response.Success ? (byte)1 : (byte)0;
+        payload[offset++] = response.Disposition is null ? (byte)0 : (byte)response.Disposition.Value;
+        WriteNullableBytes(payload, ref offset, error);
+        WriteNullableBytes(payload, ref offset, response.AcceptedEvidence);
+        WriteNullableBytes(payload, ref offset, response.DurableEvidence);
+        Zero(error);
+        return payload;
+    }
+
+    private static ExternalTransportOutboxWorkerResponse DecodeResponse(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length < ResponseFixedPayloadBytes
+            || payload.Length > MaximumResponsePayloadBytes)
+        {
+            throw new InvalidDataException("Invalid worker response.");
+        }
+
+        var offset = 0;
+        var version = ReadInt32(payload, ref offset);
+        var nonce = ReadBytes(payload, ref offset, NonceBytes);
+        byte[]? error = null;
+        byte[]? accepted = null;
+        byte[]? durable = null;
+        try
+        {
+            var successByte = payload[offset++];
+            if (successByte > 1)
+            {
+                throw new InvalidDataException("Invalid worker response.");
+            }
+            var dispositionByte = payload[offset++];
+            var disposition = dispositionByte == 0
+                ? null
+                : (TransportOutboxAdapterDisposition?)dispositionByte;
+            error = ReadNullableBytes(payload, ref offset, MaximumErrorCodeBytes);
+            accepted = ReadNullableBytes(
+                payload,
+                ref offset,
+                TransportOutboxLimits.MaxEvidenceBytes);
+            durable = ReadNullableBytes(
+                payload,
+                ref offset,
+                TransportOutboxLimits.MaxEvidenceBytes);
+            if (offset != payload.Length)
+            {
+                throw new InvalidDataException("Invalid worker response.");
+            }
+
+            var response = new ExternalTransportOutboxWorkerResponse(
+                version,
+                nonce,
+                successByte == 1,
+                disposition,
+                accepted,
+                durable,
+                error is null ? null : Encoding.ASCII.GetString(error));
+            ValidateResponse(response);
+            Zero(error);
+            return response;
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(nonce);
+            Zero(error);
+            Zero(accepted);
+            Zero(durable);
+            throw;
+        }
+    }
+
+    private static void WriteInt32(Span<byte> target, ref int offset, int value)
+    {
+        BinaryPrimitives.WriteInt32BigEndian(target.Slice(offset, sizeof(int)), value);
+        offset += sizeof(int);
+    }
+
+    private static void WriteInt64(Span<byte> target, ref int offset, long value)
+    {
+        BinaryPrimitives.WriteInt64BigEndian(target.Slice(offset, sizeof(long)), value);
+        offset += sizeof(long);
+    }
+
+    private static int ReadInt32(ReadOnlySpan<byte> source, ref int offset)
+    {
+        EnsureRemaining(source, offset, sizeof(int));
+        var value = BinaryPrimitives.ReadInt32BigEndian(source.Slice(offset, sizeof(int)));
+        offset += sizeof(int);
+        return value;
+    }
+
+    private static long ReadInt64(ReadOnlySpan<byte> source, ref int offset)
+    {
+        EnsureRemaining(source, offset, sizeof(long));
+        var value = BinaryPrimitives.ReadInt64BigEndian(source.Slice(offset, sizeof(long)));
+        offset += sizeof(long);
+        return value;
+    }
+
+    private static void WriteBytes(Span<byte> target, ref int offset, ReadOnlySpan<byte> value)
+    {
+        value.CopyTo(target[offset..]);
+        offset += value.Length;
+    }
+
+    private static byte[] ReadBytes(ReadOnlySpan<byte> source, ref int offset, int length)
+    {
+        EnsureRemaining(source, offset, length);
+        var value = source.Slice(offset, length).ToArray();
+        offset += length;
+        return value;
+    }
+
+    private static void WriteNullableBytes(Span<byte> target, ref int offset, byte[]? value)
+    {
+        WriteInt32(target, ref offset, value?.Length ?? -1);
+        if (value is not null)
+        {
+            WriteBytes(target, ref offset, value);
+        }
+    }
+
+    private static byte[]? ReadNullableBytes(
+        ReadOnlySpan<byte> source,
+        ref int offset,
+        int maximumLength)
+    {
+        var length = ReadInt32(source, ref offset);
+        if (length == -1)
+        {
+            return null;
+        }
+        if (length < 0 || length > maximumLength)
+        {
+            throw new InvalidDataException("Invalid worker response.");
+        }
+        return ReadBytes(source, ref offset, length);
+    }
+
+    private static void EnsureRemaining(ReadOnlySpan<byte> source, int offset, int length)
+    {
+        if (offset < 0 || length < 0 || source.Length - offset < length)
+        {
+            throw new InvalidDataException("Invalid worker binary payload.");
+        }
+    }
+
+    private static void Zero(byte[]? value)
+    {
+        if (value is not null)
+        {
+            CryptographicOperations.ZeroMemory(value);
         }
     }
 

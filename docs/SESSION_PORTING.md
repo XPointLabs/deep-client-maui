@@ -103,7 +103,8 @@ The Windows external-process supervisor is a tested platform safety primitive,
 not a Session parity or delivery claim. Hostile test workers cover hang, crash,
 malformed response, explicit rejection, cancellation, capacity exhaustion,
 hard timeout, maximum-size IPC, launch-time bundle locking, child-before-Job
-prevention, descendant cleanup, and shutdown cleanup. Production activation
+prevention, root rename/recreate resistance, bounded failed-termination
+poisoning, descendant cleanup, and shutdown cleanup. Production activation
 remains NO-GO until a routed worker adapter and signed packaged helper exist.
 
 Android remains NO-GO for persistent outbox activation. No same-process Android
