@@ -1,9 +1,11 @@
 ﻿<Solution>
   <Folder Name="/src/">
     <Project Path="src/Deep.Client.Maui.Core/Deep.Client.Maui.Core.csproj" />
+    <Project Path="src/Deep.Client.Maui.Outbox/Deep.Client.Maui.Outbox.csproj" />
     <Project Path="src/Deep.Client.Maui/Deep.Client.Maui.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Deep.Client.Maui.Outbox.Tests/Deep.Client.Maui.Outbox.Tests.csproj" />
     <Project Path="tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj" />
     <Project Path="tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj" />
     <Project Path="tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj" />

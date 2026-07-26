@@ -94,6 +94,43 @@ indices are exactly `0,1,2`, the signed relay identity set matches the pins, and
 relay RPC endpoints are unique. Router API loss fails the operation; there is no
 direct-storage fallback.
 
+### External persistent-outbox execution boundary
+
+The portable persistent outbox can be requested with
+`DEEP_PERSISTENT_TRANSPORT_OUTBOX=1`, but MAUI enables it only after a
+platform supervisor has passed both binary attestation and a live protocol
+probe. A failed or missing supervisor clears the effective outbox feature flag
+and continues with the existing message runtime; it does not pass a dormant
+executor to `ClientRuntime`.
+
+The current Windows boundary is a bounded, per-dispatch child-process
+supervisor in `Deep.Client.Maui.Outbox`. The worker executable must live at the
+fixed app-relative path
+`outbox-worker/Deep.Client.Maui.OutboxWorker.exe`, remain below a non-reparse
+trusted root, and match the exact SHA-256 supplied in
+`DEEP_OUTBOX_WORKER_SHA256`. Each invocation uses private inherited standard
+handles, a fresh 256-bit session key and nonce, HMAC-SHA-256 request/response
+binding, length-bounded frames, a one-slot nonblocking admission gate, and a
+Windows Job Object with kill-on-close. Timeout, cancellation, crash, malformed
+receipt, failed receipt, executor disposal, or hash drift returns no trusted
+receipt and completes only after the child process has exited. Worker stderr is
+drained without retention. No worker is resident while the app is idle.
+
+This is a platform execution boundary, not production outbox activation.
+There is currently no production worker binary, packaged worker hash, or
+versioned adapter definition for interpreting the opaque ciphertext bundle and
+dispatching it through the routed transport. Consequently both checked-in
+Debug and Release configurations leave the feature disabled.
+
+Android is explicitly fail-closed. A `Task`, thread, `JobService`, or foreground
+service in the MAUI process is not an independently killable boundary and is
+not registered as an executor. Android activation requires a separately
+declared process, authenticated length-bounded Binder IPC, package/signature
+binding, bounded admission, Binder-death confirmation after forced termination,
+and physical-device hostile-worker/battery evidence. Until that exists, an
+Android request resolves to `UnsupportedPlatform` and the normal runtime
+continues with persistent transport outbox disabled.
+
 Groups use the same transport and persistence guarantees for state and messages.
 Attachments are encrypted before upload; ordinary images are compressed for
 inline media while document mode preserves the source file.

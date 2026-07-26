@@ -97,6 +97,20 @@ message, group, or cross-device E2E parity.
 - Join community/open group URL handling.
 - Dedicated full-screen incoming-call notification actions on each operating system.
 
+## External outbox supervisor status
+
+The Windows external-process supervisor is a tested platform safety primitive,
+not a Session parity or delivery claim. Hostile test workers cover hang, crash,
+malformed response, explicit rejection, cancellation, capacity exhaustion,
+hard timeout, and shutdown cleanup. Production activation remains NO-GO until a
+routed worker adapter and signed packaged helper exist.
+
+Android remains NO-GO for persistent outbox activation. No same-process Android
+component is presented as independently killable. The required separate-process
+Binder boundary and two-device lifecycle/battery evidence remain follow-up
+work. Existing direct message behavior is unchanged on both platforms when the
+supervisor is unavailable.
+
 ## P02B offline update behavior
 
 The P02B slice adds a fail-closed Settings entry and a portable verification

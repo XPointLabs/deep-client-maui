@@ -1,6 +1,7 @@
 ﻿using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.Services;
+using Deep.Client.Maui.Outbox;
 using Deep.Client.Maui.Pages;
 using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Features;
@@ -63,6 +64,10 @@ public static class MauiProgram
     internal const string E2eAppDataRootEnv = "DEEP_E2E_APPDATA_ROOT";
     internal const string E2eStrictWindowsEnv = "DEEP_STRICT_WINDOWS_UI";
     internal const string SurvivalEnvironmentEnv = "SURVIVAL_ENV";
+    internal const string PersistentTransportOutboxEnv = "DEEP_PERSISTENT_TRANSPORT_OUTBOX";
+    internal const string ExternalOutboxWorkerSha256Env = "DEEP_OUTBOX_WORKER_SHA256";
+    private const string ExternalOutboxWorkerDirectory = "outbox-worker";
+    private const string ExternalOutboxWorkerFileName = "Deep.Client.Maui.OutboxWorker.exe";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
     private const string WindowsReleaseRuntimeEnvFile = "deep.windows.release.env";
     internal const string WipeLocalDataOnNextLaunchKey = "session.wipe-local-on-next-launch";
@@ -481,7 +486,10 @@ public static class MauiProgram
     private static ClientFeatureFlags BuildFeatureFlags(bool survivalDevelopment)
     {
 #if DEBUG
-        var featureFlags = ClientFeatureFlags.Defaults;
+        var featureFlags = ClientFeatureFlags.Defaults with
+        {
+            PersistentTransportOutboxEnabled = IsPersistentTransportOutboxRequested()
+        };
 #if DEEP_PHYSICAL_E2E
         if (survivalDevelopment)
         {
@@ -490,9 +498,18 @@ public static class MauiProgram
 #endif
         return featureFlags;
 #else
-        return ClientFeatureFlags.ReleaseDefaults;
+        return ClientFeatureFlags.ReleaseDefaults with
+        {
+            PersistentTransportOutboxEnabled = IsPersistentTransportOutboxRequested()
+        };
 #endif
     }
+
+    private static bool IsPersistentTransportOutboxRequested() =>
+        string.Equals(
+            ResolveRuntimeSetting(PersistentTransportOutboxEnv),
+            "1",
+            StringComparison.Ordinal);
 
     private static void DeleteFileForWipe(string path)
     {
@@ -613,8 +630,12 @@ public static class MauiProgram
         {
             cancellationToken.ThrowIfCancellationRequested();
             _ = ResolveAppDataDirectory();
+            var stubFeatureFlags = services.GetRequiredService<ClientFeatureFlags>() with
+            {
+                PersistentTransportOutboxEnabled = false
+            };
             return ClientRuntime.CreateStubbed(
-                services.GetRequiredService<ClientFeatureFlags>(),
+                stubFeatureFlags,
                 services.GetRequiredService<IClock>(),
                 avatarProfiles: services.GetRequiredService<IAvatarProfileTransport>());
         }
@@ -639,17 +660,70 @@ public static class MauiProgram
 
         cancellationToken.ThrowIfCancellationRequested();
         SqliteSessionStore.EnsureEncryptedDatabase(stateDbPath, stateDbKey);
-        return ClientRuntime.CreatePersistent(
-            stateDbPath,
-            services.GetRequiredService<ClientFeatureFlags>(),
-            services.GetRequiredService<IClock>(),
-            services.GetRequiredService<ISessionMessageTransport>(),
-            groupSyncTransport: null,
-            avatarProfiles: services.GetRequiredService<IAvatarProfileTransport>(),
-            legacyInMemoryStatePath: legacyStatePath,
-            sqlCipherKey: stateDbKey,
-            storeDecorator: store => new SecureRecoverySessionStore(store),
-            requireE2eeTransport: true);
+        var requestedFeatureFlags = services.GetRequiredService<ClientFeatureFlags>();
+        var outboxActivation = await ExternalTransportOutboxRuntimeActivation.ResolveAsync(
+                requestedFeatureFlags,
+                ResolveExternalOutboxWorkerOptions(requestedFeatureFlags),
+                cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            return ClientRuntime.CreatePersistent(
+                stateDbPath,
+                outboxActivation.EffectiveFeatureFlags,
+                services.GetRequiredService<IClock>(),
+                services.GetRequiredService<ISessionMessageTransport>(),
+                groupSyncTransport: null,
+                avatarProfiles: services.GetRequiredService<IAvatarProfileTransport>(),
+                legacyInMemoryStatePath: legacyStatePath,
+                sqlCipherKey: stateDbKey,
+                storeDecorator: store => new SecureRecoverySessionStore(
+                    store,
+                    outboxActivation.Executor as IDisposable),
+                requireE2eeTransport: true,
+                transportOutboxExecutor: outboxActivation.Executor);
+        }
+        catch
+        {
+            (outboxActivation.Executor as IDisposable)?.Dispose();
+            throw;
+        }
+    }
+
+    private static ProcessExternalTransportOutboxExecutorOptions? ResolveExternalOutboxWorkerOptions(
+        ClientFeatureFlags featureFlags)
+    {
+        if (!featureFlags.PersistentTransportOutboxEnabled)
+        {
+            return null;
+        }
+#if WINDOWS
+        var rawHash = ResolveRuntimeSetting(ExternalOutboxWorkerSha256Env);
+        if (string.IsNullOrWhiteSpace(rawHash) || rawHash.Length != 64)
+        {
+            return null;
+        }
+
+        byte[] expectedHash;
+        try
+        {
+            expectedHash = Convert.FromHexString(rawHash);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+
+        var trustedRoot = Path.Combine(AppContext.BaseDirectory, ExternalOutboxWorkerDirectory);
+        return new ProcessExternalTransportOutboxExecutorOptions(
+            Path.Combine(trustedRoot, ExternalOutboxWorkerFileName),
+            trustedRoot,
+            expectedHash,
+            TransportOutboxDispatcher.DefaultAttemptTimeout,
+            maximumConcurrentExecutions: 1);
+#else
+        return null;
+#endif
     }
 
     internal static string ResolveAppDataDirectory() => AppDataPath.Resolve();

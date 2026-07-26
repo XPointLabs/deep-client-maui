@@ -7,7 +7,9 @@ using DomainContact = Deep.Client.Shared.Domain.Contact;
 
 namespace Deep.Client.Maui.Services;
 
-internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) :
+internal sealed class SecureRecoverySessionStore(
+    ILocalSessionStore inner,
+    IDisposable? ownedLifetime = null) :
     ILocalSessionStore,
     IOneToOneConversationOpenRepository,
     IMessageSyncRepository,
@@ -478,9 +480,16 @@ internal sealed class SecureRecoverySessionStore(ILocalSessionStore inner) :
 
     public void Dispose()
     {
-        if (inner is IDisposable disposableInner)
+        try
         {
-            disposableInner.Dispose();
+            if (inner is IDisposable disposableInner)
+            {
+                disposableInner.Dispose();
+            }
+        }
+        finally
+        {
+            ownedLifetime?.Dispose();
         }
     }
 }
