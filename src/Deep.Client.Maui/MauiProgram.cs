@@ -34,6 +34,7 @@ internal sealed record ApplicationServiceInputs(
     HttpClient RouterHttpClient,
     RoutedSessionStorageTransportOptions RoutedTransportOptions,
     RoutedRuntimeEndpointPolicy RoutedEndpointPolicy,
+    HttpServiceTransportFactory ServiceTransportFactory,
     DeferredVerifiedMembershipRouteCatalogProvider? MembershipRouteCatalogProvider,
     RuntimeEnvironmentOptions RuntimeEnvironment,
     Func<IServiceProvider, IIpCountryLookup> CountryLookupFactory,
@@ -132,7 +133,7 @@ public static class MauiProgram
         {
             if (!string.IsNullOrWhiteSpace(inputs.StorageBaseUrl))
             {
-                return new SessionStorageMessageTransport(
+                return inputs.ServiceTransportFactory.CreateStorage(
                     CreateServiceHttpClient(),
                     new SessionStorageMessageTransportOptions(inputs.StorageBaseUrl));
             }
@@ -150,7 +151,9 @@ public static class MauiProgram
                 return new StubSessionBackend();
             }
 
-            return new HttpSessionTransport(CreateServiceHttpClient(), new HttpSessionTransportOptions(baseUrl));
+            return inputs.ServiceTransportFactory.CreateSession(
+                CreateServiceHttpClient(),
+                new HttpSessionTransportOptions(baseUrl));
         });
         }
 #else
@@ -348,6 +351,10 @@ public static class MauiProgram
         var routedEndpointPolicy = survivalDevelopment && IsDebugBuild()
             ? RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment
             : RoutedRuntimeEndpointPolicy.Production;
+        var serviceTransportFactory = new HttpServiceTransportFactory(
+            survivalDevelopment && IsDebugBuild()
+                ? HttpServiceEndpointPolicy.PhysicalE2eDevelopment
+                : HttpServiceEndpointPolicy.Production);
         var featureFlags = BuildFeatureFlags(survivalDevelopment);
         var routerBaseUrls = ResolveRouterBaseUrls(routedEndpointPolicy);
         var membershipConfiguration =
@@ -396,53 +403,13 @@ public static class MauiProgram
             _ => new IpCountryLookup(
                 _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_blocks_ipv4")),
                 _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_codes.json")));
-#if DEBUG
-        Func<IServiceProvider, IAvatarProfileTransport> avatarTransportFactory =
-            string.IsNullOrWhiteSpace(fileBaseUrl)
-                ? _ => new DisabledAvatarProfileTransport()
-                : _ => new HttpAvatarProfileTransport(
-                    CreateFileHttpClient(fileConnectIps),
-                    new HttpAvatarProfileTransportOptions(fileBaseUrl));
-        Func<IServiceProvider, IAttachmentFileTransport> attachmentTransportFactory =
-            string.IsNullOrWhiteSpace(fileBaseUrl)
-                ? _ => new DisabledAttachmentFileTransport()
-                : _ => new HttpAttachmentFileTransport(
-                    CreateFileHttpClient(fileConnectIps),
-                    new HttpAttachmentFileTransportOptions(fileBaseUrl));
-        Func<IServiceProvider, IPushSubscriptionTransport> pushTransportFactory =
-            string.IsNullOrWhiteSpace(pushBaseUrl)
-                ? _ => new DisabledPushSubscriptionTransport()
-                : _ => new HttpPushSubscriptionTransport(
-                    CreateServiceHttpClient(),
-                    new HttpPushSubscriptionTransportOptions(pushBaseUrl));
-        Func<IServiceProvider, ICallSignalingTransport> callTransportFactory =
-            string.IsNullOrWhiteSpace(callSignalingBaseUrl)
-                ? _ => new InMemoryCallSignalingTransport()
-                : serviceProvider => CreateHttpCallSignalingTransport(
-                    serviceProvider,
-                    callSignalingBaseUrl);
-#else
-        Func<IServiceProvider, IAvatarProfileTransport> avatarTransportFactory =
-            _ => new HttpAvatarProfileTransport(
-                CreateFileHttpClient(fileConnectIps),
-                new HttpAvatarProfileTransportOptions(fileBaseUrl!));
-        Func<IServiceProvider, IAttachmentFileTransport> attachmentTransportFactory =
-            _ => new HttpAttachmentFileTransport(
-                CreateFileHttpClient(fileConnectIps),
-                new HttpAttachmentFileTransportOptions(fileBaseUrl!));
-        Func<IServiceProvider, IPushSubscriptionTransport> pushTransportFactory =
-            string.IsNullOrWhiteSpace(pushBaseUrl)
-                ? _ => new DisabledPushSubscriptionTransport()
-                : _ => new HttpPushSubscriptionTransport(
-                    CreateServiceHttpClient(),
-                    new HttpPushSubscriptionTransportOptions(pushBaseUrl));
-        Func<IServiceProvider, ICallSignalingTransport> callTransportFactory =
-            string.IsNullOrWhiteSpace(callSignalingBaseUrl)
-                ? _ => new InMemoryCallSignalingTransport()
-                : serviceProvider => CreateHttpCallSignalingTransport(
-                    serviceProvider,
-                    callSignalingBaseUrl);
-#endif
+        var httpTransportFactories = ApplicationHttpTransportComposition.Create(
+            serviceTransportFactory,
+            fileBaseUrl,
+            pushBaseUrl,
+            callSignalingBaseUrl,
+            () => CreateFileHttpClient(fileConnectIps),
+            CreateServiceHttpClient);
         Func<IServiceProvider, ClientRuntimeBootstrapper> runtimeBootstrapperFactory =
             serviceProvider => new ClientRuntimeBootstrapper(
                 cancellationToken => CreateClientRuntimeAsync(serviceProvider, cancellationToken));
@@ -486,33 +453,23 @@ public static class MauiProgram
             routerHttpClient,
             BuildRoutedTransportOptions(survivalDevelopment),
             routedEndpointPolicy,
+            serviceTransportFactory,
             membershipRouteCatalogProvider,
             RuntimeEnvironmentOptions.FromRuntimeSettings(
                 key => ResolveRuntimeSettingForComposition(
                     key,
                     routedEndpointPolicy)),
             countryLookupFactory,
-            avatarTransportFactory,
-            attachmentTransportFactory,
+            httpTransportFactories.Avatar,
+            httpTransportFactories.Attachment,
             runtimeBootstrapperFactory,
             runtimeFactory,
             pushMetadataFactory,
-            pushTransportFactory,
-            callTransportFactory,
+            httpTransportFactories.Push,
+            httpTransportFactories.Calls,
             iceConfigurationFactory,
             desktopWorkspaceFactory);
     }
-
-    private static ICallSignalingTransport CreateHttpCallSignalingTransport(
-        IServiceProvider services,
-        string baseUrl) =>
-        new HttpCallSignalingTransport(
-            CreateServiceHttpClient(),
-            new HttpCallSignalingTransportOptions(baseUrl),
-            cancellationToken => services
-                .GetRequiredService<ClientRuntime>()
-                .Accounts
-                .GetRecoveryPhraseAsync(cancellationToken));
 
     private static bool IsSurvivalDevelopmentProfile()
     {

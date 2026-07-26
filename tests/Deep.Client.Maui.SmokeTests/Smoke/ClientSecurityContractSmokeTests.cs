@@ -204,6 +204,18 @@ public sealed class ClientSecurityContractSmokeTests
             program,
             StringComparison.Ordinal);
         Assert.Contains(
+            "HttpServiceEndpointPolicy.PhysicalE2eDevelopment",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ApplicationHttpTransportComposition.Create(",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "serviceTransportFactory",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "endpointPolicy: inputs.RoutedEndpointPolicy",
             program,
             StringComparison.Ordinal);
