@@ -4,14 +4,53 @@ param(
     [string]$Target = 'Android',
     [string]$AndroidSerial,
     [string]$AdbPath = $env:DEEP_ADB_PATH,
-    [string]$RuntimeEnvironmentPath = (Join-Path $PSScriptRoot 'survival.dev.env'),
+    [string]$RuntimeEnvironmentPath,
     [switch]$NoInstall
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+
+function Resolve-CanonicalRuntimeEnvironmentFile {
+    param([Parameter(Mandatory)] [string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw 'Runtime environment path is required.'
+    }
+
+    $candidate = [IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        throw 'Runtime environment path must be an existing file.'
+    }
+
+    # Resolve every lexical ancestor before resolving the file itself. This keeps a
+    # caller-supplied override supported while refusing junction/symlink traversal.
+    for ($current = $candidate; -not [string]::IsNullOrWhiteSpace($current); $current = [IO.Path]::GetDirectoryName($current)) {
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Runtime environment path must not traverse a reparse point.'
+        }
+
+        $parent = [IO.Path]::GetDirectoryName($current)
+        if ([string]::IsNullOrWhiteSpace($parent) -or $parent -ceq $current) {
+            break
+        }
+    }
+
+    $resolved = (Resolve-Path -LiteralPath $candidate -ErrorAction Stop).ProviderPath
+    if (-not [IO.Path]::IsPathRooted($resolved) -or -not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+        throw 'Runtime environment path did not resolve to a canonical file.'
+    }
+
+    return $resolved
+}
+
+if ([string]::IsNullOrWhiteSpace($RuntimeEnvironmentPath)) {
+    $RuntimeEnvironmentPath = Join-Path $PSScriptRoot 'survival.dev.env'
+}
+
 $project = Join-Path $repoRoot 'src\Deep.Client.Maui\Deep.Client.Maui.csproj'
-$runtimeEnvironment = (Resolve-Path -LiteralPath $RuntimeEnvironmentPath -ErrorAction Stop).Path
+$runtimeEnvironment = Resolve-CanonicalRuntimeEnvironmentFile -Path $RuntimeEnvironmentPath
 $physicalE2eProperty = '-p:DeepPhysicalE2E=true'
 $runtimeEnvironmentProperty = "-p:DeepSurvivalRuntimeEnv=$runtimeEnvironment"
 $androidPackage = 'network.xpoint.deep.e2e'

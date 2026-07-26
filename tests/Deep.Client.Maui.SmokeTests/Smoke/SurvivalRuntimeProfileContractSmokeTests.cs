@@ -90,6 +90,22 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.DoesNotContain("uninstall", script, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void SurvivalClientScriptResolvesDefaultRuntimeEnvironmentAfterParameterBinding()
+    {
+        var script = File.ReadAllText(WorkspacePath("eng", "Invoke-SurvivalDevClient.ps1"));
+
+        Assert.DoesNotContain(
+            "[string]$RuntimeEnvironmentPath = (Join-Path $PSScriptRoot",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains("if ([string]::IsNullOrWhiteSpace($RuntimeEnvironmentPath))", script, StringComparison.Ordinal);
+        Assert.Contains("$RuntimeEnvironmentPath = Join-Path $PSScriptRoot 'survival.dev.env'", script, StringComparison.Ordinal);
+        Assert.Contains("Resolve-CanonicalRuntimeEnvironmentFile", script, StringComparison.Ordinal);
+        Assert.Contains("Runtime environment path must not traverse a reparse point.", script, StringComparison.Ordinal);
+        Assert.Contains("$runtimeEnvironment = Resolve-CanonicalRuntimeEnvironmentFile -Path $RuntimeEnvironmentPath", script, StringComparison.Ordinal);
+    }
+
     private static string WorkspacePath(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
