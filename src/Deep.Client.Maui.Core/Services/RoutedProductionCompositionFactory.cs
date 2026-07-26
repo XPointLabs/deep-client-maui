@@ -44,14 +44,16 @@ public static class RoutedProductionCompositionFactory
         string? directStorageUrl,
         HttpClient routerHttpClient,
         RoutedSessionStorageTransportOptions transportOptions,
-        TimeProvider? timeProvider = null) =>
+        TimeProvider? timeProvider = null,
+        RoutedRuntimeEndpointPolicy? endpointPolicy = null) =>
         CreateCore(
             routerEndpoints,
             directStorageUrl,
             routerHttpClient,
             transportOptions,
             membershipRouteCatalogProvider: null,
-            timeProvider);
+            timeProvider,
+            endpointPolicy);
 
     public static RoutedProductionComposition CreateVerified(
         IEnumerable<PinnedRouterEndpoint> routerEndpoints,
@@ -59,7 +61,8 @@ public static class RoutedProductionCompositionFactory
         HttpClient routerHttpClient,
         RoutedSessionStorageTransportOptions transportOptions,
         IMembershipRouteCatalogProvider membershipRouteCatalogProvider,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        RoutedRuntimeEndpointPolicy? endpointPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(membershipRouteCatalogProvider);
         return CreateCore(
@@ -68,7 +71,8 @@ public static class RoutedProductionCompositionFactory
             routerHttpClient,
             transportOptions,
             membershipRouteCatalogProvider,
-            timeProvider);
+            timeProvider,
+            endpointPolicy);
     }
 
     private static RoutedProductionComposition CreateCore(
@@ -77,11 +81,14 @@ public static class RoutedProductionCompositionFactory
         HttpClient routerHttpClient,
         RoutedSessionStorageTransportOptions transportOptions,
         IMembershipRouteCatalogProvider? membershipRouteCatalogProvider,
-        TimeProvider? timeProvider)
+        TimeProvider? timeProvider,
+        RoutedRuntimeEndpointPolicy? endpointPolicy)
     {
         ArgumentNullException.ThrowIfNull(routerHttpClient);
         ArgumentNullException.ThrowIfNull(transportOptions);
-        var validatedEndpoints = RoutedRuntimeConfiguration.ValidateAtLeastThree(routerEndpoints);
+        var validatedEndpoints = RoutedRuntimeConfiguration.ValidateAtLeastThree(
+            routerEndpoints,
+            endpointPolicy);
         RoutedRuntimeConfiguration.RejectDirectStorageForRoutedComposition(directStorageUrl);
 
         var router = new XNodeRpcClient(

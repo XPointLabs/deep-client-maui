@@ -175,6 +175,13 @@ dispatch without logging the URL, pin, identity, or artifact.
 Android cleartext is broadened only in non-Release
 `DeepPhysicalE2E=true` packages. The normal and Release network-security
 resource is unchanged and keeps its deny-by-default cleartext policy.
+The same explicitly selected physical-E2E Development composition passes a
+dev-local endpoint policy through both initial parsing and composition-factory
+revalidation. It permits canonical literal loopback, RFC1918, and
+`169.254.0.0/16` IPv4 HTTP router and service URLs. Hostnames, public,
+unspecified, multicast, noncanonical IPv4, credentials, query, and fragment
+forms remain rejected. Ordinary Debug and Release continue using the original
+HTTPS-or-explicit-loopback policy.
 
 Groups use the same transport and persistence guarantees for state and messages.
 Attachments are encrypted before upload; ordinary images are compressed for

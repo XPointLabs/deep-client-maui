@@ -33,6 +33,7 @@ internal sealed record ApplicationServiceInputs(
     string? StorageBaseUrl,
     HttpClient RouterHttpClient,
     RoutedSessionStorageTransportOptions RoutedTransportOptions,
+    RoutedRuntimeEndpointPolicy RoutedEndpointPolicy,
     DeferredVerifiedMembershipRouteCatalogProvider? MembershipRouteCatalogProvider,
     RuntimeEnvironmentOptions RuntimeEnvironment,
     Func<IServiceProvider, IIpCountryLookup> CountryLookupFactory,
@@ -136,7 +137,9 @@ public static class MauiProgram
                     new SessionStorageMessageTransportOptions(inputs.StorageBaseUrl));
             }
 
-            var baseUrl = ResolveRuntimeSetting(TransportBaseUrlEnv);
+            var baseUrl = ResolveRuntimeSettingForComposition(
+                TransportBaseUrlEnv,
+                inputs.RoutedEndpointPolicy);
             if (string.IsNullOrWhiteSpace(baseUrl))
             {
                 if (!inputs.FeatureFlags.StubTransportAllowed)
@@ -238,13 +241,15 @@ public static class MauiProgram
                 inputs.RouterBaseUrls,
                 inputs.StorageBaseUrl,
                 inputs.RouterHttpClient,
-                inputs.RoutedTransportOptions)
+                inputs.RoutedTransportOptions,
+                endpointPolicy: inputs.RoutedEndpointPolicy)
             : RoutedProductionCompositionFactory.CreateVerified(
                 inputs.RouterBaseUrls,
                 inputs.StorageBaseUrl,
                 inputs.RouterHttpClient,
                 inputs.RoutedTransportOptions,
-                inputs.MembershipRouteCatalogProvider);
+                inputs.MembershipRouteCatalogProvider,
+                endpointPolicy: inputs.RoutedEndpointPolicy);
 
 #if ANDROID
     private static void ConfigureAndroidHandlers()
@@ -340,8 +345,11 @@ public static class MauiProgram
     private static ApplicationServiceInputs ResolveApplicationServiceInputs()
     {
         var survivalDevelopment = IsSurvivalDevelopmentProfile();
+        var routedEndpointPolicy = survivalDevelopment && IsDebugBuild()
+            ? RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment
+            : RoutedRuntimeEndpointPolicy.Production;
         var featureFlags = BuildFeatureFlags(survivalDevelopment);
-        var routerBaseUrls = ResolveRouterBaseUrls();
+        var routerBaseUrls = ResolveRouterBaseUrls(routedEndpointPolicy);
         var membershipConfiguration =
             DevLocalMembershipRouteConfiguration.Resolve(
                 ResolveRuntimeSetting(DevLocalMembershipTrustUrlEnv),
@@ -353,10 +361,18 @@ public static class MauiProgram
             throw new InvalidOperationException(
                 "Development membership routing requires configured routed transport.");
         }
-        var storageBaseUrl = ResolveRuntimeSetting(StorageBaseUrlEnv);
-        var fileBaseUrl = ResolveRuntimeSetting(FileBaseUrlEnv);
-        var pushBaseUrl = ResolveRuntimeSetting(PushBaseUrlEnv);
-        var callSignalingBaseUrl = ResolveRuntimeSetting(CallSignalingBaseUrlEnv);
+        var storageBaseUrl = ResolveRuntimeSettingForComposition(
+            StorageBaseUrlEnv,
+            routedEndpointPolicy);
+        var fileBaseUrl = ResolveRuntimeSettingForComposition(
+            FileBaseUrlEnv,
+            routedEndpointPolicy);
+        var pushBaseUrl = ResolveRuntimeSettingForComposition(
+            PushBaseUrlEnv,
+            routedEndpointPolicy);
+        var callSignalingBaseUrl = ResolveRuntimeSettingForComposition(
+            CallSignalingBaseUrlEnv,
+            routedEndpointPolicy);
 #if !DEBUG
         if (string.IsNullOrWhiteSpace(fileBaseUrl))
         {
@@ -469,8 +485,12 @@ public static class MauiProgram
             storageBaseUrl,
             routerHttpClient,
             BuildRoutedTransportOptions(survivalDevelopment),
+            routedEndpointPolicy,
             membershipRouteCatalogProvider,
-            RuntimeEnvironmentOptions.FromRuntimeSettings(ResolveRuntimeSetting),
+            RuntimeEnvironmentOptions.FromRuntimeSettings(
+                key => ResolveRuntimeSettingForComposition(
+                    key,
+                    routedEndpointPolicy)),
             countryLookupFactory,
             avatarTransportFactory,
             attachmentTransportFactory,
@@ -633,7 +653,8 @@ public static class MauiProgram
         return ResolveRuntimeSettingFromLines(key, ReadLines(reader));
     }
 
-    private static IReadOnlyList<PinnedRouterEndpoint> ResolveRouterBaseUrls()
+    private static IReadOnlyList<PinnedRouterEndpoint> ResolveRouterBaseUrls(
+        RoutedRuntimeEndpointPolicy endpointPolicy)
     {
 #if DEBUG
         if (string.Equals(
@@ -647,16 +668,41 @@ public static class MauiProgram
         var raw = ResolveRuntimeSetting(RouterBaseUrlsEnv);
         if (!string.IsNullOrWhiteSpace(raw))
         {
-            return RoutedRuntimeConfiguration.ParseAtLeastThree(raw);
+            return RoutedRuntimeConfiguration.ParseAtLeastThree(
+                raw,
+                endpointPolicy);
         }
 
 #if ANDROID
-        return RoutedRuntimeConfiguration.ValidateAtLeastThree(AndroidRealityTransport.Start());
+        return RoutedRuntimeConfiguration.ValidateAtLeastThree(
+            AndroidRealityTransport.Start(),
+            endpointPolicy);
 #elif WINDOWS
-        return RoutedRuntimeConfiguration.ValidateAtLeastThree(WindowsRealityTransport.Start());
+        return RoutedRuntimeConfiguration.ValidateAtLeastThree(
+            WindowsRealityTransport.Start(),
+            endpointPolicy);
 #else
         return [];
 #endif
+    }
+
+    private static string? ResolveRuntimeSettingForComposition(
+        string key,
+        RoutedRuntimeEndpointPolicy endpointPolicy)
+    {
+        var value = ResolveRuntimeSetting(key);
+        if (string.IsNullOrWhiteSpace(value) ||
+            !endpointPolicy.AllowsDevLocalIpv4Http ||
+            !IsRuntimeUrlKey(key))
+        {
+            return value;
+        }
+
+        return RoutedRuntimeConfiguration.RequireLiveServiceUrl(
+                key,
+                value,
+                endpointPolicy)
+            .AbsoluteUri;
     }
 
     private static Stream OpenEmbeddedResource(string name) =>

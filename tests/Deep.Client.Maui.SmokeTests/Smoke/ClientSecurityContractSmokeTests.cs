@@ -157,6 +157,8 @@ public sealed class ClientSecurityContractSmokeTests
     [Fact]
     public void PhysicalE2eMembershipCleartextIsBuildAndRuntimeGated()
     {
+        var program = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "MauiProgram.cs");
         var project = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "Deep.Client.Maui.csproj");
         var productionPolicy = ReadWorkspaceFile(
@@ -193,6 +195,18 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("explicitDevelopmentProfile", composition, StringComparison.Ordinal);
         Assert.Contains("MembershipRouteEndpointPolicy.DevLocalHttp", composition, StringComparison.Ordinal);
         Assert.Contains("new SodiumEd25519MembershipSignatureVerifier()", composition, StringComparison.Ordinal);
+        Assert.Contains(
+            "survivalDevelopment && IsDebugBuild()",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "endpointPolicy: inputs.RoutedEndpointPolicy",
+            program,
+            StringComparison.Ordinal);
     }
 
     private static string ReadWorkspaceFile(params string[] parts)
