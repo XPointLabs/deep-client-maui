@@ -34,6 +34,17 @@ public sealed class StrictCrossPlatformContractsTests
     }
 
     [Fact]
+    public void Repeated_message_body_nodes_match_the_unique_marker_not_the_unique_resource_id()
+    {
+        const string xml = "<hierarchy><node resource-id='network.xpoint.deep.e2e:id/message' text='older' bounds='[0,0][2,2]' /><node resource-id='network.xpoint.deep.e2e:id/message' text='marker-123' bounds='[2,2][4,4]' /></hierarchy>";
+
+        var node = StrictCrossPlatformContracts.FindExactlyOneResourceIdContainingText(xml, "network.xpoint.deep.e2e:id/message", "marker-123");
+
+        Assert.Equal("marker-123", node.Text);
+        Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.FindExactlyOneResourceId(xml, "network.xpoint.deep.e2e:id/message"));
+    }
+
+    [Fact]
     public void Bounds_and_process_restart_contracts_fail_closed()
     {
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.AndroidBounds.Parse("[9,9][9,10]"));
@@ -47,8 +58,11 @@ public sealed class StrictCrossPlatformContractsTests
         var metadata = StrictCrossPlatformContracts.ApkMetadata.ParseAaptBadging("package: name='network.xpoint.deep.e2e' versionCode='1' versionName='1.2.3'\n", new string('a', 64));
 
         Assert.Equal(StrictCrossPlatformContracts.AndroidPackage, metadata.PackageName);
+        Assert.Equal("1", metadata.VersionCode);
         Assert.Equal("1.2.3", metadata.VersionName);
-        Assert.Equal(new string('b', 64), StrictCrossPlatformContracts.RequireSessionId(new string('b', 64), "test"));
+        Assert.Equal("25" + new string('b', 64), StrictCrossPlatformContracts.RequireSessionId("25" + new string('b', 64), "test"));
+        Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.RequireSessionId(new string('b', 64), "test"));
+        Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.RequireSessionId("35" + new string('b', 64), "test"));
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.RequireSessionId("not-an-id", "test"));
     }
 }

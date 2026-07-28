@@ -162,12 +162,15 @@ emulator, a mock transport, a text selector, or a coordinate script. A tap
 centre is derived only from the bounds of one exact resource-id in a fresh
 dumped tree; every Windows action begins with one exact AutomationId.
 
-The lane is `NOT-RUN` unless an unlocked Windows desktop and approved physical
+The lane is `NOT-RUN` at xUnit discovery unless an unlocked Windows desktop and approved physical
 device have all of these inputs: `DEEP_E2E_BOOTSTRAP=live`,
 `DEEP_MAUI_EXE`, `DEEP_E2E_APPDATA_ROOT`, `DEEP_E2E_ARTIFACTS`,
-`DEEP_E2E_ANDROID_SERIAL`, `DEEP_E2E_ANDROID_APK`, `DEEP_E2E_AAPT`, and
-`DEEP_E2E_ATTACHMENT_FIXTURE`. The supplied APK must be the installed
-`network.xpoint.deep.e2e` package at the exact `aapt` version. It also requires
+`DEEP_E2E_ANDROID_SERIAL`, absolute `DEEP_E2E_ADB`, `DEEP_E2E_ANDROID_APK`,
+absolute `DEEP_E2E_AAPT`, absolute `DEEP_E2E_APKSIGNER`, and
+`DEEP_E2E_ATTACHMENT_FIXTURE`. It additionally requires the approved exact device
+fingerprint/model, source commit, and Windows executable SHA-256 binding. The supplied APK
+must be the installed `network.xpoint.deep.e2e` package at exact `aapt` package,
+versionCode/versionName, SHA-256, and signing-certificate digest. It also requires
 `DEEP_E2E_ANDROID_SELECTORS_JSON`, a role-to-exact-resource-id map for every
 app control used by the test; exact system-picker resource IDs in
 `DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID`,
@@ -176,13 +179,20 @@ app control used by the test; exact system-picker resource IDs in
 AutomationIds in `DEEP_E2E_WINDOWS_SAVE_FILENAME_AUTOMATION_ID` and
 `DEEP_E2E_WINDOWS_SAVE_CONFIRM_AUTOMATION_ID`.
 
-It creates separate identities, records only identity hashes, rejects an
-invalid ID before a contact can open, makes reciprocal contacts, and verifies
+It creates separate identities, records only identity hashes, rejects a syntactically valid
+but nonexistent 66-hex Session ID (prefix `05`, `15`, or `25`) before a contact or
+conversation can open, makes reciprocal contacts, and verifies
 unique text in both directions. A unique fixture is pushed through the Android
 system picker, then opened/saved in Windows, SHA-256 checked, deleted,
 re-downloaded/decrypted, and checked again. Both clients cold restart; Windows
 must have a distinct PID while retaining the same per-run isolated app-data
 root, and marked messages must render again.
+
+System picker resource IDs are explicitly configured because they vary by OEM/version.
+The lane taps only one exact configured resource ID and asserts the exact fixture filename
+on that node; it never uses an unscoped text selector. Windows Save controls are scoped to
+a dialog owned by the launched app PID. Cleanup removes only run-owned Android fixture/data,
+Windows download/decrypted file, and isolated app-data; `passed` is written only after cleanup.
 
 Only `cross-platform-ui-result.json` is standard evidence: status, safe
 package/version values, hashes, and booleans. It never contains serials,

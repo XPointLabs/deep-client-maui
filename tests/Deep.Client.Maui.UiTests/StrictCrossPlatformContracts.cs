@@ -21,7 +21,10 @@ internal static class StrictCrossPlatformContracts
     private static readonly Regex Bounds = new(
         "^\\[(?<left>-?\\d+),(?<top>-?\\d+)\\]\\[(?<right>-?\\d+),(?<bottom>-?\\d+)\\]$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
-    private static readonly Regex SessionId = new("^[a-z0-9]{64}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    // Session account identifiers are wire-format identifiers, not arbitrary hex strings.
+    // Keep this exact here: accepting a shorter value would make the negative-contact test
+    // exercise only client-side validation rather than a syntactically valid absent peer.
+    private static readonly Regex SessionId = new("^(?:05|15|25)[0-9a-f]{64}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     internal static AndroidNode FindExactlyOneResourceId(string xml, string resourceId)
     {
@@ -73,6 +76,28 @@ internal static class StrictCrossPlatformContracts
         };
     }
 
+    internal static AndroidNode FindExactlyOneResourceIdContainingText(string xml, string resourceId, string text)
+    {
+        ValidateResourceId(resourceId, "resource-id");
+        if (string.IsNullOrEmpty(text))
+        {
+            throw new InvalidOperationException("Expected Android text must not be empty.");
+        }
+
+        var document = XDocument.Parse(xml, LoadOptions.None);
+        var matches = document.Descendants("node")
+            .Where(node => string.Equals((string?)node.Attribute("resource-id"), resourceId, StringComparison.Ordinal))
+            .Select(AndroidNode.From)
+            .Where(node => node.Text.Contains(text, StringComparison.Ordinal))
+            .ToArray();
+        return matches.Length switch
+        {
+            1 => matches[0],
+            0 => throw new InvalidOperationException($"Required Android resource-id/text marker was not present: {resourceId}."),
+            _ => throw new InvalidOperationException($"Android resource-id/text marker was ambiguous: {resourceId} ({matches.Length} matches).")
+        };
+    }
+
     internal static void ValidateResourceId(string value, string name)
     {
         if (!ResourceId.IsMatch(value))
@@ -86,7 +111,7 @@ internal static class StrictCrossPlatformContracts
         var normalized = value.Trim();
         if (!SessionId.IsMatch(normalized))
         {
-            throw new InvalidOperationException($"{surface} did not expose a valid 64-character lowercase account identity.");
+            throw new InvalidOperationException($"{surface} did not expose a valid 66-character lowercase Session identity with a 05, 15, or 25 prefix.");
         }
 
         return normalized;
@@ -143,19 +168,29 @@ internal static class StrictCrossPlatformContracts
         internal (int X, int Y) Center => (checked(Left + ((Right - Left) / 2)), checked(Top + ((Bottom - Top) / 2)));
     }
 
-    internal sealed record ApkMetadata(string PackageName, string VersionName, string Sha256)
+    internal sealed record ApkMetadata(string PackageName, string VersionCode, string VersionName, string Sha256, string SigningDigest)
     {
         internal static ApkMetadata ParseAaptBadging(string output, string sha256)
         {
             var packageLine = output.Split('\n').FirstOrDefault(line => line.StartsWith("package: ", StringComparison.Ordinal))
                 ?? throw new InvalidOperationException("aapt did not return APK package metadata.");
-            var packageMatch = Regex.Match(packageLine, "name='(?<name>[^']+)'(?:\\s+versionCode='[^']*')?\\s+versionName='(?<version>[^']+)'", RegexOptions.CultureInvariant);
-            if (!packageMatch.Success || string.IsNullOrWhiteSpace(packageMatch.Groups["version"].Value))
+            var packageMatch = Regex.Match(packageLine, "name='(?<name>[^']+)'\\s+versionCode='(?<code>[^']+)'\\s+versionName='(?<version>[^']+)'", RegexOptions.CultureInvariant);
+            if (!packageMatch.Success || string.IsNullOrWhiteSpace(packageMatch.Groups["code"].Value) || string.IsNullOrWhiteSpace(packageMatch.Groups["version"].Value))
             {
                 throw new InvalidOperationException("aapt package metadata was malformed.");
             }
 
-            return new ApkMetadata(packageMatch.Groups["name"].Value, packageMatch.Groups["version"].Value, sha256);
+            return new ApkMetadata(packageMatch.Groups["name"].Value, packageMatch.Groups["code"].Value, packageMatch.Groups["version"].Value, sha256, string.Empty);
+        }
+
+        internal ApkMetadata WithSigningDigest(string digest)
+        {
+            if (!Regex.IsMatch(digest, "^[a-f0-9]{64}$", RegexOptions.CultureInvariant))
+            {
+                throw new InvalidOperationException("APK signing certificate SHA-256 digest was malformed.");
+            }
+
+            return this with { SigningDigest = digest };
         }
     }
 
