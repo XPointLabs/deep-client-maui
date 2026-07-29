@@ -710,7 +710,6 @@ public static class MauiProgram
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        SqliteSessionStore.EnsureEncryptedDatabase(stateDbPath, stateDbKey);
         var requestedFeatureFlags = services.GetRequiredService<ClientFeatureFlags>();
         var outboxActivation = await ExternalTransportOutboxRuntimeActivation.ResolveAsync(
                 requestedFeatureFlags,

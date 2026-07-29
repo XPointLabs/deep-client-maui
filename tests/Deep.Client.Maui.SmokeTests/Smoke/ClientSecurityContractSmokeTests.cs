@@ -158,6 +158,9 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.DoesNotContain("client-state.json", program, StringComparison.Ordinal);
         Assert.DoesNotContain("legacyStatePath", program, StringComparison.Ordinal);
         Assert.DoesNotContain("FileSystemLegacyStateArtifacts", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("EnsureEncryptedDatabase", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("encrypted-migration", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("plaintext-migration", program, StringComparison.Ordinal);
         Assert.Contains(
             "PrelaunchPlaintextStateArtifactPurger",
             program,
