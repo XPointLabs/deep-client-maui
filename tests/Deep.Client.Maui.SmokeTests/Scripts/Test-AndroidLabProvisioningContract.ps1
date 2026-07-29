@@ -17,6 +17,14 @@ $boundApk = Join-Path $boundRoot 'network.xpoint.deep.e2e-Signed.apk'
 $boundWindows = Join-Path $boundRoot 'Deep.Client.Maui.exe'
 $boundFixture = Join-Path $boundRoot 'fixture.bin'
 $releaseInvocationId = '77777777777777777777777777777777'
+$ownsDestination = $false
+$ownedDestinationTreeDigest = $null
+
+if ((Test-Path -LiteralPath $destination) -and
+    @(Get-ChildItem -LiteralPath $destination -Force).Count -ne 0) {
+    Write-Output 'SKIP: protected operator Android lab material is already provisioned.'
+    return
+}
 
 function Protect-Tree([string]$Root) {
     foreach ($item in Get-ChildItem -LiteralPath $Root -File -Recurse -Force) {
@@ -34,6 +42,35 @@ function Get-TextSha256Lower([string]$Value) {
     } finally { $sha.Dispose() }
 }
 
+function Get-TreeDigest([string]$Root) {
+    $manifest = Get-ChildItem -LiteralPath $Root -File -Recurse -Force |
+        ForEach-Object {
+            $relative = [IO.Path]::GetRelativePath($Root, $_.FullName).Replace('\', '/')
+            "$relative|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
+        } |
+        Sort-Object
+    return Get-TextSha256Lower ($manifest -join "`n")
+}
+
+function Remove-TestOwnedDestination {
+    if (-not $script:ownsDestination) { return }
+    if (-not (Test-Path -LiteralPath $destination)) {
+        $script:ownsDestination = $false
+        $script:ownedDestinationTreeDigest = $null
+        return
+    }
+    if ([string]::IsNullOrWhiteSpace($script:ownedDestinationTreeDigest) -or
+        (Get-TreeDigest $destination) -cne $script:ownedDestinationTreeDigest) {
+        throw 'Refusing to clean Android lab material that is not the exact test-owned tree.'
+    }
+    & $provisioner -Clean
+    if (Test-Path -LiteralPath $destination) {
+        throw 'Test-owned Android lab destination was not removed.'
+    }
+    $script:ownsDestination = $false
+    $script:ownedDestinationTreeDigest = $null
+}
+
 New-Item -ItemType Directory -Force -Path (Join-Path $source 'tools') | Out-Null
 New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
 [IO.File]::WriteAllBytes($boundApk, [byte[]](1..64))
@@ -41,9 +78,6 @@ New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
 [IO.File]::WriteAllText($boundFixture, 'synthetic-attachment')
 try {
     if (Test-Path -LiteralPath $destination) {
-        if (@(Get-ChildItem -LiteralPath $destination -Force).Count -ne 0) {
-            throw 'Operator Android lab material exists; contract refuses to touch it.'
-        }
         Remove-Item -LiteralPath $destination -Force
     }
     dotnet build $verifier -c Release
@@ -100,8 +134,14 @@ try {
     $zeroRejected = $false
     try { & $provisioner -SourceRoot $source -ExpectedOwner $owner -MrXPublicKeySha256 ('0' * 64) } catch { $zeroRejected = $true }
     if (-not $zeroRejected) { throw 'Zero public-key pin was accepted.' }
+    $expectedDestinationTreeDigest = Get-TreeDigest $source
     $policyPath = & $provisioner -SourceRoot $source -ExpectedOwner $owner -MrXPublicKeySha256 $keyHash
     if (-not (Test-Path -LiteralPath $policyPath -PathType Leaf)) { throw 'Valid signed bundle was not provisioned.' }
+    if ((Get-TreeDigest $destination) -cne $expectedDestinationTreeDigest) {
+        throw 'Provisioned Android lab tree does not exactly match the test-owned source.'
+    }
+    $ownsDestination = $true
+    $ownedDestinationTreeDigest = $expectedDestinationTreeDigest
 
     $crossResult = [ordered]@{
         schema = 'deep.strict-cross-platform-ui.v2'
@@ -268,7 +308,7 @@ try {
         }
     }
     $originalCrossResultText | Set-Content $resultPath -Encoding utf8
-    & $provisioner -Clean
+    Remove-TestOwnedDestination
 
     Get-ChildItem $source -File -Recurse -Force | ForEach-Object { $_.IsReadOnly = $false }
     $flippedPolicy = Get-Content (Join-Path $source 'approved-policy.json') -Raw | ConvertFrom-Json
@@ -319,7 +359,7 @@ try {
     try { & $provisioner -SourceRoot $source -ExpectedOwner $owner -MrXPublicKeySha256 $keyHash } catch { $reparseRejected = $true }
     if (-not $reparseRejected) { throw 'Directory reparse point was accepted.' }
 } finally {
-    if (Test-Path -LiteralPath $destination) { & $provisioner -Clean }
+    Remove-TestOwnedDestination
     if (-not [string]::IsNullOrWhiteSpace($junction) -and (Test-Path -LiteralPath $junction)) {
         [IO.Directory]::Delete($junction)
     }

@@ -380,7 +380,7 @@
                             <Label Text="Видео" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
                         </VerticalStackLayout>
                         <VerticalStackLayout Grid.Column="2" Spacing="7" HorizontalOptions="Center">
-                            <Border Style="{StaticResource AttachSheetIcon}">
+                            <Border AutomationId="Chat.PickFile" Style="{StaticResource AttachSheetIcon}">
                                 <Path Data="M8,4 H17 L22,9 V24 H8 Z M17,4 V9 H22 M11,16 H19 M11,20 H17" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="26" HeightRequest="26" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                                 <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnPickFileClicked" /></Border.GestureRecognizers>
                             </Border>

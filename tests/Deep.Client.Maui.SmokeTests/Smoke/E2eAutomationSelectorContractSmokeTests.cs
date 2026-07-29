@@ -28,6 +28,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
 
         AssertTappedAction(chat, "OnOpenAttachmentClicked", "Chat.AttachmentOpen");
         AssertTappedAction(chat, "OnSaveAttachmentClicked", "Chat.AttachmentSave");
+        AssertTappedAction(chat, "OnPickFileClicked", "Chat.PickFile");
         AssertTappedAction(chat, "OnOpenSelectedMessageAttachment", "Chat.MessageAttachmentOpen");
         AssertTappedAction(chat, "OnSaveSelectedMessageAttachment", "Chat.MessageAttachmentSave");
         AssertTappedAction(group, "OnOpenAttachmentClicked", "GroupChat.AttachmentOpen");

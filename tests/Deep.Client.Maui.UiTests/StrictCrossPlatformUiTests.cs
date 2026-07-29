@@ -245,10 +245,14 @@ public sealed class StrictCrossPlatformUiTests
     private static void StageAndSendAndroidAttachment(AndroidUiautomatorClient android, CrossPlatformOptions options, string marker)
     {
         android.Tap(options.App("Chat.Attach"));
+        android.Tap(options.App("Chat.PickFile"));
         android.Tap(options.PickerDownloadsResourceId);
         // The picker filename is asserted from the exact configured resource-id; no text-only selector is used.
         android.TapExactResourceIdWithExactText(options.PickerFileResourceId, marker);
-        android.Tap(options.PickerConfirmResourceId);
+        if (options.PickerConfirmResourceId is not null)
+        {
+            android.Tap(options.PickerConfirmResourceId);
+        }
         android.WaitForText(options.App("Chat.StagedAttachmentFilename"), marker, TimeSpan.FromSeconds(30));
         android.Tap(options.App("Chat.Send"));
     }
@@ -302,10 +306,10 @@ internal sealed class CrossPlatformOptions
         "Conversations.NewConversationTop", "Conversations.ConversationRow", "Settings.SessionId", "Settings.Back",
         "StartConversation.NewMessage", "NewConversation.SessionId", "NewConversation.DisplayName", "NewConversation.Start",
         "NewConversation.Error", "NewConversation.Back", "Chat.Draft", "Chat.Send", "Chat.MessageBody",
-        "Chat.Attach", "Chat.StagedAttachmentFilename"
+        "Chat.Attach", "Chat.PickFile", "Chat.StagedAttachmentFilename"
     ];
     private readonly Dictionary<string, string> androidSelectors;
-    private CrossPlatformOptions(string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string fixturePath, string artifactDirectory, Dictionary<string, string> selectors, string pickerDownloads, string pickerFile, string pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string releaseInvocationId, string policySha256)
+    private CrossPlatformOptions(string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string fixturePath, string artifactDirectory, Dictionary<string, string> selectors, string pickerDownloads, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string releaseInvocationId, string policySha256)
     {
         AndroidSerial = serial; AdbPath = adbPath; ApkPath = apkPath; AaptPath = aaptPath; ApksignerPath = apksignerPath; AttachmentFixturePath = fixturePath; ArtifactDirectory = artifactDirectory;
         androidSelectors = selectors; PickerDownloadsResourceId = pickerDownloads; PickerFileResourceId = pickerFile; PickerConfirmResourceId = pickerConfirm;
@@ -322,7 +326,7 @@ internal sealed class CrossPlatformOptions
     internal string ArtifactDirectory { get; }
     internal string PickerFileResourceId { get; }
     internal string PickerDownloadsResourceId { get; }
-    internal string PickerConfirmResourceId { get; }
+    internal string? PickerConfirmResourceId { get; }
     internal string ResultPath { get; }
     internal string InvocationId { get; }
     internal string DeviceFingerprint { get; }
@@ -336,7 +340,7 @@ internal sealed class CrossPlatformOptions
     internal static string? NotRunReason()
     {
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_STRICT_CROSS_PLATFORM_UI"), "1", StringComparison.Ordinal)) return "NOT-RUN: set DEEP_STRICT_CROSS_PLATFORM_UI=1 on an approved unlocked physical Android and Windows UI lab.";
-        var required = new[] { "DEEP_E2E_ANDROID_SERIAL", "DEEP_E2E_ADB", "DEEP_E2E_ANDROID_APK", "DEEP_E2E_AAPT", "DEEP_E2E_APKSIGNER", "DEEP_E2E_ATTACHMENT_FIXTURE", "DEEP_E2E_ARTIFACTS", "DEEP_E2E_ANDROID_SELECTORS_JSON", "DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID", "DEEP_E2E_ANDROID_PICKER_FILE_ID", "DEEP_E2E_ANDROID_PICKER_CONFIRM_ID", "DEEP_MAUI_EXE", "DEEP_E2E_APPDATA_ROOT", "DEEP_E2E_BOOTSTRAP", "DEEP_E2E_ANDROID_POLICY", "DEEP_MR_X_PUBLIC_KEY_SHA256", "DEEP_RELEASE_INVOCATION_ID" };
+        var required = new[] { "DEEP_E2E_ANDROID_SERIAL", "DEEP_E2E_ADB", "DEEP_E2E_ANDROID_APK", "DEEP_E2E_AAPT", "DEEP_E2E_APKSIGNER", "DEEP_E2E_ATTACHMENT_FIXTURE", "DEEP_E2E_ARTIFACTS", "DEEP_E2E_ANDROID_SELECTORS_JSON", "DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID", "DEEP_E2E_ANDROID_PICKER_FILE_ID", "DEEP_MAUI_EXE", "DEEP_E2E_APPDATA_ROOT", "DEEP_E2E_BOOTSTRAP", "DEEP_E2E_ANDROID_POLICY", "DEEP_MR_X_PUBLIC_KEY_SHA256", "DEEP_RELEASE_INVOCATION_ID" };
         var missing = required.Where(key => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key))).ToArray();
         return missing.Length == 0 ? null : "NOT-RUN: missing physical lane prerequisites: " + string.Join(", ", missing);
     }
@@ -346,8 +350,16 @@ internal sealed class CrossPlatformOptions
         if (NotRunReason() is { } reason) throw new InvalidOperationException(reason);
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_E2E_BOOTSTRAP"), "live", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Physical cross-platform UI requires DEEP_E2E_BOOTSTRAP=live; stub is not evidence.");
         var selectors = ParseSelectors(Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_SELECTORS_JSON")!);
-        var pickerDownloads = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID")!; var pickerFile = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_FILE_ID")!; var pickerConfirm = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_CONFIRM_ID")!;
-        StrictCrossPlatformContracts.ValidateResourceId(pickerDownloads, "picker Downloads selector"); StrictCrossPlatformContracts.ValidateResourceId(pickerFile, "picker file selector"); StrictCrossPlatformContracts.ValidateResourceId(pickerConfirm, "picker confirm selector");
+        var pickerDownloads = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID")!; var pickerFile = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_FILE_ID")!; var pickerConfirm = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_CONFIRM_ID");
+        StrictCrossPlatformContracts.ValidateResourceId(pickerDownloads, "picker Downloads selector"); StrictCrossPlatformContracts.ValidateResourceId(pickerFile, "picker file selector");
+        if (!string.IsNullOrWhiteSpace(pickerConfirm))
+        {
+            StrictCrossPlatformContracts.ValidateResourceId(pickerConfirm, "picker confirm selector");
+        }
+        else
+        {
+            pickerConfirm = null;
+        }
         var repositoryRoot = Directory.GetCurrentDirectory();
         var policy = ApprovedCrossPlatformPolicy.Load(
             Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_POLICY")!,

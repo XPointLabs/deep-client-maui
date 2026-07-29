@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 
 namespace Deep.Client.Maui.SmokeTests.Smoke;
 
@@ -21,7 +22,16 @@ public sealed class StrictLanePowerShellTests
     [Fact]
     public async Task AndroidLabProvisioningRequiresProtectedSignedAllowlistedBundle()
     {
+        var protectedRoot = Path.Combine(
+            FindWorkspaceRoot(),
+            ".secrets",
+            "android-lab");
+        var operatorSnapshot = SnapshotFiles(protectedRoot);
         await RunScriptAsync("Test-AndroidLabProvisioningContract.ps1");
+        if (operatorSnapshot.Count != 0)
+        {
+            Assert.Equal(operatorSnapshot, SnapshotFiles(protectedRoot));
+        }
     }
 
     [Fact]
@@ -123,6 +133,24 @@ public sealed class StrictLanePowerShellTests
         {
             return false;
         }
+    }
+
+    private static SortedDictionary<string, string> SnapshotFiles(string root)
+    {
+        var snapshot = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        if (!Directory.Exists(root))
+        {
+            return snapshot;
+        }
+
+        foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            snapshot.Add(
+                Path.GetRelativePath(root, path).Replace('\\', '/'),
+                Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))));
+        }
+
+        return snapshot;
     }
 
     private static string FindWorkspaceRoot()

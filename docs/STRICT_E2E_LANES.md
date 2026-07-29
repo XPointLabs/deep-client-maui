@@ -178,10 +178,13 @@ fingerprint, model, product, hardware, SDK, and build characteristics. The suppl
 must be the installed `network.xpoint.deep.e2e` package at exact `aapt` package,
 versionCode/versionName, SHA-256, and signing-certificate digest. It also requires
 `DEEP_E2E_ANDROID_SELECTORS_JSON`, a role-to-exact-resource-id map for every
-app control used by the test; exact system-picker resource IDs in
-`DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID`,
-`DEEP_E2E_ANDROID_PICKER_FILE_ID`, and
-`DEEP_E2E_ANDROID_PICKER_CONFIRM_ID`.
+app control used by the test; and exact system-picker resource IDs in
+`DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID` and
+`DEEP_E2E_ANDROID_PICKER_FILE_ID`.
+`DEEP_E2E_ANDROID_PICKER_CONFIRM_ID` is optional. Set it only for a
+DocumentsUI implementation that requires a separate confirmation action after
+selecting the exact filename; single-selection pickers that immediately return
+to Deep must leave it unset.
 
 It creates separate identities, records only identity hashes, rejects a syntactically
 invalid Session ID (wrong prefix) before a contact or conversation can open, makes
