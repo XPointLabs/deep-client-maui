@@ -138,7 +138,8 @@ try {
         androidSdk = [string]$policy.device.sdk
     }
     $resultPath = Join-Path $evidenceRoot 'cross-platform-ui-result.json'
-    $crossResult | ConvertTo-Json -Depth 8 | Set-Content $resultPath -Encoding utf8
+    $originalCrossResultText = $crossResult | ConvertTo-Json -Depth 8
+    $originalCrossResultText | Set-Content $resultPath -Encoding utf8
     function Invoke-CrossValidator {
         & (Join-Path $repoRoot 'eng\Test-StrictClientEvidence.ps1') `
             -ReleaseInvocationId $releaseInvocationId -ArtifactDirectory $evidenceRoot `
@@ -211,14 +212,62 @@ try {
         [IO.File]::WriteAllBytes($policyPath, $originalProvisionedPolicy)
         (Get-Item $policyPath -Force).IsReadOnly = $true
     }
-    $crossResult.releaseInvocationId = '99999999999999999999999999999999'
-    $crossResult | ConvertTo-Json -Depth 8 | Set-Content $resultPath -Encoding utf8
-    $summary = Invoke-CrossValidator
-    if (($summary.checks | Where-Object lane -eq 'cross-platform-ui').status -ne 'failed') {
-        throw 'Cross-platform invocation mutation was accepted.'
+    $evidenceMutations = [ordered]@{
+        schema = 'mutated'
+        status = 'failed'
+        sourceCommit = ('f' * 40)
+        releaseInvocationId = '99999999999999999999999999999999'
+        invocationId = 'not-an-invocation'
+        generatedAtUtc = '2000-01-01T00:00:00.0000000Z'
+        androidPackage = 'mutated.package'
+        androidVersionCode = '999'
+        androidVersion = 'mutated'
+        cleanupCompleted = $false
+        apkSizeBytes = '999'
+        apkSha256 = ('f' * 64)
+        apkSigningDigest = ('f' * 64)
+        windowsExeSha256 = ('f' * 64)
+        fixtureSha256 = ('f' * 64)
+        approvedPolicySha256 = ('f' * 64)
+        policyId = ('f' * 64)
+        approvalReceiptSha256 = ('f' * 64)
+        mrXPublicKeySha256 = ('f' * 64)
+        adbSha256 = ('f' * 64)
+        aaptSha256 = ('f' * 64)
+        apksignerSha256 = ('f' * 64)
+        adbVersionHash = ('f' * 64)
+        aaptVersionHash = ('f' * 64)
+        apksignerVersionHash = ('f' * 64)
+        androidSerialHash = ('f' * 64)
+        androidFingerprintHash = ('f' * 64)
+        androidModelHash = ('f' * 64)
+        androidProductHash = ('f' * 64)
+        androidHardwareHash = ('f' * 64)
+        androidCharacteristicsHash = ('f' * 64)
+        androidSdk = '99'
     }
-    $crossResult.releaseInvocationId = $releaseInvocationId
-    $crossResult | ConvertTo-Json -Depth 8 | Set-Content $resultPath -Encoding utf8
+    foreach ($mutation in $evidenceMutations.GetEnumerator()) {
+        $mutatedResult = $originalCrossResultText | ConvertFrom-Json
+        $mutatedResult.($mutation.Key) = $mutation.Value
+        $mutatedResult | ConvertTo-Json -Depth 8 | Set-Content $resultPath -Encoding utf8
+        $summary = Invoke-CrossValidator
+        if (($summary.checks | Where-Object lane -eq 'cross-platform-ui').status -ne 'failed') {
+            throw "Direct cross-platform evidence mutation was accepted: $($mutation.Key)"
+        }
+    }
+    foreach ($removedField in @(
+        'apkSizeBytes', 'apkSha256', 'apkSigningDigest', 'windowsExeSha256',
+        'approvalReceiptSha256', 'mrXPublicKeySha256', 'androidFingerprintHash'))
+    {
+        $mutatedResult = $originalCrossResultText | ConvertFrom-Json
+        $mutatedResult.PSObject.Properties.Remove($removedField)
+        $mutatedResult | ConvertTo-Json -Depth 8 | Set-Content $resultPath -Encoding utf8
+        $summary = Invoke-CrossValidator
+        if (($summary.checks | Where-Object lane -eq 'cross-platform-ui').status -ne 'failed') {
+            throw "Removed cross-platform evidence field was accepted: $removedField"
+        }
+    }
+    $originalCrossResultText | Set-Content $resultPath -Encoding utf8
     & $provisioner -Clean
 
     Get-ChildItem $source -File -Recurse -Force | ForEach-Object { $_.IsReadOnly = $false }
