@@ -10,7 +10,7 @@ the sibling `deep-client-shared` repository.
 
 `Deep.Client.Shared` owns:
 
-- Session-compatible identity and recovery phrase derivation;
+- canonical 13-word checksummed recovery phrase identity derivation;
 - end-to-end encrypted envelopes and replay protection;
 - three-hop authenticated XPoint onion routing;
 - SQLCipher repositories with exact v10 baseline attestation, durable
@@ -31,6 +31,10 @@ fast unit tests.
 `Deep.Client.Maui` contains pages, dependency injection, lifecycle coordination,
 secure storage adapters, media/picker integration, push callbacks, app lock,
 Reality sidecars, and OS activation ingress.
+
+Secure storage is the sole recovery-phrase source after account activation.
+An absent secure phrase is a normal clean-break state and is never populated
+from SQLite or another wrapped store.
 
 Release builds require real transports, between three and sixteen unique pinned Reality
 bootstrap nodes, TLS public-key pins, encrypted local persistence, and E2EE.
@@ -187,9 +191,11 @@ unspecified, multicast, noncanonical IPv4, credentials, query, and fragment
 forms remain rejected. Ordinary Debug and Release continue using the original
 HTTPS-or-explicit-loopback policy.
 
-Groups use the same transport and persistence guarantees for state and messages.
-Attachments are encrypted before upload; ordinary images are compressed for
-inline media while document mode preserves the source file.
+Groups use the same transport and persistence guarantees for state and messages;
+there is no legacy-group read-only conversation kind. Attachments are encrypted
+before upload using the current authenticated chunked `DEEPATT2` format, and
+downloads fail closed for every other encrypted format. Ordinary images are
+compressed for inline media while document mode preserves the source file.
 
 ## Push
 

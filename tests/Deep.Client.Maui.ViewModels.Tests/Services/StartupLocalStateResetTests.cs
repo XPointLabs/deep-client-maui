@@ -44,6 +44,40 @@ public sealed class StartupLocalStateResetTests
         }
     }
 
+    [Fact]
+    public void CapturedPostBootstrapTypedFailureCanAuthorizeConfirmedReset()
+    {
+        Preferences.Default.Remove(StartupLocalStateReset.WipeLocalDataOnNextLaunchKey);
+        try
+        {
+            var context = new StartupLocalStateResetContext();
+            context.Capture(new LocalStateResetRequiredException(
+                LocalStateResetRequiredReason.InvalidCurrentSchema,
+                "Reset required."));
+
+            Assert.True(context.TryRequestConfirmedReset());
+            Assert.True(Preferences.Default.Get(
+                StartupLocalStateReset.WipeLocalDataOnNextLaunchKey,
+                false));
+        }
+        finally
+        {
+            Preferences.Default.Remove(StartupLocalStateReset.WipeLocalDataOnNextLaunchKey);
+        }
+    }
+
+    [Fact]
+    public void ClearedContextCannotAuthorizeAReset()
+    {
+        var context = new StartupLocalStateResetContext();
+        context.Capture(new LocalStateResetRequiredException(
+            LocalStateResetRequiredReason.InvalidCurrentSchema,
+            "Reset required."));
+        context.Clear();
+
+        Assert.False(context.TryRequestConfirmedReset());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

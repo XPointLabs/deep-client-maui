@@ -23,3 +23,17 @@ internal static class StartupLocalStateReset
         return true;
     }
 }
+
+internal sealed class StartupLocalStateResetContext
+{
+    private LocalStateResetRequiredException? failure;
+
+    internal void Clear() => failure = null;
+
+    internal void Capture(LocalStateResetRequiredException exception) =>
+        failure = exception;
+
+    internal bool TryRequestConfirmedReset() =>
+        failure is not null &&
+        StartupLocalStateReset.TryRequestConfirmedReset(failure);
+}

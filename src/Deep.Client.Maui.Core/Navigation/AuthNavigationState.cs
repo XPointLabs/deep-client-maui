@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Core.Navigation;
@@ -38,8 +39,26 @@ public sealed class AuthNavigationState(ClientRuntime runtime) : INotifyProperty
             return;
         }
 
-        var account = await runtime.Accounts.GetActiveAccountAsync(cancellationToken);
-        IsAuthenticated = account is not null;
+        var account = await runtime.Accounts
+            .GetActiveAccountAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (account is null)
+        {
+            IsAuthenticated = false;
+            IsInitialized = true;
+            return;
+        }
+
+        if (!await runtime.Accounts
+                .HasUsableActiveIdentityAsync(cancellationToken)
+                .ConfigureAwait(false))
+        {
+            throw new LocalStateResetRequiredException(
+                LocalStateResetRequiredReason.InvalidCurrentSchema,
+                "The active account does not have a usable protected identity credential. Reset local data before retrying.");
+        }
+
+        IsAuthenticated = true;
         IsInitialized = true;
     }
 

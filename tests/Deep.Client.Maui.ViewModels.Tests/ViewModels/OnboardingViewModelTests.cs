@@ -66,7 +66,7 @@ public sealed class OnboardingViewModelTests
         var viewModel = new OnboardingViewModel(runtime)
         {
             DisplayName = string.Empty,
-            RecoveryPhrase = "amber anchor april arrow atom aurora autumn badge bamboo beacon berry blade"
+            RecoveryPhrase = "amaze buffet cake entrance symptoms tiger lamb maze nestle python dusted faxed faxed"
         };
 
         Assert.True(viewModel.LoginCommand.CanExecute(null));
@@ -79,7 +79,7 @@ public sealed class OnboardingViewModelTests
         var viewModel = new OnboardingViewModel(runtime)
         {
             DisplayName = string.Empty,
-            RecoveryPhrase = "amber anchor april arrow atom aurora autumn badge bamboo beacon berry blade"
+            RecoveryPhrase = "amaze buffet cake entrance symptoms tiger lamb maze nestle python dusted faxed faxed"
         };
 
         await viewModel.LoginAsync();

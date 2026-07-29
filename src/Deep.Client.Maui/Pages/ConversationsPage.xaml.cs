@@ -314,9 +314,14 @@ public partial class ConversationsPage : ContentPage
 
     private static Task OpenConversationAsync(ConversationListItem selected)
     {
-        var route = selected.Kind == ConversationKind.OneToOne
-            ? $"{ShellRouteCatalog.Chat}?sessionId={Uri.EscapeDataString(selected.Id.Value)}&displayName={Uri.EscapeDataString(selected.Title)}"
-            : $"{ShellRouteCatalog.GroupChat}?groupId={Uri.EscapeDataString(selected.Id.Value)}&displayName={Uri.EscapeDataString(selected.Title)}";
+        var route = selected.Kind switch
+        {
+            ConversationKind.OneToOne =>
+                $"{ShellRouteCatalog.Chat}?sessionId={Uri.EscapeDataString(selected.Id.Value)}&displayName={Uri.EscapeDataString(selected.Title)}",
+            ConversationKind.GroupV2 or ConversationKind.Community =>
+                $"{ShellRouteCatalog.GroupChat}?groupId={Uri.EscapeDataString(selected.Id.Value)}&displayName={Uri.EscapeDataString(selected.Title)}",
+            _ => throw new InvalidDataException("Conversation kind is unsupported.")
+        };
 
         return Shell.Current.GoToAsync(route, animate: false);
     }

@@ -9,6 +9,7 @@ public partial class App : Application
     private readonly IServiceProvider services;
     private readonly ClientRuntimeBootstrapper runtimeBootstrapper;
     private readonly SemaphoreSlim startupGate = new(1, 1);
+    private readonly StartupLocalStateResetContext localStateResetContext = new();
 
     public static IServiceProvider? Services { get; private set; }
 
@@ -72,6 +73,7 @@ public partial class App : Application
 
     private async Task InitializeWindowCoreAsync(Window window, StartupPage startupPage)
     {
+        localStateResetContext.Clear();
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         await UpdateStartupPageAsync(
             startupPage,
@@ -107,8 +109,9 @@ public partial class App : Application
                 activityRunning: false).ConfigureAwait(false);
             CrashDiagnostics.LogInfo("App.InitializeWindow", "Runtime initialization was cancelled.");
         }
-        catch (LocalStateResetRequiredException)
+        catch (LocalStateResetRequiredException exception)
         {
+            localStateResetContext.Capture(exception);
             await UpdateStartupPageAsync(
                 startupPage,
                 "Требуется сброс локальных данных",
@@ -184,8 +187,7 @@ public partial class App : Application
                 return;
             }
 
-            if (!StartupLocalStateReset.TryRequestConfirmedReset(
-                    runtimeBootstrapper.Error ?? new InvalidOperationException()))
+            if (!localStateResetContext.TryRequestConfirmedReset())
             {
                 await UpdateStartupPageAsync(
                     startupPage,

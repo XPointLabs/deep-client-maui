@@ -58,6 +58,7 @@ These must not regress:
 - Start chat by Session ID opens an actual chat route, not only a list item.
 - Sending messages and attachments updates local chat state and shared runtime state.
 - Restore/create flows must end in authenticated navigation and expose the active Session ID.
+- Restore accepts only the current canonical 13-word checksummed recovery phrase.
 - Group create/open/send/member management flows must preserve shared group rules.
 - Sign-out must clear authenticated navigation state and honor configured local wipe behavior.
 - Non-Debug startup must not silently replace real transport with stub transport.
@@ -74,6 +75,8 @@ unsupported, unreadable/wrong-key, corrupt, or tampered state is surfaced as
 the typed reset-required condition; busy, locked, I/O, full, read-only,
 cannot-open, and out-of-memory failures remain operational failures. Startup
 reset UX is an application concern and must require explicit user action.
+Secure storage is authoritative for the active recovery phrase; absence is
+normal and must not trigger a read or lift from the local database.
 
 ## UX Porting Rules
 

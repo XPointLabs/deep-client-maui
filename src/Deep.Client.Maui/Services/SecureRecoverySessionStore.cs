@@ -398,20 +398,9 @@ internal sealed class SecureRecoverySessionStore(
         }
 
         var phrase = await SecureStorage.GetAsync(SecureRecoveryPhraseKey).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(phrase))
-        {
-            return (T?)(object)phrase;
-        }
-
-        var legacyPhrase = await inner.GetAsync<string>(key, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(legacyPhrase))
-        {
-            return default;
-        }
-
-        await SecureStorage.SetAsync(SecureRecoveryPhraseKey, legacyPhrase).ConfigureAwait(false);
-        await inner.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
-        return (T?)(object)legacyPhrase;
+        return !SessionAccountService.IsCanonicalRecoveryPhrase(phrase)
+            ? default
+            : (T?)(object)phrase!;
     }
 
     public Task DeleteAsync(string key, CancellationToken cancellationToken = default)

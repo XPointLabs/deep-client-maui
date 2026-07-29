@@ -2,6 +2,7 @@ using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
+using Microsoft.Maui.Storage;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 
@@ -107,7 +108,7 @@ public sealed class SecureRecoverySessionStoreTests
 
         await store.SetAsync(LocalSettingsKeys.ActiveAccount, account);
         await store.SetAsync(SessionAccountService.ActiveRecoveryPhraseKey,
-            "amber anchor april arrow atom aurora autumn badge bamboo beacon berry blade");
+            "amaze buffet cake entrance symptoms tiger lamb maze nestle python dusted faxed faxed");
 
         await store.PurgeAccountDataAsync();
 
@@ -123,7 +124,7 @@ public sealed class SecureRecoverySessionStoreTests
         var proxyStore = DispatchProxy.Create<ILocalSessionStore, FailingPurgeStoreProxy>();
         ((FailingPurgeStoreProxy)(object)proxyStore).Inner = inner;
         using var store = new SecureRecoverySessionStore(proxyStore);
-        const string phrase = "amber anchor april arrow atom aurora autumn badge bamboo beacon berry blade";
+        const string phrase = "amaze buffet cake entrance symptoms tiger lamb maze nestle python dusted faxed faxed";
         try
         {
             await store.SetAsync(SessionAccountService.ActiveRecoveryPhraseKey, phrase);
@@ -135,6 +136,47 @@ public sealed class SecureRecoverySessionStoreTests
         finally
         {
             await store.DeleteAsync(SessionAccountService.ActiveRecoveryPhraseKey);
+        }
+    }
+
+    [Fact]
+    public async Task MissingSecurePhraseDoesNotReadOrLiftInnerStorePhrase()
+    {
+        const string secureKey = "deep.account.recovery-phrase.v1";
+        const string phrase =
+            "amaze buffet cake entrance symptoms tiger lamb maze nestle python dusted faxed faxed";
+        SecureStorage.Remove(secureKey);
+        var inner = new InMemorySessionStore();
+        await inner.SetAsync(SessionAccountService.ActiveRecoveryPhraseKey, phrase);
+        using var store = new SecureRecoverySessionStore(inner);
+
+        Assert.Null(
+            await store.GetAsync<string>(SessionAccountService.ActiveRecoveryPhraseKey));
+        Assert.Equal(
+            phrase,
+            await inner.GetAsync<string>(SessionAccountService.ActiveRecoveryPhraseKey));
+        Assert.Null(await SecureStorage.GetAsync(secureKey));
+    }
+
+    [Fact]
+    public async Task LegacySecurePhraseIsRejectedWithoutFallingBackToInnerStore()
+    {
+        const string secureKey = "deep.account.recovery-phrase.v1";
+        const string legacy =
+            "amber anchor april arrow atom aurora autumn badge bamboo beacon berry blade";
+        SecureStorage.Remove(secureKey);
+        try
+        {
+            await SecureStorage.SetAsync(secureKey, legacy);
+            var inner = new InMemorySessionStore();
+            using var store = new SecureRecoverySessionStore(inner);
+
+            Assert.Null(
+                await store.GetAsync<string>(SessionAccountService.ActiveRecoveryPhraseKey));
+        }
+        finally
+        {
+            SecureStorage.Remove(secureKey);
         }
     }
 
