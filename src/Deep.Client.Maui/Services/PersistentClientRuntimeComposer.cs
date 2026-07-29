@@ -13,7 +13,6 @@ internal static class PersistentClientRuntimeComposer
         IClock clock,
         ISessionMessageTransport messageTransport,
         IAvatarProfileTransport avatarProfiles,
-        string legacyStatePath,
         string sqlCipherKey,
         bool requireE2eeTransport,
         IExternalTransportOutboxExecutor? transportOutboxExecutor,
@@ -24,7 +23,6 @@ internal static class PersistentClientRuntimeComposer
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(messageTransport);
         ArgumentNullException.ThrowIfNull(avatarProfiles);
-        ArgumentException.ThrowIfNullOrWhiteSpace(legacyStatePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(sqlCipherKey);
 
         SecureRecoverySessionStore? secureStore = null;
@@ -35,7 +33,6 @@ internal static class PersistentClientRuntimeComposer
             messageTransport,
             groupSyncTransport: null,
             avatarProfiles,
-            legacyInMemoryStatePath: legacyStatePath,
             sqlCipherKey,
             storeDecorator: store =>
             {

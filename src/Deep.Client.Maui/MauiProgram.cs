@@ -694,17 +694,16 @@ public static class MauiProgram
 #endif
         var appDataDirectory = ResolveAppDataDirectory();
         var stateDbPath = Path.Combine(appDataDirectory, "client-state.db");
-        var legacyStatePath = Path.Combine(appDataDirectory, "client-state.json");
         var stateDbKey = await ResolveLocalStateDatabaseKeyAsync(cancellationToken).ConfigureAwait(false);
 
         if (Preferences.Default.Get(WipeLocalDataOnNextLaunchKey, false))
         {
+            await PrelaunchPlaintextStateArtifactPurger
+                .PurgeAsync(appDataDirectory, cancellationToken)
+                .ConfigureAwait(false);
             DeleteFileForWipe(stateDbPath + "-wal");
             DeleteFileForWipe(stateDbPath + "-shm");
             DeleteFileForWipe(stateDbPath);
-            await FileSystemLegacyStateArtifacts.Instance
-                .PurgeAsync(legacyStatePath, cancellationToken)
-                .ConfigureAwait(false);
             SecureStorage.Remove(LocalStateDatabaseKey);
             Preferences.Default.Remove(WipeLocalDataOnNextLaunchKey);
             stateDbKey = await ResolveLocalStateDatabaseKeyAsync(cancellationToken).ConfigureAwait(false);
@@ -726,7 +725,6 @@ public static class MauiProgram
                 services.GetRequiredService<IClock>(),
                 services.GetRequiredService<ISessionMessageTransport>(),
                 services.GetRequiredService<IAvatarProfileTransport>(),
-                legacyStatePath,
                 stateDbKey,
                 requireE2eeTransport: true,
                 outboxActivation.Executor,

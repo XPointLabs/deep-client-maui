@@ -12,14 +12,13 @@ public sealed class PersistentClientRuntimeComposerTests
         DateTimeOffset.Parse("2026-07-26T10:00:00Z");
 
     [Fact]
-    public async Task ProductionCompositionKeepsOutboxRepositoryAndActivatesReadyExecutor()
+    public async Task ProductionCompositionUsesEncryptedSqliteState()
     {
         var directory = Path.Combine(
             Path.GetTempPath(),
             $"deep-secure-outbox-composition-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         var statePath = Path.Combine(directory, "client-state.db");
-        var legacyPath = Path.Combine(directory, "client-state.json");
         var executor = new ReadyExecutor();
         using var membershipProvider =
             DevLocalMembershipRouteCompositionTests.CreateProviderForCompositionTest();
@@ -31,7 +30,6 @@ public sealed class PersistentClientRuntimeComposerTests
                 new FixedClock(),
                 new AuthenticatedTransport(),
                 new DisabledAvatarProfileTransport(),
-                legacyPath,
                 new string('A', 64),
                 requireE2eeTransport: true,
                 executor,

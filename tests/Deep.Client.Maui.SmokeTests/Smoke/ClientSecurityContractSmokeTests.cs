@@ -155,6 +155,15 @@ public sealed class ClientSecurityContractSmokeTests
             "secureStore = new SecureRecoverySessionStore(",
             composer,
             StringComparison.Ordinal);
+        Assert.DoesNotContain("client-state.json", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("legacyStatePath", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("FileSystemLegacyStateArtifacts", program, StringComparison.Ordinal);
+        Assert.Contains(
+            "PrelaunchPlaintextStateArtifactPurger",
+            program,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("legacyStatePath", composer, StringComparison.Ordinal);
+        Assert.DoesNotContain("legacyInMemoryStatePath", composer, StringComparison.Ordinal);
     }
 
     [Fact]
