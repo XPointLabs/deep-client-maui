@@ -28,6 +28,7 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\SecureRecoverySessionStore.cs" Link="Services\SecureRecoverySessionStore.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PersistentClientRuntimeComposer.cs" Link="Services\PersistentClientRuntimeComposer.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PrelaunchPlaintextStateArtifactPurger.cs" Link="Services\PrelaunchPlaintextStateArtifactPurger.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\StartupLocalStateReset.cs" Link="Services\StartupLocalStateReset.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ClientSettingKeys.cs" Link="Services\ClientSettingKeys.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\SyncPollingPolicy.cs" Link="Services\SyncPollingPolicy.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PushRegistrationLifecycleCoordinator.cs" Link="Services\PushRegistrationLifecycleCoordinator.cs" />

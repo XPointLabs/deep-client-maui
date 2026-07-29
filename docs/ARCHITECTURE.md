@@ -13,7 +13,8 @@ the sibling `deep-client-shared` repository.
 - Session-compatible identity and recovery phrase derivation;
 - end-to-end encrypted envelopes and replay protection;
 - three-hop authenticated XPoint onion routing;
-- SQLCipher repositories, migrations, durable inbox/outbox, and account purge;
+- SQLCipher repositories with exact v10 baseline attestation, durable
+  inbox/outbox, and account purge;
 - one-to-one and group conversation services;
 - encrypted attachment and avatar transports;
 - signed push subscribe/unsubscribe contracts;
@@ -41,8 +42,11 @@ process or used after a router failure.
 
 1. `MauiProgram` validates immutable embedded settings and composes narrow
    platform services.
-2. `ClientRuntimeBootstrapper` initializes encrypted persistence and migrations
-   off the UI thread. A transient failure can be retried from the startup view.
+2. `ClientRuntimeBootstrapper` initializes encrypted persistence off the UI
+   thread. Fresh state receives the single v10 baseline; existing state is
+   exactly attested and incompatible state raises an actionable reset-required
+   error. Operational failures remain retryable and are not classified as
+   reset authorization.
 3. `AuthNavigationState` selects onboarding or conversations from local state.
 4. Conversation and message pages render cached snapshots first; sync runs in
    a cancellable background path.

@@ -99,7 +99,7 @@ public sealed class SecureRecoverySessionStoreTests
     }
 
     [Fact]
-    public async Task PurgeAccountData_RemovesSecureRecoveryMaterialAndPreservesSchemaMetadata()
+    public async Task PurgeAccountData_RemovesSecureRecoveryMaterial()
     {
         var inner = new InMemorySessionStore();
         using var store = new SecureRecoverySessionStore(inner);
@@ -108,16 +108,12 @@ public sealed class SecureRecoverySessionStoreTests
         await store.SetAsync(LocalSettingsKeys.ActiveAccount, account);
         await store.SetAsync(SessionAccountService.ActiveRecoveryPhraseKey,
             "amber anchor april arrow atom aurora autumn badge bamboo beacon berry blade");
-        await store.SetSchemaVersionAsync(11);
-        await store.SetSchemaValueAsync("schema.11", "preserve");
 
         await store.PurgeAccountDataAsync();
 
         Assert.Null(await store.GetAsync<SessionAccount>(LocalSettingsKeys.ActiveAccount));
         Assert.Null(await store.GetAsync<string>(SessionAccountService.ActiveRecoveryPhraseKey));
         Assert.Null(await inner.GetAsync<string>(SessionAccountService.ActiveRecoveryPhraseKey));
-        Assert.Equal(11, await store.GetSchemaVersionAsync());
-        Assert.Equal("preserve", await store.GetSchemaValueAsync("schema.11"));
     }
 
     [Fact]

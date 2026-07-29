@@ -170,6 +170,22 @@ public sealed class ClientSecurityContractSmokeTests
     }
 
     [Fact]
+    public void StartupOffersDestructiveResetOnlyForTypedLocalStateFailures()
+    {
+        var app = ReadWorkspaceFile("src", "Deep.Client.Maui", "App.xaml.cs");
+        var policy = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Services", "StartupLocalStateReset.cs");
+
+        Assert.Contains("catch (LocalStateResetRequiredException)", app, StringComparison.Ordinal);
+        Assert.Contains("StartupResetLocalStateButton", app, StringComparison.Ordinal);
+        Assert.Contains("DisplayAlertAsync(", app, StringComparison.Ordinal);
+        Assert.Contains("Сбросить локальные данные", app, StringComparison.Ordinal);
+        Assert.Contains("StartupLocalStateReset.TryRequestConfirmedReset", app, StringComparison.Ordinal);
+        Assert.Contains("exception.GetType() == typeof(LocalStateResetRequiredException)", policy, StringComparison.Ordinal);
+        Assert.Contains("Preferences.Default.Set(WipeLocalDataOnNextLaunchKey, true)", policy, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PhysicalE2eMembershipCleartextIsBuildAndRuntimeGated()
     {
         var program = ReadWorkspaceFile(

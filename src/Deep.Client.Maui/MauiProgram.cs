@@ -80,7 +80,6 @@ public static class MauiProgram
     private const string ExternalOutboxWorkerFileName = "Deep.Client.Maui.OutboxWorker.exe";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
     private const string WindowsReleaseRuntimeEnvFile = "deep.windows.release.env";
-    internal const string WipeLocalDataOnNextLaunchKey = "session.wipe-local-on-next-launch";
     private const string LocalStateDatabaseKey = "client-state.sqlcipher-key.v1";
 
     public static MauiApp CreateMauiApp()
@@ -696,7 +695,7 @@ public static class MauiProgram
         var stateDbPath = Path.Combine(appDataDirectory, "client-state.db");
         var stateDbKey = await ResolveLocalStateDatabaseKeyAsync(cancellationToken).ConfigureAwait(false);
 
-        if (Preferences.Default.Get(WipeLocalDataOnNextLaunchKey, false))
+        if (Preferences.Default.Get(StartupLocalStateReset.WipeLocalDataOnNextLaunchKey, false))
         {
             await PrelaunchPlaintextStateArtifactPurger
                 .PurgeAsync(appDataDirectory, cancellationToken)
@@ -705,8 +704,8 @@ public static class MauiProgram
             DeleteFileForWipe(stateDbPath + "-shm");
             DeleteFileForWipe(stateDbPath);
             SecureStorage.Remove(LocalStateDatabaseKey);
-            Preferences.Default.Remove(WipeLocalDataOnNextLaunchKey);
             stateDbKey = await ResolveLocalStateDatabaseKeyAsync(cancellationToken).ConfigureAwait(false);
+            Preferences.Default.Remove(StartupLocalStateReset.WipeLocalDataOnNextLaunchKey);
         }
 
         cancellationToken.ThrowIfCancellationRequested();

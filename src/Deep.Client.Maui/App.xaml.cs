@@ -1,5 +1,6 @@
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Services;
+using Deep.Client.Shared.Persistence;
 
 namespace Deep.Client.Maui;
 
@@ -7,6 +8,7 @@ public partial class App : Application
 {
     private readonly IServiceProvider services;
     private readonly ClientRuntimeBootstrapper runtimeBootstrapper;
+    private readonly SemaphoreSlim startupGate = new(1, 1);
 
     public static IServiceProvider? Services { get; private set; }
 
@@ -41,6 +43,15 @@ public partial class App : Application
 
             await InitializeWindowAsync(window, startupPage).ConfigureAwait(true);
         };
+        startupPage.ResetLocalStateButton.Clicked += async (_, _) =>
+        {
+            if (!startupPage.ResetLocalStateButton.IsEnabled)
+            {
+                return;
+            }
+
+            await ResetLocalStateAndRetryAsync(window, startupPage).ConfigureAwait(true);
+        };
 
         _ = InitializeWindowAsync(window, startupPage);
         return window;
@@ -48,12 +59,26 @@ public partial class App : Application
 
     private async Task InitializeWindowAsync(Window window, StartupPage startupPage)
     {
+        await startupGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await InitializeWindowCoreAsync(window, startupPage).ConfigureAwait(false);
+        }
+        finally
+        {
+            startupGate.Release();
+        }
+    }
+
+    private async Task InitializeWindowCoreAsync(Window window, StartupPage startupPage)
+    {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         await UpdateStartupPageAsync(
             startupPage,
             "Запуск Deep...",
             string.Empty,
             retryEnabled: false,
+            resetEnabled: false,
             activityRunning: true).ConfigureAwait(false);
 
         try
@@ -78,8 +103,22 @@ public partial class App : Application
                 "Запуск отменён",
                 "Повторите попытку запуска.",
                 retryEnabled: true,
+                resetEnabled: false,
                 activityRunning: false).ConfigureAwait(false);
             CrashDiagnostics.LogInfo("App.InitializeWindow", "Runtime initialization was cancelled.");
+        }
+        catch (LocalStateResetRequiredException)
+        {
+            await UpdateStartupPageAsync(
+                startupPage,
+                "Требуется сброс локальных данных",
+                "Сброс локальных данных удалит локальные сообщения и состояние. Deep создаст новое защищённое хранилище.",
+                retryEnabled: false,
+                resetEnabled: true,
+                activityRunning: false).ConfigureAwait(false);
+            CrashDiagnostics.LogInfo(
+                "App.InitializeWindow",
+                "Local state reset is required before startup can continue.");
         }
         catch (Exception ex)
         {
@@ -88,6 +127,7 @@ public partial class App : Application
                 "Не удалось запустить Deep",
                 "Проверьте подключение и повторите попытку.",
                 retryEnabled: true,
+                resetEnabled: false,
                 activityRunning: false).ConfigureAwait(false);
             CrashDiagnostics.LogException("App.InitializeWindow", ex, "Startup can be retried from the startup page.");
         }
@@ -105,11 +145,72 @@ public partial class App : Application
         }
     }
 
+    private async Task ResetLocalStateAndRetryAsync(Window window, StartupPage startupPage)
+    {
+        await startupGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var resetEnabled = await MainThread
+                .InvokeOnMainThreadAsync(() => startupPage.ResetLocalStateButton.IsEnabled)
+                .ConfigureAwait(false);
+            if (!resetEnabled)
+            {
+                return;
+            }
+
+            await UpdateStartupPageAsync(
+                startupPage,
+                "Подтвердите сброс локальных данных",
+                "Локальные сообщения и состояние будут удалены безвозвратно.",
+                retryEnabled: false,
+                resetEnabled: false,
+                activityRunning: false).ConfigureAwait(false);
+            var confirmed = await MainThread.InvokeOnMainThreadAsync(
+                    () => startupPage.Page.DisplayAlertAsync(
+                        "Сбросить локальные данные?",
+                        "Локальные сообщения и состояние будут удалены. Это действие нельзя отменить.",
+                        "Сбросить",
+                        "Отмена"))
+                .ConfigureAwait(false);
+            if (!confirmed)
+            {
+                await UpdateStartupPageAsync(
+                    startupPage,
+                    "Требуется сброс локальных данных",
+                    "Сброс локальных данных удалит локальные сообщения и состояние. Deep создаст новое защищённое хранилище.",
+                    retryEnabled: false,
+                    resetEnabled: true,
+                    activityRunning: false).ConfigureAwait(false);
+                return;
+            }
+
+            if (!StartupLocalStateReset.TryRequestConfirmedReset(
+                    runtimeBootstrapper.Error ?? new InvalidOperationException()))
+            {
+                await UpdateStartupPageAsync(
+                    startupPage,
+                    "Не удалось подтвердить сброс",
+                    "Повторите запуск или запросите сброс локальных данных снова.",
+                    retryEnabled: true,
+                    resetEnabled: false,
+                    activityRunning: false).ConfigureAwait(false);
+                return;
+            }
+
+            await InitializeWindowCoreAsync(window, startupPage).ConfigureAwait(false);
+        }
+        finally
+        {
+            startupGate.Release();
+        }
+    }
+
     private static async Task UpdateStartupPageAsync(
         StartupPage startupPage,
         string status,
         string error,
         bool retryEnabled,
+        bool resetEnabled,
         bool activityRunning)
     {
         try
@@ -119,6 +220,8 @@ public partial class App : Application
                 startupPage.Status.Text = status;
                 startupPage.Error.Text = error;
                 startupPage.RetryButton.IsEnabled = retryEnabled;
+                startupPage.ResetLocalStateButton.IsVisible = resetEnabled;
+                startupPage.ResetLocalStateButton.IsEnabled = resetEnabled;
                 startupPage.Activity.IsRunning = activityRunning;
             }).ConfigureAwait(false);
         }
@@ -156,6 +259,13 @@ public partial class App : Application
             IsEnabled = false
         };
 
+        var resetLocalStateButton = new Button
+        {
+            Text = "Сбросить локальные данные",
+            AutomationId = "StartupResetLocalStateButton",
+            IsVisible = false,
+            IsEnabled = false
+        };
         var page = new ContentPage
         {
             Title = "Deep",
@@ -179,13 +289,20 @@ public partial class App : Application
                         status,
                         error,
                         activity,
-                        retryButton
+                        retryButton,
+                        resetLocalStateButton
                     }
                 }
             }
         };
         page.SetDynamicResource(VisualElement.BackgroundColorProperty, "PageBackground");
-        return new StartupPage(page, status, error, activity, retryButton);
+        return new StartupPage(
+            page,
+            status,
+            error,
+            activity,
+            retryButton,
+            resetLocalStateButton);
     }
 
     private sealed record StartupPage(
@@ -193,7 +310,8 @@ public partial class App : Application
         Label Status,
         Label Error,
         ActivityIndicator Activity,
-        Button RetryButton);
+        Button RetryButton,
+        Button ResetLocalStateButton);
 
     private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs args)
     {

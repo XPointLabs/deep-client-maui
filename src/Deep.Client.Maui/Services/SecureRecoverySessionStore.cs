@@ -561,18 +561,6 @@ internal sealed class SecureRecoverySessionStore(
         ?? throw new InvalidOperationException(
             "The secured session store requires membership trust persistence support.");
 
-    public Task<int> GetSchemaVersionAsync(CancellationToken cancellationToken = default) =>
-        inner.GetSchemaVersionAsync(cancellationToken);
-
-    public Task SetSchemaVersionAsync(int version, CancellationToken cancellationToken = default) =>
-        inner.SetSchemaVersionAsync(version, cancellationToken);
-
-    public Task SetSchemaValueAsync(string key, string value, CancellationToken cancellationToken = default) =>
-        inner.SetSchemaValueAsync(key, value, cancellationToken);
-
-    public Task<string?> GetSchemaValueAsync(string key, CancellationToken cancellationToken = default) =>
-        inner.GetSchemaValueAsync(key, cancellationToken);
-
     private static bool IsRecoveryPhraseKey(string key) =>
         string.Equals(key, SessionAccountService.ActiveRecoveryPhraseKey, StringComparison.Ordinal);
 

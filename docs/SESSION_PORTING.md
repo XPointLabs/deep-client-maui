@@ -65,6 +65,16 @@ These must not regress:
   identities and URLs, rejects `DEEP_STORAGE_URL`, and has no direct-storage
   fallback after router failure.
 
+## Local-state policy
+
+MAUI consumes the shared runtime's single physical SQLite baseline (application
+ID `DEEP`, schema version 10). The client does not forward logical schema APIs
+and does not request migration, repair, backfill, or import. Existing
+unsupported, unreadable/wrong-key, corrupt, or tampered state is surfaced as
+the typed reset-required condition; busy, locked, I/O, full, read-only,
+cannot-open, and out-of-memory failures remain operational failures. Startup
+reset UX is an application concern and must require explicit user action.
+
 ## UX Porting Rules
 
 - Prefer MAUI-native controls and stable `AutomationId`s.
