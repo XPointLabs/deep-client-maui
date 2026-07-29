@@ -20,6 +20,8 @@ public sealed class StrictCrossPlatformUiTests
     {
         var options = CrossPlatformOptions.Load();
         File.Delete(options.ResultPath); // A pass may never reuse evidence from an earlier invocation.
+        var cleanup = new StrictCrossPlatformContracts.CleanupScope();
+        var attemptCleanup = new StrictCrossPlatformContracts.AttemptCleanupState();
         WindowsDesktopGate.EnsureUnlocked();
         var evidence = new StrictCrossPlatformContracts.SanitizedEvidence();
         var android = new AndroidUiautomatorClient(options);
@@ -32,10 +34,22 @@ public sealed class StrictCrossPlatformUiTests
 
         var fixtureSha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(options.AttachmentFixturePath)));
         var apk = options.ReadAndValidateApkMetadata();
+        var approvedPolicy = ApprovedCrossPlatformPolicy.Current ?? throw new InvalidOperationException("Approved policy was not loaded.");
         var isolatedWindowsAppData = WindowsUiSmokeTests.WindowsUiTestSession.CreateIsolatedAppDataDirectory();
         var downloadsDirectory = options.ResolveProductionDownloadsDirectory();
         var createdDownloads = new List<string>();
-        var cleanup = new StrictCrossPlatformContracts.CleanupScope();
+        cleanup.Add(() =>
+        {
+            foreach (var path in createdDownloads)
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+        });
+        cleanup.Add(() => { if (Directory.Exists(isolatedWindowsAppData)) Directory.Delete(isolatedWindowsAppData, recursive: true); });
+        attemptCleanup.Register(
+            cleanup,
+            android.ClearE2ePackageData,
+            () => android.DeletePushedFixture(marker));
         evidence.AddSafeValue("schema", "deep.strict-cross-platform-ui.v2");
         evidence.AddSafeValue("invocationId", options.InvocationId);
         evidence.AddSafeValue("releaseInvocationId", options.ReleaseInvocationId);
@@ -45,36 +59,38 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddSafeValue("androidVersion", apk.VersionName);
         evidence.AddSafeValue("androidVersionCode", apk.VersionCode);
         evidence.AddSafeValue("apkSha256", apk.Sha256);
+        evidence.AddSafeValue("apkSizeBytes", approvedPolicy.Apk.SizeBytes.ToString(System.Globalization.CultureInfo.InvariantCulture));
         evidence.AddSafeValue("apkSigningDigest", apk.SigningDigest);
         evidence.AddSafeValue("windowsExeSha256", options.WindowsExeSha256);
+        evidence.AddSafeValue("policyId", approvedPolicy.PolicyId);
+        evidence.AddSafeValue("approvalReceiptSha256", approvedPolicy.ApprovalReceiptSha256);
+        evidence.AddSafeValue("mrXPublicKeySha256", approvedPolicy.MrXPublicKeySha256);
+        evidence.AddSafeValue("adbSha256", approvedPolicy.Adb.Sha256);
+        evidence.AddSafeValue("aaptSha256", approvedPolicy.Aapt.Sha256);
+        evidence.AddSafeValue("apksignerSha256", approvedPolicy.Apksigner.Sha256);
+        evidence.AddHash("adbVersionHash", approvedPolicy.Adb.Version);
+        evidence.AddHash("aaptVersionHash", approvedPolicy.Aapt.Version);
+        evidence.AddHash("apksignerVersionHash", approvedPolicy.Apksigner.Version);
         evidence.AddHash("androidSerialHash", options.AndroidSerial);
         evidence.AddHash("androidFingerprintHash", options.DeviceFingerprint);
         evidence.AddHash("androidModelHash", options.DeviceModel);
+        evidence.AddHash("androidProductHash", approvedPolicy.Device.Product);
+        evidence.AddHash("androidHardwareHash", approvedPolicy.Device.Hardware);
+        evidence.AddHash("androidCharacteristicsHash", approvedPolicy.Device.Characteristics);
+        evidence.AddSafeValue("androidSdk", approvedPolicy.Device.Sdk.ToString(System.Globalization.CultureInfo.InvariantCulture));
         evidence.AddSafeValue("approvedPolicySha256", options.PolicySha256);
         evidence.AddSafeValue("fixtureSha256", fixtureSha256);
 
         // The E2E-only package may be cleared; the production package is never queried or changed.
         android.AssertPhysicalConnectedDevice();
         android.AssertInstalledPackage(apk);
-        var androidIdentityCreated = false;
-        var pushedFixture = false;
-        cleanup.Add(() =>
-        {
-            foreach (var path in createdDownloads)
-            {
-                if (File.Exists(path)) File.Delete(path);
-            }
-        });
-        cleanup.Add(() => { if (pushedFixture) android.DeletePushedFixture(marker); });
-        cleanup.Add(() => { if (androidIdentityCreated) android.ClearE2ePackageData(); });
-        cleanup.Add(() => { if (Directory.Exists(isolatedWindowsAppData)) Directory.Delete(isolatedWindowsAppData, recursive: true); });
         Exception? runFailure = null;
         try
         {
+        attemptCleanup.BeginAndroidPackageMutation();
         android.ClearE2ePackageData();
         android.ColdStart();
         var androidIdentity = CreateAndroidIdentity(android, options);
-        androidIdentityCreated = true;
         evidence.AddHash("androidIdentityHash", androidIdentity);
 
         int firstWindowsPid;
@@ -95,8 +111,8 @@ public sealed class StrictCrossPlatformUiTests
             SendAndroidMessage(android, options, androidToWindows);
             WaitForWindowsText(windows, "DesktopWorkspace.DirectMessageBody", androidToWindows);
 
+            attemptCleanup.BeginFixturePush();
             android.PushFixture(options.AttachmentFixturePath, marker);
-            pushedFixture = true;
             StageAndSendAndroidAttachment(android, options, marker);
             SaveOpenAndVerifyWindowsAttachment(windows, downloadsDirectory, createdDownloads, marker, fixtureSha256);
             evidence.AddBoolean("bidirectionalTextReceived", true);
@@ -320,7 +336,7 @@ internal sealed class CrossPlatformOptions
     internal static string? NotRunReason()
     {
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_STRICT_CROSS_PLATFORM_UI"), "1", StringComparison.Ordinal)) return "NOT-RUN: set DEEP_STRICT_CROSS_PLATFORM_UI=1 on an approved unlocked physical Android and Windows UI lab.";
-        var required = new[] { "DEEP_E2E_ANDROID_SERIAL", "DEEP_E2E_ADB", "DEEP_E2E_ANDROID_APK", "DEEP_E2E_AAPT", "DEEP_E2E_APKSIGNER", "DEEP_E2E_ATTACHMENT_FIXTURE", "DEEP_E2E_ARTIFACTS", "DEEP_E2E_ANDROID_SELECTORS_JSON", "DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID", "DEEP_E2E_ANDROID_PICKER_FILE_ID", "DEEP_E2E_ANDROID_PICKER_CONFIRM_ID", "DEEP_MAUI_EXE", "DEEP_E2E_APPDATA_ROOT", "DEEP_E2E_BOOTSTRAP", "DEEP_E2E_ANDROID_POLICY", "DEEP_E2E_ANDROID_POLICY_SHA256", "DEEP_RELEASE_INVOCATION_ID" };
+        var required = new[] { "DEEP_E2E_ANDROID_SERIAL", "DEEP_E2E_ADB", "DEEP_E2E_ANDROID_APK", "DEEP_E2E_AAPT", "DEEP_E2E_APKSIGNER", "DEEP_E2E_ATTACHMENT_FIXTURE", "DEEP_E2E_ARTIFACTS", "DEEP_E2E_ANDROID_SELECTORS_JSON", "DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID", "DEEP_E2E_ANDROID_PICKER_FILE_ID", "DEEP_E2E_ANDROID_PICKER_CONFIRM_ID", "DEEP_MAUI_EXE", "DEEP_E2E_APPDATA_ROOT", "DEEP_E2E_BOOTSTRAP", "DEEP_E2E_ANDROID_POLICY", "DEEP_MR_X_PUBLIC_KEY_SHA256", "DEEP_RELEASE_INVOCATION_ID" };
         var missing = required.Where(key => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key))).ToArray();
         return missing.Length == 0 ? null : "NOT-RUN: missing physical lane prerequisites: " + string.Join(", ", missing);
     }
@@ -332,30 +348,32 @@ internal sealed class CrossPlatformOptions
         var selectors = ParseSelectors(Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_SELECTORS_JSON")!);
         var pickerDownloads = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID")!; var pickerFile = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_FILE_ID")!; var pickerConfirm = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_CONFIRM_ID")!;
         StrictCrossPlatformContracts.ValidateResourceId(pickerDownloads, "picker Downloads selector"); StrictCrossPlatformContracts.ValidateResourceId(pickerFile, "picker file selector"); StrictCrossPlatformContracts.ValidateResourceId(pickerConfirm, "picker confirm selector");
+        var repositoryRoot = Directory.GetCurrentDirectory();
         var policy = ApprovedCrossPlatformPolicy.Load(
             Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_POLICY")!,
-            Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_POLICY_SHA256")!);
+            repositoryRoot,
+            Environment.GetEnvironmentVariable("DEEP_MR_X_PUBLIC_KEY_SHA256")!);
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_SERIAL"), policy.Device.Serial, StringComparison.Ordinal)) throw new InvalidOperationException("Configured Android serial does not match approved inventory.");
         var apk = RequirePinnedPath("DEEP_E2E_ANDROID_APK", policy.Apk.Path); var fixture = RequireAbsoluteFile("DEEP_E2E_ATTACHMENT_FIXTURE"); var adb = RequirePinnedPath("DEEP_E2E_ADB", policy.Adb.Path); var aapt = RequirePinnedPath("DEEP_E2E_AAPT", policy.Aapt.Path); var apksigner = RequirePinnedPath("DEEP_E2E_APKSIGNER", policy.Apksigner.Path); var artifacts = Path.GetFullPath(Environment.GetEnvironmentVariable("DEEP_E2E_ARTIFACTS")!);
         var windowsExe = Environment.GetEnvironmentVariable("DEEP_MAUI_EXE")!;
         var appDataRoot = Environment.GetEnvironmentVariable("DEEP_E2E_APPDATA_ROOT")!;
-        if (!Path.IsPathFullyQualified(windowsExe) || !File.Exists(windowsExe) || !Path.IsPathFullyQualified(appDataRoot)) throw new InvalidOperationException("Configured Windows executable or app-data root is invalid.");
+        if (!Path.IsPathFullyQualified(windowsExe) || !File.Exists(windowsExe) || !Path.IsPathFullyQualified(appDataRoot) || !string.Equals(Path.GetFullPath(windowsExe), policy.WindowsExePath, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Configured Windows executable or app-data root is invalid.");
         StrictCrossPlatformContracts.RequirePinnedFile(windowsExe, policy.WindowsExeSha256, "Windows executable");
         var windowsHash = StrictCrossPlatformContracts.Sha256File(windowsExe);
         Directory.CreateDirectory(artifacts);
-        var commit = StrictCrossPlatformContracts.RequireCurrentCommit(Directory.GetCurrentDirectory(), policy.SourceCommit);
+        var commit = StrictCrossPlatformContracts.RequireCurrentCommit(repositoryRoot, policy.SourceCommit);
         policy.ValidateTool(adb, "adb");
         policy.ValidateTool(aapt, "aapt");
         policy.ValidateTool(apksigner, "apksigner");
         var releaseInvocation = Environment.GetEnvironmentVariable("DEEP_RELEASE_INVOCATION_ID")!;
         if (!System.Text.RegularExpressions.Regex.IsMatch(releaseInvocation, "^[a-f0-9]{32}$")) throw new InvalidOperationException("Release invocation ID must be fresh 32-hex.");
-        return new CrossPlatformOptions(policy.Device.Serial, adb, apk, aapt, apksigner, fixture, artifacts, selectors, pickerDownloads, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, releaseInvocation, StrictCrossPlatformContracts.Sha256File(Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_POLICY")!));
+        return new CrossPlatformOptions(policy.Device.Serial, adb, apk, aapt, apksigner, fixture, artifacts, selectors, pickerDownloads, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, releaseInvocation, policy.PolicySha256);
     }
     internal StrictCrossPlatformContracts.ApkMetadata ReadAndValidateApkMetadata()
     {
         var policy = ApprovedCrossPlatformPolicy.Current ?? throw new InvalidOperationException("Approved policy was not loaded.");
         var sha = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(ApkPath)));
-        if (!string.Equals(sha, policy.Apk.Sha256, StringComparison.Ordinal)) throw new InvalidOperationException("Selected APK does not match the independently pinned APK SHA-256.");
+        if (new FileInfo(ApkPath).Length != policy.Apk.SizeBytes || !string.Equals(sha, policy.Apk.Sha256, StringComparison.Ordinal)) throw new InvalidOperationException("Selected APK does not match the signed size/SHA-256.");
         var badging = AndroidUiautomatorClient.Run(AaptPath, ["dump", "badging", ApkPath]);
         if (badging.ExitCode != 0) throw new InvalidOperationException("aapt failed to inspect the configured APK.");
         var metadata = StrictCrossPlatformContracts.ApkMetadata.ParseAaptBadging(badging.Output, sha);
@@ -386,61 +404,121 @@ internal sealed class CrossPlatformOptions
 internal sealed class ApprovedCrossPlatformPolicy
 {
     internal sealed record ToolPin(string Path, string Sha256, string Version, string[] VersionArguments);
-    internal sealed record ApkPin(string Path, string Sha256, string VersionCode, string VersionName, string SigningDigest);
+    internal sealed record ApkPin(string Path, long SizeBytes, string Sha256, string VersionCode, string VersionName, string SigningDigest);
     internal sealed record DevicePin(string Serial, string Fingerprint, string Model, string Product, string Hardware, int Sdk, string Characteristics);
 
-    private ApprovedCrossPlatformPolicy(string sourceCommit, string windowsExeSha256, ToolPin adb, ToolPin aapt, ToolPin apksigner, ApkPin apk, DevicePin device)
+    private ApprovedCrossPlatformPolicy(string sourceCommit, string policyId, string approvalReceiptSha256, string mrXPublicKeySha256, string windowsExePath, string windowsExeSha256, string policySha256, ToolPin adb, ToolPin aapt, ToolPin apksigner, ApkPin apk, DevicePin device)
     {
-        SourceCommit = sourceCommit; WindowsExeSha256 = windowsExeSha256; Adb = adb; Aapt = aapt; Apksigner = apksigner; Apk = apk; Device = device;
+        SourceCommit = sourceCommit; PolicyId = policyId; ApprovalReceiptSha256 = approvalReceiptSha256; MrXPublicKeySha256 = mrXPublicKeySha256; WindowsExePath = windowsExePath; WindowsExeSha256 = windowsExeSha256; PolicySha256 = policySha256; Adb = adb; Aapt = aapt; Apksigner = apksigner; Apk = apk; Device = device;
     }
 
     internal static ApprovedCrossPlatformPolicy? Current { get; private set; }
     internal string SourceCommit { get; }
+    internal string PolicyId { get; }
+    internal string ApprovalReceiptSha256 { get; }
+    internal string MrXPublicKeySha256 { get; }
+    internal string WindowsExePath { get; }
     internal string WindowsExeSha256 { get; }
+    internal string PolicySha256 { get; }
     internal ToolPin Adb { get; }
     internal ToolPin Aapt { get; }
     internal ToolPin Apksigner { get; }
     internal ApkPin Apk { get; }
     internal DevicePin Device { get; }
 
-    internal static ApprovedCrossPlatformPolicy Load(string path, string expectedPolicySha256)
+    internal static ApprovedCrossPlatformPolicy Load(string path, string repositoryRoot, string mrXPublicKeySha256)
     {
-        StrictCrossPlatformContracts.RequirePinnedFile(path, expectedPolicySha256, "approved cross-platform policy");
+        var expectedPolicyPath = Path.Combine(repositoryRoot, ".secrets", "android-lab", "approved-policy.json");
+        if (!string.Equals(Path.GetFullPath(path), Path.GetFullPath(expectedPolicyPath), StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Cross-platform evidence requires the established protected Android lab policy path.");
+        }
+        if (!System.Text.RegularExpressions.Regex.IsMatch(mrXPublicKeySha256, "^[a-f0-9]{64}$") || mrXPublicKeySha256.All(character => character == '0'))
+        {
+            throw new InvalidOperationException("A nonzero externally pinned Mr. X public-key SHA-256 is required.");
+        }
         using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
         var root = document.RootElement;
-        if (root.GetProperty("schema").GetString() != "deep.strict-cross-platform-policy.v1" ||
-            root.GetProperty("inventoryClass").GetString() != "physical-managed-dedicated" ||
-            !root.GetProperty("physical").GetBoolean() ||
-            !root.GetProperty("dedicated").GetBoolean())
+        if (root.GetProperty("schema").GetString() != "deep.survival.android-lab-policy.v1" ||
+            !root.GetProperty("provisioned").GetBoolean() ||
+            root.GetProperty("synthetic").GetBoolean())
         {
-            throw new InvalidOperationException("Cross-platform policy is not an approved physical dedicated inventory.");
+            throw new InvalidOperationException("Cross-platform evidence requires a provisioned non-synthetic Android lab policy.");
         }
+
+        var approval = root.GetProperty("approval");
+        var signature = root.GetProperty("signature");
+        if (approval.GetProperty("state").GetString() != "approved" ||
+            approval.GetProperty("approvedBy").GetString() != "Mr. X" ||
+            signature.GetProperty("algorithm").GetString() != "Ed25519" ||
+            signature.GetProperty("publicKeySha256").GetString() != mrXPublicKeySha256)
+        {
+            throw new InvalidOperationException("Android lab inventory lacks exact Mr. X approval/signature bindings.");
+        }
+        var receiptPath = ResolveProtectedPath(repositoryRoot, approval.GetProperty("receiptRelativePath").GetString()!);
+        var publicKeyPath = ResolveProtectedPath(repositoryRoot, signature.GetProperty("publicKeyRelativePath").GetString()!);
+        var signaturePath = ResolveProtectedPath(repositoryRoot, signature.GetProperty("signatureRelativePath").GetString()!);
+        var payloadPath = ResolveProtectedPath(repositoryRoot, signature.GetProperty("signedPayloadRelativePath").GetString()!);
+        StrictCrossPlatformContracts.RequirePinnedFile(receiptPath, approval.GetProperty("receiptSha256").GetString()!, "Mr. X approval receipt");
+        StrictCrossPlatformContracts.RequirePinnedFile(publicKeyPath, mrXPublicKeySha256, "Mr. X public key");
+        StrictCrossPlatformContracts.RequirePinnedFile(payloadPath, signature.GetProperty("signedPayloadSha256").GetString()!, "Mr. X signed payload");
+        if (!File.Exists(signaturePath)) throw new InvalidOperationException("Mr. X detached signature is absent.");
+        using var payloadDocument = System.Text.Json.JsonDocument.Parse(File.ReadAllText(payloadPath));
+        var payload = payloadDocument.RootElement;
+        foreach (var scalar in new[] { "schema", "provisioned", "synthetic", "sourceCommitSha", "policyId" })
+        {
+            if (root.GetProperty(scalar).GetRawText() != payload.GetProperty(scalar).GetRawText()) throw new InvalidOperationException($"Signed payload does not bind {scalar}.");
+        }
+        foreach (var section in new[] { "approval", "tools", "device", "application", "crossPlatform" })
+        {
+            var policyNode = System.Text.Json.Nodes.JsonNode.Parse(root.GetProperty(section).GetRawText());
+            var payloadNode = System.Text.Json.Nodes.JsonNode.Parse(payload.GetProperty(section).GetRawText());
+            if (!System.Text.Json.Nodes.JsonNode.DeepEquals(policyNode, payloadNode)) throw new InvalidOperationException($"Signed payload does not bind {section}.");
+        }
+        VerifySignature(repositoryRoot, publicKeyPath, signaturePath, payloadPath);
 
         var tools = root.GetProperty("tools");
         ToolPin ReadTool(string name)
         {
             var value = tools.GetProperty(name);
             return new ToolPin(
-                value.GetProperty("path").GetString()!,
+                ResolveProtectedPath(repositoryRoot, value.GetProperty("relativePath").GetString()!),
                 value.GetProperty("sha256").GetString()!,
                 value.GetProperty("version").GetString()!,
                 value.GetProperty("versionArguments").EnumerateArray().Select(x => x.GetString()!).ToArray());
         }
 
-        var apk = root.GetProperty("apk");
+        var apk = root.GetProperty("application");
         var device = root.GetProperty("device");
+        var crossPlatform = root.GetProperty("crossPlatform");
+        if (apk.GetProperty("packageId").GetString() != StrictCrossPlatformContracts.AndroidPackage ||
+            device.GetProperty("kernelQemu").GetString() != "0" ||
+            device.GetProperty("class").GetString() != "physical-managed-dedicated" ||
+            !device.GetProperty("dedicated").GetBoolean() ||
+            device.GetProperty("inventoryState").GetString() != "approved" ||
+            device.GetProperty("inventoryApprovedBy").GetString() != "Mr. X" ||
+            device.GetProperty("inventoryApprovalReceiptSha256").GetString() != approval.GetProperty("receiptSha256").GetString())
+        {
+            throw new InvalidOperationException("Signed application/device inventory is not the approved physical dedicated contract.");
+        }
         var parsed = new ApprovedCrossPlatformPolicy(
-            root.GetProperty("sourceCommit").GetString()!,
-            root.GetProperty("windowsExeSha256").GetString()!,
+            root.GetProperty("sourceCommitSha").GetString()!,
+            root.GetProperty("policyId").GetString()!,
+            approval.GetProperty("receiptSha256").GetString()!,
+            mrXPublicKeySha256,
+            ResolveRepositoryPath(repositoryRoot, crossPlatform.GetProperty("windowsExecutableRelativePath").GetString()!),
+            crossPlatform.GetProperty("windowsExecutableSha256").GetString()!,
+            StrictCrossPlatformContracts.Sha256File(path),
             ReadTool("adb"),
             ReadTool("aapt"),
             ReadTool("apksigner"),
             new ApkPin(
-                apk.GetProperty("path").GetString()!,
-                apk.GetProperty("sha256").GetString()!,
-                apk.GetProperty("versionCode").GetString()!,
+                ResolveRepositoryPath(repositoryRoot, apk.GetProperty("apkRelativePath").GetString()!),
+                apk.GetProperty("apkSizeBytes").GetInt64(),
+                apk.GetProperty("apkSha256").GetString()!,
+                apk.GetProperty("versionCode").ToString(),
                 apk.GetProperty("versionName").GetString()!,
-                apk.GetProperty("signingDigest").GetString()!),
+                apk.GetProperty("signingCertificateSha256").GetString()!),
             new DevicePin(
                 device.GetProperty("serial").GetString()!,
                 device.GetProperty("fingerprint").GetString()!,
@@ -469,16 +547,61 @@ internal sealed class ApprovedCrossPlatformPolicy
     {
         static void Hex(string value, int length, string role)
         {
-            if (!System.Text.RegularExpressions.Regex.IsMatch(value, $"^[a-f0-9]{{{length}}}$")) throw new InvalidOperationException($"{role} is malformed.");
+            if (!System.Text.RegularExpressions.Regex.IsMatch(value, $"^[a-f0-9]{{{length}}}$") || value.All(character => character == '0')) throw new InvalidOperationException($"{role} is malformed.");
         }
-        Hex(SourceCommit, 40, "source commit"); Hex(WindowsExeSha256, 64, "Windows hash"); Hex(Apk.Sha256, 64, "APK hash"); Hex(Apk.SigningDigest, 64, "APK signer");
+        Hex(SourceCommit, 40, "source commit"); Hex(PolicyId, 64, "policy ID"); Hex(ApprovalReceiptSha256, 64, "approval receipt"); Hex(MrXPublicKeySha256, 64, "Mr. X key"); Hex(WindowsExeSha256, 64, "Windows hash"); Hex(Apk.Sha256, 64, "APK hash"); Hex(Apk.SigningDigest, 64, "APK signer");
         foreach (var tool in new[] { Adb, Aapt, Apksigner })
         {
             Hex(tool.Sha256, 64, "tool hash");
             if (!Path.IsPathFullyQualified(tool.Path) || tool.VersionArguments.Length is < 1 or > 4 || string.IsNullOrWhiteSpace(tool.Version)) throw new InvalidOperationException("Approved tool definition is malformed.");
         }
-        if (!Path.IsPathFullyQualified(Apk.Path) || string.IsNullOrWhiteSpace(Apk.VersionCode) || string.IsNullOrWhiteSpace(Apk.VersionName) || Device.Sdk is < 26 or > 100) throw new InvalidOperationException("Approved APK/device definition is malformed.");
+        if (!string.Equals(Path.GetFileName(Adb.Path), "adb.exe", StringComparison.OrdinalIgnoreCase) ||
+            !new[] { "aapt.exe", "aapt2.exe" }.Contains(Path.GetFileName(Aapt.Path), StringComparer.OrdinalIgnoreCase) ||
+            !string.Equals(Path.GetFileName(Apksigner.Path), "apksigner.bat", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Approved tool paths do not match their fixed roles.");
+        }
+        if (!Path.IsPathFullyQualified(Apk.Path) || Apk.SizeBytes <= 0 || string.IsNullOrWhiteSpace(Apk.VersionCode) || string.IsNullOrWhiteSpace(Apk.VersionName) || Device.Sdk is < 26 or > 100) throw new InvalidOperationException("Approved APK/device definition is malformed.");
         StrictCrossPlatformContracts.RequirePhysicalDeviceInventory(Device.Fingerprint, Device.Model, Device.Product, Device.Hardware, Device.Characteristics, Device.Sdk);
+    }
+
+    private static string ResolveProtectedPath(string repositoryRoot, string relative)
+    {
+        if (relative.Contains('\\') || relative.Split('/').Contains("..") || !relative.StartsWith(".secrets/android-lab/", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Signed protected path is not canonical.");
+        }
+        return ResolveRepositoryPath(repositoryRoot, relative);
+    }
+
+    private static string ResolveRepositoryPath(string repositoryRoot, string relative)
+    {
+        if (Path.IsPathFullyQualified(relative) || relative.Contains('\\') || relative.Split('/').Contains(".."))
+        {
+            throw new InvalidOperationException("Signed repository path is not canonical.");
+        }
+        var root = Path.GetFullPath(repositoryRoot);
+        var resolved = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
+        if (!resolved.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Signed path escapes the repository.");
+        }
+        return resolved;
+    }
+
+    private static void VerifySignature(string repositoryRoot, string publicKeyPath, string signaturePath, string payloadPath)
+    {
+        var dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+        if (string.IsNullOrWhiteSpace(dotnet) || !Path.IsPathFullyQualified(dotnet) || !File.Exists(dotnet))
+        {
+            dotnet = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet", "dotnet.exe");
+        }
+        var verifier = Path.Combine(repositoryRoot, "eng", "Deep.AndroidLab.PolicyVerifier", "Deep.AndroidLab.PolicyVerifier.csproj");
+        var result = StrictCrossPlatformContracts.RunBounded(
+            dotnet,
+            ["run", "--project", verifier, "-c", "Release", "--no-build", "--no-restore", "--", "verify", publicKeyPath, signaturePath, payloadPath],
+            TimeSpan.FromSeconds(30));
+        if (result.ExitCode != 0) throw new InvalidOperationException("Mr. X Ed25519 signature verification failed.");
     }
 }
 

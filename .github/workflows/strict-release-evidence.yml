@@ -94,8 +94,7 @@ jobs:
         env:
           DEEP_STRICT_CROSS_PLATFORM_UI: '1'
           DEEP_E2E_BOOTSTRAP: live
-          DEEP_E2E_ANDROID_POLICY: ${{ vars.DEEP_CROSS_PLATFORM_POLICY_PATH }}
-          DEEP_E2E_ANDROID_POLICY_SHA256: ${{ secrets.DEEP_CROSS_PLATFORM_POLICY_SHA256 }}
+          DEEP_MR_X_PUBLIC_KEY_SHA256: ${{ secrets.DEEP_MR_X_PUBLIC_KEY_SHA256 }}
           DEEP_E2E_ADB: ${{ vars.DEEP_CROSS_PLATFORM_ADB_PATH }}
           DEEP_E2E_AAPT: ${{ vars.DEEP_CROSS_PLATFORM_AAPT_PATH }}
           DEEP_E2E_APKSIGNER: ${{ vars.DEEP_CROSS_PLATFORM_APKSIGNER_PATH }}
@@ -110,6 +109,7 @@ jobs:
         run: |
           $env:DEEP_MAUI_EXE = $env:DEEP_WINDOWS_EXE
           $env:DEEP_E2E_ANDROID_APK = $env:DEEP_ANDROID_APK
+          $env:DEEP_E2E_ANDROID_POLICY = $env:DEEP_ANDROID_LAB_POLICY
           dotnet test tests/Deep.Client.Maui.UiTests/Deep.Client.Maui.UiTests.csproj --no-restore `
             --filter FullyQualifiedName~StrictCrossPlatformUiTests
           if ($LASTEXITCODE -ne 0) { throw 'Optional physical cross-platform UI flow failed.' }
@@ -136,7 +136,7 @@ jobs:
         run: |
           $crossPlatformArguments = @{}
           if ('${{ vars.DEEP_RUN_CROSS_PLATFORM_UI }}' -eq '1') {
-            $crossPlatformArguments.CrossPlatformPolicyPath = '${{ vars.DEEP_CROSS_PLATFORM_POLICY_PATH }}'
+            $crossPlatformArguments.CrossPlatformPolicyPath = $env:DEEP_ANDROID_LAB_POLICY
             $crossPlatformArguments.CrossPlatformWindowsExePath = $env:DEEP_WINDOWS_EXE
             $crossPlatformArguments.CrossPlatformAttachmentFixturePath = '${{ vars.DEEP_CROSS_PLATFORM_ATTACHMENT_FIXTURE }}'
           }

@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
+. (Join-Path $repoRoot 'eng\StrictLane.Common.ps1')
 $sandbox = Join-Path ([IO.Path]::GetTempPath()) ("deep-lab-provision-{0}" -f [Guid]::NewGuid().ToString('N'))
 $source = Join-Path $sandbox 'protected-source'
 $destination = Join-Path $repoRoot '.secrets\android-lab'
@@ -10,6 +11,12 @@ $provisioner = Join-Path $repoRoot 'eng\Provision-AndroidLabPolicy.ps1'
 $owner = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $junction = $null
 $ancestorJunction = $null
+$boundRoot = Join-Path $repoRoot ("artifacts\cross-policy-contract-{0}" -f [Guid]::NewGuid().ToString('N'))
+$evidenceRoot = Join-Path $boundRoot 'evidence'
+$boundApk = Join-Path $boundRoot 'network.xpoint.deep.e2e-Signed.apk'
+$boundWindows = Join-Path $boundRoot 'Deep.Client.Maui.exe'
+$boundFixture = Join-Path $boundRoot 'fixture.bin'
+$releaseInvocationId = '77777777777777777777777777777777'
 
 function Protect-Tree([string]$Root) {
     foreach ($item in Get-ChildItem -LiteralPath $Root -File -Recurse -Force) {
@@ -20,7 +27,18 @@ function Protect-Tree([string]$Root) {
     if ($LASTEXITCODE -ne 0) { throw 'Could not protect synthetic fixture ACL inheritance.' }
 }
 
+function Get-TextSha256Lower([string]$Value) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Value)))).Replace('-', '').ToLowerInvariant()
+    } finally { $sha.Dispose() }
+}
+
 New-Item -ItemType Directory -Force -Path (Join-Path $source 'tools') | Out-Null
+New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
+[IO.File]::WriteAllBytes($boundApk, [byte[]](1..64))
+[IO.File]::WriteAllText($boundWindows, 'synthetic-windows-binary')
+[IO.File]::WriteAllText($boundFixture, 'synthetic-attachment')
 try {
     if (Test-Path -LiteralPath $destination) {
         if (@(Get-ChildItem -LiteralPath $destination -Force).Count -ne 0) {
@@ -45,13 +63,18 @@ try {
     $policy.device.product = 'physical_product'
     $policy.device.hardware = 'physical_hardware'
     $policy.device.model = 'Physical Model'
+    $policy.device.characteristics = 'nosdcard'
     $policy.device.sdk = 35
     $policy.device.inventoryState = 'approved'
     $policy.device.inventoryApprovalReceiptSha256 = $policy.approval.receiptSha256
     $policy.application.versionCode = 42
     $policy.application.versionName = '1.2.3'
-    $policy.application.apkSha256 = 'c' * 64
+    $policy.application.apkRelativePath = (Get-RelativePathCompat -Root $repoRoot -Candidate $boundApk).Replace('\', '/')
+    $policy.application.apkSizeBytes = (Get-Item $boundApk).Length
+    $policy.application.apkSha256 = (Get-FileHash $boundApk -Algorithm SHA256).Hash.ToLowerInvariant()
     $policy.application.signingCertificateSha256 = 'd' * 64
+    $policy.crossPlatform.windowsExecutableRelativePath = (Get-RelativePathCompat -Root $repoRoot -Candidate $boundWindows).Replace('\', '/')
+    $policy.crossPlatform.windowsExecutableSha256 = (Get-FileHash $boundWindows -Algorithm SHA256).Hash.ToLowerInvariant()
     foreach ($role in @('runner', 'adb', 'aapt', 'apksigner')) {
         $definition = $policy.tools.$role
         $toolRelative = ([string]$definition.relativePath).Substring('.secrets/android-lab/'.Length)
@@ -62,6 +85,7 @@ try {
         schema = $policy.schema; provisioned = $policy.provisioned; synthetic = $policy.synthetic
         sourceCommitSha = $policy.sourceCommitSha; policyId = $policy.policyId; approval = $policy.approval
         tools = $policy.tools; device = $policy.device; application = $policy.application
+        crossPlatform = $policy.crossPlatform
     } | ConvertTo-Json -Depth 8 -Compress | Set-Content (Join-Path $source 'signed-payload.json') -Encoding utf8
     dotnet run --project $signer -c Release -- `
         (Join-Path $source 'mr-x-public-key.bin') (Join-Path $source 'policy.signature') `
@@ -78,6 +102,123 @@ try {
     if (-not $zeroRejected) { throw 'Zero public-key pin was accepted.' }
     $policyPath = & $provisioner -SourceRoot $source -ExpectedOwner $owner -MrXPublicKeySha256 $keyHash
     if (-not (Test-Path -LiteralPath $policyPath -PathType Leaf)) { throw 'Valid signed bundle was not provisioned.' }
+
+    $crossResult = [ordered]@{
+        schema = 'deep.strict-cross-platform-ui.v2'
+        status = 'passed'
+        sourceCommit = $policy.sourceCommitSha
+        releaseInvocationId = $releaseInvocationId
+        invocationId = '88888888888888888888888888888888'
+        generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        androidPackage = $policy.application.packageId
+        androidVersionCode = [string]$policy.application.versionCode
+        androidVersion = $policy.application.versionName
+        cleanupCompleted = $true
+        apkSizeBytes = [string]$policy.application.apkSizeBytes
+        apkSha256 = $policy.application.apkSha256
+        apkSigningDigest = $policy.application.signingCertificateSha256
+        windowsExeSha256 = $policy.crossPlatform.windowsExecutableSha256
+        fixtureSha256 = (Get-FileHash $boundFixture -Algorithm SHA256).Hash.ToLowerInvariant()
+        approvedPolicySha256 = (Get-FileHash $policyPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        policyId = $policy.policyId
+        approvalReceiptSha256 = $policy.approval.receiptSha256
+        mrXPublicKeySha256 = $keyHash
+        adbSha256 = $policy.tools.adb.sha256
+        aaptSha256 = $policy.tools.aapt.sha256
+        apksignerSha256 = $policy.tools.apksigner.sha256
+        adbVersionHash = Get-TextSha256Lower $policy.tools.adb.version
+        aaptVersionHash = Get-TextSha256Lower $policy.tools.aapt.version
+        apksignerVersionHash = Get-TextSha256Lower $policy.tools.apksigner.version
+        androidSerialHash = Get-TextSha256Lower $policy.device.serial
+        androidFingerprintHash = Get-TextSha256Lower $policy.device.fingerprint
+        androidModelHash = Get-TextSha256Lower $policy.device.model
+        androidProductHash = Get-TextSha256Lower $policy.device.product
+        androidHardwareHash = Get-TextSha256Lower $policy.device.hardware
+        androidCharacteristicsHash = Get-TextSha256Lower $policy.device.characteristics
+        androidSdk = [string]$policy.device.sdk
+    }
+    $resultPath = Join-Path $evidenceRoot 'cross-platform-ui-result.json'
+    $crossResult | ConvertTo-Json -Depth 8 | Set-Content $resultPath -Encoding utf8
+    function Invoke-CrossValidator {
+        & (Join-Path $repoRoot 'eng\Test-StrictClientEvidence.ps1') `
+            -ReleaseInvocationId $releaseInvocationId -ArtifactDirectory $evidenceRoot `
+            -AndroidApkPath $boundApk -MrXPublicKeySha256 $keyHash `
+            -CrossPlatformPolicyPath $policyPath -CrossPlatformWindowsExePath $boundWindows `
+            -CrossPlatformAttachmentFixturePath $boundFixture
+        return Get-Content (Join-Path $evidenceRoot 'strict-evidence-summary.json') -Raw | ConvertFrom-Json
+    }
+    $summary = Invoke-CrossValidator
+    if (($summary.checks | Where-Object lane -eq 'cross-platform-ui').status -ne 'passed') {
+        throw 'Valid signed cross-platform inventory was not accepted.'
+    }
+
+    $originalProvisionedPolicy = [IO.File]::ReadAllBytes($policyPath)
+    $originalProvisionedPolicyText = Get-Content -LiteralPath $policyPath -Raw
+    $trustMutations = @(
+        'sourceCommitSha', 'policyId', 'approval.state', 'approval.receiptSha256',
+        'signature.publicKeySha256',
+        'tools.adb.relativePath', 'tools.adb.sha256', 'tools.adb.version', 'tools.adb.versionArguments',
+        'tools.aapt.relativePath', 'tools.aapt.sha256', 'tools.aapt.version', 'tools.aapt.versionArguments',
+        'tools.apksigner.relativePath', 'tools.apksigner.sha256', 'tools.apksigner.version', 'tools.apksigner.versionArguments',
+        'application.packageId', 'application.versionCode', 'application.versionName',
+        'application.apkRelativePath', 'application.apkSizeBytes', 'application.apkSha256',
+        'application.signingCertificateSha256',
+        'device.serial', 'device.fingerprint', 'device.model', 'device.product', 'device.hardware',
+        'device.sdk', 'device.characteristics', 'device.kernelQemu', 'device.class',
+        'device.dedicated', 'device.inventoryState', 'device.inventoryApprovedBy',
+        'crossPlatform.windowsExecutableRelativePath', 'crossPlatform.windowsExecutableSha256')
+    foreach ($mutation in $trustMutations) {
+        (Get-Item $policyPath -Force).IsReadOnly = $false
+        $mutated = $originalProvisionedPolicyText | ConvertFrom-Json
+        switch -Wildcard ($mutation) {
+            'sourceCommitSha' { $mutated.sourceCommitSha = 'f' * 40 }
+            'policyId' { $mutated.policyId = 'f' * 64 }
+            'approval.state' { $mutated.approval.state = 'pending' }
+            'approval.receiptSha256' { $mutated.approval.receiptSha256 = 'f' * 64 }
+            'signature.publicKeySha256' { $mutated.signature.publicKeySha256 = 'f' * 64 }
+            'tools.adb.*' { $field = $mutation.Split('.')[-1]; $mutated.tools.adb.$field = $(if ($field -eq 'versionArguments') { @('mutated') } else { 'f' * 64 }) }
+            'tools.aapt.*' { $field = $mutation.Split('.')[-1]; $mutated.tools.aapt.$field = $(if ($field -eq 'versionArguments') { @('mutated') } else { 'f' * 64 }) }
+            'tools.apksigner.*' { $field = $mutation.Split('.')[-1]; $mutated.tools.apksigner.$field = $(if ($field -eq 'versionArguments') { @('mutated') } else { 'f' * 64 }) }
+            'application.packageId' { $mutated.application.packageId = 'mutated.package' }
+            'application.versionCode' { $mutated.application.versionCode = 999 }
+            'application.versionName' { $mutated.application.versionName = 'mutated' }
+            'application.apkRelativePath' { $mutated.application.apkRelativePath = 'artifacts/mutated.apk' }
+            'application.apkSizeBytes' { $mutated.application.apkSizeBytes = 999 }
+            'application.apkSha256' { $mutated.application.apkSha256 = 'f' * 64 }
+            'application.signingCertificateSha256' { $mutated.application.signingCertificateSha256 = 'f' * 64 }
+            'device.serial' { $mutated.device.serial = 'mutated' }
+            'device.fingerprint' { $mutated.device.fingerprint = 'mutated' }
+            'device.model' { $mutated.device.model = 'mutated' }
+            'device.product' { $mutated.device.product = 'mutated' }
+            'device.hardware' { $mutated.device.hardware = 'mutated' }
+            'device.sdk' { $mutated.device.sdk = 99 }
+            'device.characteristics' { $mutated.device.characteristics = 'mutated' }
+            'device.kernelQemu' { $mutated.device.kernelQemu = '1' }
+            'device.class' { $mutated.device.class = 'mutated' }
+            'device.dedicated' { $mutated.device.dedicated = $false }
+            'device.inventoryState' { $mutated.device.inventoryState = 'mutated' }
+            'device.inventoryApprovedBy' { $mutated.device.inventoryApprovedBy = 'mutated' }
+            'crossPlatform.windowsExecutableRelativePath' { $mutated.crossPlatform.windowsExecutableRelativePath = 'artifacts/mutated.exe' }
+            'crossPlatform.windowsExecutableSha256' { $mutated.crossPlatform.windowsExecutableSha256 = 'f' * 64 }
+        }
+        $mutated | ConvertTo-Json -Depth 8 | Set-Content $policyPath -Encoding utf8
+        (Get-Item $policyPath -Force).IsReadOnly = $true
+        $summary = Invoke-CrossValidator
+        if (($summary.checks | Where-Object lane -eq 'cross-platform-ui').status -ne 'failed') {
+            throw "Signed trust-field mutation was accepted: $mutation"
+        }
+        (Get-Item $policyPath -Force).IsReadOnly = $false
+        [IO.File]::WriteAllBytes($policyPath, $originalProvisionedPolicy)
+        (Get-Item $policyPath -Force).IsReadOnly = $true
+    }
+    $crossResult.releaseInvocationId = '99999999999999999999999999999999'
+    $crossResult | ConvertTo-Json -Depth 8 | Set-Content $resultPath -Encoding utf8
+    $summary = Invoke-CrossValidator
+    if (($summary.checks | Where-Object lane -eq 'cross-platform-ui').status -ne 'failed') {
+        throw 'Cross-platform invocation mutation was accepted.'
+    }
+    $crossResult.releaseInvocationId = $releaseInvocationId
+    $crossResult | ConvertTo-Json -Depth 8 | Set-Content $resultPath -Encoding utf8
     & $provisioner -Clean
 
     Get-ChildItem $source -File -Recurse -Force | ForEach-Object { $_.IsReadOnly = $false }
@@ -141,5 +282,8 @@ try {
         Get-ChildItem $sandbox -File -Recurse -Force -ErrorAction SilentlyContinue |
             ForEach-Object { try { $_.IsReadOnly = $false } catch {} }
         Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $boundRoot) {
+        Remove-Item $boundRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

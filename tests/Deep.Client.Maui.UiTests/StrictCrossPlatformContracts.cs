@@ -233,12 +233,39 @@ internal static class StrictCrossPlatformContracts
         if (!process.WaitForExit((int)timeout.TotalMilliseconds))
         {
             try { process.Kill(entireProcessTree: true); } catch { }
-            Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(5));
+            CloseRedirectedPipes(process);
+            TryDrainAfterClose(stdout, stderr);
             throw new TimeoutException("Bounded tool process exceeded its timeout.");
         }
 
-        Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(5));
-        return new ProcessResult(process.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
+        if (!Task.WaitAll([stdout, stderr], timeout))
+        {
+            // A descendant can outlive an exited parent while retaining inherited stdout/
+            // stderr handles.  Never block on GetResult in that state.
+            try { process.Kill(entireProcessTree: true); } catch { }
+            CloseRedirectedPipes(process);
+            TryDrainAfterClose(stdout, stderr);
+            throw new TimeoutException("Tool parent exited but redirected output did not close before the bounded drain deadline.");
+        }
+
+        if (!stdout.IsCompletedSuccessfully || !stderr.IsCompletedSuccessfully)
+        {
+            throw new InvalidOperationException("Tool output could not be drained safely.");
+        }
+
+        return new ProcessResult(process.ExitCode, stdout.Result, stderr.Result);
+
+        static void CloseRedirectedPipes(Process target)
+        {
+            try { target.StandardOutput.Dispose(); } catch { }
+            try { target.StandardError.Dispose(); } catch { }
+        }
+
+        static void TryDrainAfterClose(Task stdoutTask, Task stderrTask)
+        {
+            try { _ = Task.WaitAll([stdoutTask, stderrTask], TimeSpan.FromSeconds(1)); }
+            catch { }
+        }
     }
 
     internal sealed record ProcessResult(int ExitCode, string Output, string Error);
@@ -330,6 +357,21 @@ internal static class StrictCrossPlatformContracts
                 throw new AggregateException("One or more independent strict-lane cleanup steps failed.", failures);
             }
         }
+    }
+
+    internal sealed class AttemptCleanupState
+    {
+        internal bool AndroidPackageMutationAttempted { get; private set; }
+        internal bool FixturePushAttempted { get; private set; }
+
+        internal void Register(CleanupScope cleanup, Action clearAndroidPackage, Action deleteFixture)
+        {
+            cleanup.Add(() => { if (AndroidPackageMutationAttempted) clearAndroidPackage(); });
+            cleanup.Add(() => { if (FixturePushAttempted) deleteFixture(); });
+        }
+
+        internal void BeginAndroidPackageMutation() => AndroidPackageMutationAttempted = true;
+        internal void BeginFixturePush() => FixturePushAttempted = true;
     }
 
     internal sealed record AndroidNode(string ResourceId, string Text, AndroidBounds Bounds)

@@ -268,7 +268,8 @@ if (Test-Path -LiteralPath $androidSummaryPath -PathType Leaf) {
             ($signedPayload.approval | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.approval | ConvertTo-Json -Depth 8 -Compress) -or
             ($signedPayload.tools | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.tools | ConvertTo-Json -Depth 8 -Compress) -or
             ($signedPayload.device | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.device | ConvertTo-Json -Depth 8 -Compress) -or
-            ($signedPayload.application | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.application | ConvertTo-Json -Depth 8 -Compress)) {
+            ($signedPayload.application | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.application | ConvertTo-Json -Depth 8 -Compress) -or
+            ($signedPayload.crossPlatform | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.crossPlatform | ConvertTo-Json -Depth 8 -Compress)) {
             throw 'Release signed payload does not bind the complete policy semantics.'
         }
         dotnet run --project (Join-Path $PSScriptRoot 'Deep.AndroidLab.PolicyVerifier\Deep.AndroidLab.PolicyVerifier.csproj') `
@@ -414,6 +415,100 @@ if (Test-Path -LiteralPath $crossPlatformPath -PathType Leaf) {
                 throw 'Cross-platform bound input is absent.'
             }
         }
+        $expectedPolicyPath = [IO.Path]::GetFullPath((Join-Path $repoRoot '.secrets\android-lab\approved-policy.json'))
+        if (-not [StringComparer]::OrdinalIgnoreCase.Equals($policyPath, $expectedPolicyPath) -or
+            -not (Test-NonZeroSha256Value $MrXPublicKeySha256)) {
+            throw 'Cross-platform policy path or external Mr. X key pin is invalid.'
+        }
+        $crossPolicy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
+        $crossPayloadPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+            [IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$crossPolicy.signature.signedPayloadRelativePath)))
+        )
+        $crossPublicKeyPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+            [IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$crossPolicy.signature.publicKeyRelativePath)))
+        )
+        $crossSignaturePath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+            [IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$crossPolicy.signature.signatureRelativePath)))
+        )
+        $crossReceiptPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+            [IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$crossPolicy.approval.receiptRelativePath)))
+        )
+        foreach ($signedPath in @($crossPayloadPath, $crossPublicKeyPath, $crossSignaturePath, $crossReceiptPath)) {
+            Assert-NoReparsePointInPath -Root $repoRoot -Candidate $signedPath
+        }
+        $crossPayload = Get-Content -LiteralPath $crossPayloadPath -Raw | ConvertFrom-Json
+        $signedInventoryBound =
+            $crossPolicy.schema -ceq 'deep.survival.android-lab-policy.v1' -and
+            $crossPolicy.provisioned -eq $true -and
+            $crossPolicy.synthetic -eq $false -and
+            $crossPolicy.sourceCommitSha -ceq $commit -and
+            $crossPolicy.approval.state -ceq 'approved' -and
+            $crossPolicy.approval.approvedBy -ceq 'Mr. X' -and
+            $crossPolicy.signature.algorithm -ceq 'Ed25519' -and
+            $crossPolicy.signature.publicKeySha256 -ceq $MrXPublicKeySha256 -and
+            (Get-Sha256Lower -Path $crossPublicKeyPath) -ceq $MrXPublicKeySha256 -and
+            (Get-Sha256Lower -Path $crossPayloadPath) -ceq [string]$crossPolicy.signature.signedPayloadSha256 -and
+            (Get-Sha256Lower -Path $crossReceiptPath) -ceq [string]$crossPolicy.approval.receiptSha256 -and
+            [string]$crossPayload.schema -ceq [string]$crossPolicy.schema -and
+            $crossPayload.provisioned -eq $crossPolicy.provisioned -and
+            $crossPayload.synthetic -eq $crossPolicy.synthetic -and
+            [string]$crossPayload.sourceCommitSha -ceq [string]$crossPolicy.sourceCommitSha -and
+            [string]$crossPayload.policyId -ceq [string]$crossPolicy.policyId -and
+            ($crossPayload.approval | ConvertTo-Json -Depth 8 -Compress) -ceq ($crossPolicy.approval | ConvertTo-Json -Depth 8 -Compress) -and
+            ($crossPayload.tools | ConvertTo-Json -Depth 8 -Compress) -ceq ($crossPolicy.tools | ConvertTo-Json -Depth 8 -Compress) -and
+            ($crossPayload.device | ConvertTo-Json -Depth 8 -Compress) -ceq ($crossPolicy.device | ConvertTo-Json -Depth 8 -Compress) -and
+            ($crossPayload.application | ConvertTo-Json -Depth 8 -Compress) -ceq ($crossPolicy.application | ConvertTo-Json -Depth 8 -Compress) -and
+            ($crossPayload.crossPlatform | ConvertTo-Json -Depth 8 -Compress) -ceq ($crossPolicy.crossPlatform | ConvertTo-Json -Depth 8 -Compress)
+        if (-not $signedInventoryBound) {
+            throw 'Cross-platform signed inventory semantics are invalid.'
+        }
+        dotnet run --project (Join-Path $PSScriptRoot 'Deep.AndroidLab.PolicyVerifier\Deep.AndroidLab.PolicyVerifier.csproj') `
+            -c Release --no-build --no-restore -- verify $crossPublicKeyPath $crossSignaturePath $crossPayloadPath
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Cross-platform Mr. X signature is invalid.'
+        }
+        $signedApkPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+            [IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$crossPolicy.application.apkRelativePath)))
+        )
+        $signedWindowsPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+            [IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$crossPolicy.crossPlatform.windowsExecutableRelativePath)))
+        )
+        if (-not [StringComparer]::OrdinalIgnoreCase.Equals($apkPath, $signedApkPath) -or
+            -not [StringComparer]::OrdinalIgnoreCase.Equals($windowsPath, $signedWindowsPath)) {
+            throw 'Cross-platform executable/APK paths do not match signed inventory.'
+        }
+        $toolBindingsValid = $true
+        foreach ($role in @('adb', 'aapt', 'apksigner')) {
+            $definition = $crossPolicy.tools.$role
+            $toolPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+                [IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$definition.relativePath)))
+            )
+            if ((Get-Sha256Lower -Path $toolPath) -cne [string]$definition.sha256 -or
+                @($definition.versionArguments).Count -lt 1 -or @($definition.versionArguments).Count -gt 4 -or
+                [string]$cross."${role}Sha256" -cne [string]$definition.sha256 -or
+                [string]$cross."${role}VersionHash" -cne (Get-TextSha256Lower -Value ([string]$definition.version))) {
+                $toolBindingsValid = $false
+                break
+            }
+        }
+        $inventoryComplete =
+            (Test-NonZeroSha256Value ([string]$crossPolicy.policyId)) -and
+            (Test-NonZeroSha256Value ([string]$crossPolicy.approval.receiptSha256)) -and
+            (Test-NonZeroSha256Value ([string]$crossPolicy.application.apkSha256)) -and
+            (Test-NonZeroSha256Value ([string]$crossPolicy.application.signingCertificateSha256)) -and
+            [long]$crossPolicy.application.apkSizeBytes -gt 0 -and
+            [string]$crossPolicy.application.packageId -ceq 'network.xpoint.deep.e2e' -and
+            [int]$crossPolicy.application.versionCode -gt 0 -and
+            -not [string]::IsNullOrWhiteSpace([string]$crossPolicy.application.versionName) -and
+            -not [string]::IsNullOrWhiteSpace([string]$crossPolicy.device.serial) -and
+            -not [string]::IsNullOrWhiteSpace([string]$crossPolicy.device.fingerprint) -and
+            -not [string]::IsNullOrWhiteSpace([string]$crossPolicy.device.model) -and
+            -not [string]::IsNullOrWhiteSpace([string]$crossPolicy.device.product) -and
+            -not [string]::IsNullOrWhiteSpace([string]$crossPolicy.device.hardware) -and
+            -not [string]::IsNullOrWhiteSpace([string]$crossPolicy.device.characteristics) -and
+            [int]$crossPolicy.device.sdk -ge 26 -and [int]$crossPolicy.device.sdk -le 100 -and
+            [string]$crossPolicy.device.inventoryApprovalReceiptSha256 -ceq [string]$crossPolicy.approval.receiptSha256 -and
+            (Test-NonZeroSha256Value ([string]$crossPolicy.crossPlatform.windowsExecutableSha256))
         $crossPlatformPassed =
             $cross.schema -ceq 'deep.strict-cross-platform-ui.v2' -and
             $cross.status -ceq 'passed' -and
@@ -422,12 +517,36 @@ if (Test-Path -LiteralPath $crossPlatformPath -PathType Leaf) {
             [string]$cross.invocationId -match '^[a-f0-9]{32}$' -and
             (Test-FreshTimestamp $cross.generatedAtUtc) -and
             $cross.androidPackage -ceq 'network.xpoint.deep.e2e' -and
+            $cross.androidPackage -ceq [string]$crossPolicy.application.packageId -and
+            [string]$cross.androidVersionCode -ceq [string]$crossPolicy.application.versionCode -and
+            [string]$cross.androidVersion -ceq [string]$crossPolicy.application.versionName -and
             $cross.cleanupCompleted -eq $true -and
+            $inventoryComplete -and
+            $toolBindingsValid -and
+            [long]$cross.apkSizeBytes -eq [long]$crossPolicy.application.apkSizeBytes -and
+            (Get-Item -LiteralPath $apkPath).Length -eq [long]$crossPolicy.application.apkSizeBytes -and
             $cross.apkSha256 -ceq (Get-Sha256Lower -Path $apkPath) -and
+            $cross.apkSha256 -ceq [string]$crossPolicy.application.apkSha256 -and
+            $cross.apkSigningDigest -ceq [string]$crossPolicy.application.signingCertificateSha256 -and
             $cross.windowsExeSha256 -ceq (Get-Sha256Lower -Path $windowsPath) -and
+            $cross.windowsExeSha256 -ceq [string]$crossPolicy.crossPlatform.windowsExecutableSha256 -and
             $cross.fixtureSha256 -ceq (Get-Sha256Lower -Path $fixturePath) -and
             $cross.approvedPolicySha256 -ceq (Get-Sha256Lower -Path $policyPath) -and
-            (Test-NonZeroSha256Value ([string]$cross.apkSigningDigest))
+            $cross.policyId -ceq [string]$crossPolicy.policyId -and
+            $cross.approvalReceiptSha256 -ceq [string]$crossPolicy.approval.receiptSha256 -and
+            $cross.mrXPublicKeySha256 -ceq $MrXPublicKeySha256 -and
+            $cross.androidSerialHash -ceq (Get-TextSha256Lower -Value ([string]$crossPolicy.device.serial)) -and
+            $cross.androidFingerprintHash -ceq (Get-TextSha256Lower -Value ([string]$crossPolicy.device.fingerprint)) -and
+            $cross.androidModelHash -ceq (Get-TextSha256Lower -Value ([string]$crossPolicy.device.model)) -and
+            $cross.androidProductHash -ceq (Get-TextSha256Lower -Value ([string]$crossPolicy.device.product)) -and
+            $cross.androidHardwareHash -ceq (Get-TextSha256Lower -Value ([string]$crossPolicy.device.hardware)) -and
+            $cross.androidCharacteristicsHash -ceq (Get-TextSha256Lower -Value ([string]$crossPolicy.device.characteristics)) -and
+            [int]$cross.androidSdk -eq [int]$crossPolicy.device.sdk -and
+            [string]$crossPolicy.device.kernelQemu -ceq '0' -and
+            [string]$crossPolicy.device.class -ceq 'physical-managed-dedicated' -and
+            $crossPolicy.device.dedicated -eq $true -and
+            [string]$crossPolicy.device.inventoryState -ceq 'approved' -and
+            [string]$crossPolicy.device.inventoryApprovedBy -ceq 'Mr. X'
         $crossPlatformStatus = if ($crossPlatformPassed) { 'passed' } else { 'failed' }
     } catch {
         $crossPlatformStatus = 'failed'

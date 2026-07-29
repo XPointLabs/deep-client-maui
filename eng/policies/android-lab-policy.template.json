@@ -27,18 +27,21 @@
     "adb": {
       "relativePath": ".secrets/android-lab/tools/adb.exe",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "version": "PENDING"
+      "version": "PENDING",
+      "versionArguments": ["version"]
     },
     "aapt": {
       "kind": "aapt",
       "relativePath": ".secrets/android-lab/tools/aapt.exe",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "version": "PENDING"
+      "version": "PENDING",
+      "versionArguments": ["version"]
     },
     "apksigner": {
       "relativePath": ".secrets/android-lab/tools/apksigner.bat",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "version": "PENDING"
+      "version": "PENDING",
+      "versionArguments": ["version"]
     }
   },
   "device": {
@@ -47,6 +50,7 @@
     "product": "PENDING",
     "hardware": "PENDING",
     "model": "PENDING",
+    "characteristics": "PENDING",
     "kernelQemu": "0",
     "sdk": 0,
     "class": "physical-managed-dedicated",
@@ -59,7 +63,13 @@
     "packageId": "network.xpoint.deep.e2e",
     "versionCode": 0,
     "versionName": "PENDING",
-    "apkSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "apkRelativePath": "src/Deep.Client.Maui/bin/Debug/net10.0-android/network.xpoint.deep.e2e-Signed.apk",
+    "apkSizeBytes": 157098057,
+    "apkSha256": "a9084a504f5040938ff1c167a753206cb14abaf2aac7c1325548ba3b72e17eba",
     "signingCertificateSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "crossPlatform": {
+    "windowsExecutableRelativePath": "src/Deep.Client.Maui/bin/Debug/net10.0-windows10.0.19041.0/Deep.Client.Maui.exe",
+    "windowsExecutableSha256": "0000000000000000000000000000000000000000000000000000000000000000"
   }
 }

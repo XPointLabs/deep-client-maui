@@ -168,11 +168,13 @@ device have all of these inputs: `DEEP_E2E_BOOTSTRAP=live`,
 `DEEP_E2E_ANDROID_SERIAL`, absolute `DEEP_E2E_ADB`, `DEEP_E2E_ANDROID_APK`,
 absolute `DEEP_E2E_AAPT`, absolute `DEEP_E2E_APKSIGNER`, and
 `DEEP_E2E_ATTACHMENT_FIXTURE`, one common `DEEP_RELEASE_INVOCATION_ID`, and an
-absolute `DEEP_E2E_ANDROID_POLICY` whose SHA-256 is independently pinned by
-`DEEP_E2E_ANDROID_POLICY_SHA256`. The approved policy binds exact adb/aapt/apksigner
-paths, hashes and complete version output; source commit; Windows executable hash;
-APK; and physical dedicated device serial, fingerprint, model, product, hardware, SDK,
-and build characteristics. The supplied APK
+exact provisioned `DEEP_E2E_ANDROID_POLICY` plus the external
+`DEEP_MR_X_PUBLIC_KEY_SHA256` pin. This is the same protected policy, approval receipt,
+signed payload, and Ed25519 verifier used by the release Android lane; a parallel
+caller-hash policy is not accepted. Its signed inventory binds exact adb/aapt/apksigner
+paths, hashes, version arguments and complete version output; source commit; Windows
+executable path/hash; APK path/byte size; and physical dedicated device serial,
+fingerprint, model, product, hardware, SDK, and build characteristics. The supplied APK
 must be the installed `network.xpoint.deep.e2e` package at exact `aapt` package,
 versionCode/versionName, SHA-256, and signing-certificate digest. It also requires
 `DEEP_E2E_ANDROID_SELECTORS_JSON`, a role-to-exact-resource-id map for every
@@ -197,8 +199,10 @@ The lane taps only one exact configured resource ID and asserts the exact fixtur
 on that node; it never uses an unscoped text selector. Production Windows Save has no dialog:
 the harness snapshots Downloads before each Save and owns only the exact new correlated file,
 never a preexisting collision. Cleanup independently attempts both run-created Downloads
-files, the pushed Android fixture, run-created E2E identity data, and isolated Windows
-app-data; it aggregates failures and writes `passed` only after all cleanup succeeds.
+files, the attempted Android fixture path, attempted E2E package data, and isolated
+Windows app-data. Cleanup eligibility is registered before ColdStart/identity/push
+attempts, aggregates every independent failure, and writes `passed` only after all
+cleanup succeeds.
 
 A valid unknown 66-character Session ID with prefix `05`, `15`, or `25` is intentionally
 accepted by the product and must never be used as the negative validation gate. The offline

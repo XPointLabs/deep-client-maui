@@ -194,7 +194,8 @@ if ((Get-Sha256Lower -Path $publicKeyPath) -cne $MrXPublicKeySha256 -or
     ($payload.approval | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.approval | ConvertTo-Json -Depth 8 -Compress) -or
     ($payload.tools | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.tools | ConvertTo-Json -Depth 8 -Compress) -or
     ($payload.device | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.device | ConvertTo-Json -Depth 8 -Compress) -or
-    ($payload.application | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.application | ConvertTo-Json -Depth 8 -Compress)) {
+    ($payload.application | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.application | ConvertTo-Json -Depth 8 -Compress) -or
+    ($payload.crossPlatform | ConvertTo-Json -Depth 8 -Compress) -cne ($policy.crossPlatform | ConvertTo-Json -Depth 8 -Compress)) {
     throw 'Signed payload does not exactly bind the protected policy, tools, device, and application.'
 }
 

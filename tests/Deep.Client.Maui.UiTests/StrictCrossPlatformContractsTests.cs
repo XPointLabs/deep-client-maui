@@ -111,6 +111,26 @@ public sealed class StrictCrossPlatformContractsTests
     }
 
     [Fact]
+    public void Bounded_process_rejects_exited_parent_when_descendant_holds_redirected_pipes()
+    {
+        var powershell = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+        var command =
+            "$child = Start-Process -PassThru -NoNewWindow -FilePath '" + powershell.Replace("'", "''", StringComparison.Ordinal) +
+            "' -ArgumentList @('-NoProfile','-Command','while ($true) { Write-Output held; Start-Sleep -Milliseconds 20 }'); exit 0";
+        var started = DateTime.UtcNow;
+
+        Assert.Throws<TimeoutException>(() =>
+            StrictCrossPlatformContracts.RunBounded(
+                powershell,
+                ["-NoProfile", "-Command", command],
+                TimeSpan.FromMilliseconds(400)));
+
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(4));
+    }
+
+    [Fact]
     public void Downloads_snapshot_accepts_production_collision_and_never_owns_preexisting_file()
     {
         var root = Path.Combine(Path.GetTempPath(), $"deep-download-contract-{Guid.NewGuid():N}");
@@ -151,5 +171,29 @@ public sealed class StrictCrossPlatformContractsTests
         Assert.True(firstAttempted);
         Assert.True(lastAttempted);
         Assert.Equal(2, error.InnerExceptions.Count);
+    }
+
+    [Theory]
+    [InlineData("cold-start")]
+    [InlineData("identity")]
+    [InlineData("push")]
+    public void Partial_android_attempts_are_cleanup_eligible_before_the_fault(string faultStage)
+    {
+        var packageCleanup = 0;
+        var fixtureCleanup = 0;
+        var cleanup = new StrictCrossPlatformContracts.CleanupScope();
+        var state = new StrictCrossPlatformContracts.AttemptCleanupState();
+        state.Register(cleanup, () => packageCleanup++, () => fixtureCleanup++);
+
+        state.BeginAndroidPackageMutation();
+        if (faultStage == "push") state.BeginFixturePush();
+        Exception? captured = null;
+        try { throw new IOException(faultStage); }
+        catch (Exception exception) { captured = exception; }
+
+        Assert.IsType<IOException>(captured);
+        cleanup.RunAll();
+        Assert.Equal(1, packageCleanup);
+        Assert.Equal(faultStage == "push" ? 1 : 0, fixtureCleanup);
     }
 }
