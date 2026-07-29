@@ -232,36 +232,6 @@ public sealed class WindowsUiSmokeTests
             FlaUI.Core.Input.Mouse.Click(element.GetClickablePoint());
         }
 
-        // Common dialogs are accepted only when their top-level owner belongs to the exact
-        // process launched by this session.  A desktop-wide AutomationId lookup could save
-        // through an unrelated application's dialog.
-        internal AutomationElement? WaitForOwnedDialogAutomationId(string automationId, TimeSpan timeout)
-        {
-            var result = Retry.WhileNull(
-                () => automation.GetDesktop()
-                    .FindAllDescendants(condition => condition.ByAutomationId(automationId))
-                    .Where(candidate => BelongsToLaunchedProcess(candidate))
-                    .SingleOrDefault(),
-                timeout,
-                TimeSpan.FromMilliseconds(200),
-                throwOnTimeout: false);
-            return result.Result;
-        }
-
-        private bool BelongsToLaunchedProcess(AutomationElement candidate)
-        {
-            for (var current = candidate; current is not null; current = current.Parent)
-            {
-                if (current.Properties.ControlType.ValueOrDefault == FlaUI.Core.Definitions.ControlType.Window &&
-                    current.Properties.ProcessId.ValueOrDefault == application.ProcessId)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         public void FocusWindow() => CurrentWindow().Focus();
 
         public void WriteSuccessEvidence()
@@ -448,9 +418,14 @@ public sealed class WindowsUiSmokeTests
                 throw new InvalidOperationException("Launched Windows process path does not match DEEP_MAUI_EXE.");
             }
 
-            var expectedHash = RequireSetting("DEEP_E2E_WINDOWS_EXE_SHA256");
+            if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_STRICT_CROSS_PLATFORM_UI"), "1", StringComparison.Ordinal))
+            {
+                return;
+            }
+            var policy = ApprovedCrossPlatformPolicy.Current ?? throw new InvalidOperationException("Approved cross-platform policy was not loaded before Windows launch.");
+            var expectedHash = policy.WindowsExeSha256;
             var actualHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(launchedPath)));
-            if (!string.Equals(actualHash, expectedHash, StringComparison.Ordinal) || !System.Text.RegularExpressions.Regex.IsMatch(RequireSetting("DEEP_E2E_SOURCE_COMMIT"), "^[a-f0-9]{40}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+            if (!string.Equals(actualHash, expectedHash, StringComparison.Ordinal) || !System.Text.RegularExpressions.Regex.IsMatch(policy.SourceCommit, "^[a-f0-9]{40}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
             {
                 throw new InvalidOperationException("Launched Windows binary hash or source-commit binding is invalid.");
             }

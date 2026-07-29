@@ -137,6 +137,201 @@ internal static class StrictCrossPlatformContracts
 
     internal static string NewMarker(string role) => $"strict-{role}-{Guid.NewGuid():N}";
 
+    internal static void RequireInvalidSessionId(string value)
+    {
+        try
+        {
+            _ = RequireSessionId(value, "negative test identity");
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException("The negative-flow identity must be syntactically invalid. Valid unknown identities are intentionally accepted.");
+    }
+
+    internal static string Sha256File(string path) =>
+        Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path)));
+
+    internal static void RequirePinnedFile(string path, string expectedSha256, string role)
+    {
+        if (!Path.IsPathFullyQualified(path) || !File.Exists(path))
+        {
+            throw new InvalidOperationException($"{role} must be an existing absolute path.");
+        }
+
+        if (!Regex.IsMatch(expectedSha256, "^[a-f0-9]{64}$", RegexOptions.CultureInvariant) ||
+            !string.Equals(Sha256File(path), expectedSha256, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"{role} does not match its independently pinned SHA-256.");
+        }
+    }
+
+    internal static void RequirePhysicalDeviceInventory(
+        string fingerprint,
+        string model,
+        string product,
+        string hardware,
+        string characteristics,
+        int sdk)
+    {
+        if (sdk is < 26 or > 100 ||
+            new[] { fingerprint, model, product, hardware, characteristics }.Any(string.IsNullOrWhiteSpace) ||
+            Regex.IsMatch(
+                $"{fingerprint} {model} {product} {hardware} {characteristics}",
+                "(?i)(emulator|generic|goldfish|ranchu|vbox|qemu|simulator|sdk[_-]?gphone)",
+                RegexOptions.CultureInvariant))
+        {
+            throw new InvalidOperationException("Approved inventory must identify a non-virtual physical device.");
+        }
+    }
+
+    internal static void RequireExactVersion(ProcessResult result, string expected, string role)
+    {
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"{role} version command failed.");
+        }
+
+        var actual = (result.Output + result.Error).Trim();
+        if (!string.Equals(actual, expected, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"{role} version output does not match the approved inventory.");
+        }
+    }
+
+    internal static ProcessResult RunBounded(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        TimeSpan timeout)
+    {
+        if (!Path.IsPathFullyQualified(fileName) && !string.Equals(fileName, "git", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Tool execution requires an absolute path.");
+        }
+
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        foreach (var argument in arguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        process.Start();
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit((int)timeout.TotalMilliseconds))
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(5));
+            throw new TimeoutException("Bounded tool process exceeded its timeout.");
+        }
+
+        Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(5));
+        return new ProcessResult(process.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
+    }
+
+    internal sealed record ProcessResult(int ExitCode, string Output, string Error);
+
+    internal static string RequireCurrentCommit(string repositoryRoot, string expectedCommit)
+    {
+        var result = RunBounded(
+            "git",
+            ["-c", $"safe.directory={repositoryRoot.Replace('\\', '/')}", "-C", repositoryRoot, "rev-parse", "HEAD"],
+            TimeSpan.FromSeconds(15));
+        var actual = result.Output.Trim();
+        if (result.ExitCode != 0 ||
+            !Regex.IsMatch(actual, "^[a-f0-9]{40}$", RegexOptions.CultureInvariant) ||
+            !string.Equals(actual, expectedCommit, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Actual Git HEAD does not match the pinned source commit.");
+        }
+
+        return actual;
+    }
+
+    internal static DownloadsSnapshot SnapshotDownloads(string directory)
+    {
+        if (!Path.IsPathFullyQualified(directory))
+        {
+            throw new InvalidOperationException("Downloads directory must be absolute.");
+        }
+
+        Directory.CreateDirectory(directory);
+        return new DownloadsSnapshot(
+            Path.GetFullPath(directory),
+            Directory.EnumerateFiles(directory).Select(Path.GetFullPath).ToHashSet(StringComparer.OrdinalIgnoreCase));
+    }
+
+    internal sealed record DownloadsSnapshot(string Directory, IReadOnlySet<string> Preexisting)
+    {
+        internal string WaitForNewCorrelatedFile(string originalFileName, TimeSpan timeout, ICollection<string>? runOwned = null)
+        {
+            var stem = Path.GetFileNameWithoutExtension(originalFileName);
+            var extension = Path.GetExtension(originalFileName);
+            var correlated = new Regex(
+                "^" + Regex.Escape(stem) + "(?: \\([2-9][0-9]*\\))?" + Regex.Escape(extension) + "$",
+                RegexOptions.CultureInvariant);
+            var until = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < until)
+            {
+                var matches = System.IO.Directory.EnumerateFiles(Directory)
+                    .Select(Path.GetFullPath)
+                    .Where(path => !Preexisting.Contains(path) && correlated.IsMatch(Path.GetFileName(path)))
+                    .ToArray();
+                if (runOwned is not null)
+                {
+                    foreach (var path in matches)
+                    {
+                        if (!runOwned.Contains(path, StringComparer.OrdinalIgnoreCase)) runOwned.Add(path);
+                    }
+                }
+                if (matches.Length == 1)
+                {
+                    return matches[0];
+                }
+                if (matches.Length > 1)
+                {
+                    throw new InvalidOperationException("Save created more than one new correlated Downloads file.");
+                }
+                Thread.Sleep(200);
+            }
+
+            throw new InvalidOperationException("Production Save did not create one new correlated Downloads file.");
+        }
+    }
+
+    internal sealed class CleanupScope
+    {
+        private readonly List<Action> actions = [];
+
+        internal void Add(Action action) => actions.Add(action);
+
+        internal void RunAll()
+        {
+            var failures = new List<Exception>();
+            foreach (var action in actions)
+            {
+                try { action(); }
+                catch (Exception exception) { failures.Add(exception); }
+            }
+            if (failures.Count > 0)
+            {
+                throw new AggregateException("One or more independent strict-lane cleanup steps failed.", failures);
+            }
+        }
+    }
+
     internal sealed record AndroidNode(string ResourceId, string Text, AndroidBounds Bounds)
     {
         internal static AndroidNode From(XElement node)
@@ -202,7 +397,7 @@ internal static class StrictCrossPlatformContracts
         internal void AddHash(string key, string sensitiveValue) => values.Add(key, Sha256(sensitiveValue));
         internal void AddSafeValue(string key, string value)
         {
-            if (!Regex.IsMatch(value, "^[A-Za-z0-9._-]{1,128}$", RegexOptions.CultureInvariant))
+            if (!Regex.IsMatch(value, "^[A-Za-z0-9._:+-]{1,128}$", RegexOptions.CultureInvariant))
             {
                 throw new InvalidOperationException($"Evidence value '{key}' is not safe to publish.");
             }

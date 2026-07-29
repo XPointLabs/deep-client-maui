@@ -167,32 +167,42 @@ device have all of these inputs: `DEEP_E2E_BOOTSTRAP=live`,
 `DEEP_MAUI_EXE`, `DEEP_E2E_APPDATA_ROOT`, `DEEP_E2E_ARTIFACTS`,
 `DEEP_E2E_ANDROID_SERIAL`, absolute `DEEP_E2E_ADB`, `DEEP_E2E_ANDROID_APK`,
 absolute `DEEP_E2E_AAPT`, absolute `DEEP_E2E_APKSIGNER`, and
-`DEEP_E2E_ATTACHMENT_FIXTURE`. It additionally requires the approved exact device
-fingerprint/model, source commit, and Windows executable SHA-256 binding. The supplied APK
+`DEEP_E2E_ATTACHMENT_FIXTURE`, one common `DEEP_RELEASE_INVOCATION_ID`, and an
+absolute `DEEP_E2E_ANDROID_POLICY` whose SHA-256 is independently pinned by
+`DEEP_E2E_ANDROID_POLICY_SHA256`. The approved policy binds exact adb/aapt/apksigner
+paths, hashes and complete version output; source commit; Windows executable hash;
+APK; and physical dedicated device serial, fingerprint, model, product, hardware, SDK,
+and build characteristics. The supplied APK
 must be the installed `network.xpoint.deep.e2e` package at exact `aapt` package,
 versionCode/versionName, SHA-256, and signing-certificate digest. It also requires
 `DEEP_E2E_ANDROID_SELECTORS_JSON`, a role-to-exact-resource-id map for every
 app control used by the test; exact system-picker resource IDs in
 `DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID`,
 `DEEP_E2E_ANDROID_PICKER_FILE_ID`, and
-`DEEP_E2E_ANDROID_PICKER_CONFIRM_ID`; and exact Windows common-dialog
-AutomationIds in `DEEP_E2E_WINDOWS_SAVE_FILENAME_AUTOMATION_ID` and
-`DEEP_E2E_WINDOWS_SAVE_CONFIRM_AUTOMATION_ID`.
+`DEEP_E2E_ANDROID_PICKER_CONFIRM_ID`.
 
-It creates separate identities, records only identity hashes, rejects a syntactically valid
-but nonexistent 66-hex Session ID (prefix `05`, `15`, or `25`) before a contact or
-conversation can open, makes reciprocal contacts, and verifies
+It creates separate identities, records only identity hashes, rejects a syntactically
+invalid Session ID (wrong prefix) before a contact or conversation can open, makes
+reciprocal contacts, and verifies
 unique text in both directions. A unique fixture is pushed through the Android
-system picker, then opened/saved in Windows, SHA-256 checked, deleted,
-re-downloaded/decrypted, and checked again. Both clients cold restart; Windows
+system picker, then opened/saved directly through the production
+`Windows.Storage.DownloadsFolder\Deep` path and SHA-256 checked. Both clients cold restart;
+Windows saves it again with the production collision name and both new files are checked.
+Windows
 must have a distinct PID while retaining the same per-run isolated app-data
 root, and marked messages must render again.
 
 System picker resource IDs are explicitly configured because they vary by OEM/version.
 The lane taps only one exact configured resource ID and asserts the exact fixture filename
-on that node; it never uses an unscoped text selector. Windows Save controls are scoped to
-a dialog owned by the launched app PID. Cleanup removes only run-owned Android fixture/data,
-Windows download/decrypted file, and isolated app-data; `passed` is written only after cleanup.
+on that node; it never uses an unscoped text selector. Production Windows Save has no dialog:
+the harness snapshots Downloads before each Save and owns only the exact new correlated file,
+never a preexisting collision. Cleanup independently attempts both run-created Downloads
+files, the pushed Android fixture, run-created E2E identity data, and isolated Windows
+app-data; it aggregates failures and writes `passed` only after all cleanup succeeds.
+
+A valid unknown 66-character Session ID with prefix `05`, `15`, or `25` is intentionally
+accepted by the product and must never be used as the negative validation gate. The offline
+contract suite mutation-tests that distinction.
 
 Only `cross-platform-ui-result.json` is standard evidence: status, safe
 package/version values, hashes, and booleans. It never contains serials,

@@ -90,6 +90,23 @@ try {
         throw "Duplicate lane invocation identity was not rejected. $($summary | ConvertTo-Json -Depth 7)"
     }
 
+    # Optional cross-platform evidence is not required, but a caller-controlled attempted
+    # artifact may never be ignored or accepted without its independently bound inputs.
+    Write-Json (Join-Path $sandbox 'cross-platform-ui-result.json') ([ordered]@{
+        schema = 'deep.strict-cross-platform-ui.v2'
+        sourceCommit = $commit
+        releaseInvocationId = $releaseInvocationId
+        invocationId = '55555555555555555555555555555555'
+        generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        status = 'passed'
+        cleanupCompleted = $true
+    })
+    $summary = Invoke-Validator $sandbox
+    if (($summary.checks | Where-Object lane -eq 'cross-platform-ui').status -ne 'failed' -or
+        $summary.productionReady -ne $false) {
+        throw 'Unbound attempted cross-platform evidence was not rejected.'
+    }
+
     if ($summary.productionReady -ne $false) {
         throw 'Incomplete/tampered evidence was incorrectly marked production-ready.'
     }

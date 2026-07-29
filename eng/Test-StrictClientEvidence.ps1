@@ -7,6 +7,9 @@ param(
     [string]$AndroidLabPolicyPath,
     [string]$AndroidApkPath,
     [string]$MrXPublicKeySha256,
+    [string]$CrossPlatformPolicyPath,
+    [string]$CrossPlatformWindowsExePath,
+    [string]$CrossPlatformAttachmentFixturePath,
     [switch]$RequireComplete,
     [int]$MaximumAgeHours = 24
 )
@@ -391,15 +394,65 @@ $checks.Add([ordered]@{
     detail = 'allowlisted APK, runner, managed-device, JUnit, and invocation bindings'
 })
 
+$crossPlatformPath = Join-Path $ArtifactDirectory 'cross-platform-ui-result.json'
+$crossPlatformStatus = 'not-run'
+if (Test-Path -LiteralPath $crossPlatformPath -PathType Leaf) {
+    try {
+        if ([string]::IsNullOrWhiteSpace($CrossPlatformPolicyPath) -or
+            [string]::IsNullOrWhiteSpace($CrossPlatformWindowsExePath) -or
+            [string]::IsNullOrWhiteSpace($CrossPlatformAttachmentFixturePath) -or
+            [string]::IsNullOrWhiteSpace($AndroidApkPath)) {
+            throw 'Attempted cross-platform evidence requires exact policy, executable, fixture and APK inputs.'
+        }
+        $cross = Get-Content -LiteralPath $crossPlatformPath -Raw | ConvertFrom-Json
+        $policyPath = [IO.Path]::GetFullPath($CrossPlatformPolicyPath)
+        $windowsPath = [IO.Path]::GetFullPath($CrossPlatformWindowsExePath)
+        $fixturePath = [IO.Path]::GetFullPath($CrossPlatformAttachmentFixturePath)
+        $apkPath = [IO.Path]::GetFullPath($AndroidApkPath)
+        foreach ($boundPath in @($policyPath, $windowsPath, $fixturePath, $apkPath)) {
+            if (-not (Test-Path -LiteralPath $boundPath -PathType Leaf)) {
+                throw 'Cross-platform bound input is absent.'
+            }
+        }
+        $crossPlatformPassed =
+            $cross.schema -ceq 'deep.strict-cross-platform-ui.v2' -and
+            $cross.status -ceq 'passed' -and
+            $cross.sourceCommit -ceq $commit -and
+            $cross.releaseInvocationId -ceq $ReleaseInvocationId -and
+            [string]$cross.invocationId -match '^[a-f0-9]{32}$' -and
+            (Test-FreshTimestamp $cross.generatedAtUtc) -and
+            $cross.androidPackage -ceq 'network.xpoint.deep.e2e' -and
+            $cross.cleanupCompleted -eq $true -and
+            $cross.apkSha256 -ceq (Get-Sha256Lower -Path $apkPath) -and
+            $cross.windowsExeSha256 -ceq (Get-Sha256Lower -Path $windowsPath) -and
+            $cross.fixtureSha256 -ceq (Get-Sha256Lower -Path $fixturePath) -and
+            $cross.approvedPolicySha256 -ceq (Get-Sha256Lower -Path $policyPath) -and
+            (Test-NonZeroSha256Value ([string]$cross.apkSigningDigest))
+        $crossPlatformStatus = if ($crossPlatformPassed) { 'passed' } else { 'failed' }
+    } catch {
+        $crossPlatformStatus = 'failed'
+    }
+}
+$checks.Add([ordered]@{
+    lane = 'cross-platform-ui'
+    optional = $true
+    status = $crossPlatformStatus
+    detail = 'optional physical UI evidence; when attempted it binds invocation, freshness, commit, binary, APK, fixture, policy and cleanup'
+})
+
 $checks.Add([ordered]@{
     lane = 'source-tree'
     status = $(if ($sourceTreeClean) { 'passed' } else { 'failed' })
     detail = 'strict release evidence requires an exact clean commit'
 })
 
-$incomplete = @($checks | Where-Object { $_.status -ne 'passed' })
+$incomplete = @($checks | Where-Object {
+    $isOptional = $_.PSObject.Properties.Name -contains 'optional' -and $_.optional -eq $true
+    $_.status -ne 'passed' -and -not $isOptional
+})
 $attemptedFailure = @($checks | Where-Object { $_.status -eq 'failed' }).Count -gt 0
-$productionReady = $incomplete.Count -eq 0
+$productionReady = $incomplete.Count -eq 0 -and -not $attemptedFailure
+$blockers = @($checks | Where-Object { $_.status -ne 'passed' } | ForEach-Object { $_.lane })
 $overall = if ($productionReady) {
     'passed'
 } elseif ($RequireComplete -or $attemptedFailure) {
@@ -414,7 +467,7 @@ $overall = if ($productionReady) {
     generatedAtUtc = $now.ToString('O')
     status = $overall
     productionReady = $productionReady
-    blockers = @($incomplete | ForEach-Object { $_.lane })
+    blockers = $blockers
     checks = $checks
 } | ConvertTo-Json -Depth 7 |
     Set-Content -LiteralPath (Join-Path $ArtifactDirectory 'strict-evidence-summary.json') -Encoding utf8

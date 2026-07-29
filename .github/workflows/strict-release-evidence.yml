@@ -87,6 +87,32 @@ jobs:
             -AndroidLabPolicyPath $env:DEEP_ANDROID_LAB_POLICY `
             -MrXPublicKeySha256 $env:DEEP_MR_X_PUBLIC_KEY_SHA256 -ConfigureAdbReverse `
             -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
+      - name: Optional physical Android to Windows rendered flow
+        if: ${{ vars.DEEP_RUN_CROSS_PLATFORM_UI == '1' }}
+        working-directory: deep-client-maui
+        shell: pwsh
+        env:
+          DEEP_STRICT_CROSS_PLATFORM_UI: '1'
+          DEEP_E2E_BOOTSTRAP: live
+          DEEP_E2E_ANDROID_POLICY: ${{ vars.DEEP_CROSS_PLATFORM_POLICY_PATH }}
+          DEEP_E2E_ANDROID_POLICY_SHA256: ${{ secrets.DEEP_CROSS_PLATFORM_POLICY_SHA256 }}
+          DEEP_E2E_ADB: ${{ vars.DEEP_CROSS_PLATFORM_ADB_PATH }}
+          DEEP_E2E_AAPT: ${{ vars.DEEP_CROSS_PLATFORM_AAPT_PATH }}
+          DEEP_E2E_APKSIGNER: ${{ vars.DEEP_CROSS_PLATFORM_APKSIGNER_PATH }}
+          DEEP_E2E_ANDROID_SERIAL: ${{ secrets.DEEP_ANDROID_SERIAL }}
+          DEEP_E2E_ATTACHMENT_FIXTURE: ${{ vars.DEEP_CROSS_PLATFORM_ATTACHMENT_FIXTURE }}
+          DEEP_E2E_ARTIFACTS: ${{ github.workspace }}\deep-client-maui\artifacts\survival\I01-MAUI-STRICT-GATES
+          DEEP_E2E_APPDATA_ROOT: ${{ github.workspace }}\deep-client-maui\artifacts\survival\I01-MAUI-STRICT-GATES\cross-platform-appdata
+          DEEP_E2E_ANDROID_SELECTORS_JSON: ${{ secrets.DEEP_CROSS_PLATFORM_ANDROID_SELECTORS_JSON }}
+          DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID: ${{ vars.DEEP_CROSS_PLATFORM_PICKER_DOWNLOADS_ID }}
+          DEEP_E2E_ANDROID_PICKER_FILE_ID: ${{ vars.DEEP_CROSS_PLATFORM_PICKER_FILE_ID }}
+          DEEP_E2E_ANDROID_PICKER_CONFIRM_ID: ${{ vars.DEEP_CROSS_PLATFORM_PICKER_CONFIRM_ID }}
+        run: |
+          $env:DEEP_MAUI_EXE = $env:DEEP_WINDOWS_EXE
+          $env:DEEP_E2E_ANDROID_APK = $env:DEEP_ANDROID_APK
+          dotnet test tests/Deep.Client.Maui.UiTests/Deep.Client.Maui.UiTests.csproj --no-restore `
+            --filter FullyQualifiedName~StrictCrossPlatformUiTests
+          if ($LASTEXITCODE -ne 0) { throw 'Optional physical cross-platform UI flow failed.' }
       - name: Prepare clean-runner Release live acceptance
         working-directory: deep-client-maui
         shell: pwsh
@@ -108,7 +134,13 @@ jobs:
         working-directory: deep-client-maui
         shell: pwsh
         run: |
-          ./eng/Test-StrictClientEvidence.ps1 -RequireComplete `
+          $crossPlatformArguments = @{}
+          if ('${{ vars.DEEP_RUN_CROSS_PLATFORM_UI }}' -eq '1') {
+            $crossPlatformArguments.CrossPlatformPolicyPath = '${{ vars.DEEP_CROSS_PLATFORM_POLICY_PATH }}'
+            $crossPlatformArguments.CrossPlatformWindowsExePath = $env:DEEP_WINDOWS_EXE
+            $crossPlatformArguments.CrossPlatformAttachmentFixturePath = '${{ vars.DEEP_CROSS_PLATFORM_ATTACHMENT_FIXTURE }}'
+          }
+          ./eng/Test-StrictClientEvidence.ps1 -RequireComplete @crossPlatformArguments `
             -ReleaseInvocationId $env:DEEP_RELEASE_INVOCATION_ID `
             -AndroidLabPolicyPath $env:DEEP_ANDROID_LAB_POLICY `
             -AndroidApkPath $env:DEEP_ANDROID_APK `
@@ -128,4 +160,5 @@ jobs:
             deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/*.json
             deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/windows-ui/windows-ui-result.json
             deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/windows-ui/windows-ui-tree.txt
+            deep-client-maui/artifacts/survival/I01-MAUI-STRICT-GATES/cross-platform-ui-result.json
           if-no-files-found: error

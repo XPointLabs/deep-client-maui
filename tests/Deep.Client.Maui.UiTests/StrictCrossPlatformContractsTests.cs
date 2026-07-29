@@ -65,4 +65,91 @@ public sealed class StrictCrossPlatformContractsTests
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.RequireSessionId("35" + new string('b', 64), "test"));
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.RequireSessionId("not-an-id", "test"));
     }
+
+    [Fact]
+    public void Valid_unknown_identity_is_not_permitted_as_a_negative_validation_fixture()
+    {
+        var validUnknown = "05" + new string('a', 64);
+
+        Assert.Equal(validUnknown, StrictCrossPlatformContracts.RequireSessionId(validUnknown, "unknown peer"));
+        Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.RequireInvalidSessionId(validUnknown));
+        StrictCrossPlatformContracts.RequireInvalidSessionId("35" + new string('a', 64));
+    }
+
+    [Fact]
+    public void Caller_controlled_tool_apk_commit_and_virtual_device_mutations_fail_closed()
+    {
+        var currentAssembly = typeof(StrictCrossPlatformContractsTests).Assembly.Location;
+
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.RequirePinnedFile(currentAssembly, new string('0', 64), "mutated tool/APK"));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.RequireCurrentCommit(
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..")),
+                new string('0', 40)));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.RequirePhysicalDeviceInventory(
+                "generic/sdk_gphone", "Android SDK built for x86", "sdk_gphone", "ranchu", "emulator", 35));
+    }
+
+    [Fact]
+    public void Bounded_process_rejects_hang_and_nonzero_version_exit()
+    {
+        var command = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+
+        Assert.Throws<TimeoutException>(() =>
+            StrictCrossPlatformContracts.RunBounded(
+                command,
+                ["-NoProfile", "-Command", "Start-Sleep -Seconds 30"],
+                TimeSpan.FromMilliseconds(200)));
+        var failed = StrictCrossPlatformContracts.RunBounded(command, ["-NoProfile", "-Command", "exit 7"], TimeSpan.FromSeconds(5));
+        Assert.Equal(7, failed.ExitCode);
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.RequireExactVersion(failed, "expected", "mutated tool"));
+    }
+
+    [Fact]
+    public void Downloads_snapshot_accepts_production_collision_and_never_owns_preexisting_file()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"deep-download-contract-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var preexisting = Path.Combine(root, "fixture.bin");
+        var collision = Path.Combine(root, "fixture (2).bin");
+        try
+        {
+            File.WriteAllText(preexisting, "preexisting");
+            var snapshot = StrictCrossPlatformContracts.SnapshotDownloads(root);
+            File.WriteAllText(collision, "run-created");
+
+            Assert.Equal(collision, snapshot.WaitForNewCorrelatedFile("fixture.bin", TimeSpan.FromSeconds(1)));
+            Assert.Contains(preexisting, snapshot.Preexisting);
+            File.Delete(collision);
+            Assert.True(File.Exists(preexisting));
+        }
+        finally
+        {
+            if (File.Exists(collision)) File.Delete(collision);
+            if (File.Exists(preexisting)) File.Delete(preexisting);
+            if (Directory.Exists(root)) Directory.Delete(root);
+        }
+    }
+
+    [Fact]
+    public void Cleanup_attempts_every_step_and_aggregates_failures()
+    {
+        var firstAttempted = false;
+        var lastAttempted = false;
+        var cleanup = new StrictCrossPlatformContracts.CleanupScope();
+        cleanup.Add(() => { firstAttempted = true; throw new IOException("first"); });
+        cleanup.Add(() => throw new UnauthorizedAccessException("second"));
+        cleanup.Add(() => lastAttempted = true);
+
+        var error = Assert.Throws<AggregateException>(() => cleanup.RunAll());
+
+        Assert.True(firstAttempted);
+        Assert.True(lastAttempted);
+        Assert.Equal(2, error.InnerExceptions.Count);
+    }
 }
