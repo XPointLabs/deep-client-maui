@@ -9,6 +9,8 @@ public sealed class Mau2PhysicalPhaseTests
     [InlineData("Attach", Mau2PhysicalPhase.Attach)]
     [InlineData("HappyPath", Mau2PhysicalPhase.HappyPath)]
     [InlineData("RestartDurability", Mau2PhysicalPhase.RestartDurability)]
+    [InlineData("ManualResendAfterRestart", Mau2PhysicalPhase.ManualResendAfterRestart)]
+    [InlineData("AutomaticRetryAfterRestart", Mau2PhysicalPhase.AutomaticRetryAfterRestart)]
     [InlineData("NegativeRuntime", Mau2PhysicalPhase.NegativeRuntime)]
     public void Exact_phase_names_are_accepted_without_destructive_default(string value, Mau2PhysicalPhase expected)
     {
@@ -21,6 +23,29 @@ public sealed class Mau2PhysicalPhaseTests
         finally
         {
             Environment.SetEnvironmentVariable("DEEP_MAU2_E2E_PHASE", previous);
+        }
+    }
+
+    [Theory]
+    [InlineData(Mau2PhysicalPhase.ManualResendAfterRestart)]
+    [InlineData(Mau2PhysicalPhase.AutomaticRetryAfterRestart)]
+    public void Restart_resend_phases_fail_closed_without_supported_chaos_evidence(
+        Mau2PhysicalPhase phase)
+    {
+        var previousEvidence = Environment.GetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE");
+        var previousProvider = Environment.GetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER");
+        try
+        {
+            Environment.SetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE", null);
+            Environment.SetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER", null);
+
+            Assert.Throws<InvalidOperationException>(() =>
+                Mau2PhysicalPhaseContract.RequireSupportedChaosEvidence(phase));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE", previousEvidence);
+            Environment.SetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER", previousProvider);
         }
     }
 

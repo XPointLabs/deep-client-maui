@@ -30,12 +30,23 @@ public sealed class StrictCrossPlatformUiTests
             case Mau2PhysicalPhase.RestartDurability:
                 RestartAndAssertDeduplicatedReceive(options);
                 return;
+            case Mau2PhysicalPhase.ManualResendAfterRestart:
+            case Mau2PhysicalPhase.AutomaticRetryAfterRestart:
+                RequireReviewedRestartResendLane(options.Phase);
+                return;
             case Mau2PhysicalPhase.NegativeRuntime:
                 AssertInvalidWindowsRuntimesFailClosed(options);
                 return;
             default:
                 throw new InvalidOperationException("Unsupported physical MAU2 phase.");
         }
+    }
+
+    private static void RequireReviewedRestartResendLane(Mau2PhysicalPhase phase)
+    {
+        _ = Mau2PhysicalPhaseContract.RequireSupportedChaosEvidence(phase);
+        throw new InvalidOperationException(
+            "Restart resend evidence is fail-closed until the reviewed Deep DevOps chaos executor is integrated.");
     }
 
     // This regression fixture is intentionally callable only through a second,
@@ -311,8 +322,8 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddBoolean("windowsRestartedWithDistinctPid", true);
         evidence.AddBoolean("receivedExactlyOnceAfterRestart", true);
         // This is deliberately a restart-durability result, not a resend result.
-        // The product currently has no resend AutomationId/action; that is tracked
-        // as a separate P1 survival case and cannot be inferred from this phase.
+        // Product resend controls are covered separately; their physical phases
+        // require reviewed DevOps chaos evidence and cannot be inferred here.
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
         CompletePhaseEvidence(options, evidence);
     }

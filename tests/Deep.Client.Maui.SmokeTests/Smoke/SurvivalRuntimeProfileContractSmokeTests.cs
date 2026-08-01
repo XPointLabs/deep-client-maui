@@ -130,7 +130,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         var ui = File.ReadAllText(WorkspacePath(
             "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
 
-        Assert.Contains("ValidateSet('Attach', 'HappyPath', 'RestartDurability', 'NegativeRuntime')", runner,
+        Assert.Contains("ValidateSet('Attach', 'HappyPath', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
         Assert.Contains("e2e-runs", runner, StringComparison.Ordinal);
@@ -167,7 +167,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("case Mau2PhysicalPhase.Attach", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.HappyPath", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.RestartDurability", ui, StringComparison.Ordinal);
+        Assert.Contains("case Mau2PhysicalPhase.ManualResendAfterRestart", ui, StringComparison.Ordinal);
+        Assert.Contains("case Mau2PhysicalPhase.AutomaticRetryAfterRestart", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.NegativeRuntime", ui, StringComparison.Ordinal);
+        Assert.Contains("RequireSupportedChaosEvidence", ui, StringComparison.Ordinal);
         Assert.Contains("survival-dev-mailbox-negative-runtime.ps1", runner,
             StringComparison.Ordinal);
         Assert.Contains("Canonical live Windows runtime changed", runner,

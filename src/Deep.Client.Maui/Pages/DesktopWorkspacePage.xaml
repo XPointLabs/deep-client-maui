@@ -244,6 +244,7 @@
                                         <HorizontalStackLayout HorizontalOptions="End" Spacing="5">
                                             <Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" />
                                             <Label AutomationId="DesktopWorkspace.DirectDeliveryStatus" Text="{Binding StatusGlyph}" FontSize="10" TextColor="{StaticResource PrimaryColor}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" />
+                                            <Button AutomationId="DesktopWorkspace.DirectRetry" Text="Повторить" IsVisible="{Binding IsRetryAvailable}" IsEnabled="{Binding IsRetryAvailable}" Command="{Binding Source={x:Reference WorkspaceRoot}, Path=BindingContext.DirectChat.RetryMessageCommand}" CommandParameter="{Binding .}" SemanticProperties.Description="Повторить отправку сообщения" FontSize="11" Padding="7,2" MinimumHeightRequest="28" />
                                         </HorizontalStackLayout>
                                     </VerticalStackLayout>
                                 </Border>
@@ -331,7 +332,7 @@
                                                 </DataTemplate>
                                             </BindableLayout.ItemTemplate>
                                         </FlexLayout>
-                                        <HorizontalStackLayout HorizontalOptions="End" Spacing="5"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label AutomationId="DesktopWorkspace.GroupDeliveryStatus" Text="{Binding StatusGlyph}" FontSize="10" TextColor="{StaticResource PrimaryColor}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" /></HorizontalStackLayout>
+                                        <HorizontalStackLayout HorizontalOptions="End" Spacing="5"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label AutomationId="DesktopWorkspace.GroupDeliveryStatus" Text="{Binding StatusGlyph}" FontSize="10" TextColor="{StaticResource PrimaryColor}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" /><Button AutomationId="DesktopWorkspace.GroupRetry" Text="Повторить" IsVisible="{Binding IsRetryAvailable}" IsEnabled="{Binding IsRetryAvailable}" Command="{Binding Source={x:Reference WorkspaceRoot}, Path=BindingContext.GroupChat.RetryMessageCommand}" CommandParameter="{Binding .}" SemanticProperties.Description="Повторить отправку сообщения в группе" FontSize="11" Padding="7,2" MinimumHeightRequest="28" /></HorizontalStackLayout>
                                     </VerticalStackLayout>
                                 </Border>
                             </DataTemplate>

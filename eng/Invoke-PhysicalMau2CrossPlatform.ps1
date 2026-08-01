@@ -1,12 +1,14 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Attach', 'HappyPath', 'RestartDurability', 'NegativeRuntime')]
+    [ValidateSet('Attach', 'HappyPath', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')]
     [string]$Phase,
     [string]$AndroidSerial = '192.168.1.45:43337',
     [string]$AdbPath = 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe',
     [string]$MailboxBootstrapRoot = 'C:\Work\DeepSession\secrets\mailbox-bootstrap',
     [string]$MrXPublicKeySha256 = $env:DEEP_MR_X_PUBLIC_KEY_SHA256,
+    [string]$SupportedChaosEvidence = $env:DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE,
+    [string]$SupportedChaosProvider = $env:DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER,
     [switch]$Execute
 )
 
@@ -21,6 +23,12 @@ $devOpsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot '..\deep-devops'))
 $androidPackage = 'network.xpoint.deep.e2e'
 $productionPackage = 'network.xpoint.deep'
 $policyPath = Join-Path $repoRoot '.secrets\android-lab\approved-policy.json'
+$restartResendPhase = $Phase -cin @('ManualResendAfterRestart', 'AutomaticRetryAfterRestart')
+if ($restartResendPhase -and
+    ($SupportedChaosProvider -cne 'deep-devops-survival-chaos-v1' -or
+     [string]::IsNullOrWhiteSpace($SupportedChaosEvidence))) {
+    throw 'Restart resend phases require explicit evidence from the supported Deep DevOps chaos provider.'
+}
 
 function Assert-AbsoluteExisting([string]$Path, [string]$Label, [switch]$Directory) {
     if (-not [IO.Path]::IsPathFullyQualified($Path) -or
@@ -247,6 +255,10 @@ try {
         $env:DEEP_E2E_BOOTSTRAP = 'live'
         $env:DEEP_TRANSPORT_PROTOCOL = 'authenticated-mau2'
         $env:DEEP_TRANSPORT_OWNERSHIP = 'user-managed'
+        if ($restartResendPhase) {
+            $env:DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE = $SupportedChaosEvidence
+            $env:DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER = $SupportedChaosProvider
+        }
         $env:DEEP_STORAGE_URL = $null
         $negativeGenerator = Join-Path $devOpsRoot 'scripts\survival-dev-mailbox-negative-runtime.ps1'
         $negativePrepared = $false

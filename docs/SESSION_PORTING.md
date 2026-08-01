@@ -57,6 +57,10 @@ These must not regress:
 
 - Start chat by Session ID opens an actual chat route, not only a list item.
 - Sending messages and attachments updates local chat state and shared runtime state.
+- A failed message owned by the active account exposes a retry action in direct,
+  group, and desktop chat. Retry reuses the durable message ID, shows the
+  sending state while in flight, and reconciles to the persisted authoritative
+  result without rendering transport error details.
 - Restore/create flows must end in authenticated navigation and expose the active Session ID.
 - Restore accepts only the current canonical 13-word checksummed recovery phrase.
 - Group create/open/send/member management flows must preserve shared group rules.

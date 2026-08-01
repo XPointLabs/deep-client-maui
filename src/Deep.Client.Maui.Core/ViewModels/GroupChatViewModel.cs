@@ -44,7 +44,8 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
         string senderLabel,
         MessageReply? replyTo,
         IReadOnlyList<MessageReaction> reactions,
-        SessionId? senderId = null)
+        SessionId? senderId = null,
+        bool isRetryAvailable = false)
     {
         Id = id;
         Body = body;
@@ -54,6 +55,10 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
         Attachments = attachments;
         this.senderLabel = senderLabel;
         SenderId = senderId;
+        IsRetryAvailable = isRetryAvailable
+            && direction == MessageDirection.Outgoing
+            && state == MessageDeliveryState.Failed
+            && senderId is not null;
         ReplyTo = replyTo;
         Reactions = reactions;
         hasVisibleBody = MessageAttachmentPresentation.HasVisibleBody(body);
@@ -97,6 +102,8 @@ public sealed class GroupChatMessageItem : INotifyPropertyChanged
     public IReadOnlyList<AttachmentMetadata> Attachments { get; }
 
     public SessionId? SenderId { get; }
+
+    public bool IsRetryAvailable { get; }
 
     public string SenderLabel => senderLabel;
 
@@ -292,6 +299,7 @@ public sealed class GroupChatViewModel : ViewModelBase
     private bool hasOlderMessages;
     private bool isRecordingVoice;
     private GroupChatMessageItem? replyingTo;
+    private long messageContextGeneration;
 
     public GroupChatViewModel(
         ClientRuntime runtime,
@@ -318,6 +326,7 @@ public sealed class GroupChatViewModel : ViewModelBase
         MarkPendingRemovalCommand = new AsyncCommand(MarkPendingRemovalAsync, () => CanManageMembers && TryGetTargetMember(out _));
         UndoPendingRemovalCommand = new AsyncCommand(UndoPendingRemovalAsync, () => CanManageMembers && TryGetTargetMember(out _));
         CancelReplyCommand = new AsyncCommand(CancelReplyAsync, () => ReplyingTo is not null);
+        RetryMessageCommand = new AsyncCommand<GroupChatMessageItem>(RetryMessageAsync, CanRetryMessage);
     }
 
     public string GroupTitle
@@ -361,6 +370,8 @@ public sealed class GroupChatViewModel : ViewModelBase
     public AsyncCommand UndoPendingRemovalCommand { get; }
 
     public AsyncCommand CancelReplyCommand { get; }
+
+    public AsyncCommand<GroupChatMessageItem> RetryMessageCommand { get; }
 
     public string Draft
     {
@@ -473,6 +484,7 @@ public sealed class GroupChatViewModel : ViewModelBase
 
     public async Task OpenFromRouteAsync(string groupId, string? displayName = null, CancellationToken cancellationToken = default)
     {
+        Interlocked.Increment(ref messageContextGeneration);
         var id = ConversationId.Parse(groupId);
         senderLabels.Clear();
         if (runtime.Store is IGroupConversationOpenRepository openRepository)
@@ -770,6 +782,223 @@ public sealed class GroupChatViewModel : ViewModelBase
             ErrorMessage = $"Не удалось отправить сообщение: {ex.Message}";
             SetStatus(ErrorMessage, isError: true);
         }
+    }
+
+    public async Task RetryMessageAsync(
+        GroupChatMessageItem message,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        if (!CanRetryMessage(message))
+        {
+            return;
+        }
+
+        var activeAccount = await runtime.Accounts.GetActiveAccountAsync(cancellationToken);
+        var stored = await ((IMessageRepository)runtime.Store).GetAsync(message.Id, cancellationToken);
+        if (activeAccount is null
+            || account?.SessionId != activeAccount.SessionId
+            || stored is null
+            || stored.Sender != activeAccount.SessionId
+            || group is null
+            || stored.ConversationId != group.Id
+            || stored.Recipient is not null
+            || stored.Direction != MessageDirection.Outgoing
+            || stored.DeliveryState != MessageDeliveryState.Failed)
+        {
+            return;
+        }
+
+        ErrorMessage = null;
+        SetStatus("Повторная отправка...");
+        var retryContext = new RetryContext(
+            Volatile.Read(ref messageContextGeneration),
+            activeAccount.SessionId,
+            stored.ConversationId);
+        ReplaceMessageItem(stored.Mark(MessageDeliveryState.Sending));
+        RetryMessageCommand.RaiseCanExecuteChanged();
+        try
+        {
+            var result = await runtime.Messages.RetryOutgoingAsync(
+                activeAccount.SessionId,
+                stored.Id,
+                cancellationToken);
+            if (await IsRetryContextCurrentAsync(retryContext))
+            {
+                ReplaceMessageItem(result);
+                SetStatus("Сообщение отправлено.");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            var restore = await RestoreAuthoritativeRetryStateAsync(
+                retryContext,
+                stored,
+                allowFailed: false);
+            if (restore == RetryRestoreOutcome.Pending
+                && await IsRetryContextCurrentAsync(retryContext))
+            {
+                SetStatus("Статус повторной отправки уточняется.");
+            }
+        }
+        catch
+        {
+            var restore = await RestoreAuthoritativeRetryStateAsync(
+                retryContext,
+                stored,
+                allowFailed: true);
+            if (await IsRetryContextCurrentAsync(retryContext))
+            {
+                if (restore == RetryRestoreOutcome.Applied)
+                {
+                    ErrorMessage = "Не удалось повторно отправить сообщение.";
+                    SetStatus(ErrorMessage, isError: true);
+                }
+                else
+                {
+                    SetStatus("Статус повторной отправки уточняется.");
+                }
+            }
+        }
+        finally
+        {
+            RetryMessageCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    private bool CanRetryMessage(GroupChatMessageItem message) =>
+        account is not null
+        && message.Direction == MessageDirection.Outgoing
+        && message.State == MessageDeliveryState.Failed
+        && message.SenderId == account.SessionId
+        && Messages.Any(current =>
+            current.Id == message.Id
+            && current.State == MessageDeliveryState.Failed
+            && current.SenderId == account.SessionId);
+
+    private async Task<RetryRestoreOutcome> RestoreAuthoritativeRetryStateAsync(
+        RetryContext context,
+        Message original,
+        bool allowFailed)
+    {
+        Message? stored;
+        try
+        {
+            stored = await ((IMessageRepository)runtime.Store).GetAsync(original.Id, CancellationToken.None);
+        }
+        catch
+        {
+            stored = null;
+        }
+
+        if (!await IsRetryContextCurrentAsync(context))
+        {
+            return RetryRestoreOutcome.ContextChanged;
+        }
+
+        if (IsMatchingRetryMessage(stored, context)
+            && (allowFailed || stored!.DeliveryState != MessageDeliveryState.Failed))
+        {
+            ReplaceMessageItem(stored!);
+            return RetryRestoreOutcome.Applied;
+        }
+
+        ScheduleRetryReconciliation(context, original.Id, allowFailed);
+        return RetryRestoreOutcome.Pending;
+    }
+
+    private void ScheduleRetryReconciliation(RetryContext context, MessageId messageId, bool allowFailed) =>
+        _ = ReconcileRetryStateAsync(context, messageId, allowFailed);
+
+    private async Task ReconcileRetryStateAsync(
+        RetryContext context,
+        MessageId messageId,
+        bool allowFailed)
+    {
+        foreach (var delay in new[] { 250, 500, 1_000, 2_000, 4_000 })
+        {
+            await Task.Delay(delay);
+            if (!await IsRetryContextCurrentAsync(context))
+            {
+                return;
+            }
+
+            Message? stored;
+            try
+            {
+                stored = await ((IMessageRepository)runtime.Store).GetAsync(messageId, CancellationToken.None);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (!IsMatchingRetryMessage(stored, context)
+                || (!allowFailed && stored!.DeliveryState == MessageDeliveryState.Failed))
+            {
+                continue;
+            }
+
+            if (!await IsRetryContextCurrentAsync(context))
+            {
+                return;
+            }
+
+            ReplaceMessageItem(stored!);
+            if (stored!.DeliveryState == MessageDeliveryState.Failed)
+            {
+                ErrorMessage = "Не удалось повторно отправить сообщение.";
+                SetStatus(ErrorMessage, isError: true);
+            }
+            else
+            {
+                ErrorMessage = null;
+                SetStatus("Сообщение отправлено.");
+            }
+            return;
+        }
+    }
+
+    private async Task<bool> IsRetryContextCurrentAsync(RetryContext context)
+    {
+        if (!IsRetryContextCurrent(context))
+        {
+            return false;
+        }
+
+        try
+        {
+            var active = await runtime.Accounts.GetActiveAccountAsync(CancellationToken.None);
+            return IsRetryContextCurrent(context) && active?.SessionId == context.AccountId;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool IsRetryContextCurrent(RetryContext context) =>
+        Volatile.Read(ref messageContextGeneration) == context.Generation
+        && account?.SessionId == context.AccountId
+        && group?.Id == context.ConversationId;
+
+    private static bool IsMatchingRetryMessage(Message? message, RetryContext context) =>
+        message is not null
+        && message.Sender == context.AccountId
+        && message.ConversationId == context.ConversationId
+        && message.Recipient is null
+        && message.Direction == MessageDirection.Outgoing;
+
+    private readonly record struct RetryContext(
+        long Generation,
+        SessionId AccountId,
+        ConversationId ConversationId);
+
+    private enum RetryRestoreOutcome
+    {
+        Applied,
+        Pending,
+        ContextChanged
     }
 
     public Task PickAttachmentsAsync(CancellationToken cancellationToken = default) =>
@@ -1203,7 +1432,10 @@ public sealed class GroupChatViewModel : ViewModelBase
             senderLabel,
             message.ReplyTo,
             message.ReactionItems,
-            message.Sender);
+            message.Sender,
+            message.Direction == MessageDirection.Outgoing
+                && message.DeliveryState == MessageDeliveryState.Failed
+                && account?.SessionId == message.Sender);
     }
 
     private void ReplaceMessageItem(Message message)
@@ -1213,6 +1445,7 @@ public sealed class GroupChatViewModel : ViewModelBase
             if (Messages[index].Id == message.Id)
             {
                 Messages[index] = ToItem(message);
+                RetryMessageCommand.RaiseCanExecuteChanged();
                 return;
             }
         }
@@ -1297,7 +1530,8 @@ public sealed class GroupChatViewModel : ViewModelBase
             optimistic.Attachments,
             string.Empty,
             optimistic.ReplyTo,
-            optimistic.ReactionItems));
+            optimistic.ReactionItems,
+            optimistic.Sender));
 
         try
         {
@@ -1466,6 +1700,8 @@ public sealed class GroupChatViewModel : ViewModelBase
         && left.Body == right.Body
         && left.Direction == right.Direction
         && left.State == right.State
+        && left.SenderId == right.SenderId
+        && left.IsRetryAvailable == right.IsRetryAvailable
         && left.CreatedAt == right.CreatedAt
         && left.Attachments.SequenceEqual(right.Attachments)
         && left.SenderLabel == right.SenderLabel

@@ -46,7 +46,9 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
         IReadOnlyList<AttachmentMetadata> attachments,
         MessageReply? replyTo,
         IReadOnlyList<MessageReaction> reactions,
-        DateTimeOffset? expiresAt = null)
+        DateTimeOffset? expiresAt = null,
+        SessionId? senderId = null,
+        bool isRetryAvailable = false)
     {
         Id = id;
         Body = body;
@@ -57,6 +59,11 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
         ReplyTo = replyTo;
         Reactions = reactions;
         ExpiresAt = expiresAt;
+        SenderId = senderId;
+        IsRetryAvailable = isRetryAvailable
+            && direction == MessageDirection.Outgoing
+            && state == MessageDeliveryState.Failed
+            && senderId is not null;
         hasVisibleBody = MessageAttachmentPresentation.HasVisibleBody(body);
         isVoiceMessage = MessageAttachmentPresentation.IsVoiceMessage(attachments);
         isImageMessage = MessageAttachmentPresentation.IsInlineImage(attachments);
@@ -102,6 +109,10 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
     public IReadOnlyList<MessageReaction> Reactions { get; }
 
     public DateTimeOffset? ExpiresAt { get; }
+
+    public SessionId? SenderId { get; }
+
+    public bool IsRetryAvailable { get; }
 
     public bool HasAttachments => Attachments.Count > 0;
 
@@ -264,6 +275,7 @@ public sealed class ChatViewModel : ViewModelBase
     private bool isBlocked;
     private bool isRecordingVoice;
     private ChatMessageItem? replyingTo;
+    private long messageContextGeneration;
 
     public ChatViewModel(
         ClientRuntime runtime,
@@ -287,6 +299,7 @@ public sealed class ChatViewModel : ViewModelBase
         AcceptMessageRequestCommand = new AsyncCommand(AcceptMessageRequestAsync, () => counterpart is not null && IsMessageRequest);
         BlockContactCommand = new AsyncCommand(BlockContactAsync, () => counterpart is not null && !IsBlocked);
         CancelReplyCommand = new AsyncCommand(CancelReplyAsync, () => ReplyingTo is not null);
+        RetryMessageCommand = new AsyncCommand<ChatMessageItem>(RetryMessageAsync, CanRetryMessage);
     }
 
     public Conversation? Conversation
@@ -483,8 +496,11 @@ public sealed class ChatViewModel : ViewModelBase
 
     public AsyncCommand CancelReplyCommand { get; }
 
+    public AsyncCommand<ChatMessageItem> RetryMessageCommand { get; }
+
     public bool PrepareRoute(SessionId recipient, string? displayName = null)
     {
+        Interlocked.Increment(ref messageContextGeneration);
         ReplyingTo = null;
         StagedAttachments.Clear();
         if (openCache?.TryGet(recipient, runtime.Clock.UtcNow, out var cached) == true)
@@ -532,6 +548,7 @@ public sealed class ChatViewModel : ViewModelBase
 
     public async Task OpenOneToOneAsync(SessionAccount activeAccount, SessionId recipient, string? displayName = null, CancellationToken cancellationToken = default)
     {
+        Interlocked.Increment(ref messageContextGeneration);
         var conversationId = ConversationId.ForOneToOne(recipient);
         account = activeAccount;
         counterpart = recipient;
@@ -567,6 +584,7 @@ public sealed class ChatViewModel : ViewModelBase
 
     public async Task OpenFromRouteAsync(string sessionId, string? displayName = null, CancellationToken cancellationToken = default)
     {
+        Interlocked.Increment(ref messageContextGeneration);
         var recipient = SessionId.Parse(sessionId);
         if (runtime.Store is IOneToOneConversationOpenRepository fastOpenStore)
         {
@@ -915,6 +933,212 @@ public sealed class ChatViewModel : ViewModelBase
         }
     }
 
+    public async Task RetryMessageAsync(
+        ChatMessageItem message,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        if (!CanRetryMessage(message))
+        {
+            return;
+        }
+
+        var activeAccount = await runtime.Accounts.GetActiveAccountAsync(cancellationToken);
+        var stored = await ((IMessageRepository)runtime.Store).GetAsync(message.Id, cancellationToken);
+        if (activeAccount is null
+            || account?.SessionId != activeAccount.SessionId
+            || stored is null
+            || stored.Sender != activeAccount.SessionId
+            || Conversation is null
+            || stored.ConversationId != Conversation.Id
+            || stored.Recipient != counterpart
+            || stored.Direction != MessageDirection.Outgoing
+            || stored.DeliveryState != MessageDeliveryState.Failed)
+        {
+            return;
+        }
+
+        ErrorMessage = null;
+        var retryContext = new RetryContext(
+            Volatile.Read(ref messageContextGeneration),
+            activeAccount.SessionId,
+            stored.ConversationId,
+            stored.Recipient);
+        ReplaceMessageItem(stored.Mark(MessageDeliveryState.Sending));
+        RetryMessageCommand.RaiseCanExecuteChanged();
+        try
+        {
+            var result = await runtime.Messages.RetryOutgoingAsync(
+                activeAccount.SessionId,
+                stored.Id,
+                cancellationToken);
+            if (await IsRetryContextCurrentAsync(retryContext))
+            {
+                ReplaceMessageItem(result);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            var restore = await RestoreAuthoritativeRetryStateAsync(
+                retryContext,
+                stored,
+                allowFailed: false);
+            if (restore == RetryRestoreOutcome.Pending
+                && await IsRetryContextCurrentAsync(retryContext))
+            {
+                ErrorMessage = "Статус повторной отправки уточняется.";
+            }
+        }
+        catch
+        {
+            var restore = await RestoreAuthoritativeRetryStateAsync(
+                retryContext,
+                stored,
+                allowFailed: true);
+            if (await IsRetryContextCurrentAsync(retryContext))
+            {
+                ErrorMessage = restore == RetryRestoreOutcome.Applied
+                    ? "Не удалось повторно отправить сообщение."
+                    : "Статус повторной отправки уточняется.";
+            }
+        }
+        finally
+        {
+            RetryMessageCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    private bool CanRetryMessage(ChatMessageItem message) =>
+        account is not null
+        && message.IsRetryAvailable
+        && message.Direction == MessageDirection.Outgoing
+        && message.State == MessageDeliveryState.Failed
+        && message.SenderId == account.SessionId
+        && Messages.Any(current =>
+            current.Id == message.Id
+            && current.State == MessageDeliveryState.Failed
+            && current.SenderId == account.SessionId);
+
+    private async Task<RetryRestoreOutcome> RestoreAuthoritativeRetryStateAsync(
+        RetryContext context,
+        Message original,
+        bool allowFailed)
+    {
+        Message? stored;
+        try
+        {
+            stored = await ((IMessageRepository)runtime.Store).GetAsync(original.Id, CancellationToken.None);
+        }
+        catch
+        {
+            stored = null;
+        }
+
+        if (!await IsRetryContextCurrentAsync(context))
+        {
+            return RetryRestoreOutcome.ContextChanged;
+        }
+
+        if (IsMatchingRetryMessage(stored, context)
+            && (allowFailed || stored!.DeliveryState != MessageDeliveryState.Failed))
+        {
+            ReplaceMessageItem(stored!);
+            return RetryRestoreOutcome.Applied;
+        }
+
+        ScheduleRetryReconciliation(context, original.Id, allowFailed);
+        return RetryRestoreOutcome.Pending;
+    }
+
+    private void ScheduleRetryReconciliation(RetryContext context, MessageId messageId, bool allowFailed) =>
+        _ = ReconcileRetryStateAsync(context, messageId, allowFailed);
+
+    private async Task ReconcileRetryStateAsync(
+        RetryContext context,
+        MessageId messageId,
+        bool allowFailed)
+    {
+        foreach (var delay in new[] { 250, 500, 1_000, 2_000, 4_000 })
+        {
+            await Task.Delay(delay);
+            if (!await IsRetryContextCurrentAsync(context))
+            {
+                return;
+            }
+
+            Message? stored;
+            try
+            {
+                stored = await ((IMessageRepository)runtime.Store).GetAsync(messageId, CancellationToken.None);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (!IsMatchingRetryMessage(stored, context)
+                || (!allowFailed && stored!.DeliveryState == MessageDeliveryState.Failed))
+            {
+                continue;
+            }
+
+            if (!await IsRetryContextCurrentAsync(context))
+            {
+                return;
+            }
+
+            ReplaceMessageItem(stored!);
+            ErrorMessage = stored!.DeliveryState == MessageDeliveryState.Failed
+                ? "Не удалось повторно отправить сообщение."
+                : null;
+            return;
+        }
+    }
+
+    private async Task<bool> IsRetryContextCurrentAsync(RetryContext context)
+    {
+        if (!IsRetryContextCurrent(context))
+        {
+            return false;
+        }
+
+        try
+        {
+            var active = await runtime.Accounts.GetActiveAccountAsync(CancellationToken.None);
+            return IsRetryContextCurrent(context) && active?.SessionId == context.AccountId;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool IsRetryContextCurrent(RetryContext context) =>
+        Volatile.Read(ref messageContextGeneration) == context.Generation
+        && account?.SessionId == context.AccountId
+        && Conversation?.Id == context.ConversationId
+        && counterpart == context.Recipient;
+
+    private static bool IsMatchingRetryMessage(Message? message, RetryContext context) =>
+        message is not null
+        && message.Sender == context.AccountId
+        && message.ConversationId == context.ConversationId
+        && message.Recipient == context.Recipient
+        && message.Direction == MessageDirection.Outgoing;
+
+    private readonly record struct RetryContext(
+        long Generation,
+        SessionId AccountId,
+        ConversationId ConversationId,
+        SessionId? Recipient);
+
+    private enum RetryRestoreOutcome
+    {
+        Applied,
+        Pending,
+        ContextChanged
+    }
+
     public Task ReceiveAsync(CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
         {
@@ -1244,7 +1468,7 @@ public sealed class ChatViewModel : ViewModelBase
             now);
     }
 
-    private static ChatMessageItem ToItem(Message message) =>
+    private ChatMessageItem ToItem(Message message) =>
         new(
             message.Id,
             message.Body,
@@ -1254,7 +1478,11 @@ public sealed class ChatViewModel : ViewModelBase
             message.Attachments,
             message.ReplyTo,
             message.ReactionItems,
-            message.ExpiresAt);
+            message.ExpiresAt,
+            message.Sender,
+            message.Direction == MessageDirection.Outgoing
+                && message.DeliveryState == MessageDeliveryState.Failed
+                && account?.SessionId == message.Sender);
 
     private void ReplaceMessageItem(Message message)
     {
@@ -1264,6 +1492,7 @@ public sealed class ChatViewModel : ViewModelBase
             {
                 Messages[index] = ToItem(message);
                 CacheCurrentConversation();
+                RetryMessageCommand.RaiseCanExecuteChanged();
                 return;
             }
         }
@@ -1439,6 +1668,8 @@ public sealed class ChatViewModel : ViewModelBase
         && left.Body == right.Body
         && left.Direction == right.Direction
         && left.State == right.State
+        && left.SenderId == right.SenderId
+        && left.IsRetryAvailable == right.IsRetryAvailable
         && left.CreatedAt == right.CreatedAt
         && left.Attachments.SequenceEqual(right.Attachments)
         && Equals(left.ReplyTo, right.ReplyTo)

@@ -40,6 +40,21 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
+    public void ManualResendSelectorsAreCommandBackedOnDesktop()
+    {
+        var desktop = LoadPage("DesktopWorkspacePage.xaml");
+
+        AssertDesktopRetry(
+            desktop,
+            "DesktopWorkspace.DirectRetry",
+            "BindingContext.DirectChat.RetryMessageCommand");
+        AssertDesktopRetry(
+            desktop,
+            "DesktopWorkspace.GroupRetry",
+            "BindingContext.GroupChat.RetryMessageCommand");
+    }
+
+    [Fact]
     public void E2eAutomationIdsAreLiteralPrivacySafeRolesAndPageSelectorsAreUnique()
     {
         var pages = new[]
@@ -75,9 +90,11 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         AssertSelectorExists(pages, "DesktopWorkspace.DirectMessageBubble");
         AssertSelectorExists(pages, "DesktopWorkspace.DirectMessageBody");
         AssertSelectorExists(pages, "DesktopWorkspace.DirectDeliveryStatus");
+        AssertSelectorExists(pages, "DesktopWorkspace.DirectRetry");
         AssertSelectorExists(pages, "DesktopWorkspace.GroupMessageBubble");
         AssertSelectorExists(pages, "DesktopWorkspace.GroupMessageBody");
         AssertSelectorExists(pages, "DesktopWorkspace.GroupDeliveryStatus");
+        AssertSelectorExists(pages, "DesktopWorkspace.GroupRetry");
     }
 
     private static void AssertMessageTemplates(
@@ -104,6 +121,11 @@ public sealed class E2eAutomationSelectorContractSmokeTests
 
             Assert.Single(ElementsWithAutomationId(bubble, $"{selectorPrefix}.MessageBody"));
             Assert.Single(ElementsWithAutomationId(bubble, $"{selectorPrefix}.DeliveryStatus"));
+            var retry = Assert.Single(ElementsWithAutomationId(bubble, $"{selectorPrefix}.Retry"));
+            Assert.Equal("{Binding IsRetryAvailable}", retry.Attribute("IsVisible")?.Value);
+            Assert.Equal("{Binding IsRetryAvailable}", retry.Attribute("IsEnabled")?.Value);
+            Assert.Equal("{Binding .}", retry.Attribute("CommandParameter")?.Value);
+            Assert.Contains("RetryMessageCommand", retry.Attribute("Command")?.Value, StringComparison.Ordinal);
 
             var outgoingTrigger = Assert.Single(
                 bubble.Descendants(),
@@ -142,6 +164,20 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         var action = gesture.Ancestors().FirstOrDefault(element => element.Attribute("AutomationId") is not null);
         Assert.NotNull(action);
         Assert.Equal(expectedAutomationId, action.Attribute("AutomationId")?.Value);
+    }
+
+    private static void AssertDesktopRetry(
+        XDocument page,
+        string automationId,
+        string commandPath)
+    {
+        var retry = Assert.Single(ElementsWithAutomationId(page.Root!, automationId));
+        Assert.Equal("{Binding IsRetryAvailable}", retry.Attribute("IsVisible")?.Value);
+        Assert.Equal("{Binding IsRetryAvailable}", retry.Attribute("IsEnabled")?.Value);
+        Assert.Equal("{Binding .}", retry.Attribute("CommandParameter")?.Value);
+        Assert.Contains(commandPath, retry.Attribute("Command")?.Value, StringComparison.Ordinal);
+        Assert.False(string.IsNullOrWhiteSpace(
+            retry.Attribute("SemanticProperties.Description")?.Value));
     }
 
     private static void AssertClickedAction(XDocument page, string handler, string expectedAutomationId)

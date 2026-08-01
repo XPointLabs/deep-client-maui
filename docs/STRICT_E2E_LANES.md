@@ -262,8 +262,14 @@ The preflight supports an explicit `-AndroidSerial` and configures `adb reverse`
 ## Physical Android ↔ Windows rendered flow (opt-in)
 
 The non-destructive physical runner `eng/Invoke-PhysicalMau2CrossPlatform.ps1`
-requires one explicit phase: `Attach`, `HappyPath`, `RestartDurability`, or
-`NegativeRuntime`. `NegativeRuntime` does not clear or reinstall either Android
+requires one explicit phase: `Attach`, `HappyPath`, `RestartDurability`,
+`ManualResendAfterRestart`, `AutomaticRetryAfterRestart`, or `NegativeRuntime`.
+The two resend-after-restart contracts are opt-in and fail closed unless an
+explicit `deep-devops-survival-chaos-v1` evidence input is supplied. They do
+not currently claim a live pass: the reviewed DevOps chaos executor still has
+to be integrated, and the runner never substitutes raw Docker lifecycle
+commands. `RestartDurability` remains the existing delivered-message
+durability claim. `NegativeRuntime` does not clear or reinstall either Android
 package and does not mutate Android app data. It materializes three disposable,
 exact-DACL Windows app-data roots below the protected
 `secrets/mailbox-bootstrap/e2e-runs/<run-id>` tree: a tampered Mr. X signature,

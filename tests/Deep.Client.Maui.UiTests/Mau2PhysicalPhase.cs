@@ -14,6 +14,8 @@ public enum Mau2PhysicalPhase
     Attach,
     HappyPath,
     RestartDurability,
+    ManualResendAfterRestart,
+    AutomaticRetryAfterRestart,
     NegativeRuntime
 }
 
@@ -22,6 +24,9 @@ internal static partial class Mau2PhysicalPhaseContract
     private const string PhaseEnvironmentKey = "DEEP_MAU2_E2E_PHASE";
     private const string RunStateEnvironmentKey = "DEEP_MAU2_E2E_RUN_STATE";
     private const string RunsRootEnvironmentKey = "DEEP_MAU2_E2E_RUNS_ROOT";
+    private const string ChaosEvidenceEnvironmentKey = "DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE";
+    private const string ChaosProviderEnvironmentKey = "DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER";
+    private const string SupportedChaosProvider = "deep-devops-survival-chaos-v1";
     private const string CanonicalRunsRoot =
         @"C:\Work\DeepSession\secrets\mailbox-bootstrap\e2e-runs";
 
@@ -34,7 +39,7 @@ internal static partial class Mau2PhysicalPhaseContract
             !string.Equals(raw, phase.ToString(), StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                "Physical MAU2 E2E requires one exact DEEP_MAU2_E2E_PHASE: Attach, HappyPath, RestartDurability, or NegativeRuntime.");
+                "Physical MAU2 E2E requires one exact DEEP_MAU2_E2E_PHASE: Attach, HappyPath, RestartDurability, ManualResendAfterRestart, AutomaticRetryAfterRestart, or NegativeRuntime.");
         }
 
         return phase;
@@ -42,6 +47,34 @@ internal static partial class Mau2PhysicalPhaseContract
 
     internal static string GetResultFileName(Mau2PhysicalPhase phase) =>
         $"mau2-{phase.ToString().ToLowerInvariant()}-result.json";
+
+    internal static string RequireSupportedChaosEvidence(Mau2PhysicalPhase phase)
+    {
+        if (phase is not (Mau2PhysicalPhase.ManualResendAfterRestart
+            or Mau2PhysicalPhase.AutomaticRetryAfterRestart))
+        {
+            throw new InvalidOperationException("This MAU2 phase does not accept chaos evidence.");
+        }
+
+        var provider = Environment.GetEnvironmentVariable(ChaosProviderEnvironmentKey);
+        var rawPath = Environment.GetEnvironmentVariable(ChaosEvidenceEnvironmentKey);
+        if (!string.Equals(provider, SupportedChaosProvider, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(rawPath)
+            || !Path.IsPathFullyQualified(rawPath))
+        {
+            throw new InvalidOperationException(
+                "Restart resend phases require explicit evidence from the supported Deep DevOps chaos provider.");
+        }
+
+        var path = Path.GetFullPath(rawPath);
+        if (!File.Exists(path)
+            || (File.GetAttributes(path) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+        {
+            throw new InvalidOperationException("Supported chaos evidence must be an existing regular file.");
+        }
+
+        return path;
+    }
 
     internal static string RequireSanitizedRunStatePath()
     {

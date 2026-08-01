@@ -1,6 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage
     x:Class="Deep.Client.Maui.Pages.ChatPage"
+    x:Name="ChatPageRoot"
     AutomationId="Page.Chat"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
@@ -28,6 +29,7 @@
                                     <DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger>
                                 </Label.Triggers>
                             </Label>
+                            <Button AutomationId="Chat.Retry" Text="Повторить" IsVisible="{Binding IsRetryAvailable}" IsEnabled="{Binding IsRetryAvailable}" Command="{Binding Source={x:Reference ChatPageRoot}, Path=BindingContext.RetryMessageCommand}" CommandParameter="{Binding .}" SemanticProperties.Description="Повторить отправку сообщения" FontSize="11" Padding="7,2" MinimumHeightRequest="28" />
                         </HorizontalStackLayout>
                     </VerticalStackLayout>
                     <Border.Triggers>
@@ -72,6 +74,7 @@
                                     <DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger>
                                 </Label.Triggers>
                             </Label>
+                            <Button AutomationId="Chat.Retry" Text="Повторить" IsVisible="{Binding IsRetryAvailable}" IsEnabled="{Binding IsRetryAvailable}" Command="{Binding Source={x:Reference ChatPageRoot}, Path=BindingContext.RetryMessageCommand}" CommandParameter="{Binding .}" SemanticProperties.Description="Повторить отправку сообщения" FontSize="11" Padding="7,2" MinimumHeightRequest="28" />
                         </HorizontalStackLayout>
                     </VerticalStackLayout>
                     <Border.Triggers>
@@ -131,6 +134,7 @@
                                     <DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger>
                                 </Label.Triggers>
                             </Label>
+                            <Button AutomationId="Chat.Retry" Text="Повторить" IsVisible="{Binding IsRetryAvailable}" IsEnabled="{Binding IsRetryAvailable}" Command="{Binding Source={x:Reference ChatPageRoot}, Path=BindingContext.RetryMessageCommand}" CommandParameter="{Binding .}" SemanticProperties.Description="Повторить отправку сообщения" FontSize="11" Padding="7,2" MinimumHeightRequest="28" />
                         </HorizontalStackLayout>
                     </VerticalStackLayout>
                     <Border.Triggers>
@@ -162,7 +166,7 @@
                         </Border>
                         <Label AutomationId="Chat.MessageBody" Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" FontSize="15" LineBreakMode="WordWrap" />
                         <FlexLayout Direction="Row" Wrap="Wrap" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}"><BindableLayout.ItemTemplate><DataTemplate x:DataType="vm:MessageReactionChip"><Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2"><Border.GestureRecognizers><TapGestureRecognizer Tapped="OnReactionChipTapped" /></Border.GestureRecognizers><HorizontalStackLayout Spacing="4"><Label Text="{Binding Emoji}" FontSize="14" /><Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" /></HorizontalStackLayout></Border></DataTemplate></BindableLayout.ItemTemplate></FlexLayout>
-                        <HorizontalStackLayout Spacing="6" HorizontalOptions="End"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label AutomationId="Chat.DeliveryStatus" Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}"><Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger><DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger></Label.Triggers></Label></HorizontalStackLayout>
+                        <HorizontalStackLayout Spacing="6" HorizontalOptions="End"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label AutomationId="Chat.DeliveryStatus" Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}"><Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger><DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger></Label.Triggers></Label><Button AutomationId="Chat.Retry" Text="Повторить" IsVisible="{Binding IsRetryAvailable}" IsEnabled="{Binding IsRetryAvailable}" Command="{Binding Source={x:Reference ChatPageRoot}, Path=BindingContext.RetryMessageCommand}" CommandParameter="{Binding .}" SemanticProperties.Description="Повторить отправку сообщения" FontSize="11" Padding="7,2" MinimumHeightRequest="28" /></HorizontalStackLayout>
                     </VerticalStackLayout>
                     <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /><Setter Property="SemanticProperties.Description" Value="Исходящее сообщение" /></DataTrigger></Border.Triggers>
                 </Border>
@@ -182,7 +186,7 @@
                         </Border>
                         <Label AutomationId="Chat.MessageBody" Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" FontSize="15" LineBreakMode="WordWrap" />
                         <FlexLayout Direction="Row" Wrap="Wrap" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}"><BindableLayout.ItemTemplate><DataTemplate x:DataType="vm:MessageReactionChip"><Border Style="{StaticResource ReactionChip}" Margin="0,0,4,2"><Border.GestureRecognizers><TapGestureRecognizer Tapped="OnReactionChipTapped" /></Border.GestureRecognizers><HorizontalStackLayout Spacing="4"><Label Text="{Binding Emoji}" FontSize="14" /><Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" /></HorizontalStackLayout></Border></DataTemplate></BindableLayout.ItemTemplate></FlexLayout>
-                        <HorizontalStackLayout Spacing="6" HorizontalOptions="End"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label AutomationId="Chat.DeliveryStatus" Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}"><Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger><DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger></Label.Triggers></Label></HorizontalStackLayout>
+                        <HorizontalStackLayout Spacing="6" HorizontalOptions="End"><Label Text="{Binding LocalCreatedAt, StringFormat='{}{0:HH:mm}'}" FontSize="10" TextColor="{StaticResource TextTertiary}" /><Label AutomationId="Chat.DeliveryStatus" Text="{Binding StatusGlyph}" IsVisible="{Binding IsStatusVisible}" SemanticProperties.Description="{Binding StatusDescription}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextTertiary}"><Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsReadStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource PrimaryColor}" /></DataTrigger><DataTrigger TargetType="Label" Binding="{Binding IsFailedStatus}" Value="True"><Setter Property="TextColor" Value="{StaticResource DangerColor}" /></DataTrigger></Label.Triggers></Label><Button AutomationId="Chat.Retry" Text="Повторить" IsVisible="{Binding IsRetryAvailable}" IsEnabled="{Binding IsRetryAvailable}" Command="{Binding Source={x:Reference ChatPageRoot}, Path=BindingContext.RetryMessageCommand}" CommandParameter="{Binding .}" SemanticProperties.Description="Повторить отправку сообщения" FontSize="11" Padding="7,2" MinimumHeightRequest="28" /></HorizontalStackLayout>
                     </VerticalStackLayout>
                     <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding Direction}" Value="{x:Static domain:MessageDirection.Outgoing}"><Setter Property="Background" Value="{StaticResource OutgoingBubbleColor}" /><Setter Property="HorizontalOptions" Value="End" /><Setter Property="SemanticProperties.Description" Value="Исходящее сообщение" /></DataTrigger></Border.Triggers>
                 </Border>
