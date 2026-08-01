@@ -261,6 +261,21 @@ The preflight supports an explicit `-AndroidSerial` and configures `adb reverse`
 
 ## Physical Android ↔ Windows rendered flow (opt-in)
 
+The non-destructive physical runner `eng/Invoke-PhysicalMau2CrossPlatform.ps1`
+requires one explicit phase: `Attach`, `HappyPath`, `RestartDurability`, or
+`NegativeRuntime`. `NegativeRuntime` does not clear or reinstall either Android
+package and does not mutate Android app data. It materializes three disposable,
+exact-DACL Windows app-data roots below the protected
+`secrets/mailbox-bootstrap/e2e-runs/<run-id>` tree: a tampered Mr. X signature,
+a missing authority file, and a valid Android runtime presented to Windows.
+Each must expose a non-empty `Startup.Error` and must not reach Welcome or an
+authenticated surface. The runner removes the disposable runtime bytes and
+requires the canonical live Windows runtime hash and production Android package
+snapshot to remain unchanged. Expiry/revocation and a second valid wrong-holder
+bundle require issuer-backed signed fixtures and are not simulated by editing
+JSON; Android platform/holder binding remains covered by shared loader tests
+until a second disposable Android package is available.
+
 `DEEP_STRICT_CROSS_PLATFORM_UI=1` enables the separate Debug/live rendered
 acceptance in `Deep.Client.Maui.UiTests`. It uses FlaUI UIA3 only against the
 PID returned by the Windows process it starts, and `adb -s <exact-serial>` plus

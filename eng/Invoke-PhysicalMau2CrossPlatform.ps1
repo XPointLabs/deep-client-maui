@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Attach', 'HappyPath', 'RestartDurability')]
+    [ValidateSet('Attach', 'HappyPath', 'RestartDurability', 'NegativeRuntime')]
     [string]$Phase,
     [string]$AndroidSerial = '192.168.1.45:43337',
     [string]$AdbPath = 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe',
@@ -45,9 +45,30 @@ function Get-PackageSnapshot([string]$Package) {
 
 function Get-Sha256([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
 
+function Get-TreeSha256([string]$Root) {
+    $canonical = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+    $lines = foreach ($file in Get-ChildItem -LiteralPath $canonical -File -Recurse -Force |
+        Sort-Object FullName) {
+        $relative = $file.FullName.Substring($canonical.Length + 1).Replace('\', '/')
+        "$relative`n$((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())`n$($file.Length)"
+    }
+    $bytes = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($hasher.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $hasher.Dispose()
+        [Array]::Clear($bytes, 0, $bytes.Length)
+    }
+}
+
 function Set-ProtectedRunItem([string]$Path) {
+    $item = Get-Item -Force -LiteralPath $Path
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Refusing to apply a run ACL through a reparse point.'
+    }
     $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    $acl = if ((Get-Item -Force -LiteralPath $Path).PSIsContainer) {
+    $acl = if ($item.PSIsContainer) {
         [Security.AccessControl.DirectorySecurity]::new()
     } else {
         [Security.AccessControl.FileSecurity]::new()
@@ -58,6 +79,56 @@ function Set-ProtectedRunItem([string]$Path) {
         $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]::None, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow))
     }
     Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
+function Assert-NonReparseDirectory([string]$Path, [string]$Label) {
+    $item = Get-Item -Force -LiteralPath $Path
+    if (-not $item.PSIsContainer -or
+        ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "$Label must be a regular directory, never a reparse point."
+    }
+}
+
+function Assert-ExactProtectedRunDirectory([string]$Path, [string]$Label) {
+    Assert-NonReparseDirectory $Path $Label
+    $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl = Get-Acl -LiteralPath $Path
+    $actualOwner = $acl.GetOwner([Security.Principal.SecurityIdentifier])
+    $expected = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($sid in @($owner.Value, 'S-1-5-18', 'S-1-5-32-544')) {
+        [void]$expected.Add($sid)
+    }
+    $rules = @($acl.GetAccessRules($true, $true,
+        [Security.Principal.SecurityIdentifier]))
+    if (-not $acl.AreAccessRulesProtected -or
+        -not $actualOwner.Equals($owner) -or
+        $rules.Count -ne 3) {
+        throw "$Label does not have the exact protected owner/DACL."
+    }
+    foreach ($rule in $rules) {
+        if ($rule.IsInherited -or
+            $rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
+            $rule.FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl -or
+            $rule.InheritanceFlags -ne [Security.AccessControl.InheritanceFlags]::None -or
+            $rule.PropagationFlags -ne [Security.AccessControl.PropagationFlags]::None -or
+            -not $expected.Remove($rule.IdentityReference.Value)) {
+            throw "$Label does not have the exact protected owner/DACL."
+        }
+    }
+    if ($expected.Count -ne 0) {
+        throw "$Label does not have the exact protected owner/DACL."
+    }
+}
+
+function Initialize-ProtectedRunsRoot([string]$Path) {
+    if (Test-Path -LiteralPath $Path) {
+        Assert-NonReparseDirectory $Path 'Physical E2E runs root'
+    } else {
+        [IO.Directory]::CreateDirectory($Path) | Out-Null
+        Assert-NonReparseDirectory $Path 'Physical E2E runs root'
+    }
+    Set-ProtectedRunItem $Path
+    Assert-ExactProtectedRunDirectory $Path 'Physical E2E runs root'
 }
 
 function Set-ProtectedRunTree([string]$Path) {
@@ -86,9 +157,16 @@ function Assert-DockerHealthy {
 
 $adb = Assert-AbsoluteExisting $AdbPath 'ADB'
 $bootstrap = Assert-AbsoluteExisting $MailboxBootstrapRoot 'Mailbox bootstrap root' -Directory
+if ($Phase -ceq 'NegativeRuntime' -and
+    $bootstrap -cne [IO.Path]::GetFullPath(
+        'C:\Work\DeepSession\secrets\mailbox-bootstrap')) {
+    throw 'NegativeRuntime requires the canonical protected mailbox bootstrap root.'
+}
 $androidRuntime = Assert-AbsoluteExisting (Join-Path $bootstrap 'runtime\android') 'Android runtime root' -Directory
 $windowsRuntime = Assert-AbsoluteExisting (Join-Path $bootstrap 'runtime\windows') 'Windows runtime root' -Directory
 $windowsAppData = Assert-AbsoluteExisting (Join-Path $bootstrap 'windows') 'Windows app data root' -Directory
+$windowsLiveRuntime = Assert-AbsoluteExisting (Join-Path $windowsAppData 'mailbox-runtime-v1') 'Live Windows runtime' -Directory
+$windowsLiveRuntimeHashBefore = Get-TreeSha256 $windowsLiveRuntime
 $policy = Assert-AbsoluteExisting $policyPath 'Approved Android policy'
 if ($MrXPublicKeySha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Mr. X public key hash must be exactly lowercase SHA-256.' }
 $runtimeEnvironment = Assert-AbsoluteExisting (Join-Path $repoRoot 'eng\survival.dev.env') 'MAU2 runtime environment'
@@ -108,7 +186,9 @@ if ($LASTEXITCODE -ne 0 -or $worktreeState.Count -ne 0) {
 }
 
 $runId = [Guid]::NewGuid().ToString('N')
-$runRoot = Join-Path $bootstrap "e2e-runs\$runId"
+$e2eRunsRoot = Join-Path $bootstrap 'e2e-runs'
+Initialize-ProtectedRunsRoot $e2eRunsRoot
+$runRoot = Join-Path $e2eRunsRoot $runId
 [IO.Directory]::CreateDirectory($runRoot) | Out-Null
 Set-ProtectedRunTree $runRoot
 $runStatePath = Join-Path $runRoot 'run-state.json'
@@ -157,6 +237,7 @@ try {
         $env:DEEP_STRICT_CROSS_PLATFORM_UI = '1'
         $env:DEEP_MAU2_E2E_PHASE = $Phase
         $env:DEEP_MAU2_E2E_RUN_STATE = $runStatePath
+        $env:DEEP_MAU2_E2E_RUNS_ROOT = (Join-Path $bootstrap 'e2e-runs')
         $env:DEEP_E2E_ANDROID_SERIAL = $AndroidSerial
         $env:DEEP_E2E_ADB = $adb
         $env:DEEP_E2E_ANDROID_POLICY = $policy
@@ -166,14 +247,35 @@ try {
         $env:DEEP_E2E_BOOTSTRAP = 'live'
         $env:DEEP_TRANSPORT_PROTOCOL = 'authenticated-mau2'
         $env:DEEP_TRANSPORT_OWNERSHIP = 'user-managed'
+        $env:DEEP_STORAGE_URL = $null
+        $negativeGenerator = Join-Path $devOpsRoot 'scripts\survival-dev-mailbox-negative-runtime.ps1'
+        $negativePrepared = $false
+        if ($Phase -ceq 'NegativeRuntime') {
+            Assert-AbsoluteExisting $negativeGenerator 'Negative runtime generator' | Out-Null
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $negativeGenerator `
+                -Action Generate -RunRoot $runRoot
+            if ($LASTEXITCODE -ne 0) { throw 'Negative runtime fixture generation failed.' }
+            $negativePrepared = $true
+        }
         # The test itself rechecks its policy/tool/APK pins. This wrapper never emits
         # their paths, holders, sessions, message markers, or native/container logs.
-        & dotnet test (Join-Path $repoRoot 'tests\Deep.Client.Maui.UiTests\Deep.Client.Maui.UiTests.csproj') --no-restore --filter 'FullyQualifiedName~StrictCrossPlatformUiTests'
-        if ($LASTEXITCODE -ne 0) { throw 'Physical MAU2 UI phase failed.' }
+        try {
+            & dotnet test (Join-Path $repoRoot 'tests\Deep.Client.Maui.UiTests\Deep.Client.Maui.UiTests.csproj') --no-restore --filter 'FullyQualifiedName~StrictCrossPlatformUiTests'
+            if ($LASTEXITCODE -ne 0) { throw 'Physical MAU2 UI phase failed.' }
+        } finally {
+            if ($negativePrepared) {
+                & powershell -NoProfile -ExecutionPolicy Bypass -File $negativeGenerator `
+                    -Action Cleanup -RunRoot $runRoot | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw 'Negative runtime fixture cleanup failed.' }
+            }
+        }
     }
 } finally {
     $productionAfter = Get-PackageSnapshot $productionPackage
     if ($productionBefore -cne $productionAfter) { throw 'Production Android package changed during MAU2 E2E.' }
+    if ((Get-TreeSha256 $windowsLiveRuntime) -cne $windowsLiveRuntimeHashBefore) {
+        throw 'Canonical live Windows runtime changed during MAU2 E2E.'
+    }
 }
 
 Write-Output "Physical MAU2 phase '$Phase' prepared. Sanitized protected run state: $runId"

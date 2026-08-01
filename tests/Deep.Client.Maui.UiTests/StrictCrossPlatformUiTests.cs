@@ -30,6 +30,9 @@ public sealed class StrictCrossPlatformUiTests
             case Mau2PhysicalPhase.RestartDurability:
                 RestartAndAssertDeduplicatedReceive(options);
                 return;
+            case Mau2PhysicalPhase.NegativeRuntime:
+                AssertInvalidWindowsRuntimesFailClosed(options);
+                return;
             default:
                 throw new InvalidOperationException("Unsupported physical MAU2 phase.");
         }
@@ -311,6 +314,47 @@ public sealed class StrictCrossPlatformUiTests
         // The product currently has no resend AutomationId/action; that is tracked
         // as a separate P1 survival case and cannot be inferred from this phase.
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
+        CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void AssertInvalidWindowsRuntimesFailClosed(CrossPlatformOptions options)
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_PROTOCOL"),
+                "authenticated-mau2", StringComparison.Ordinal) ||
+            !string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_OWNERSHIP"),
+                "user-managed", StringComparison.Ordinal) ||
+            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DEEP_STORAGE_URL")))
+        {
+            throw new InvalidOperationException(
+                "Negative runtime evidence requires authenticated MAU2 without a direct storage fallback.");
+        }
+
+        var evidence = CreatePhaseEvidence(options);
+        var runState = Mau2PhysicalPhaseContract.RequireSanitizedRunStatePath();
+        var cases = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["tampered-signature"] = "approval-signature",
+            ["missing-authority"] = "inventory",
+            ["android-runtime-on-windows"] = "platform-binding"
+        };
+
+        foreach (var (caseName, expectedFailureCode) in cases)
+        {
+            var appDataRoot = Mau2PhysicalPhaseContract.RequireProtectedNegativeCase(
+                runState, caseName);
+
+            using var windows = WindowsUiSmokeTests.WindowsUiTestSession
+                .CreateStrictWithAppData(appDataRoot);
+            windows.AssertStartupFailClosed(expectedFailureCode, TimeSpan.FromSeconds(45));
+            evidence.AddBoolean(caseName + "Rejected", true);
+        }
+
+        evidence.AddBoolean("directFallbackAbsent", true);
+        evidence.AddBoolean("rawFallbackAbsent", true);
+        evidence.AddBoolean("canonicalWindowsRuntimePreserved", true);
+        evidence.AddSafeValue(
+            "androidNegativeRuntime",
+            "shared-platform-binding-only-no-device-mutation");
         CompletePhaseEvidence(options, evidence);
     }
 

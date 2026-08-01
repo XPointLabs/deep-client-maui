@@ -758,16 +758,29 @@ public static class MauiProgram
         throw new PlatformNotSupportedException(
             "DEV-local mailbox pair supports only Android and Windows.");
 #endif
-        var native = new StoreBoundNativeMau2Transport(
-            sqlite,
-            secureStore,
-            () => MailboxRuntimeProvisioning.LoadDevelopment(
+        var runtimeRoot = Path.Combine(
+            appDataDirectory,
+            MailboxRuntimeProvisioning.DirectoryName);
+        var startupProvisioning = Directory.Exists(runtimeRoot)
+            ? MailboxRuntimeProvisioning.LoadDevelopment(
                 appDataDirectory,
                 platform,
                 PhysicalLabTrustRoot.MrXPublicKeySha256,
                 mode.Ownership == MailboxInfrastructureOwnership.OfficialManaged
                     ? static () => false
-                    : null).ImportOptions,
+                    : null)
+            : null;
+        var native = new StoreBoundNativeMau2Transport(
+            sqlite,
+            secureStore,
+            () => (startupProvisioning ?? MailboxRuntimeProvisioning.LoadDevelopment(
+                    appDataDirectory,
+                    platform,
+                    PhysicalLabTrustRoot.MrXPublicKeySha256,
+                    mode.Ownership == MailboxInfrastructureOwnership.OfficialManaged
+                        ? static () => false
+                        : null))
+                .ImportOptions,
             holder => DevelopmentMailboxHolderBootstrap.Publish(
                 appDataDirectory,
                 platform,

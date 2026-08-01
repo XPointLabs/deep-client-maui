@@ -6,6 +6,31 @@ namespace Deep.Client.Maui.ViewModels.Tests.Services;
 public sealed class MailboxRuntimeProvisioningPathTests
 {
     [Fact]
+    public void PinnedApprovalRejectsTamperAndWrongPinBeforeRuntimeImport()
+    {
+        var payload = Convert.FromHexString("72");
+        var publicKey = Convert.FromHexString(
+            "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c");
+        var signature = Convert.FromHexString(
+            "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da0" +
+            "85ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00");
+        var pin = System.Security.Cryptography.SHA256.HashData(publicKey);
+
+        MailboxRuntimeProvisioning.ValidatePinnedApproval(
+            payload, signature, publicKey, pin);
+
+        signature[0] ^= 1;
+        Assert.Throws<InvalidDataException>(() =>
+            MailboxRuntimeProvisioning.ValidatePinnedApproval(
+                payload, signature, publicKey, pin));
+        signature[0] ^= 1;
+        pin[0] ^= 1;
+        Assert.Throws<InvalidDataException>(() =>
+            MailboxRuntimeProvisioning.ValidatePinnedApproval(
+                payload, signature, publicKey, pin));
+    }
+
+    [Fact]
     public void SafeRootAllowsPlatformIndirectionAboveTrustedAppDataAnchor()
     {
         var root = NewRoot();

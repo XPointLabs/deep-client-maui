@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
+using Deep.Protocol;
 
 namespace Deep.Client.Maui.Services;
 
@@ -22,6 +23,8 @@ internal sealed record MailboxRuntimeProvisioning(
         TimeProvider? timeProvider = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
+        try
+        {
         var root = SafeRoot(appDataDirectory, DirectoryName);
         if (OperatingSystem.IsWindows()) WindowsMailboxAccessControl.ValidateTree(root);
         var activationBytes = ReadBounded(SafeFile(root, "activation.v1.json"), 32 * 1024);
@@ -34,11 +37,13 @@ internal sealed record MailboxRuntimeProvisioning(
         var activation = document.RootElement;
         RequireExactProperties(activation, ActivationProperties, "mailbox activation");
         var expectedPlatform = platform.ToString().ToLowerInvariant();
-        Require(activation.GetProperty("schemaVersion").GetInt32() == 1 &&
-                activation.GetProperty("developmentOnly").GetBoolean() &&
-                string.Equals(activation.GetProperty("platform").GetString(),
-                    expectedPlatform, StringComparison.Ordinal),
-            "Mailbox activation is not the exact platform DEV-local schema v1.");
+        if (activation.GetProperty("schemaVersion").GetInt32() != 1 ||
+            !activation.GetProperty("developmentOnly").GetBoolean() ||
+            !string.Equals(activation.GetProperty("platform").GetString(),
+                expectedPlatform, StringComparison.Ordinal))
+        {
+            throw new MailboxRuntimeValidationException("platform-binding");
+        }
 
         var publicKeyPin = Hex(expectedMrXPublicKeySha256, 32, "Mr. X public-key pin");
         var policyPayload = ReadBounded(
@@ -47,10 +52,16 @@ internal sealed record MailboxRuntimeProvisioning(
             SafeFile(root, "mr-x-mailbox-policy.signature"), 64);
         var policyPublicKey = ReadBounded(
             SafeFile(root, "mr-x-mailbox-policy.public-key"), 32);
-        Require(policySignature.Length == 64 && policyPublicKey.Length == 32 &&
-                CryptographicOperations.FixedTimeEquals(
-                    SHA256.HashData(policyPublicKey), publicKeyPin),
-            "Mailbox approval key differs from the build-pinned Mr. X key.");
+        try
+        {
+            ValidatePinnedApproval(
+                policyPayload, policySignature, policyPublicKey, publicKeyPin);
+        }
+        catch (InvalidDataException exception)
+        {
+            throw new MailboxRuntimeValidationException(
+                "approval-signature", exception);
+        }
 
         var pairRoot = SafeDirectory(root, "pair");
         var authorityPath = SafeFile(root, "authority.public.json");
@@ -78,6 +89,32 @@ internal sealed record MailboxRuntimeProvisioning(
                 DevelopmentOnly: true,
                 managedEntitlement,
                 timeProvider ?? TimeProvider.System));
+        }
+        catch (MailboxRuntimeValidationException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new MailboxRuntimeValidationException("inventory", exception);
+        }
+    }
+
+    internal static void ValidatePinnedApproval(
+        ReadOnlySpan<byte> payload,
+        ReadOnlySpan<byte> signature,
+        ReadOnlySpan<byte> publicKey,
+        ReadOnlySpan<byte> expectedPublicKeySha256)
+    {
+        Require(payload.Length is > 0 and <= 16 * 1024 &&
+                signature.Length == 64 &&
+                publicKey.Length == 32 &&
+                expectedPublicKeySha256.Length == 32 &&
+                CryptographicOperations.FixedTimeEquals(
+                    SHA256.HashData(publicKey), expectedPublicKeySha256) &&
+                new SodiumSessionProtocolCrypto().VerifyEd25519Detached(
+                    signature, payload, publicKey),
+            "Mailbox approval signature or key differs from the build-pinned Mr. X approval.");
     }
 
     private static string SafeRoot(string appDataDirectory, string name)
@@ -198,4 +235,17 @@ internal sealed record MailboxRuntimeProvisioning(
     {
         if (!condition) throw new InvalidDataException(message);
     }
+}
+
+internal sealed class MailboxRuntimeValidationException : Exception
+{
+    internal MailboxRuntimeValidationException(string code, Exception? innerException = null)
+        : base("Mailbox runtime validation failed closed.", innerException)
+    {
+        if (code is not ("inventory" or "platform-binding" or "approval-signature"))
+            throw new ArgumentOutOfRangeException(nameof(code));
+        Code = code;
+    }
+
+    internal string Code { get; }
 }

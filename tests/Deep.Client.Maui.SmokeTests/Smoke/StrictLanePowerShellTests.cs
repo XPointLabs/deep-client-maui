@@ -14,6 +14,12 @@ public sealed class StrictLanePowerShellTests
     }
 
     [Fact]
+    public async Task PhysicalMau2RunsRootRejectsJunctionBeforeAnyChildWrite()
+    {
+        await RunScriptAsync("Test-PhysicalMau2RunsRoot.ps1", TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
     public async Task AndroidRunnerExecutesAndEvidenceRejectsTamperingAndStaleness()
     {
         await RunScriptAsync("Test-AndroidRunnerContract.ps1");

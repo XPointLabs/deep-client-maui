@@ -234,6 +234,52 @@ public sealed class WindowsUiSmokeTests
 
         public void FocusWindow() => CurrentWindow().Focus();
 
+        internal void AssertStartupFailClosed(string expectedRuntimeFailureCode, TimeSpan timeout)
+        {
+            var result = Retry.WhileNull(
+                () =>
+                {
+                    var error = FindAutomationId("Startup.Error");
+                    if (error is null ||
+                        string.IsNullOrWhiteSpace(error.Properties.Name.ValueOrDefault))
+                    {
+                        return null;
+                    }
+                    return error;
+                },
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            if (result.Result is null)
+            {
+                throw new InvalidOperationException(
+                    "Invalid mailbox runtime did not expose a concrete Startup.Error.");
+            }
+
+            var code = WaitForAutomationIdWithName(
+                "Startup.RuntimeFailureCode", expectedRuntimeFailureCode, timeout);
+            if (code is null)
+            {
+                throw new InvalidOperationException(
+                    "Invalid mailbox runtime did not expose its expected sanitized failure code.");
+            }
+
+            foreach (var forbidden in new[]
+            {
+                "Welcome.Create",
+                "Welcome.Restore",
+                "Conversations.Root",
+                "Page.DesktopWorkspace"
+            })
+            {
+                if (FindAutomationId(forbidden) is not null)
+                {
+                    throw new InvalidOperationException(
+                        "Invalid mailbox runtime reached an interactive or authenticated UI.");
+                }
+            }
+        }
+
         public void WriteSuccessEvidence()
         {
             File.WriteAllText(

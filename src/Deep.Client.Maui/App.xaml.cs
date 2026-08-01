@@ -135,6 +135,22 @@ public partial class App : Application
                 activityRunning: false).ConfigureAwait(false);
             CrashDiagnostics.LogInfo("App.InitializeWindow", "Runtime initialization was cancelled.");
         }
+        catch (MailboxRuntimeValidationException exception)
+        {
+            await UpdateStartupPageAsync(
+                startupPage,
+                "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ Deep",
+                "РџСЂРѕРІРµСЂСЊС‚Рµ РїРѕРґРєР»СЋС‡РµРЅРёРµ Рё РїРѕРІС‚РѕСЂРёС‚Рµ РїРѕРїС‹С‚РєСѓ.",
+                retryEnabled: true,
+                resetEnabled: false,
+                activityRunning: false).ConfigureAwait(false);
+            await MainThread.InvokeOnMainThreadAsync(
+                () => startupPage.RuntimeFailureCode.Text = exception.Code)
+                .ConfigureAwait(false);
+            CrashDiagnostics.LogInfo(
+                "App.InitializeWindow",
+                $"Mailbox runtime rejected code={exception.Code}.");
+        }
         catch (LocalStateResetRequiredException exception)
         {
             localStateResetContext.Capture(exception);
@@ -247,6 +263,7 @@ public partial class App : Application
             {
                 startupPage.Status.Text = status;
                 startupPage.Error.Text = error;
+                startupPage.RuntimeFailureCode.Text = string.Empty;
                 startupPage.RetryButton.IsEnabled = retryEnabled;
                 startupPage.ResetLocalStateButton.IsVisible = resetEnabled;
                 startupPage.ResetLocalStateButton.IsEnabled = resetEnabled;
@@ -283,6 +300,12 @@ public partial class App : Application
             HorizontalOptions = LayoutOptions.Center
         };
         activity.SetDynamicResource(ActivityIndicator.ColorProperty, "PrimaryColor");
+        var runtimeFailureCode = new Label
+        {
+            Text = string.Empty,
+            AutomationId = "Startup.RuntimeFailureCode",
+            IsVisible = true
+        };
         var retryButton = new Button
         {
             Text = "Повторить",
@@ -319,6 +342,7 @@ public partial class App : Application
                         },
                         status,
                         error,
+                        runtimeFailureCode,
                         activity,
                         retryButton,
                         resetLocalStateButton
@@ -331,6 +355,7 @@ public partial class App : Application
             page,
             status,
             error,
+            runtimeFailureCode,
             activity,
             retryButton,
             resetLocalStateButton);
@@ -340,6 +365,7 @@ public partial class App : Application
         ContentPage Page,
         Label Status,
         Label Error,
+        Label RuntimeFailureCode,
         ActivityIndicator Activity,
         Button RetryButton,
         Button ResetLocalStateButton);

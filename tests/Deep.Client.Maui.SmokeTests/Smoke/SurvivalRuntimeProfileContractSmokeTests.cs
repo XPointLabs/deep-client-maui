@@ -130,10 +130,22 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         var ui = File.ReadAllText(WorkspacePath(
             "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
 
-        Assert.Contains("ValidateSet('Attach', 'HappyPath', 'RestartDurability')", runner,
+        Assert.Contains("ValidateSet('Attach', 'HappyPath', 'RestartDurability', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
         Assert.Contains("e2e-runs", runner, StringComparison.Ordinal);
+        Assert.Contains("Initialize-ProtectedRunsRoot $e2eRunsRoot", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("Set-ProtectedRunItem $Path", runner,
+            StringComparison.Ordinal);
+        var runsRootGuard = runner.IndexOf(
+            "Initialize-ProtectedRunsRoot $e2eRunsRoot",
+            StringComparison.Ordinal);
+        var firstChildWrite = runner.IndexOf(
+            "[IO.Directory]::CreateDirectory($runRoot)",
+            StringComparison.Ordinal);
+        Assert.True(runsRootGuard >= 0 && firstChildWrite > runsRootGuard,
+            "The existing e2e-runs anchor must be rejected when it is a junction before any child write.");
         Assert.Contains("Assert-SanitizedState", runner, StringComparison.Ordinal);
         Assert.Contains("shared-dev-storage-non-replicated", runner, StringComparison.Ordinal);
         Assert.Contains("DEEP_TRANSPORT_PROTOCOL=authenticated-mau2", runner, StringComparison.Ordinal);
@@ -155,6 +167,12 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("case Mau2PhysicalPhase.Attach", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.HappyPath", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.RestartDurability", ui, StringComparison.Ordinal);
+        Assert.Contains("case Mau2PhysicalPhase.NegativeRuntime", ui, StringComparison.Ordinal);
+        Assert.Contains("survival-dev-mailbox-negative-runtime.ps1", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("Canonical live Windows runtime changed", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("AssertStartupFailClosed", ui, StringComparison.Ordinal);
         Assert.DoesNotContain("ClearE2ePackageData();", ui[..ui.IndexOf("Legacy_destructive_fixture_is_not_a_physical_mau2_phase", StringComparison.Ordinal)],
             StringComparison.Ordinal);
     }
@@ -208,7 +226,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
     }
 
     [Fact]
-    public void PhysicalMailboxProvisioningIsLazyAndExportsOnlyPublicHolderMaterial()
+    public void PhysicalMailboxProvisioningEagerlyRejectsPresentRuntimeAndKeepsBootstrapLazy()
     {
         var program = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "MauiProgram.cs"));
@@ -217,7 +235,12 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         var bootstrap = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Services", "DevelopmentMailboxHolderBootstrap.cs"));
 
-        Assert.Contains("() => MailboxRuntimeProvisioning.LoadDevelopment(", program,
+        Assert.Contains("Directory.Exists(runtimeRoot)", program,
+            StringComparison.Ordinal);
+        Assert.Contains("startupProvisioning ?? MailboxRuntimeProvisioning.LoadDevelopment(", program,
+            StringComparison.Ordinal);
+        Assert.Contains("VerifyEd25519Detached", File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Services", "MailboxRuntimeProvisioning.cs")),
             StringComparison.Ordinal);
         var firstPublish = transport.IndexOf(
             "holderAvailable(new MailboxHolderIdentity", StringComparison.Ordinal);
