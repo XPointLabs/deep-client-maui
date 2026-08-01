@@ -20,6 +20,12 @@ public sealed class StrictLanePowerShellTests
     }
 
     [Fact]
+    public async Task SurvivalInstallerRequiresOneExactCanonicalApkSigner()
+    {
+        await RunScriptAsync("Test-SurvivalApkSignerSetContract.ps1");
+    }
+
+    [Fact]
     public async Task AndroidLabProvisioningRequiresProtectedSignedAllowlistedBundle()
     {
         var protectedRoot = Path.Combine(

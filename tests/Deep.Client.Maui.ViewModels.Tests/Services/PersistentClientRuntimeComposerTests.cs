@@ -20,43 +20,48 @@ public sealed class PersistentClientRuntimeComposerTests
         Directory.CreateDirectory(directory);
         var statePath = Path.Combine(directory, "client-state.db");
         var executor = new ReadyExecutor();
+        var transport = new AuthenticatedTransport();
         using var membershipProvider =
             DevLocalMembershipRouteCompositionTests.CreateProviderForCompositionTest();
         try
         {
-            using var runtime = PersistentClientRuntimeComposer.Create(
-                statePath,
-                ClientFeatureFlags.Defaults with { PersistentTransportOutboxEnabled = true },
-                new FixedClock(),
-                new AuthenticatedTransport(),
-                new DisabledAvatarProfileTransport(),
-                new string('A', 64),
-                requireE2eeTransport: true,
-                new DirectP2pMailboxDeliveryPolicy(),
-                executor,
-                membershipProvider);
+            using (var runtime = PersistentClientRuntimeComposer.Create(
+                       statePath,
+                       ClientFeatureFlags.Defaults with { PersistentTransportOutboxEnabled = true },
+                       new FixedClock(),
+                       new DisabledAvatarProfileTransport(),
+                       new string('A', 64),
+                       (_, _) => new StoreBoundRuntimeTransportComposition(
+                           transport,
+                           new DirectP2pMailboxDeliveryPolicy()),
+                       executor,
+                       membershipProvider))
+            {
 
-            Assert.NotNull(runtime.TransportOutbox);
-            Assert.True(membershipProvider.IsBound);
-            var item = TransportOutboxPreparedItem.Create(
-                OutboxAccountScope.FromBytes(Bytes(TransportOutboxLimits.AccountScopeBytes, 0x11)),
-                OutboxLogicalId.FromBytes(Bytes(TransportOutboxLimits.LogicalIdBytes, 0x22)),
-                OutboxDedupMaterial.FromBytes(Bytes(TransportOutboxLimits.DedupMaterialBytes, 0x33)),
-                Bytes(64, 0x44),
-                Now,
-                Now.AddHours(1),
-                Now);
+                Assert.NotNull(runtime.TransportOutbox);
+                Assert.True(membershipProvider.IsBound);
+                var item = TransportOutboxPreparedItem.Create(
+                    OutboxAccountScope.FromBytes(Bytes(TransportOutboxLimits.AccountScopeBytes, 0x11)),
+                    OutboxLogicalId.FromBytes(Bytes(TransportOutboxLimits.LogicalIdBytes, 0x22)),
+                    OutboxDedupMaterial.FromBytes(Bytes(TransportOutboxLimits.DedupMaterialBytes, 0x33)),
+                    Bytes(64, 0x44),
+                    Now,
+                    Now.AddHours(1),
+                    Now);
 
-            Assert.Equal(
-                TransportOutboxCommitResult.Applied,
-                await runtime.TransportOutbox!.PrepareAsync(item));
-            var result = await runtime.TransportOutbox.DispatchReadyAsync(item.AccountScope);
-            var persisted = await runtime.TransportOutbox.ReadAsync(
-                item.AccountScope,
-                item.LogicalId);
+                Assert.Equal(
+                    TransportOutboxCommitResult.Applied,
+                    await runtime.TransportOutbox!.PrepareAsync(item));
+                var result = await runtime.TransportOutbox.DispatchReadyAsync(item.AccountScope);
+                var persisted = await runtime.TransportOutbox.ReadAsync(
+                    item.AccountScope,
+                    item.LogicalId);
 
-            Assert.Equal(1, result.DurableCount);
-            Assert.Equal(TransportOutboxState.Durable, persisted.Item?.State);
+                Assert.Equal(1, result.DurableCount);
+                Assert.Equal(TransportOutboxState.Durable, persisted.Item?.State);
+            }
+
+            Assert.Equal(1, transport.DisposeCount);
         }
         finally
         {
@@ -90,8 +95,11 @@ public sealed class PersistentClientRuntimeComposerTests
     private sealed class AuthenticatedTransport :
         ISessionMessageTransport,
         IAuthenticatedInboxTransport,
-        IDirectP2pSessionMessageTransport
+        IDirectP2pSessionMessageTransport,
+        IDisposable
     {
+        public int DisposeCount { get; private set; }
+
         public Task SendAsync(
             OutboundMessageEnvelope envelope,
             CancellationToken cancellationToken = default) =>
@@ -106,6 +114,8 @@ public sealed class PersistentClientRuntimeComposerTests
             SessionIdentityProvider identity,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<InboundMessageEnvelope>>([]);
+
+        public void Dispose() => DisposeCount++;
     }
 
     private sealed class ReadyExecutor : IExternalTransportOutboxExecutor, IDisposable

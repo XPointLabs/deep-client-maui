@@ -1,4 +1,5 @@
 using Deep.Client.Maui.Core.Services;
+using Deep.Client.Maui.ViewModels.Tests.Services;
 using Deep.Client.Shared.Services;
 
 namespace Deep.Client.Maui.ViewModels.Tests.ViewModels;
@@ -47,7 +48,8 @@ public sealed class StrictLiveEndpointPolicyTests
             directStorageUrl: null,
             new HttpClient(),
             new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility),
+                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
+            OpaqueStorageTestDependencies.Create(),
             endpointPolicy: physicalPolicy);
 
         Assert.Equal(endpoints, composition.PinnedRouters);

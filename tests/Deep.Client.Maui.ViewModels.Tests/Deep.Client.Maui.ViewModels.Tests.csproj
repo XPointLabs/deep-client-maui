@@ -27,6 +27,7 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PushTokenBridge.cs" Link="Services\PushTokenBridge.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\SecureRecoverySessionStore.cs" Link="Services\SecureRecoverySessionStore.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PersistentClientRuntimeComposer.cs" Link="Services\PersistentClientRuntimeComposer.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\StoreBoundNativeMau2Transport.cs" Link="Services\StoreBoundNativeMau2Transport.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PrelaunchPlaintextStateArtifactPurger.cs" Link="Services\PrelaunchPlaintextStateArtifactPurger.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\StartupLocalStateReset.cs" Link="Services\StartupLocalStateReset.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ClientSettingKeys.cs" Link="Services\ClientSettingKeys.cs" />

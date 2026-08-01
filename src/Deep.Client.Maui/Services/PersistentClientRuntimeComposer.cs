@@ -1,9 +1,14 @@
-using Deep.Client.Shared.Features;
 using Deep.Client.Maui.Core.Services;
+using Deep.Client.Shared.Features;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Services;
+
+internal sealed record StoreBoundRuntimeTransportComposition(
+    ISessionMessageTransport Transport,
+    IMailboxDeliveryPolicy DeliveryPolicy);
 
 internal static class PersistentClientRuntimeComposer
 {
@@ -11,55 +16,60 @@ internal static class PersistentClientRuntimeComposer
         string stateDbPath,
         ClientFeatureFlags featureFlags,
         IClock clock,
-        ISessionMessageTransport messageTransport,
         IAvatarProfileTransport avatarProfiles,
         string sqlCipherKey,
-        bool requireE2eeTransport,
-        IMailboxDeliveryPolicy mailboxDeliveryPolicy,
+        Func<SqliteSessionStore, SecureRecoverySessionStore,
+            StoreBoundRuntimeTransportComposition> transportFactory,
         IExternalTransportOutboxExecutor? transportOutboxExecutor,
         DeferredVerifiedMembershipRouteCatalogProvider? membershipRouteCatalogProvider = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDbPath);
         ArgumentNullException.ThrowIfNull(featureFlags);
         ArgumentNullException.ThrowIfNull(clock);
-        ArgumentNullException.ThrowIfNull(messageTransport);
         ArgumentNullException.ThrowIfNull(avatarProfiles);
         ArgumentException.ThrowIfNullOrWhiteSpace(sqlCipherKey);
-        ArgumentNullException.ThrowIfNull(mailboxDeliveryPolicy);
+        ArgumentNullException.ThrowIfNull(transportFactory);
 
-        SecureRecoverySessionStore? secureStore = null;
-        var runtime = ClientRuntime.CreatePersistent(
-            stateDbPath,
-            featureFlags,
-            clock,
-            messageTransport,
-            groupSyncTransport: null,
-            avatarProfiles,
-            sqlCipherKey,
-            storeDecorator: store =>
-            {
-                secureStore = new SecureRecoverySessionStore(
-                    store,
-                    transportOutboxExecutor as IDisposable);
-                return secureStore;
-            },
-            requireE2eeTransport,
-            transportOutboxExecutor,
-            mailboxDeliveryPolicy);
+        var sqlite = new SqliteSessionStore(
+            new SqliteSessionStoreOptions(stateDbPath, sqlCipherKey));
+        var secureStore = new SecureRecoverySessionStore(
+            sqlite,
+            transportOutboxExecutor as IDisposable);
+        StoreBoundRuntimeTransportComposition? composition = null;
+        ClientRuntime? runtime = null;
         try
         {
+            composition = transportFactory(sqlite, secureStore) ??
+                throw new InvalidOperationException(
+                    "The store-bound transport factory returned no composition.");
+            ArgumentNullException.ThrowIfNull(composition.Transport);
+            ArgumentNullException.ThrowIfNull(composition.DeliveryPolicy);
+            runtime = new ClientRuntime(
+                secureStore,
+                featureFlags,
+                clock,
+                composition.Transport,
+                groupSyncTransport: null,
+                avatarProfiles,
+                requireE2eeTransport: true,
+                transportOutboxExecutor,
+                composition.DeliveryPolicy,
+                ownsMessageTransport: true);
             if (membershipRouteCatalogProvider is not null)
-            {
-                membershipRouteCatalogProvider.Bind(
-                    secureStore ??
-                    throw new InvalidOperationException(
-                        "The persistent runtime did not construct its secured store."));
-            }
+                membershipRouteCatalogProvider.Bind(secureStore);
             return runtime;
         }
         catch
         {
-            runtime.Dispose();
+            if (runtime is not null)
+            {
+                runtime.Dispose();
+            }
+            else
+            {
+                (composition?.Transport as IDisposable)?.Dispose();
+                secureStore.Dispose();
+            }
             throw;
         }
     }

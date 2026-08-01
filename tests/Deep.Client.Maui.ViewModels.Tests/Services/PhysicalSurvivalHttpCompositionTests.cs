@@ -86,7 +86,7 @@ public sealed class PhysicalSurvivalHttpCompositionTests
         {
             var storage = storageProvider
                 .GetRequiredService<SessionStorageMessageTransport>();
-            await Assert.ThrowsAsync<HttpRequestException>(
+            await Assert.ThrowsAsync<InvalidOperationException>(
                 () => storage.SendAsync(envelope));
         }
 
@@ -99,7 +99,7 @@ public sealed class PhysicalSurvivalHttpCompositionTests
                 Assert.Equal(41821, destination.Port);
             });
         Assert.Equal(
-            [41820, 41820, 41822, 41823],
+            [41820, 41822, 41823],
             serviceDestinations.Select(item => item.Port).Order().ToArray());
         Assert.All(
             serviceDestinations,
@@ -160,7 +160,8 @@ public sealed class PhysicalSurvivalHttpCompositionTests
         services.AddSingleton(_ => factories.ServiceTransportFactory.CreateStorage(
             new SessionStorageMessageTransportOptions(
                 "http://192.168.1.44:41820/",
-                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility),
+                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
+            opaque: OpaqueStorageTestDependencies.Create(),
             clientOptions: factories.ServiceClientOptions));
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true });

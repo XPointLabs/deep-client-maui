@@ -29,7 +29,12 @@
 
   <PropertyGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
     <DefineConstants>$(DefineConstants);DEEP_PHYSICAL_E2E</DefineConstants>
+    <PhysicalLabTrustRootSource>$(BaseIntermediateOutputPath)deep-physical\$(TargetFramework)\PhysicalLabTrustRoot.g.cs</PhysicalLabTrustRootSource>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+    <Compile Include="$(PhysicalLabTrustRootSource)" Visible="false" />
+  </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
     <AndroidPackageFormats>aab</AndroidPackageFormats>
@@ -146,6 +151,23 @@
            Text="DeepSurvivalRuntimeEnv is forbidden for Release builds." />
     <Error Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' != 'Release' And '$(DeepPhysicalE2E)' == 'true' And !Exists('$(DeepSurvivalRuntimeEnv)')"
            Text="DeepSurvivalRuntimeEnv does not identify an existing file." />
+  </Target>
+
+  <Target Name="GeneratePhysicalLabTrustRoot"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepMrXPublicKeySha256)', '^[0-9a-f]{64}$'))"
+           Text="Physical E2E builds require -p:DeepMrXPublicKeySha256=&lt;64 lowercase hex&gt;. The Mr. X trust pin is compiled into the lab binary and cannot come from runtime env." />
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(PhysicalLabTrustRootSource)'))" />
+    <WriteLinesToFile File="$(PhysicalLabTrustRootSource)"
+                      Overwrite="true"
+                      Lines="namespace Deep.Client.Maui.Services%3B internal static class PhysicalLabTrustRoot { internal const string MrXPublicKeySha256 = &quot;$(DeepMrXPublicKeySha256)&quot;%3B }" />
+  </Target>
+
+  <Target Name="RejectPhysicalLabTrustRootOutsidePhysicalDebug"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepMrXPublicKeySha256)' != '' And ('$(DeepPhysicalE2E)' != 'true' Or '$(Configuration)' == 'Release')">
+    <Error Text="DeepMrXPublicKeySha256 is forbidden outside a physical non-Release build." />
   </Target>
 
 </Project>

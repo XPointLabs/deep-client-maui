@@ -4,7 +4,11 @@ param(
     [string]$Target = 'Android',
     [string]$AndroidSerial,
     [string]$AdbPath = $env:DEEP_ADB_PATH,
+    [string]$ApkSignerPath = $env:DEEP_APKSIGNER,
+    [string]$JavaHome = $env:JAVA_HOME,
     [string]$RuntimeEnvironmentPath,
+    [string]$MrXPublicKeySha256 = $env:DEEP_MR_X_PUBLIC_KEY_SHA256,
+    [switch]$NoBuild,
     [switch]$NoInstall
 )
 
@@ -53,6 +57,10 @@ $project = Join-Path $repoRoot 'src\Deep.Client.Maui\Deep.Client.Maui.csproj'
 $runtimeEnvironment = Resolve-CanonicalRuntimeEnvironmentFile -Path $RuntimeEnvironmentPath
 $physicalE2eProperty = '-p:DeepPhysicalE2E=true'
 $runtimeEnvironmentProperty = "-p:DeepSurvivalRuntimeEnv=$runtimeEnvironment"
+if ($MrXPublicKeySha256 -cnotmatch '^[0-9a-f]{64}$') {
+    throw 'DEEP_MR_X_PUBLIC_KEY_SHA256 must be exactly 64 lowercase hexadecimal characters.'
+}
+$mrXTrustRootProperty = "-p:DeepMrXPublicKeySha256=$MrXPublicKeySha256"
 $androidPackage = 'network.xpoint.deep.e2e'
 $productionPackage = 'network.xpoint.deep'
 $reversePorts = @(41545) + @(41801..41806) + @(41810..41823)
@@ -89,8 +97,15 @@ function Invoke-AdbChecked {
         [Parameter(Mandatory)] [string[]]$Arguments
     )
 
-    $output = @(& $Adb @Arguments 2>&1)
-    if ($LASTEXITCODE -ne 0) {
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& $Adb @Arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if ($exitCode -ne 0) {
         throw "adb failed: $($output -join [Environment]::NewLine)"
     }
     return $output
@@ -109,10 +124,78 @@ function Get-PackagePath {
         Sort-Object) -join "`n"
 }
 
+function Resolve-ApkSigner {
+    if (-not [string]::IsNullOrWhiteSpace($ApkSignerPath) -and
+        (Test-Path -LiteralPath $ApkSignerPath -PathType Leaf)) {
+        return (Resolve-Path -LiteralPath $ApkSignerPath).Path
+    }
+    $command = Get-Command apksigner -ErrorAction SilentlyContinue
+    if ($null -ne $command) { return $command.Source }
+    $buildTools = @(
+        "$env:LOCALAPPDATA\Android\Sdk\build-tools",
+        "$env:ANDROID_HOME\build-tools",
+        "$env:ANDROID_SDK_ROOT\build-tools",
+        "${env:ProgramFiles(x86)}\Android\android-sdk\build-tools",
+        "$env:ProgramFiles\Android\android-sdk\build-tools")
+    foreach ($root in $buildTools) {
+        if ([string]::IsNullOrWhiteSpace($root) -or
+            -not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+        $candidate = Get-ChildItem -LiteralPath $root -Directory |
+            Sort-Object Name -Descending |
+            ForEach-Object { Join-Path $_.FullName 'apksigner.bat' } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Select-Object -First 1
+        if ($candidate) { return $candidate }
+    }
+    throw 'apksigner was not found. Set -ApkSignerPath or DEEP_APKSIGNER.'
+}
+
+function Get-ApkSignerSha256 {
+    param(
+        [Parameter(Mandatory)][string]$ApkSigner,
+        [Parameter(Mandatory)][string]$Apk
+    )
+    $resolvedJavaHome = $JavaHome
+    if ([string]::IsNullOrWhiteSpace($resolvedJavaHome)) {
+        $resolvedJavaHome = @(
+            'C:\Program Files\Android\openjdk\jdk-21.0.8',
+            'C:\Program Files\Microsoft\jdk-21.0.8.9-hotspot') |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_ 'bin\java.exe') -PathType Leaf } |
+            Select-Object -First 1
+    }
+    if ([string]::IsNullOrWhiteSpace($resolvedJavaHome) -or
+        -not (Test-Path -LiteralPath (Join-Path $resolvedJavaHome 'bin\java.exe') -PathType Leaf)) {
+        throw 'JAVA_HOME does not identify an Android build JDK.'
+    }
+    $previousJavaHome = $env:JAVA_HOME
+    try {
+        $env:JAVA_HOME = $resolvedJavaHome
+        $output = @(& $ApkSigner verify --print-certs $Apk 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw "apksigner verify failed: $($output -join ' ')" }
+    } finally {
+        $env:JAVA_HOME = $previousJavaHome
+    }
+    $signers = @($output | ForEach-Object {
+        if ([string]$_ -cmatch
+            '^Signer #(?<number>[1-9][0-9]*) certificate SHA-256 digest: (?<digest>[0-9a-f]{64})$') {
+            [pscustomobject]@{
+                number = [int]$Matches.number
+                digest = $Matches.digest
+            }
+        }
+    })
+    if ($signers.Count -ne 1 -or $signers[0].number -ne 1) {
+        throw 'APK must have exactly one canonical signer and no rotation ambiguity.'
+    }
+    return $signers[0].digest
+}
+
 if ($Target -in @('Windows', 'All')) {
-    & dotnet build $project -f net10.0-windows10.0.19041.0 -c Debug $physicalE2eProperty $runtimeEnvironmentProperty
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Survival Windows Debug build failed.'
+    if (-not $NoBuild) {
+        & dotnet build $project -f net10.0-windows10.0.19041.0 -c Debug $physicalE2eProperty $runtimeEnvironmentProperty $mrXTrustRootProperty
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Survival Windows Debug build failed.'
+        }
     }
 }
 
@@ -137,9 +220,11 @@ if ($Target -in @('Android', 'All')) {
         Invoke-AdbChecked -Adb $adb -Arguments @('-s', $AndroidSerial, 'reverse', "tcp:$port", "tcp:$port") | Out-Null
     }
 
-    & dotnet build $project -f net10.0-android -c Debug $physicalE2eProperty $runtimeEnvironmentProperty
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Survival Android Debug build failed.'
+    if (-not $NoBuild) {
+        & dotnet build $project -f net10.0-android -c Debug $physicalE2eProperty $runtimeEnvironmentProperty $mrXTrustRootProperty
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Survival Android Debug build failed.'
+        }
     }
 
     $apk = Join-Path $repoRoot "src\Deep.Client.Maui\bin\Debug\net10.0-android\$androidPackage-Signed.apk"
@@ -148,6 +233,31 @@ if ($Target -in @('Android', 'All')) {
     }
 
     if (-not $NoInstall) {
+        $apkSigner = Resolve-ApkSigner
+        $candidateSigner = Get-ApkSignerSha256 -ApkSigner $apkSigner -Apk $apk
+        $installedPath = Get-PackagePath -Adb $adb -Serial $AndroidSerial -Package $androidPackage
+        if (-not [string]::IsNullOrWhiteSpace($installedPath)) {
+            if ($installedPath.Contains("`n") -or
+                -not $installedPath.StartsWith('package:/data/app/', [StringComparison]::Ordinal)) {
+                throw 'Installed E2E package path is not one exact base APK.'
+            }
+            $temporaryInstalledApk = Join-Path ([IO.Path]::GetTempPath()) (
+                'deep-installed-e2e-' + [Guid]::NewGuid().ToString('N') + '.apk')
+            try {
+                Invoke-AdbChecked -Adb $adb -Arguments @(
+                    '-s', $AndroidSerial, 'pull',
+                    $installedPath.Substring('package:'.Length),
+                    $temporaryInstalledApk) | Out-Null
+                $installedSigner = Get-ApkSignerSha256 `
+                    -ApkSigner $apkSigner `
+                    -Apk $temporaryInstalledApk
+                if ($installedSigner -cne $candidateSigner) {
+                    throw 'Candidate APK signer differs from the installed E2E package signer.'
+                }
+            } finally {
+                Remove-Item -LiteralPath $temporaryInstalledApk -Force -ErrorAction SilentlyContinue
+            }
+        }
         Invoke-AdbChecked -Adb $adb -Arguments @('-s', $AndroidSerial, 'install', '-r', '-t', $apk) | Out-Host
         if ([string]::IsNullOrWhiteSpace((Get-PackagePath -Adb $adb -Serial $AndroidSerial -Package $androidPackage))) {
             throw 'The E2E package was not installed.'

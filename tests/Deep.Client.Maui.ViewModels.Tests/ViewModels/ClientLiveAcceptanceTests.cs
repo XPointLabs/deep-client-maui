@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using Deep.Client.Maui.Core.Services;
+using Deep.Client.Maui.ViewModels.Tests.Services;
 using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Features;
@@ -214,7 +215,8 @@ public sealed class ClientLiveAcceptanceTests
             directStorageUrl: null,
             new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) },
             new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility),
+                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
+            OpaqueStorageTestDependencies.Create(),
             TimeProvider.System,
             endpointPolicy);
         var runtime = new ClientRuntime(

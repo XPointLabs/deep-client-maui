@@ -191,7 +191,7 @@ public sealed class RoutedRuntimeConfigurationTests
     }
 
     [Fact]
-    public async Task ProductionFactory_ResolvesRealRoutedTypesAndFailsClosedDuringRouterOutage()
+    public async Task ProductionFactory_ResolvesRealRoutedTypesAndRejectsInvalidWireBeforeNetwork()
     {
         var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
             $"{RouterOne}|https://router-one.example/",
@@ -203,7 +203,8 @@ public sealed class RoutedRuntimeConfigurationTests
             directStorageUrl: null,
             new HttpClient(handler),
             new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility));
+                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
+            OpaqueStorageTestDependencies.Create());
 
         Assert.IsType<XNodeRpcClient>(composition.RouteProvider);
         Assert.IsType<RoutedSessionStorageMessageTransport>(composition.SessionMessageTransport);
@@ -221,7 +222,7 @@ public sealed class RoutedRuntimeConfigurationTests
                 null)));
 
         Assert.NotNull(exception);
-        Assert.True(handler.RequestCount > 0);
+        Assert.Equal(0, handler.RequestCount);
         Assert.Empty(handler.UnexpectedDestinations);
     }
 
@@ -238,7 +239,8 @@ public sealed class RoutedRuntimeConfigurationTests
                 endpoints,
                 directStorageUrl: null,
                 new HttpClient(),
-                new RoutedSessionStorageTransportOptions()));
+                new RoutedSessionStorageTransportOptions(),
+                opaqueDependencies: null));
 
         Assert.Equal(
             "Opaque P03 routed storage requires explicit capability, crypto and replay dependencies.",
@@ -258,13 +260,15 @@ public sealed class RoutedRuntimeConfigurationTests
                 valid,
                 "https://storage.example/",
                 new HttpClient(),
-                new RoutedSessionStorageTransportOptions()));
+                new RoutedSessionStorageTransportOptions(),
+                OpaqueStorageTestDependencies.Create()));
         Assert.Throws<InvalidOperationException>(() =>
             RoutedProductionCompositionFactory.Create(
                 valid.Take(2),
                 directStorageUrl: null,
                 new HttpClient(),
-                new RoutedSessionStorageTransportOptions()));
+                new RoutedSessionStorageTransportOptions(),
+                OpaqueStorageTestDependencies.Create()));
     }
 
     [Fact]
@@ -281,7 +285,8 @@ public sealed class RoutedRuntimeConfigurationTests
             directStorageUrl: null,
             new HttpClient(),
             new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility));
+                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
+            OpaqueStorageTestDependencies.Create());
 
         Assert.Equal(endpoints, composition.PinnedRouters);
     }
@@ -302,14 +307,16 @@ public sealed class RoutedRuntimeConfigurationTests
                 directStorageUrl: null,
                 new HttpClient(),
                 new RoutedSessionStorageTransportOptions(
-                    MetadataMode: SessionStorageMetadataMode.LegacyCompatibility)));
+                    MetadataMode: SessionStorageMetadataMode.OpaqueP03),
+                OpaqueStorageTestDependencies.Create()));
 
         using var composition = RoutedProductionCompositionFactory.Create(
             endpoints,
             directStorageUrl: null,
             new HttpClient(),
             new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility),
+                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
+            OpaqueStorageTestDependencies.Create(),
             endpointPolicy: RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment);
 
         Assert.Equal(endpoints, composition.PinnedRouters);
@@ -329,7 +336,8 @@ public sealed class RoutedRuntimeConfigurationTests
             directStorageUrl: null,
             new HttpClient(routerHandler),
             new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility),
+                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
+            OpaqueStorageTestDependencies.Create(),
             provider);
 
         var error = await Assert.ThrowsAsync<MembershipRouteCatalogException>(

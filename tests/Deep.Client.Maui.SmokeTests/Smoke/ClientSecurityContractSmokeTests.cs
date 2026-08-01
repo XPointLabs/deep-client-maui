@@ -263,7 +263,11 @@ public sealed class ClientSecurityContractSmokeTests
             program,
             StringComparison.Ordinal);
         Assert.Contains(
-            "endpointPolicy: inputs.RoutedEndpointPolicy",
+            "RoutedRuntimeConfiguration.ValidateAtLeastThree(",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "inputs.RoutedEndpointPolicy",
             program,
             StringComparison.Ordinal);
     }

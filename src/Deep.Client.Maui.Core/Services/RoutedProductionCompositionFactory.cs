@@ -44,6 +44,7 @@ public static class RoutedProductionCompositionFactory
         string? directStorageUrl,
         HttpClient routerHttpClient,
         RoutedSessionStorageTransportOptions transportOptions,
+        OpaqueSessionStorageDependencies? opaqueDependencies,
         TimeProvider? timeProvider = null,
         RoutedRuntimeEndpointPolicy? endpointPolicy = null) =>
         CreateCore(
@@ -51,6 +52,7 @@ public static class RoutedProductionCompositionFactory
             directStorageUrl,
             routerHttpClient,
             transportOptions,
+            opaqueDependencies,
             membershipRouteCatalogProvider: null,
             timeProvider,
             endpointPolicy);
@@ -60,6 +62,7 @@ public static class RoutedProductionCompositionFactory
         string? directStorageUrl,
         HttpClient routerHttpClient,
         RoutedSessionStorageTransportOptions transportOptions,
+        OpaqueSessionStorageDependencies? opaqueDependencies,
         IMembershipRouteCatalogProvider membershipRouteCatalogProvider,
         TimeProvider? timeProvider = null,
         RoutedRuntimeEndpointPolicy? endpointPolicy = null)
@@ -70,6 +73,7 @@ public static class RoutedProductionCompositionFactory
             directStorageUrl,
             routerHttpClient,
             transportOptions,
+            opaqueDependencies,
             membershipRouteCatalogProvider,
             timeProvider,
             endpointPolicy);
@@ -80,6 +84,7 @@ public static class RoutedProductionCompositionFactory
         string? directStorageUrl,
         HttpClient routerHttpClient,
         RoutedSessionStorageTransportOptions transportOptions,
+        OpaqueSessionStorageDependencies? opaqueDependencies,
         IMembershipRouteCatalogProvider? membershipRouteCatalogProvider,
         TimeProvider? timeProvider,
         RoutedRuntimeEndpointPolicy? endpointPolicy)
@@ -101,7 +106,8 @@ public static class RoutedProductionCompositionFactory
             membershipRouteCatalogProvider);
         var transport = new RoutedSessionStorageMessageTransport(
             router,
-            transportOptions);
+            transportOptions,
+            opaqueDependencies);
         return new RoutedProductionComposition(
             validatedEndpoints,
             router,

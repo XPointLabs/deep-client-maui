@@ -31,7 +31,7 @@ internal sealed record ApplicationServiceInputs(
     ClientFeatureFlags FeatureFlags,
     IReadOnlyList<PinnedRouterEndpoint> RouterBaseUrls,
     IRealityTransportRuntime RealityTransportRuntime,
-    bool UserManagedTransport,
+    RuntimeTransportMode TransportMode,
     string? StorageBaseUrl,
     HttpClient RouterHttpClient,
     RoutedSessionStorageTransportOptions RoutedTransportOptions,
@@ -72,6 +72,7 @@ public static class MauiProgram
     internal const string SurvivalEnvironmentEnv = "SURVIVAL_ENV";
     internal const string PersistentTransportOutboxEnv = "DEEP_PERSISTENT_TRANSPORT_OUTBOX";
     internal const string TransportOwnershipEnv = "DEEP_TRANSPORT_OWNERSHIP";
+    internal const string TransportProtocolEnv = "DEEP_TRANSPORT_PROTOCOL";
     internal const string ExternalOutboxWorkerSha256Env = "DEEP_OUTBOX_WORKER_SHA256";
     internal const string ExternalOutboxWorkerBundleSha256Env =
         "DEEP_OUTBOX_WORKER_BUNDLE_SHA256";
@@ -108,56 +109,39 @@ public static class MauiProgram
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(inputs);
-#if DEBUG
-        var hasRoutedComposition = inputs.RouterBaseUrls.Count != 0;
-#else
-        const bool hasRoutedComposition = true;
-#endif
-
         services.AddSingleton(inputs.RuntimeEnvironment);
+        services.AddSingleton(inputs.TransportMode);
         services.AddSingleton<IRealityTransportRuntime>(inputs.RealityTransportRuntime);
-#if DEBUG
-        if (hasRoutedComposition)
+        if (inputs.RouterBaseUrls.Count != 0)
         {
-            RegisterDeferredRoutedComposition(services, inputs);
+            RegisterRouteProvider(services, inputs);
         }
         else
         {
             services.AddSingleton<ITransportRouteProvider>(_ =>
                 new DirectStorageRouteProvider(inputs.StorageBaseUrl));
         }
-        if (!hasRoutedComposition)
-        {
-        services.AddSingleton<ISessionMessageTransport>(_ =>
-        {
-            if (!string.IsNullOrWhiteSpace(inputs.StorageBaseUrl))
-            {
-                return ApplyTransportOwnership(inputs.ServiceTransportFactory.CreateStorage(
-                    new SessionStorageMessageTransportOptions(inputs.StorageBaseUrl),
-                    clientOptions: inputs.ServiceTransportClientOptions), inputs);
-            }
 
-            var baseUrl = ResolveRuntimeSettingForComposition(
-                TransportBaseUrlEnv,
-                inputs.RoutedEndpointPolicy);
-            if (string.IsNullOrWhiteSpace(baseUrl))
+        if (inputs.TransportMode.Protocol == RuntimeTransportProtocol.DirectP2p)
+        {
+            services.AddSingleton<ISessionMessageTransport>(_ =>
             {
-                if (!inputs.FeatureFlags.StubTransportAllowed)
+                var baseUrl = ResolveRuntimeSettingForComposition(
+                    TransportBaseUrlEnv,
+                    inputs.RoutedEndpointPolicy);
+                if (string.IsNullOrWhiteSpace(baseUrl))
                 {
-                    throw new InvalidOperationException("Stub transport is disabled by feature flags.");
+                    throw new InvalidOperationException(
+                        "Direct-P2P mode requires an explicit direct transport endpoint.");
                 }
 
-                return new StubSessionBackend();
-            }
-
-            return ApplyTransportOwnership(inputs.ServiceTransportFactory.CreateSession(
-                new HttpSessionTransportOptions(baseUrl),
-                inputs.ServiceTransportClientOptions), inputs);
-        });
+                return inputs.ServiceTransportFactory.CreateSession(
+                    new HttpSessionTransportOptions(baseUrl),
+                    inputs.ServiceTransportClientOptions);
+            });
         }
-#else
-        RegisterDeferredRoutedComposition(services, inputs);
-#endif
+        if (inputs.MembershipRouteCatalogProvider is not null)
+            services.AddSingleton(inputs.MembershipRouteCatalogProvider);
         services.AddSingleton(inputs.FeatureFlags);
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton(inputs.CountryLookupFactory);
@@ -233,51 +217,33 @@ public static class MauiProgram
 #endif
     }
 
-    private static RoutedProductionComposition CreateRoutedComposition(
+    private static XNodeRpcClient CreateRouterClient(
         ApplicationServiceInputs inputs)
     {
         var currentRuntimeEndpoints = inputs.RealityTransportRuntime.RouterEndpoints;
         var endpoints = currentRuntimeEndpoints.Count == 0
             ? inputs.RouterBaseUrls
             : currentRuntimeEndpoints;
-        return
-        inputs.MembershipRouteCatalogProvider is null
-            ? RoutedProductionCompositionFactory.Create(
-                endpoints,
-                inputs.StorageBaseUrl,
-                inputs.RouterHttpClient,
-                inputs.RoutedTransportOptions,
-                endpointPolicy: inputs.RoutedEndpointPolicy)
-            : RoutedProductionCompositionFactory.CreateVerified(
-                endpoints,
-                inputs.StorageBaseUrl,
-                inputs.RouterHttpClient,
-                inputs.RoutedTransportOptions,
-                inputs.MembershipRouteCatalogProvider,
-                endpointPolicy: inputs.RoutedEndpointPolicy);
+        var validatedEndpoints = RoutedRuntimeConfiguration.ValidateAtLeastThree(
+            endpoints,
+            inputs.RoutedEndpointPolicy);
+        return new XNodeRpcClient(
+            inputs.RouterHttpClient,
+            new XNodeRpcClientOptions(
+                validatedEndpoints,
+                RequireMembershipRouteSelection:
+                    inputs.MembershipRouteCatalogProvider is not null),
+            membershipRouteCatalogProvider: inputs.MembershipRouteCatalogProvider);
     }
 
-    private static void RegisterDeferredRoutedComposition(
+    private static void RegisterRouteProvider(
         IServiceCollection services,
         ApplicationServiceInputs inputs)
     {
-        services.AddSingleton(_ => CreateRoutedComposition(inputs));
-        services.AddSingleton(serviceProvider =>
-            serviceProvider.GetRequiredService<RoutedProductionComposition>().Router);
+        services.AddSingleton(_ => CreateRouterClient(inputs));
         services.AddSingleton<ITransportRouteProvider>(serviceProvider =>
-            serviceProvider.GetRequiredService<RoutedProductionComposition>().RouteProvider);
-        services.AddSingleton<ISessionMessageTransport>(serviceProvider =>
-            ApplyTransportOwnership(
-                serviceProvider.GetRequiredService<RoutedProductionComposition>().SessionMessageTransport,
-                inputs));
+            serviceProvider.GetRequiredService<XNodeRpcClient>());
     }
-
-    private static ISessionMessageTransport ApplyTransportOwnership(
-        ISessionMessageTransport transport,
-        ApplicationServiceInputs inputs) =>
-        inputs.UserManagedTransport
-            ? new UserManagedSessionMessageTransport(transport)
-            : transport;
 
 #if ANDROID
     private static void ConfigureAndroidHandlers()
@@ -373,6 +339,7 @@ public static class MauiProgram
     private static ApplicationServiceInputs ResolveApplicationServiceInputs()
     {
         var survivalDevelopment = IsSurvivalDevelopmentProfile();
+        var transportMode = ResolveRuntimeTransportMode();
         var routedEndpointPolicy = survivalDevelopment && IsDebugBuild()
             ? RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment
             : RoutedRuntimeEndpointPolicy.Production;
@@ -380,7 +347,7 @@ public static class MauiProgram
             survivalDevelopment && IsDebugBuild()
                 ? HttpServiceEndpointPolicy.PhysicalE2eDevelopment
                 : HttpServiceEndpointPolicy.Production);
-        var featureFlags = BuildFeatureFlags(survivalDevelopment);
+        var featureFlags = BuildFeatureFlags(survivalDevelopment, transportMode);
         var realityBinding = ResolveRealityTransportBinding(routedEndpointPolicy);
         var realityTransportRuntime = realityBinding.Runtime;
         var routerBaseUrls = realityBinding.RouterEndpoints;
@@ -489,7 +456,7 @@ public static class MauiProgram
             featureFlags,
             routerBaseUrls,
             realityTransportRuntime,
-            ResolveUserManagedTransportOwnership(),
+            transportMode,
             storageBaseUrl,
             routerHttpClient,
             BuildRoutedTransportOptions(survivalDevelopment),
@@ -513,19 +480,10 @@ public static class MauiProgram
             desktopWorkspaceFactory);
     }
 
-    private static bool ResolveUserManagedTransportOwnership()
-    {
-        var value = ResolveRuntimeSetting(TransportOwnershipEnv);
-        if (string.Equals(value, "user-managed", StringComparison.Ordinal))
-            return true;
-        if (string.Equals(value, "direct-p2p", StringComparison.Ordinal))
-            return false;
-        if (string.Equals(value, "official-managed", StringComparison.Ordinal))
-            throw new InvalidOperationException(
-                "Official managed mode requires a verified authority, entitlement, credential importer and native MAU2 transport registration; a mode string is not authority.");
-        throw new InvalidOperationException(
-            "DEEP_TRANSPORT_OWNERSHIP must explicitly select user-managed, direct-p2p, or official-managed.");
-    }
+    private static RuntimeTransportMode ResolveRuntimeTransportMode() =>
+        RuntimeTransportMode.Parse(
+            ResolveRuntimeSetting(TransportProtocolEnv),
+            ResolveRuntimeSetting(TransportOwnershipEnv));
 
     private static bool IsSurvivalDevelopmentProfile()
     {
@@ -551,12 +509,20 @@ public static class MauiProgram
     private static RoutedSessionStorageTransportOptions BuildRoutedTransportOptions(
         bool survivalDevelopment) => new();
 
-    private static ClientFeatureFlags BuildFeatureFlags(bool survivalDevelopment)
+    private static ClientFeatureFlags BuildFeatureFlags(
+        bool survivalDevelopment,
+        RuntimeTransportMode transportMode)
     {
 #if DEBUG
         var featureFlags = ClientFeatureFlags.Defaults with
         {
-            PersistentTransportOutboxEnabled = IsPersistentTransportOutboxRequested()
+            PersistentTransportOutboxEnabled = IsPersistentTransportOutboxRequested(),
+            TransportRequired = true,
+            StubTransportAllowed = false,
+            MetadataPrivateTransportRequired =
+                transportMode.Protocol == RuntimeTransportProtocol.AuthenticatedMau2,
+            ClientMailboxAdapterEnabled =
+                transportMode.Protocol == RuntimeTransportProtocol.AuthenticatedMau2
         };
         return featureFlags;
 #else
@@ -744,16 +710,16 @@ public static class MauiProgram
                 stateDbPath,
                 outboxActivation.EffectiveFeatureFlags,
                 services.GetRequiredService<IClock>(),
-                services.GetRequiredService<ISessionMessageTransport>(),
                 services.GetRequiredService<IAvatarProfileTransport>(),
                 stateDbKey,
-                requireE2eeTransport: true,
-                ResolveMailboxDeliveryPolicy(
-                    services.GetRequiredService<ISessionMessageTransport>()),
+                (sqlite, secureStore) => CreateStoreBoundTransportComposition(
+                    services,
+                    sqlite,
+                    secureStore,
+                    appDataDirectory,
+                    outboxActivation.EffectiveFeatureFlags),
                 outboxActivation.Executor,
-                services.GetService<RoutedProductionComposition>()
-                    ?.MembershipRouteCatalogProvider as
-                    DeferredVerifiedMembershipRouteCatalogProvider);
+                services.GetService<DeferredVerifiedMembershipRouteCatalogProvider>());
         }
         catch
         {
@@ -762,19 +728,57 @@ public static class MauiProgram
         }
     }
 
-    private static IMailboxDeliveryPolicy ResolveMailboxDeliveryPolicy(
-        ISessionMessageTransport transport)
+    private static StoreBoundRuntimeTransportComposition
+        CreateStoreBoundTransportComposition(
+            IServiceProvider services,
+            SqliteSessionStore sqlite,
+            SecureRecoverySessionStore secureStore,
+            string appDataDirectory,
+            ClientFeatureFlags featureFlags)
     {
-        ArgumentNullException.ThrowIfNull(transport);
-        return transport switch
+        var mode = services.GetRequiredService<RuntimeTransportMode>();
+        mode.Validate();
+        if (mode.Protocol == RuntimeTransportProtocol.DirectP2p)
         {
-            IDirectP2pSessionMessageTransport => new DirectP2pMailboxDeliveryPolicy(),
-            IUserManagedSessionMessageTransport => new UserManagedMailboxDeliveryPolicy(),
-            IAuthenticatedOpaqueMailboxTransport => throw new InvalidOperationException(
-                "Official managed mailbox transport requires an explicitly verified authority, entitlement and scoped-selector policy."),
-            _ => throw new InvalidOperationException(
-                "The configured transport has no explicit direct-P2P, user-managed, or official-cloud ownership policy.")
-        };
+            var direct = services.GetRequiredService<ISessionMessageTransport>();
+            if (direct is not IDirectP2pSessionMessageTransport)
+                throw new InvalidOperationException(
+                    "Direct-P2P mode requires an explicit direct transport capability.");
+            return new StoreBoundRuntimeTransportComposition(
+                direct,
+                new DirectP2pMailboxDeliveryPolicy());
+        }
+
+#if DEBUG && DEEP_PHYSICAL_E2E
+#if ANDROID
+        const MailboxClientPlatform platform = MailboxClientPlatform.Android;
+#elif WINDOWS
+        const MailboxClientPlatform platform = MailboxClientPlatform.Windows;
+#else
+        throw new PlatformNotSupportedException(
+            "DEV-local mailbox pair supports only Android and Windows.");
+#endif
+        var native = new StoreBoundNativeMau2Transport(
+            sqlite,
+            secureStore,
+            () => MailboxRuntimeProvisioning.LoadDevelopment(
+                appDataDirectory,
+                platform,
+                PhysicalLabTrustRoot.MrXPublicKeySha256,
+                mode.Ownership == MailboxInfrastructureOwnership.OfficialManaged
+                    ? static () => false
+                    : null).ImportOptions,
+            holder => DevelopmentMailboxHolderBootstrap.Publish(
+                appDataDirectory,
+                platform,
+                holder),
+            mode.Ownership,
+            featureFlags);
+        return new StoreBoundRuntimeTransportComposition(native, native);
+#else
+        throw new InvalidOperationException(
+            "DEV-local authenticated MAU2 composition is forbidden outside physical Debug builds.");
+#endif
     }
 
     private static ProcessExternalTransportOutboxExecutorOptions? ResolveExternalOutboxWorkerOptions(

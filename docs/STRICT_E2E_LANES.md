@@ -153,13 +153,15 @@ multicast addresses, alternate IPv4 spellings, credentials, query, and
 fragment forms fail closed. The identical LAN values remain invalid in ordinary
 Debug and Release composition.
 
-CI does not trust a pre-existing checkout directory. `eng/Provision-AndroidLabPolicy.ps1` materializes an exact allowlisted bundle from `DEEP_ANDROID_LAB_PROTECTED_SOURCE` after checkout, rejects reparse points in every existing source/destination ancestor, requires a pinned owner, and permits write access only to that owner, Local System, and Builtin Administrators by resolved SID. Every source file is regular/read-only, and both source and destination are re-enumerated against the exact signed file set with no extras. The script verifies all receipt/tool hashes and an Ed25519 signature over the complete semantic policy projection. The Mr. X public-key SHA-256 is supplied as the protected deployment pin `DEEP_MR_X_PUBLIC_KEY_SHA256`; the repository contains no invented real key. The verify-only helper uses a locked dependency graph, is built before provisioning, and runs without restore/build at the trust gate. An `if: always()` step removes the destination even after a failed lane.
+CI does not trust a pre-existing checkout directory. `eng/Provision-AndroidLabPolicy.ps1` materializes an exact allowlisted bundle from `DEEP_ANDROID_LAB_PROTECTED_SOURCE` after checkout, rejects reparse points in every existing source/destination ancestor, requires a pinned owner, and permits write access only to that owner, Local System, and Builtin Administrators by resolved SID. Every source file is regular/read-only, and both source and destination are re-enumerated against the exact signed file set with no extras. The script verifies all receipt/tool hashes and an Ed25519 signature over the complete semantic policy projection. The Mr. X public-key SHA-256 enters the protected build invocation as `DEEP_MR_X_PUBLIC_KEY_SHA256`, is passed explicitly as `DeepMrXPublicKeySha256`, and is compiled into the physical-lab binary; application runtime configuration never supplies or replaces this trust root. Release and non-physical builds reject the property. The repository contains no invented real key. The verify-only helper uses a locked dependency graph, is built before provisioning, and runs without restore/build at the trust gate. An `if: always()` step removes the destination even after a failed lane.
 
 Then attach that exact dedicated managed physical test device and invoke:
 
 ```powershell
 dotnet build .\src\Deep.Client.Maui\Deep.Client.Maui.csproj `
-  -f net10.0-android -c Debug -p:DeepPhysicalE2E=true
+  -f net10.0-android -c Debug `
+  -p:DeepPhysicalE2E=true `
+  -p:DeepMrXPublicKeySha256=$env:DEEP_MR_X_PUBLIC_KEY_SHA256
 
 .\eng\Invoke-StrictClientLane.ps1 `
   -Lane AndroidDevice `
@@ -170,6 +172,52 @@ dotnet build .\src\Deep.Client.Maui\Deep.Client.Maui.csproj `
 ```
 
 Release always keeps `network.xpoint.deep`; the physical Debug lane accepts only `network.xpoint.deep.e2e`. The wrapper, not the caller or runner, opens and hashes the policy-selected tools and APK, checks their exact versions, queries the attached device identity with the trusted `adb`, requires `ro.kernel.qemu=0`, rejects emulator hardware/model/product/characteristic patterns, validates the APK archive/metadata/certificate, and rejects any production package presence. Caller-selected tool paths or serials are optional cross-checks only and cannot establish trust. It never reads, cleans, or modifies the production package.
+
+### Two-phase DEV-local mailbox bootstrap
+
+Authenticated MAU2 credentials are holder-bound, so the app must create or
+restore its Session identity before the host can issue the Android/Windows
+pair. The physical Debug runtime therefore publishes only `sessionId` and the
+Ed25519 public holder key to its app-private
+`files/mailbox-holder-bootstrap-v1/android.holder.v1.json` record before it
+attempts to load signed mailbox material. It never exports the recovery phrase
+or a private key. Missing signed material still fails the first MAU2 operation
+closed; it does not select routed storage or a raw transport fallback.
+
+After the account exists, retrieve and validate that public request:
+
+```powershell
+.\eng\Invoke-AndroidMailboxBootstrap.ps1 `
+  -Action ExportHolder `
+  -AndroidSerial 192.168.1.45:43337
+```
+
+Provision the pair with the Android and Windows public holder keys, assemble
+the platform-specific signed `mailbox-runtime-v1` root outside the repository,
+and, before protected runtime paths enter the process, build the locked
+signature verifier once:
+
+```powershell
+dotnet build .\eng\Deep.AndroidLab.PolicyVerifier\Deep.AndroidLab.PolicyVerifier.csproj `
+  -c Release --locked-mode
+```
+
+Then stage the Android root without packaging it in the APK. `StageRuntime`
+uses that prebuilt verifier with `--no-build --no-restore`, so dependency
+resolution cannot occur while approval material is in scope:
+
+```powershell
+.\eng\Invoke-AndroidMailboxBootstrap.ps1 `
+  -Action StageRuntime `
+  -AndroidSerial 192.168.1.45:43337 `
+  -RuntimeRoot C:\protected\deep-mailbox\android\mailbox-runtime-v1 `
+  -MrXPublicKeySha256 $env:DEEP_MR_X_PUBLIC_KEY_SHA256
+```
+
+The staging command force-stops only `network.xpoint.deep.e2e`, streams the
+exact allowlisted files through `run-as`, checks every remote SHA-256, applies
+`0700/0600`, and atomically renames the complete staging directory. It never
+touches `network.xpoint.deep`. Relaunch only after staging completes.
 
 The preflight supports an explicit `-AndroidSerial` and configures `adb reverse` for local UAT ports when requested. The runner must bind its v3 result to the policy ID/hash, source commit, both invocation IDs, APK SHA-256, package/version, signing certificate, selected serial, fingerprint/product hashes, SDK/class, its own binary hash/exact version, JUnit hash, and cleanup attestations before and after execution. JUnit counters are independently parsed and cross-checked. Any DTD/entity, system output/error, attachment, absolute Windows/Unix path, absolute URI, sensitive property/value, or non-whitespace text blocks sanitization. Raw JUnit, logcat, screenshots, runner result, and runner output remain below `quarantine/raw` and are never uploaded. Only `android-device-summary.json`, containing allowlisted hashes, counters, safe versions, and booleans (not a raw serial or path), is standard evidence.
 

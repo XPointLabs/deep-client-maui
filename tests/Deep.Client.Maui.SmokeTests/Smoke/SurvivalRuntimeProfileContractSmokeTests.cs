@@ -67,12 +67,13 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.DoesNotContain("SessionStorageMetadataMode.LegacyCompatibility", program, StringComparison.Ordinal);
         Assert.Contains("SURVIVAL_ENV", program, StringComparison.Ordinal);
         Assert.DoesNotContain("MetadataPrivateTransportRequired = false", program, StringComparison.Ordinal);
-        Assert.Contains("a mode string is not authority", program, StringComparison.Ordinal);
-        Assert.Contains("ResolveMailboxDeliveryPolicy", program, StringComparison.Ordinal);
+        Assert.Contains("RuntimeTransportProtocol.AuthenticatedMau2", program, StringComparison.Ordinal);
+        Assert.Contains("StoreBoundNativeMau2Transport", program, StringComparison.Ordinal);
         Assert.Contains("bool survivalDevelopment) => new();", program, StringComparison.Ordinal);
         Assert.Contains("RoutedSessionStorageTransportOptions transportOptions", factory, StringComparison.Ordinal);
+        Assert.Contains("OpaqueSessionStorageDependencies? opaqueDependencies", factory, StringComparison.Ordinal);
         Assert.Contains("new RoutedSessionStorageMessageTransport(", factory, StringComparison.Ordinal);
-        Assert.Contains("transportOptions);", factory, StringComparison.Ordinal);
+        Assert.Contains("opaqueDependencies);", factory, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -85,7 +86,85 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("$reversePorts = @(41545) + @(41801..41806) + @(41810..41823)", script, StringComparison.Ordinal);
         Assert.Contains("-p:DeepPhysicalE2E=true", script, StringComparison.Ordinal);
         Assert.Contains("-p:DeepSurvivalRuntimeEnv=", script, StringComparison.Ordinal);
+        Assert.Contains("-p:DeepMrXPublicKeySha256=", script, StringComparison.Ordinal);
+        Assert.Contains("Get-ApkSignerSha256", script, StringComparison.Ordinal);
+        Assert.Contains("Signer #(?<number>[1-9][0-9]*)", script, StringComparison.Ordinal);
+        Assert.Contains("$signers.Count -ne 1 -or $signers[0].number -ne 1", script,
+            StringComparison.Ordinal);
+        Assert.Contains("exactly one canonical signer and no rotation ambiguity", script,
+            StringComparison.Ordinal);
+        Assert.Contains("Candidate APK signer differs from the installed E2E package signer.",
+            script, StringComparison.Ordinal);
+        Assert.Contains("DEEP_MR_X_PUBLIC_KEY_SHA256 must be exactly 64 lowercase hexadecimal characters.",
+            script, StringComparison.Ordinal);
         Assert.DoesNotContain("uninstall", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AndroidMailboxBootstrapStreamsFirstInstallOnlyIntoAppPrivateStorage()
+    {
+        var script = File.ReadAllText(WorkspacePath(
+            "eng", "Invoke-AndroidMailboxBootstrap.ps1"));
+
+        Assert.Contains("network.xpoint.deep.e2e", script, StringComparison.Ordinal);
+        Assert.Contains("Copy-ToAppPrivate", script, StringComparison.Ordinal);
+        Assert.Contains("RedirectStandardInput = $true", script, StringComparison.Ordinal);
+        Assert.Contains("test ! -e files/mailbox-runtime-v1", script, StringComparison.Ordinal);
+        Assert.Contains("selections).Count -ne 0", script, StringComparison.Ordinal);
+        Assert.Contains("@($_.replicas).Count -ne 0", script, StringComparison.Ordinal);
+        Assert.Contains("Deep.AndroidLab.PolicyVerifier", script, StringComparison.Ordinal);
+        Assert.Contains("Mr. X Ed25519 approval signature is invalid", script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("/data/local/tmp", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("rm -rf files/mailbox-runtime-v1", script,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PhysicalMrXTrustRootIsCompiledAndReleaseUnreachable()
+    {
+        var project = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Deep.Client.Maui.csproj"));
+        var program = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "MauiProgram.cs"));
+
+        Assert.Contains("GeneratePhysicalLabTrustRoot", project, StringComparison.Ordinal);
+        Assert.Contains("DeepMrXPublicKeySha256", project, StringComparison.Ordinal);
+        Assert.Contains("RejectPhysicalLabTrustRootOutsidePhysicalDebug", project,
+            StringComparison.Ordinal);
+        Assert.Contains("PhysicalLabTrustRoot.MrXPublicKeySha256", program,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("MrXPublicKeySha256Env", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResolveRuntimeSetting(\"DEEP_MR_X_PUBLIC_KEY_SHA256\")",
+            program, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PhysicalMailboxProvisioningIsLazyAndExportsOnlyPublicHolderMaterial()
+    {
+        var program = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "MauiProgram.cs"));
+        var transport = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Services", "StoreBoundNativeMau2Transport.cs"));
+        var bootstrap = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Services", "DevelopmentMailboxHolderBootstrap.cs"));
+
+        Assert.Contains("() => MailboxRuntimeProvisioning.LoadDevelopment(", program,
+            StringComparison.Ordinal);
+        var firstPublish = transport.IndexOf(
+            "holderAvailable(new MailboxHolderIdentity", StringComparison.Ordinal);
+        var firstLoad = transport.IndexOf(
+            "importOptions = importOptionsFactory()", StringComparison.Ordinal);
+        var secondPublish = transport.IndexOf(
+            "holderAvailable(holder);", firstLoad + 1, StringComparison.Ordinal);
+        var secondLoad = transport.IndexOf(
+            "importOptions = importOptionsFactory()", firstLoad + 1, StringComparison.Ordinal);
+        Assert.True(firstPublish >= 0 && firstPublish < firstLoad);
+        Assert.True(secondPublish > firstLoad && secondPublish < secondLoad);
+        Assert.Contains("ed25519PublicKey", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("sessionId", bootstrap, StringComparison.Ordinal);
+        Assert.DoesNotContain("RecoveryPhrase", bootstrap, StringComparison.Ordinal);
+        Assert.DoesNotContain("PrivateKey", bootstrap, StringComparison.Ordinal);
     }
 
     [Fact]
