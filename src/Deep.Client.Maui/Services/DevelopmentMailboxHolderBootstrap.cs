@@ -19,9 +19,15 @@ internal static class DevelopmentMailboxHolderBootstrap
             throw new InvalidOperationException("Mailbox holder bootstrap identity is invalid.");
 
         var root = Path.GetFullPath(Path.Combine(appDataDirectory, DirectoryName));
+        var rootAlreadyExisted = Directory.Exists(root);
         Directory.CreateDirectory(root);
         RejectReparse(root);
-        if (!OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows())
+        {
+            if (rootAlreadyExisted) WindowsMailboxAccessControl.ValidateDirectory(root);
+            else WindowsMailboxAccessControl.ProtectNewDirectory(root);
+        }
+        else
             File.SetUnixFileMode(root, UnixFileMode.UserRead |
                 UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 
@@ -42,6 +48,7 @@ internal static class DevelopmentMailboxHolderBootstrap
             if (File.Exists(destination))
             {
                 RejectReparse(destination);
+                WindowsMailboxAccessControl.ValidateFile(destination);
                 var info = new FileInfo(destination);
                 if (info.Length == payload.Length)
                 {
@@ -65,8 +72,11 @@ internal static class DevelopmentMailboxHolderBootstrap
             }
             if (!OperatingSystem.IsWindows())
                 File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            else
+                WindowsMailboxAccessControl.ProtectNewFile(temporary);
             File.Move(temporary, destination, overwrite: true);
             RejectReparse(destination);
+            WindowsMailboxAccessControl.ValidateFile(destination);
         }
         finally
         {

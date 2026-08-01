@@ -123,6 +123,35 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
     }
 
     [Fact]
+    public void WindowsMailboxBootstrapStagesOnlyAProtectedFirstInstallRuntime()
+    {
+        var script = File.ReadAllText(WorkspacePath(
+            "eng", "Invoke-WindowsMailboxBootstrap.ps1"));
+        var provisioning = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Services", "MailboxRuntimeProvisioning.cs"));
+        var acl = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Services", "WindowsMailboxAccessControl.cs"));
+
+        Assert.Contains("ValidateSet('ExportHolder', 'StageRuntime')", script,
+            StringComparison.Ordinal);
+        Assert.Contains("Deep.AndroidLab.PolicyVerifier", script, StringComparison.Ordinal);
+        Assert.Contains("--no-build --no-restore", script, StringComparison.Ordinal);
+        Assert.Contains("Live Windows mailbox runtime already exists", script,
+            StringComparison.Ordinal);
+        Assert.Contains("[IO.Directory]::Move($stage, $destination)", script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Remove-Item -LiteralPath $destination", script,
+            StringComparison.Ordinal);
+        Assert.Contains("Assert-CanonicalMailboxTreeAcl", script,
+            StringComparison.Ordinal);
+        Assert.Contains("WindowsMailboxAccessControl.ValidateTree(root)", provisioning,
+            StringComparison.Ordinal);
+        Assert.Contains("S-1-5-18", acl, StringComparison.Ordinal);
+        Assert.Contains("S-1-5-32-544", acl, StringComparison.Ordinal);
+        Assert.Contains("FileSystemRights.FullControl", acl, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PhysicalMrXTrustRootIsCompiledAndReleaseUnreachable()
     {
         var project = File.ReadAllText(WorkspacePath(

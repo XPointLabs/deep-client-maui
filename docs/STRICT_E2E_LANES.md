@@ -219,6 +219,42 @@ exact allowlisted files through `run-as`, checks every remote SHA-256, applies
 `0700/0600`, and atomically renames the complete staging directory. It never
 touches `network.xpoint.deep`. Relaunch only after staging completes.
 
+### Windows DEV-local mailbox staging
+
+The Windows peer uses the same signed pair but is not permitted to receive it
+through an environment variable, package asset, or a shared working folder.
+After the Windows Debug client has created its identity, export only its public
+holder request and protect the output file with the exact current-user, Local
+System, and Builtin Administrators DACL:
+
+```powershell
+.\eng\Invoke-WindowsMailboxBootstrap.ps1 `
+  -Action ExportHolder `
+  -WindowsAppDataRoot C:\protected\deep-e2e\windows-appdata `
+  -OutputPath C:\protected\deep-mailbox\holders\windows.holder.v1.json
+```
+
+After pair issuance, stage the Windows-specific runtime into that same isolated
+app-data root:
+
+```powershell
+.\eng\Invoke-WindowsMailboxBootstrap.ps1 `
+  -Action StageRuntime `
+  -WindowsAppDataRoot C:\protected\deep-e2e\windows-appdata `
+  -RuntimeRoot C:\protected\deep-mailbox\windows\mailbox-runtime-v1 `
+  -MrXPublicKeySha256 $env:DEEP_MR_X_PUBLIC_KEY_SHA256
+```
+
+The command uses the prebuilt locked verifier (`--no-build --no-restore`),
+checks the pin, signature, exact ten-file/three-directory inventory, pair
+generation, activation hashes, and minimized authority before copying. It
+creates a same-volume sibling staging directory with a GUID, applies and
+revalidates the exact non-inherited three-principal DACL to every entry, then
+performs one `Directory.Move`. Existing `mailbox-runtime-v1` is a hard failure:
+the command never replaces or deletes a live runtime. The app repeats the ACL
+and reparse validation before loading the runtime. This is DEV-local only;
+production approval and provisioning remain a separate release composition.
+
 The preflight supports an explicit `-AndroidSerial` and configures `adb reverse` for local UAT ports when requested. The runner must bind its v3 result to the policy ID/hash, source commit, both invocation IDs, APK SHA-256, package/version, signing certificate, selected serial, fingerprint/product hashes, SDK/class, its own binary hash/exact version, JUnit hash, and cleanup attestations before and after execution. JUnit counters are independently parsed and cross-checked. Any DTD/entity, system output/error, attachment, absolute Windows/Unix path, absolute URI, sensitive property/value, or non-whitespace text blocks sanitization. Raw JUnit, logcat, screenshots, runner result, and runner output remain below `quarantine/raw` and are never uploaded. Only `android-device-summary.json`, containing allowlisted hashes, counters, safe versions, and booleans (not a raw serial or path), is standard evidence.
 
 `-AllowSyntheticLabPolicyForContractTests` exists only for the repository's compiled synthetic security fixture. It must be explicit, emits `synthetic=true`, and is always rejected by the release validator. The checked-in template, missing Mr. X receipt, missing exact tool/APK/device bindings, personal devices, or runner self-attestation remain `blocked`; building an APK is never counted as execution.

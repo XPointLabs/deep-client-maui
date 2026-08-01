@@ -23,6 +23,7 @@ internal sealed record MailboxRuntimeProvisioning(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
         var root = SafeRoot(appDataDirectory, DirectoryName);
+        if (OperatingSystem.IsWindows()) WindowsMailboxAccessControl.ValidateTree(root);
         var activationBytes = ReadBounded(SafeFile(root, "activation.v1.json"), 32 * 1024);
         using var document = JsonDocument.Parse(activationBytes, new JsonDocumentOptions
         {
