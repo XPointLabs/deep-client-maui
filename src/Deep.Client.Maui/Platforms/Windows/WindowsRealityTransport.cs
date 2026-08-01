@@ -14,7 +14,7 @@ using Microsoft.Win32.SafeHandles;
 namespace Deep.Client.Maui;
 
 #if WINDOWS
-internal static class WindowsRealityTransport
+internal sealed class WindowsRealityTransport : IRealityTransportRuntime
 {
     private const string XrayAmd64FileName = "xray-windows-amd64.exe";
     private const string XrayArm64FileName = "xray-windows-arm64.exe";
@@ -23,6 +23,7 @@ internal static class WindowsRealityTransport
     private const int DynamicPortMinimum = 49152;
     private const int DynamicPortMaximumExclusive = 65536;
     private const int PortSelectionAttemptLimit = 128;
+    private const int ProcessSelectionAttemptLimit = 6;
     private const int AddressFamilyInterNetwork = 2;
     private const int TcpStateListen = 2;
     private const uint ErrorSuccess = 0;
@@ -30,77 +31,76 @@ internal static class WindowsRealityTransport
     private const int MaximumTcpTableBytes = 16 * 1024 * 1024;
 
     private static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan ListenerOwnershipTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(5);
     private static readonly uint LoopbackAddress = BitConverter.ToUInt32(IPAddress.Loopback.GetAddressBytes());
-    private static readonly object Sync = new();
-    private static readonly object ProcessSync = new();
-    private static IReadOnlyList<PinnedRouterEndpoint>? routerEndpoints;
-    private static IReadOnlyList<RealitySeed>? configuredSeeds;
-    private static RealityStartupCoordinator? startupCoordinator;
-    private static Process? xrayProcess;
-    private static WindowsJobObject? xrayJob;
+    private readonly object processSync = new();
+    private readonly IReadOnlyList<RealitySeed> bootstrapSeeds;
+    private readonly RealityStartupCoordinator startupCoordinator;
+    private IReadOnlyList<PinnedRouterEndpoint> routerEndpoints;
+    private IReadOnlyList<RealitySeed> configuredSeeds;
+    private Process? xrayProcess;
+    private WindowsJobObject? xrayJob;
+    private string? xrayConfigPath;
+    private bool runtimeCatalogAttested;
+    private int disposed;
 
-    static WindowsRealityTransport()
+    public WindowsRealityTransport()
     {
-        AppDomain.CurrentDomain.ProcessExit += static (_, _) => Shutdown();
+        var bootstrap = RealityTransportConfiguration.LoadEmbedded(typeof(WindowsRealityTransport).Assembly);
+        bootstrapSeeds = bootstrap.Seeds.ToArray();
+        configuredSeeds = CreateRuntimeSeeds(bootstrapSeeds);
+        routerEndpoints = RealityTransportConfiguration.BuildRouterEndpoints(
+            new RealityBootstrap(bootstrap.Version, configuredSeeds));
+        startupCoordinator = new RealityStartupCoordinator(
+            StartCoreAsync,
+            ProbeListenerAsync,
+            initialRetryDelay: TimeSpan.FromMilliseconds(250),
+            maximumRetryDelay: TimeSpan.FromSeconds(2),
+            listenerPollInterval: TimeSpan.FromMilliseconds(100),
+            startupFailed: static exception => Debug.WriteLine(
+                $"Windows Reality transport startup remains retryable: {exception.GetType().Name}"));
     }
 
-    public static IReadOnlyList<PinnedRouterEndpoint> Start()
+    public IReadOnlyList<PinnedRouterEndpoint> RouterEndpoints
     {
-        lock (Sync)
+        get
         {
-            if (routerEndpoints is not null)
+            lock (processSync)
             {
                 return routerEndpoints;
             }
-
-            var bootstrap = RealityTransportConfiguration.LoadEmbedded(typeof(WindowsRealityTransport).Assembly);
-            var seeds = CreateRuntimeSeeds(bootstrap.Seeds);
-            var endpoints = RealityTransportConfiguration.BuildRouterEndpoints(
-                new RealityBootstrap(bootstrap.Version, seeds));
-            var coordinator = new RealityStartupCoordinator(
-                (restart, cancellationToken) => StartCoreAsync(seeds, restart, cancellationToken),
-                ProbeListenerAsync,
-                initialRetryDelay: TimeSpan.FromMilliseconds(250),
-                maximumRetryDelay: TimeSpan.FromSeconds(2),
-                listenerPollInterval: TimeSpan.FromMilliseconds(100),
-                startupFailed: static exception => Debug.WriteLine(
-                    $"Windows Reality transport startup remains retryable: {exception.GetType().Name}"));
-
-            routerEndpoints = endpoints;
-            configuredSeeds = seeds;
-            startupCoordinator = coordinator;
-            _ = ObserveInitialStartupAsync(coordinator);
-            return routerEndpoints;
         }
     }
 
-    public static Task WaitUntilReadyAsync(Uri? requestUri, CancellationToken cancellationToken)
-    {
-        RealitySeed? seed;
-        RealityStartupCoordinator? coordinator;
-        lock (Sync)
-        {
-            seed = RealityTransportConfiguration.FindSeedForRequest(configuredSeeds, requestUri);
-            coordinator = startupCoordinator;
-        }
+    public RealityTransportEndpointSource EndpointSource => RealityTransportEndpointSource.Embedded;
 
-        return seed is null || coordinator is null
+    public Task EnsureStartedAsync(CancellationToken cancellationToken = default) =>
+        RunWithTimeoutAsync(
+            startupCoordinator.EnsureStartedAsync,
+            ReadinessTimeout,
+            "Windows Reality transport startup did not complete in time.",
+            cancellationToken);
+
+    public Task WaitUntilReadyAsync(Uri? requestUri, CancellationToken cancellationToken)
+    {
+        var seed = RealityTransportConfiguration.FindSeedForRequest(configuredSeeds, requestUri);
+        return seed is null
             ? Task.CompletedTask
-            : WaitForListenerAsync(seed, coordinator, cancellationToken);
+            : WaitForListenerAsync(seed, cancellationToken);
     }
 
-    private static async Task ObserveInitialStartupAsync(RealityStartupCoordinator coordinator)
+    public void NotifyNetworkChanged()
     {
-        try
-        {
-            await coordinator.EnsureStartedAsync().ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            Debug.WriteLine(
-                $"Initial Windows Reality transport startup did not complete: {exception.GetType().Name}");
-        }
+        _ = startupCoordinator.TryInvalidateReadiness();
     }
+
+    public void SetForeground(bool isForeground)
+    {
+    }
+
+    public Task OnForegroundAsync(CancellationToken cancellationToken = default) =>
+        EnsureStartedAsync(cancellationToken);
 
     internal static RealitySeed[] CreateRuntimeSeeds(IReadOnlyList<RealitySeed> seeds)
     {
@@ -150,23 +150,21 @@ internal static class WindowsRealityTransport
         throw new InvalidOperationException("Could not reserve randomized loopback ports for the Reality transport.");
     }
 
-    private static Task StartCoreAsync(
-        IReadOnlyList<RealitySeed> seeds,
+    private Task StartCoreAsync(
         bool restart,
         CancellationToken cancellationToken) =>
         Task.Factory.StartNew(
-            () => StartCore(seeds, restart, cancellationToken),
+            () => StartCore(restart, cancellationToken),
             CancellationToken.None,
             TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
             TaskScheduler.Default);
 
-    private static void StartCore(
-        IReadOnlyList<RealitySeed> seeds,
+    private void StartCore(
         bool restart,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        lock (ProcessSync)
+        lock (processSync)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (IsRunning(xrayProcess) && !restart)
@@ -175,33 +173,112 @@ internal static class WindowsRealityTransport
             }
 
             StopProcessLocked();
-            EnsurePortsAvailable(seeds);
-
             var executablePath = ResolveVerifiedExecutablePath();
-            var configPath = WriteConfig(RealityTransportConfiguration.BuildXrayConfig(seeds));
-            var process = CreateProcess(executablePath, configPath);
-            try
-            {
-                process.Start();
-                xrayJob ??= WindowsJobObject.CreateKillOnClose();
-                xrayJob.AddProcess(process);
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-                if (process.WaitForExit(150))
-                {
-                    throw new InvalidOperationException(
-                        $"Bundled Xray exited during startup with code {process.ExitCode}.");
-                }
+            var mayReselectPorts = !runtimeCatalogAttested;
+            var selectedSeeds = SelectBoundedCandidate(
+                ProcessSelectionAttemptLimit,
+                _ => mayReselectPorts ? CreateRuntimeSeeds(bootstrapSeeds) : configuredSeeds.ToArray(),
+                candidate => TryStartCandidate(executablePath, candidate, cancellationToken),
+                static _ => { },
+                mayReselectPorts
+                    ? "Windows Reality transport could not claim its loopback listeners after bounded port reselection."
+                    : "Windows Reality transport could not reclaim its published loopback listeners; the route catalog remains unchanged and recovery failed closed.",
+                cancellationToken);
+            configuredSeeds = selectedSeeds;
+            routerEndpoints = RealityTransportConfiguration.BuildRouterEndpoints(
+                new RealityBootstrap(1, configuredSeeds));
+            runtimeCatalogAttested = true;
+        }
+    }
 
-                xrayProcess = process;
-            }
-            catch
+    private bool TryStartCandidate(
+        string executablePath,
+        IReadOnlyList<RealitySeed> seeds,
+        CancellationToken cancellationToken)
+    {
+        var configPath = WriteConfig(RealityTransportConfiguration.BuildXrayConfig(seeds));
+        var process = CreateProcess(executablePath, configPath);
+        try
+        {
+            process.Start();
+            xrayJob ??= WindowsJobObject.CreateKillOnClose();
+            xrayJob.AddProcess(process);
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            if (!WaitForOwnedListeners(process, seeds, cancellationToken))
             {
                 TryKill(process);
                 process.Dispose();
-                throw;
+                TryDelete(configPath);
+                return false;
             }
+
+            xrayProcess = process;
+            xrayConfigPath = configPath;
+            return true;
         }
+        catch
+        {
+            TryKill(process);
+            process.Dispose();
+            TryDelete(configPath);
+            throw;
+        }
+    }
+
+    private static bool WaitForOwnedListeners(
+        Process process,
+        IReadOnlyList<RealitySeed> seeds,
+        CancellationToken cancellationToken)
+    {
+        var deadline = Stopwatch.GetTimestamp() + (long)(ListenerOwnershipTimeout.TotalSeconds * Stopwatch.Frequency);
+        while (Stopwatch.GetTimestamp() < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsRunning(process))
+            {
+                return false;
+            }
+
+            if (seeds.All(seed =>
+                    TryGetListenerOwnerProcessId(seed.LocalPort, out var processId)
+                    && processId == process.Id))
+            {
+                return true;
+            }
+
+            Thread.Sleep(TimeSpan.FromMilliseconds(50));
+        }
+
+        return false;
+    }
+
+    internal static T SelectBoundedCandidate<T>(
+        int attemptLimit,
+        Func<int, T> createCandidate,
+        Func<T, bool> tryActivate,
+        Action<T> rejectCandidate,
+        string failureMessage,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(attemptLimit, 1);
+        ArgumentNullException.ThrowIfNull(createCandidate);
+        ArgumentNullException.ThrowIfNull(tryActivate);
+        ArgumentNullException.ThrowIfNull(rejectCandidate);
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureMessage);
+        for (var attempt = 0; attempt < attemptLimit; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var candidate = createCandidate(attempt);
+            if (tryActivate(candidate))
+            {
+                return candidate;
+            }
+
+            rejectCandidate(candidate);
+        }
+
+        throw new InvalidOperationException(failureMessage);
     }
 
     private static Process CreateProcess(string executablePath, string configPath)
@@ -281,42 +358,15 @@ internal static class WindowsRealityTransport
         }
     }
 
-    private static void EnsurePortsAvailable(IEnumerable<RealitySeed> seeds)
-    {
-        foreach (var seed in seeds)
-        {
-            TcpListener? listener = null;
-            try
-            {
-                listener = new TcpListener(IPAddress.Loopback, seed.LocalPort)
-                {
-                    ExclusiveAddressUse = true
-                };
-                listener.Start();
-            }
-            catch (SocketException exception)
-            {
-                throw new InvalidOperationException(
-                    $"Local Reality listener port {seed.LocalPort} is already occupied.",
-                    exception);
-            }
-            finally
-            {
-                listener?.Stop();
-            }
-        }
-    }
-
-    private static async Task WaitForListenerAsync(
+    private async Task WaitForListenerAsync(
         RealitySeed seed,
-        RealityStartupCoordinator coordinator,
         CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ReadinessTimeout);
         try
         {
-            await coordinator.WaitUntilReadyAsync(seed.LocalPort, timeout.Token).ConfigureAwait(false);
+            await startupCoordinator.WaitUntilReadyAsync(seed.LocalPort, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -330,10 +380,10 @@ internal static class WindowsRealityTransport
         }
     }
 
-    private static Task<bool> ProbeListenerAsync(int localPort, CancellationToken cancellationToken)
+    private Task<bool> ProbeListenerAsync(int localPort, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        lock (ProcessSync)
+        lock (processSync)
         {
             var process = xrayProcess;
             if (!IsRunning(process))
@@ -346,6 +396,28 @@ internal static class WindowsRealityTransport
                 && IsRunning(process);
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(belongsToXray);
+        }
+    }
+
+    private static async Task RunWithTimeoutAsync(
+        Func<CancellationToken, Task> operation,
+        TimeSpan timeout,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        bounded.CancelAfter(timeout);
+        try
+        {
+            await operation(bounded.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException exception)
+        {
+            throw new InvalidOperationException(timeoutMessage, exception);
         }
     }
 
@@ -452,27 +524,72 @@ internal static class WindowsRealityTransport
         }
     }
 
-    private static void Shutdown()
+    public Task StopAsync(CancellationToken cancellationToken = default) =>
+        Task.Factory.StartNew(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                lock (processSync)
+                {
+                    StopProcessLocked();
+                    xrayJob?.Dispose();
+                    xrayJob = null;
+                }
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
+            TaskScheduler.Default).WaitAsync(cancellationToken);
+
+    public async ValueTask DisposeAsync()
     {
-        lock (ProcessSync)
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
         {
-            StopProcessLocked();
-            xrayJob?.Dispose();
-            xrayJob = null;
+            return;
+        }
+
+        var coordinatorDisposal = startupCoordinator.DisposeAsync().AsTask();
+        var stop = StopAsync();
+        try
+        {
+            await Task.WhenAll(coordinatorDisposal, stop)
+                .WaitAsync(ShutdownTimeout)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            ObserveLateCompletion(coordinatorDisposal);
+            ObserveLateCompletion(stop);
         }
     }
 
-    private static void StopProcessLocked()
+    private static void ObserveLateCompletion(Task task) =>
+        _ = task.ContinueWith(
+            static completed => _ = completed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+    private void StopProcessLocked()
     {
         var process = xrayProcess;
         xrayProcess = null;
+        var configPath = xrayConfigPath;
+        xrayConfigPath = null;
         if (process is null)
         {
+            if (configPath is not null)
+            {
+                TryDelete(configPath);
+            }
             return;
         }
 
         TryKill(process);
         process.Dispose();
+        if (configPath is not null)
+        {
+            TryDelete(configPath);
+        }
     }
 
     private static void TryKill(Process process)

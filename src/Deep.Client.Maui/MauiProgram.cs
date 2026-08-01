@@ -30,6 +30,7 @@ namespace Deep.Client.Maui;
 internal sealed record ApplicationServiceInputs(
     ClientFeatureFlags FeatureFlags,
     IReadOnlyList<PinnedRouterEndpoint> RouterBaseUrls,
+    IRealityTransportRuntime RealityTransportRuntime,
     string? StorageBaseUrl,
     HttpClient RouterHttpClient,
     RoutedSessionStorageTransportOptions RoutedTransportOptions,
@@ -106,28 +107,24 @@ public static class MauiProgram
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(inputs);
 #if DEBUG
-        var routedComposition = inputs.RouterBaseUrls.Count == 0
-            ? null
-            : CreateRoutedComposition(inputs);
+        var hasRoutedComposition = inputs.RouterBaseUrls.Count != 0;
 #else
-        var routedComposition = CreateRoutedComposition(inputs);
+        const bool hasRoutedComposition = true;
 #endif
 
         services.AddSingleton(inputs.RuntimeEnvironment);
+        services.AddSingleton<IRealityTransportRuntime>(inputs.RealityTransportRuntime);
 #if DEBUG
-        if (routedComposition is not null)
+        if (hasRoutedComposition)
         {
-            services.AddSingleton(routedComposition);
-            services.AddSingleton(routedComposition.Router);
-            services.AddSingleton<ITransportRouteProvider>(routedComposition.RouteProvider);
-            services.AddSingleton<ISessionMessageTransport>(routedComposition.SessionMessageTransport);
+            RegisterDeferredRoutedComposition(services, inputs);
         }
         else
         {
             services.AddSingleton<ITransportRouteProvider>(_ =>
                 new DirectStorageRouteProvider(inputs.StorageBaseUrl));
         }
-        if (routedComposition is null)
+        if (!hasRoutedComposition)
         {
         services.AddSingleton<ISessionMessageTransport>(_ =>
         {
@@ -157,10 +154,7 @@ public static class MauiProgram
         });
         }
 #else
-        services.AddSingleton(routedComposition);
-        services.AddSingleton(routedComposition.Router);
-        services.AddSingleton<ITransportRouteProvider>(routedComposition.RouteProvider);
-        services.AddSingleton<ISessionMessageTransport>(routedComposition.SessionMessageTransport);
+        RegisterDeferredRoutedComposition(services, inputs);
 #endif
         services.AddSingleton(inputs.FeatureFlags);
         services.AddSingleton<IClock, SystemClock>();
@@ -238,21 +232,41 @@ public static class MauiProgram
     }
 
     private static RoutedProductionComposition CreateRoutedComposition(
-        ApplicationServiceInputs inputs) =>
+        ApplicationServiceInputs inputs)
+    {
+        var currentRuntimeEndpoints = inputs.RealityTransportRuntime.RouterEndpoints;
+        var endpoints = currentRuntimeEndpoints.Count == 0
+            ? inputs.RouterBaseUrls
+            : currentRuntimeEndpoints;
+        return
         inputs.MembershipRouteCatalogProvider is null
             ? RoutedProductionCompositionFactory.Create(
-                inputs.RouterBaseUrls,
+                endpoints,
                 inputs.StorageBaseUrl,
                 inputs.RouterHttpClient,
                 inputs.RoutedTransportOptions,
                 endpointPolicy: inputs.RoutedEndpointPolicy)
             : RoutedProductionCompositionFactory.CreateVerified(
-                inputs.RouterBaseUrls,
+                endpoints,
                 inputs.StorageBaseUrl,
                 inputs.RouterHttpClient,
                 inputs.RoutedTransportOptions,
                 inputs.MembershipRouteCatalogProvider,
                 endpointPolicy: inputs.RoutedEndpointPolicy);
+    }
+
+    private static void RegisterDeferredRoutedComposition(
+        IServiceCollection services,
+        ApplicationServiceInputs inputs)
+    {
+        services.AddSingleton(_ => CreateRoutedComposition(inputs));
+        services.AddSingleton(serviceProvider =>
+            serviceProvider.GetRequiredService<RoutedProductionComposition>().Router);
+        services.AddSingleton<ITransportRouteProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<RoutedProductionComposition>().RouteProvider);
+        services.AddSingleton<ISessionMessageTransport>(serviceProvider =>
+            serviceProvider.GetRequiredService<RoutedProductionComposition>().SessionMessageTransport);
+    }
 
 #if ANDROID
     private static void ConfigureAndroidHandlers()
@@ -356,7 +370,9 @@ public static class MauiProgram
                 ? HttpServiceEndpointPolicy.PhysicalE2eDevelopment
                 : HttpServiceEndpointPolicy.Production);
         var featureFlags = BuildFeatureFlags(survivalDevelopment);
-        var routerBaseUrls = ResolveRouterBaseUrls(routedEndpointPolicy);
+        var realityBinding = ResolveRealityTransportBinding(routedEndpointPolicy);
+        var realityTransportRuntime = realityBinding.Runtime;
+        var routerBaseUrls = realityBinding.RouterEndpoints;
         var membershipConfiguration =
             DevLocalMembershipRouteConfiguration.Resolve(
                 ResolveRuntimeSetting(DevLocalMembershipTrustUrlEnv),
@@ -413,8 +429,18 @@ public static class MauiProgram
             CreateFileTransportClientOptions(),
             CreateServiceTransportClientOptions());
         Func<IServiceProvider, ClientRuntimeBootstrapper> runtimeBootstrapperFactory =
-            serviceProvider => new ClientRuntimeBootstrapper(
-                cancellationToken => CreateClientRuntimeAsync(serviceProvider, cancellationToken));
+            serviceProvider => new ClientRuntimeBootstrapper(async cancellationToken =>
+            {
+                if (realityTransportRuntime.EndpointSource == RealityTransportEndpointSource.Embedded
+                    && routerBaseUrls.Count > 0)
+                {
+                    await realityTransportRuntime.EnsureStartedAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                return await CreateClientRuntimeAsync(serviceProvider, cancellationToken)
+                    .ConfigureAwait(false);
+            });
         Func<IServiceProvider, ClientRuntime> runtimeFactory =
             serviceProvider => serviceProvider
                 .GetRequiredService<ClientRuntimeBootstrapper>()
@@ -438,7 +464,7 @@ public static class MauiProgram
 #else
         Func<IServiceProvider, DesktopWorkspaceViewModel>? desktopWorkspaceFactory = null;
 #endif
-        var routerHttpClient = CreateRouterHttpClient();
+        var routerHttpClient = CreateRouterHttpClient(realityTransportRuntime);
         var membershipRouteCatalogProvider = membershipConfiguration is null
             ? null
             : new DeferredVerifiedMembershipRouteCatalogProvider(
@@ -451,6 +477,7 @@ public static class MauiProgram
         return new ApplicationServiceInputs(
             featureFlags,
             routerBaseUrls,
+            realityTransportRuntime,
             storageBaseUrl,
             routerHttpClient,
             BuildRoutedTransportOptions(survivalDevelopment),
@@ -613,7 +640,7 @@ public static class MauiProgram
         return ResolveRuntimeSettingFromLines(key, ReadLines(reader));
     }
 
-    private static IReadOnlyList<PinnedRouterEndpoint> ResolveRouterBaseUrls(
+    private static RealityTransportBinding ResolveRealityTransportBinding(
         RoutedRuntimeEndpointPolicy endpointPolicy)
     {
 #if DEBUG
@@ -622,28 +649,14 @@ public static class MauiProgram
                 "stub",
                 StringComparison.OrdinalIgnoreCase))
         {
-            return [];
+            var unsupported = new UnsupportedRealityTransportRuntime();
+            return new RealityTransportBinding(unsupported, []);
         }
 #endif
-        var raw = ResolveRuntimeSetting(RouterBaseUrlsEnv);
-        if (!string.IsNullOrWhiteSpace(raw))
-        {
-            return RoutedRuntimeConfiguration.ParseAtLeastThree(
-                raw,
-                endpointPolicy);
-        }
-
-#if ANDROID
-        return RoutedRuntimeConfiguration.ValidateAtLeastThree(
-            AndroidRealityTransport.Start(),
-            endpointPolicy);
-#elif WINDOWS
-        return RoutedRuntimeConfiguration.ValidateAtLeastThree(
-            WindowsRealityTransport.Start(),
-            endpointPolicy);
-#else
-        return [];
-#endif
+        return RealityTransportBindingResolver.Resolve(
+            ResolveRuntimeSetting(RouterBaseUrlsEnv),
+            endpointPolicy,
+            RealityTransportRuntimeFactory.CreateEmbedded);
     }
 
     private static string? ResolveRuntimeSettingForComposition(
@@ -782,13 +795,13 @@ public static class MauiProgram
 
     internal static string ResolveAppDataDirectory() => AppDataPath.Resolve();
 
-    private static HttpClient CreateRouterHttpClient()
+    private static HttpClient CreateRouterHttpClient(IRealityTransportRuntime realityTransportRuntime)
     {
         var socketsHandler = CreateServiceHttpHandler();
         socketsHandler.UseProxy = false;
         HttpMessageHandler handler = socketsHandler;
 #if ANDROID || WINDOWS
-        handler = new RealityReadinessHandler(handler);
+        handler = new RealityReadinessHandler(handler, realityTransportRuntime);
 #endif
         return CreateServiceHttpClient(handler);
     }
@@ -1187,13 +1200,11 @@ public static class MauiProgram
     }
 
 #if ANDROID || WINDOWS
-    private sealed class RealityReadinessHandler(HttpMessageHandler innerHandler)
+    private sealed class RealityReadinessHandler(
+        HttpMessageHandler innerHandler,
+        IRealityTransportRuntime realityTransportRuntime)
         : DelegatingHandler(innerHandler)
     {
-        private readonly object readinessSync = new();
-        private readonly HashSet<int> readyPorts = [];
-        private readonly SemaphoreSlim readinessGate = new(1, 1);
-
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -1204,59 +1215,14 @@ public static class MauiProgram
                 await EnsureReadyAsync(request.RequestUri!, localPort.Value, cancellationToken).ConfigureAwait(false);
             }
 
-            try
-            {
-                return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
-            }
-            catch
-            {
-                if (localPort is not null)
-                {
-                    lock (readinessSync)
-                    {
-                        readyPorts.Remove(localPort.Value);
-                    }
-                }
-
-                throw;
-            }
+            return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
         private async Task EnsureReadyAsync(Uri requestUri, int localPort, CancellationToken cancellationToken)
         {
-            lock (readinessSync)
-            {
-                if (readyPorts.Contains(localPort))
-                {
-                    return;
-                }
-            }
-
-            await readinessGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                lock (readinessSync)
-                {
-                    if (readyPorts.Contains(localPort))
-                    {
-                        return;
-                    }
-                }
-
-#if ANDROID
-                await AndroidRealityTransport.WaitUntilReadyAsync(requestUri, cancellationToken).ConfigureAwait(false);
-#elif WINDOWS
-                await WindowsRealityTransport.WaitUntilReadyAsync(requestUri, cancellationToken).ConfigureAwait(false);
-#endif
-                lock (readinessSync)
-                {
-                    readyPorts.Add(localPort);
-                }
-            }
-            finally
-            {
-                readinessGate.Release();
-            }
+            _ = localPort;
+            await realityTransportRuntime.WaitUntilReadyAsync(requestUri, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         private static int? LocalRealityPort(Uri? requestUri) =>
@@ -1264,15 +1230,6 @@ public static class MauiProgram
                 ? requestUri.Port
                 : null;
 
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                readinessGate.Dispose();
-            }
-
-            base.Dispose(disposing);
-        }
     }
 #endif
 }

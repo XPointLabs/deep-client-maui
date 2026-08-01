@@ -1,4 +1,7 @@
 #if ANDROID
+using ConnectivityManager = Android.Net.ConnectivityManager;
+using Network = Android.Net.Network;
+using NetworkCapabilities = Android.Net.NetworkCapabilities;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -9,99 +12,137 @@ using Microsoft.Maui.Storage;
 namespace Deep.Client.Maui;
 
 #if ANDROID
-internal static class AndroidRealityTransport
+internal sealed class AndroidRealityTransportRuntime : IRealityTransportRuntime
 {
     private static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(5);
     private static readonly object Sync = new();
-    private static global::LibXray.IDialerController? dialerController;
-    private static IReadOnlyList<PinnedRouterEndpoint>? routerEndpoints;
-    private static IReadOnlyList<RealitySeed>? configuredSeeds;
-    private static RealityStartupCoordinator? startupCoordinator;
+    private global::LibXray.IDialerController? dialerController;
+    private readonly IReadOnlyList<PinnedRouterEndpoint> routerEndpoints;
+    private readonly IReadOnlyList<RealitySeed> configuredSeeds;
+    private readonly RealityStartupCoordinator startupCoordinator;
+    private readonly ConnectivityManager? connectivityManager;
+    private readonly ConnectivityManager.NetworkCallback? networkCallback;
+    private readonly RealityForegroundLifecycle foregroundLifecycle = new();
+    private int disposed;
 
-    public static IReadOnlyList<PinnedRouterEndpoint> Start()
+    public AndroidRealityTransportRuntime()
     {
-        lock (Sync)
-        {
-            if (routerEndpoints is not null)
-            {
-                return routerEndpoints;
-            }
-
-            var bootstrap = RealityTransportConfiguration.LoadEmbedded(typeof(AndroidRealityTransport).Assembly);
+        var bootstrap = RealityTransportConfiguration.LoadEmbedded(typeof(AndroidRealityTransportRuntime).Assembly);
 #if DEEP_PHYSICAL_E2E
-            bootstrap = RealityTransportConfiguration.ApplyLocalPortProfile(
-                bootstrap,
-                RealityTransportPortProfile.PhysicalE2E);
+        bootstrap = RealityTransportConfiguration.ApplyLocalPortProfile(
+            bootstrap,
+            RealityTransportPortProfile.PhysicalE2E);
 #endif
-            var endpoints = RealityTransportConfiguration.BuildRouterEndpoints(bootstrap);
-
-            var seeds = bootstrap.Seeds.ToArray();
-            var coordinator = new RealityStartupCoordinator(
-                (restart, cancellationToken) => StartCoreAsync(seeds, restart, cancellationToken),
-                ProbeListenerAsync,
-                initialRetryDelay: TimeSpan.FromMilliseconds(250),
-                maximumRetryDelay: TimeSpan.FromSeconds(2),
-                listenerPollInterval: TimeSpan.FromMilliseconds(100),
-                startupFailed: static exception => global::Android.Util.Log.Warn(
-                    "DeepXray",
-                    $"Embedded Xray startup failed and remains retryable: {exception.Message}"));
-
-            routerEndpoints = endpoints;
-            configuredSeeds = seeds;
-            startupCoordinator = coordinator;
-            ObserveInitialStartup(coordinator);
-            return routerEndpoints;
-        }
-    }
-
-    public static Task WaitUntilReadyAsync(Uri? requestUri, CancellationToken cancellationToken)
-    {
-        RealitySeed? seed;
-        RealityStartupCoordinator? coordinator;
-        lock (Sync)
-        {
-            seed = RealityTransportConfiguration.FindSeedForRequest(configuredSeeds, requestUri);
-            coordinator = startupCoordinator;
-        }
-
-        return seed is null || coordinator is null
-            ? Task.CompletedTask
-            : WaitForListenerAsync(seed, coordinator, cancellationToken);
-    }
-
-    private static void ObserveInitialStartup(RealityStartupCoordinator coordinator)
-    {
-        _ = ObserveInitialStartupAsync(coordinator);
-    }
-
-    private static async Task ObserveInitialStartupAsync(RealityStartupCoordinator coordinator)
-    {
-        try
-        {
-            await coordinator.EnsureStartedAsync().ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            global::Android.Util.Log.Warn(
+        routerEndpoints = RealityTransportConfiguration.BuildRouterEndpoints(bootstrap);
+        configuredSeeds = bootstrap.Seeds.ToArray();
+        startupCoordinator = new RealityStartupCoordinator(
+            StartCoreAsync,
+            ProbeListenerAsync,
+            initialRetryDelay: TimeSpan.FromMilliseconds(250),
+            maximumRetryDelay: TimeSpan.FromSeconds(2),
+            listenerPollInterval: TimeSpan.FromMilliseconds(100),
+            invalidatedSuccessCleanupAsync: () => StopAsync(),
+            startupFailed: static exception => global::Android.Util.Log.Warn(
                 "DeepXray",
-                $"Initial embedded Xray startup did not complete: {exception.Message}");
+                $"Embedded Xray startup failed and remains retryable: {exception.GetType().Name}"));
+        _ = startupCoordinator.TrySetRecoveryEnabled(false);
+        connectivityManager = Microsoft.Maui.ApplicationModel.Platform.AppContext
+            .GetSystemService(global::Android.Content.Context.ConnectivityService) as ConnectivityManager;
+        if (connectivityManager is not null && OperatingSystem.IsAndroidVersionAtLeast(24))
+        {
+            networkCallback = new RealityNetworkCallback(this);
+            try
+            {
+                connectivityManager.RegisterDefaultNetworkCallback(networkCallback);
+            }
+            catch (global::Java.Lang.Exception)
+            {
+                networkCallback = null;
+            }
         }
     }
 
-    private static Task StartCoreAsync(
-        IReadOnlyList<RealitySeed> seeds,
+    public IReadOnlyList<PinnedRouterEndpoint> RouterEndpoints => routerEndpoints;
+
+    public RealityTransportEndpointSource EndpointSource => RealityTransportEndpointSource.Embedded;
+
+    public async Task EnsureStartedAsync(CancellationToken cancellationToken = default)
+    {
+        using var lease = foregroundLifecycle.Capture(cancellationToken);
+        await RunWithTimeoutAsync(
+            startupCoordinator.EnsureStartedAsync,
+            ReadinessTimeout,
+            "Embedded Xray startup did not complete in time.",
+            lease.Token).ConfigureAwait(false);
+        foregroundLifecycle.Validate(lease.Generation, cancellationToken);
+    }
+
+    public Task WaitUntilReadyAsync(Uri? requestUri, CancellationToken cancellationToken)
+    {
+        var seed = RealityTransportConfiguration.FindSeedForRequest(configuredSeeds, requestUri);
+        if (seed is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        return foregroundLifecycle.IsForeground
+            ? WaitForForegroundListenerAsync(seed, cancellationToken)
+            : RequireExistingBackgroundListenerAsync(seed, cancellationToken);
+    }
+
+    public void SetForeground(bool isForeground)
+    {
+        if (isForeground && Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        if (isForeground)
+        {
+            foregroundLifecycle.SetForeground(true);
+            _ = startupCoordinator.TrySetRecoveryEnabled(true);
+            return;
+        }
+
+        // The coordinator owns startup publication. Invalidate its generation first so a
+        // non-cooperative native start cannot publish success during the lifecycle transition.
+        _ = startupCoordinator.TrySetRecoveryEnabled(false);
+        foregroundLifecycle.SetForeground(false);
+    }
+
+    public void NotifyNetworkChanged()
+    {
+        _ = startupCoordinator.TryInvalidateReadiness();
+    }
+
+    public Task OnForegroundAsync(CancellationToken cancellationToken = default)
+    {
+        SetForeground(true);
+        return EnsureStartedAsync(cancellationToken);
+    }
+
+    private async Task WaitForForegroundListenerAsync(
+        RealitySeed seed,
+        CancellationToken cancellationToken)
+    {
+        using var lease = foregroundLifecycle.Capture(cancellationToken);
+        await WaitForListenerAsync(seed, lease.Token).ConfigureAwait(false);
+        foregroundLifecycle.Validate(lease.Generation, cancellationToken);
+    }
+
+    private Task StartCoreAsync(
         bool restart,
         CancellationToken cancellationToken)
     {
         return Task.Factory.StartNew(
-            () => StartCore(seeds, restart, cancellationToken),
+            () => StartCore(restart, cancellationToken),
             CancellationToken.None,
             TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
             TaskScheduler.Default);
     }
 
-    private static void StartCore(
-        IReadOnlyList<RealitySeed> seeds,
+    private void StartCore(
         bool restart,
         CancellationToken cancellationToken)
     {
@@ -122,12 +163,34 @@ internal static class AndroidRealityTransport
         cancellationToken.ThrowIfCancellationRequested();
         var dataDirectory = Path.Combine(MauiProgram.ResolveAppDataDirectory(), "xray");
         Directory.CreateDirectory(dataDirectory);
-        var config = RealityTransportConfiguration.BuildXrayConfig(seeds);
-        var request = global::LibXray.LibXray.NewXrayRunFromJSONRequest(dataDirectory, string.Empty, config)
-            ?? throw new InvalidOperationException("libXray did not create a startup request.");
-        var response = global::LibXray.LibXray.RunXrayFromJSON(request)
-            ?? throw new InvalidOperationException("libXray did not return a startup response.");
-        EnsureSuccess(response);
+        var config = RealityTransportConfiguration.BuildXrayConfig(configuredSeeds);
+        try
+        {
+            var request = global::LibXray.LibXray.NewXrayRunFromJSONRequest(dataDirectory, string.Empty, config)
+                ?? throw new InvalidOperationException("libXray did not create a startup request.");
+            var response = global::LibXray.LibXray.RunXrayFromJSON(request)
+                ?? throw new InvalidOperationException("libXray did not return a startup response.");
+            EnsureSuccess(response);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw RealityTransportFailure.CreateSanitizedStartupException(exception.Message);
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            if (global::LibXray.LibXray.XrayState)
+            {
+                _ = global::LibXray.LibXray.StopXray();
+                WaitUntilStopped(CancellationToken.None);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+        }
     }
 
     private static void WaitUntilStopped(CancellationToken cancellationToken)
@@ -145,7 +208,7 @@ internal static class AndroidRealityTransport
         }
     }
 
-    private static void RegisterDialerController()
+    private void RegisterDialerController()
     {
         dialerController ??= new AndroidXrayDialerController();
         global::LibXray.LibXray.RegisterDialerController(dialerController);
@@ -166,21 +229,36 @@ internal static class AndroidRealityTransport
         using var response = JsonDocument.Parse(Encoding.UTF8.GetString(bytes));
         if (!response.RootElement.TryGetProperty("success", out var success) || !success.GetBoolean())
         {
-            var error = response.RootElement.TryGetProperty("error", out var value) ? value.GetString() : null;
-            throw new InvalidOperationException($"Could not start embedded Xray: {error ?? "unknown error"}");
+            var untrustedError = response.RootElement.TryGetProperty("error", out var value)
+                ? value.GetString()
+                : null;
+            throw RealityTransportFailure.CreateSanitizedStartupException(untrustedError);
         }
     }
 
-    private static async Task WaitForListenerAsync(
+    private async Task RequireExistingBackgroundListenerAsync(
         RealitySeed seed,
-        RealityStartupCoordinator coordinator,
+        CancellationToken cancellationToken)
+    {
+        if (await startupCoordinator.TryUseExistingListenerAsync(seed.LocalPort, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "Embedded Xray listener is unavailable while Deep is backgrounded; recovery is deferred until foreground.");
+    }
+
+    private async Task WaitForListenerAsync(
+        RealitySeed seed,
         CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ReadinessTimeout);
         try
         {
-            await coordinator.WaitUntilReadyAsync(seed.LocalPort, timeout.Token).ConfigureAwait(false);
+            await startupCoordinator.WaitUntilReadyAsync(seed.LocalPort, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -214,8 +292,235 @@ internal static class AndroidRealityTransport
         }
     }
 
+    public async Task StopAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await Task.Factory.StartNew(
+            () =>
+            {
+                lock (Sync)
+                {
+                    if (global::LibXray.LibXray.XrayState)
+                    {
+                        _ = global::LibXray.LibXray.StopXray();
+                        WaitUntilStopped(CancellationToken.None);
+                    }
+                }
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
+            TaskScheduler.Default).WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
+        }
+
+        SetForeground(false);
+        foregroundLifecycle.Dispose();
+        if (networkCallback is not null && connectivityManager is not null)
+        {
+            try
+            {
+                connectivityManager.UnregisterNetworkCallback(networkCallback);
+            }
+            catch (global::Java.Lang.Exception)
+            {
+                // The operating system may already have removed the callback during shutdown.
+            }
+        }
+        var coordinatorDisposal = startupCoordinator.DisposeAsync().AsTask();
+        var stop = StopAsync();
+        try
+        {
+            await Task.WhenAll(coordinatorDisposal, stop)
+                .WaitAsync(ShutdownTimeout)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            ObserveLateCompletion(coordinatorDisposal);
+            ObserveLateCompletion(stop);
+        }
+    }
+
+    private static async Task RunWithTimeoutAsync(
+        Func<CancellationToken, Task> operation,
+        TimeSpan timeout,
+        string timeoutMessage,
+        CancellationToken cancellationToken)
+    {
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        bounded.CancelAfter(timeout);
+        try
+        {
+            await operation(bounded.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException exception)
+        {
+            throw new InvalidOperationException(timeoutMessage, exception);
+        }
+    }
+
+    private static void ObserveLateCompletion(Task task) =>
+        _ = task.ContinueWith(
+            static completed => _ = completed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+    private sealed class RealityNetworkCallback(AndroidRealityTransportRuntime owner)
+        : ConnectivityManager.NetworkCallback
+    {
+        public override void OnAvailable(Network network) => owner.NotifyNetworkChanged();
+
+        public override void OnLost(Network network) => owner.NotifyNetworkChanged();
+
+        public override void OnCapabilitiesChanged(Network network, NetworkCapabilities capabilities) =>
+            owner.NotifyNetworkChanged();
+    }
+
 }
 #endif
+
+internal static class RealityTransportFailure
+{
+    internal static InvalidOperationException CreateSanitizedStartupException(string? untrustedNativeError)
+    {
+        _ = untrustedNativeError;
+        return new InvalidOperationException(
+            "The embedded Reality transport rejected its startup configuration.");
+    }
+}
+
+internal sealed class RealityForegroundLifecycle : IDisposable
+{
+    private readonly object sync = new();
+    private CancellationTokenSource transitionCancellation = CreateCancelledSource();
+    private long generation;
+    private bool foreground;
+    private bool disposed;
+
+    public bool IsForeground
+    {
+        get
+        {
+            lock (sync)
+            {
+                return foreground && !disposed;
+            }
+        }
+    }
+
+    public void SetForeground(bool isForeground)
+    {
+        lock (sync)
+        {
+            if (disposed || foreground == isForeground)
+            {
+                return;
+            }
+
+            generation++;
+            foreground = isForeground;
+            if (isForeground)
+            {
+                transitionCancellation.Dispose();
+                transitionCancellation = new CancellationTokenSource();
+            }
+            else
+            {
+                CancelNoThrow(transitionCancellation);
+            }
+        }
+    }
+
+    public Lease Capture(CancellationToken cancellationToken)
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (!foreground)
+            {
+                throw new InvalidOperationException(
+                    "Reality transport recovery is deferred while the application is backgrounded.");
+            }
+
+            return new Lease(
+                generation,
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    transitionCancellation.Token));
+        }
+    }
+
+    public void Validate(long expectedGeneration, CancellationToken callerCancellation)
+    {
+        callerCancellation.ThrowIfCancellationRequested();
+        lock (sync)
+        {
+            if (disposed || !foreground || expectedGeneration != generation)
+            {
+                throw new OperationCanceledException(
+                    "Reality transport foreground operation was cancelled by a lifecycle transition.");
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (sync)
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            foreground = false;
+            generation++;
+            CancelNoThrow(transitionCancellation);
+            transitionCancellation.Dispose();
+        }
+    }
+
+    private static CancellationTokenSource CreateCancelledSource()
+    {
+        var source = new CancellationTokenSource();
+        source.Cancel();
+        return source;
+    }
+
+    private static void CancelNoThrow(CancellationTokenSource source)
+    {
+        try
+        {
+            source.Cancel();
+        }
+        catch (AggregateException)
+        {
+            // Lifecycle cancellation must not escape a platform callback.
+        }
+    }
+
+    internal sealed class Lease(
+        long generation,
+        CancellationTokenSource cancellation) : IDisposable
+    {
+        public long Generation { get; } = generation;
+
+        public CancellationToken Token => cancellation.Token;
+
+        public void Dispose() => cancellation.Dispose();
+    }
+}
 
 internal sealed class RealityStartupCoordinator : IAsyncDisposable
 {
@@ -227,12 +532,17 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
     private readonly TimeSpan initialRetryDelay;
     private readonly TimeSpan maximumRetryDelay;
     private readonly TimeSpan listenerPollInterval;
+    private readonly TimeSpan disposalWaitTimeout;
+    private readonly Func<Task>? invalidatedSuccessCleanupAsync;
+    private readonly Action<CancellationTokenSource> cancelAttempt;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private StartupAttempt? currentAttempt;
     private ListenerRecovery? listenerRecovery;
     private Task? disposalTask;
     private int consecutiveFailures;
+    private long recoveryGeneration;
     private bool restartPending;
+    private bool recoveryEnabled = true;
     private bool disposed;
 
     public RealityStartupCoordinator(
@@ -241,6 +551,9 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
         TimeSpan initialRetryDelay,
         TimeSpan maximumRetryDelay,
         TimeSpan listenerPollInterval,
+        TimeSpan? disposalWaitTimeout = null,
+        Func<Task>? invalidatedSuccessCleanupAsync = null,
+        Action<CancellationTokenSource>? cancelAttempt = null,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
         Action<Exception>? startupFailed = null)
     {
@@ -264,6 +577,13 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
         this.initialRetryDelay = initialRetryDelay;
         this.maximumRetryDelay = maximumRetryDelay;
         this.listenerPollInterval = listenerPollInterval;
+        this.disposalWaitTimeout = disposalWaitTimeout ?? TimeSpan.FromSeconds(5);
+        if (this.disposalWaitTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(disposalWaitTimeout));
+        }
+        this.invalidatedSuccessCleanupAsync = invalidatedSuccessCleanupAsync;
+        this.cancelAttempt = cancelAttempt ?? (static source => source.Cancel());
         this.delayAsync = delayAsync ?? Task.Delay;
         this.startupFailed = startupFailed;
     }
@@ -277,12 +597,15 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
         lock (sync)
         {
             ThrowIfDisposedLocked();
+            ThrowIfRecoveryDisabledLocked();
             if (currentAttempt is null)
             {
                 attemptToRun = new StartupAttempt(
                     restartPending,
                     GetRetryDelayLocked(),
-                    new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+                    new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+                    CancellationTokenSource.CreateLinkedTokenSource(lifetimeCancellation.Token),
+                    recoveryGeneration);
                 restartPending = false;
                 currentAttempt = attemptToRun;
             }
@@ -307,7 +630,16 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(listenerPort));
         }
 
-        if (await ProbeAndMarkHealthyAsync(listenerPort, cancellationToken).ConfigureAwait(false))
+        var restartRequired = false;
+        lock (sync)
+        {
+            ThrowIfDisposedLocked();
+            ThrowIfRecoveryDisabledLocked();
+            restartRequired = restartPending;
+        }
+
+        if (!restartRequired &&
+            await ProbeAndMarkHealthyAsync(listenerPort, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -320,6 +652,10 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
                 break;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
             {
                 throw;
             }
@@ -361,6 +697,7 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
         lock (sync)
         {
             ThrowIfDisposedLocked();
+            ThrowIfRecoveryDisabledLocked();
             observedAttempt = currentAttempt;
             shareActiveRestart = observedAttempt?.IsRestart == true
                 && !observedAttempt.Completion.Task.IsCompleted;
@@ -399,6 +736,96 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
         await EnsureStartedAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<bool> TryUseExistingListenerAsync(
+        int listenerPort,
+        CancellationToken cancellationToken)
+    {
+        if (listenerPort is <= 0 or > ushort.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(listenerPort));
+        }
+
+        lock (sync)
+        {
+            ThrowIfDisposedLocked();
+            if (restartPending || currentAttempt is null || !currentAttempt.Completion.Task.IsCompletedSuccessfully)
+            {
+                return false;
+            }
+        }
+
+        return await probeListenerAsync(listenerPort, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Marks cached listener health stale without creating background work. The next foreground
+    /// or routed request performs the single-flight restart through the normal bounded path.
+    /// </summary>
+    public bool TryInvalidateReadiness()
+    {
+        lock (sync)
+        {
+            if (disposed)
+            {
+                return false;
+            }
+
+            restartPending = true;
+            listenerRecovery = null;
+            if (currentAttempt?.Completion.Task.IsCompleted == true)
+            {
+                currentAttempt = null;
+            }
+
+            return true;
+        }
+    }
+
+    public bool TrySetRecoveryEnabled(bool enabled)
+    {
+        CancellationTokenSource? cancellation = null;
+        lock (sync)
+        {
+            if (disposed)
+            {
+                return false;
+            }
+
+            if (recoveryEnabled == enabled)
+            {
+                return true;
+            }
+
+            recoveryEnabled = enabled;
+            recoveryGeneration++;
+            if (!enabled && currentAttempt is { } attempt && !attempt.Completion.Task.IsCompleted)
+            {
+                restartPending = true;
+                attempt.Invalidated = true;
+                cancellation = attempt.Cancellation;
+            }
+
+            if (!enabled && listenerRecovery is not null)
+            {
+                restartPending = true;
+            }
+
+        }
+
+        try
+        {
+            if (cancellation is not null)
+            {
+                cancelAttempt(cancellation);
+            }
+        }
+        catch (Exception exception) when (exception is ObjectDisposedException or AggregateException)
+        {
+            // The attempt completed or a cancellation callback failed after the guarded snapshot.
+        }
+        return true;
+    }
+
     public ValueTask DisposeAsync()
     {
         TaskCompletionSource? disposalCompletion = null;
@@ -411,8 +838,13 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
             }
 
             disposed = true;
+            recoveryGeneration++;
             restartPending = false;
             listenerRecovery = null;
+            if (currentAttempt is { } attempt)
+            {
+                attempt.Invalidated = true;
+            }
             activeTask = currentAttempt?.Completion.Task;
             currentAttempt = null;
             disposalCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -435,16 +867,19 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
     {
         Exception? error = null;
         var cancelled = false;
+        var startReturnedSuccessfully = false;
         try
         {
             if (attempt.RetryDelay > TimeSpan.Zero)
             {
-                await delayAsync(attempt.RetryDelay, lifetimeCancellation.Token).ConfigureAwait(false);
+                await delayAsync(attempt.RetryDelay, attempt.Cancellation.Token).ConfigureAwait(false);
             }
 
-            await startAsync(attempt.IsRestart, lifetimeCancellation.Token).ConfigureAwait(false);
+            await startAsync(attempt.IsRestart, attempt.Cancellation.Token).ConfigureAwait(false);
+            startReturnedSuccessfully = true;
+            attempt.Cancellation.Token.ThrowIfCancellationRequested();
         }
-        catch (OperationCanceledException exception) when (lifetimeCancellation.IsCancellationRequested)
+        catch (OperationCanceledException exception) when (attempt.Cancellation.IsCancellationRequested)
         {
             error = exception;
             cancelled = true;
@@ -454,39 +889,92 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
             error = exception;
         }
 
+        var cleanupInvalidatedSuccess = false;
+        var notifyFailure = false;
         lock (sync)
         {
-            if (ReferenceEquals(currentAttempt, attempt))
+            if (error is null && startReturnedSuccessfully &&
+                (attempt.Invalidated || attempt.Generation != recoveryGeneration || !recoveryEnabled || disposed))
             {
-                if (error is null)
+                error = new OperationCanceledException(
+                    "Reality transport startup completed after its lifecycle generation was invalidated.");
+                cancelled = true;
+                cleanupInvalidatedSuccess = true;
+            }
+
+            if (!cleanupInvalidatedSuccess)
+            {
+                if (ReferenceEquals(currentAttempt, attempt))
                 {
-                    consecutiveFailures = 0;
-                    if (restartPending)
+                    if (error is null)
                     {
+                        consecutiveFailures = 0;
+                        if (restartPending)
+                        {
+                            currentAttempt = null;
+                        }
+                    }
+                    else
+                    {
+                        consecutiveFailures = Math.Min(consecutiveFailures + 1, 31);
+                        restartPending = true;
                         currentAttempt = null;
                     }
                 }
+
+                if (error is null)
+                {
+                    attempt.Completion.TrySetResult();
+                }
+                else if (cancelled)
+                {
+                    attempt.Completion.TrySetCanceled();
+                }
                 else
                 {
-                    consecutiveFailures = Math.Min(consecutiveFailures + 1, 31);
-                    restartPending = true;
-                    currentAttempt = null;
+                    attempt.Completion.TrySetException(error);
+                    notifyFailure = true;
                 }
             }
         }
 
-        if (error is null)
+        if (cleanupInvalidatedSuccess)
         {
-            attempt.Completion.TrySetResult();
+            await CleanupInvalidatedSuccessAsync().ConfigureAwait(false);
+            lock (sync)
+            {
+                if (ReferenceEquals(currentAttempt, attempt))
+                {
+                    consecutiveFailures = Math.Max(consecutiveFailures, 1);
+                    restartPending = true;
+                    currentAttempt = null;
+                }
+
+                attempt.Completion.TrySetCanceled();
+            }
         }
-        else if (cancelled)
+        else if (notifyFailure)
         {
-            attempt.Completion.TrySetCanceled(lifetimeCancellation.Token);
+            NotifyStartupFailed(error!);
         }
-        else
+
+        attempt.Cancellation.Dispose();
+    }
+
+    private async Task CleanupInvalidatedSuccessAsync()
+    {
+        if (invalidatedSuccessCleanupAsync is null)
         {
-            attempt.Completion.TrySetException(error);
-            NotifyStartupFailed(error);
+            return;
+        }
+
+        try
+        {
+            await invalidatedSuccessCleanupAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            NotifyStartupFailed(exception);
         }
     }
 
@@ -526,6 +1014,7 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
         lock (sync)
         {
             ThrowIfDisposedLocked();
+            ThrowIfRecoveryDisabledLocked();
             if (listenerRecovery is null)
             {
                 recoveryToRun = new ListenerRecovery(
@@ -627,7 +1116,13 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
         {
             try
             {
-                await activeTask.ConfigureAwait(false);
+                await activeTask.WaitAsync(disposalWaitTimeout).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                _ = DisposeLifetimeAfterLateAttemptAsync(activeTask);
+                completion.TrySetResult();
+                return;
             }
             catch (Exception)
             {
@@ -636,6 +1131,21 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
 
         lifetimeCancellation.Dispose();
         completion.TrySetResult();
+    }
+
+    private async Task DisposeLifetimeAfterLateAttemptAsync(Task activeTask)
+    {
+        try
+        {
+            await activeTask.ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+        }
+        finally
+        {
+            lifetimeCancellation.Dispose();
+        }
     }
 
     private void NotifyStartupFailed(Exception exception)
@@ -654,10 +1164,34 @@ internal sealed class RealityStartupCoordinator : IAsyncDisposable
         ObjectDisposedException.ThrowIf(disposed, this);
     }
 
-    private sealed record StartupAttempt(
-        bool IsRestart,
-        TimeSpan RetryDelay,
-        TaskCompletionSource Completion);
+    private void ThrowIfRecoveryDisabledLocked()
+    {
+        if (!recoveryEnabled)
+        {
+            throw new OperationCanceledException(
+                "Reality transport recovery is paused while the application is backgrounded.");
+        }
+    }
+
+    private sealed class StartupAttempt(
+        bool isRestart,
+        TimeSpan retryDelay,
+        TaskCompletionSource completion,
+        CancellationTokenSource cancellation,
+        long generation)
+    {
+        public bool IsRestart { get; } = isRestart;
+
+        public TimeSpan RetryDelay { get; } = retryDelay;
+
+        public TaskCompletionSource Completion { get; } = completion;
+
+        public CancellationTokenSource Cancellation { get; } = cancellation;
+
+        public long Generation { get; } = generation;
+
+        public bool Invalidated { get; set; }
+    }
 
     private sealed class ListenerRecovery(TaskCompletionSource completion)
     {

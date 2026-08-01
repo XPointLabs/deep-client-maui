@@ -36,6 +36,29 @@ Secure storage is the sole recovery-phrase source after account activation.
 An absent secure phrase is a normal clean-break state and is never populated
 from SQLite or another wrapped store.
 
+Reality sidecars are exposed as one application-scoped
+`IRealityTransportRuntime`; `App` is the single idempotent shutdown owner.
+Endpoint catalog construction is synchronous and does not start native
+networking. Startup and foreground recovery have bounded waits. Every routed
+request verifies the requested local listener. Android tracks foreground state
+explicitly: a background request may use an already-attested listener once, but
+cannot start, restart, or poll the sidecar. Pausing the Activity cancels the
+current lifecycle generation, including an in-flight start/restart or listener
+poll; a non-cooperative native call is rechecked and any late success is stopped.
+Network callbacks only invalidate readiness. An explicit `XNODE_URLS` catalog
+selects configured mode and is authoritative: no embedded sidecar is constructed
+or started. Without that catalog, embedded mode publishes only its runtime-
+attested loopback catalog. Windows defers routed composition until bounded port selection,
+sidecar startup, and exact listener-owner PID attestation succeed. Rejected
+candidates are cleaned up and reselected before the endpoint catalog is
+published. After publication, restart retries only those exact ports and fails
+closed if they cannot be reclaimed; silently republishing different ports would
+leave existing router clients bound to stale endpoints. Shutdown initiates
+sidecar stop concurrently with a bounded wait for
+any native startup attempt and deletes generated configuration. Native startup
+errors are reduced to a static diagnostic and never persist endpoint or
+credential material. No failure path enables a direct or unpinned fallback.
+
 Release builds require real transports, between three and sixteen unique pinned Reality
 bootstrap nodes, TLS public-key pins, encrypted local persistence, and E2EE.
 Routed composition rejects `DEEP_STORAGE_URL`; direct storage and custom direct
@@ -46,7 +69,8 @@ process or used after a router failure.
 
 1. `MauiProgram` validates immutable embedded settings and composes narrow
    platform services.
-2. `ClientRuntimeBootstrapper` initializes encrypted persistence off the UI
+2. `ClientRuntimeBootstrapper` brings the DI-owned Reality runtime to readiness
+   before any routed client network I/O, then initializes encrypted persistence off the UI
    thread. Fresh state receives the single v10 baseline; existing state is
    exactly attested and incompatible state raises an actionable reset-required
    error. Operational failures remain retryable and are not classified as

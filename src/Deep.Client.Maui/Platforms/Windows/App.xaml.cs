@@ -169,6 +169,9 @@ public partial class App : MauiWinUIApplication
     {
         if (args.NetworkAccess is NetworkAccess.Internet or NetworkAccess.ConstrainedInternet)
         {
+            Deep.Client.Maui.App.Services
+                ?.GetService<IRealityTransportRuntime>()
+                ?.NotifyNetworkChanged();
             _ = RunPushMaintenanceAsync();
         }
     }
@@ -182,6 +185,12 @@ public partial class App : MauiWinUIApplication
             if (appLock is not null && !await appLock.AuthenticateIfRequiredAsync().ConfigureAwait(false))
             {
                 return;
+            }
+
+            var realityTransport = services?.GetService<IRealityTransportRuntime>();
+            if (realityTransport is not null)
+            {
+                await realityTransport.OnForegroundAsync().ConfigureAwait(false);
             }
 
             await RunPushMaintenanceAsync().ConfigureAwait(false);

@@ -32,6 +32,9 @@ public sealed class WindowsPlatformContractTests
         Assert.Contains("TcpTableClass.OwnerPidListener", source, StringComparison.Ordinal);
         Assert.Contains("row.LocalAddress == LoopbackAddress", source, StringComparison.Ordinal);
         Assert.Contains("processId == process!.Id", source, StringComparison.Ordinal);
+        Assert.Contains("IRealityTransportRuntime", source, StringComparison.Ordinal);
+        Assert.Contains("xrayConfigPath", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("EnsurePortsAvailable", source, StringComparison.Ordinal);
         Assert.DoesNotContain("ConnectAsync(IPAddress.Loopback, localPort", source, StringComparison.Ordinal);
     }
 

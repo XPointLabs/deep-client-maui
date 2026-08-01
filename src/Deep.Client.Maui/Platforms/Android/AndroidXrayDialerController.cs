@@ -14,8 +14,6 @@ internal sealed class AndroidXrayDialerController : Object, global::LibXray.IDia
     private const string LogTag = "DeepXray";
     private readonly ConnectivityManager? connectivityManager =
         Platform.AppContext.GetSystemService(Context.ConnectivityService) as ConnectivityManager;
-    private bool directBindUnavailable;
-    private bool protectFromVpnUnavailable;
     private int statusLogState;
 
     public bool ProtectFd(long fd)
@@ -34,15 +32,9 @@ internal sealed class AndroidXrayDialerController : Object, global::LibXray.IDia
             }
 
             var socketFd = (int)fd;
-            if (!protectFromVpnUnavailable && TryProtectFromVpn(socketFd))
+            if (TryProtectFromVpn(socketFd))
             {
                 LogStatusOnce("Embedded Xray sockets are protected from the active Android VPN.");
-                return true;
-            }
-
-            if (directBindUnavailable)
-            {
-                LogStatusOnce("Android denied external VPN bypass; embedded Xray will use the active network path.");
                 return true;
             }
 
@@ -62,13 +54,11 @@ internal sealed class AndroidXrayDialerController : Object, global::LibXray.IDia
             }
 
             network.BindSocket(fileDescriptor);
-            LogStatusOnce($"Embedded Xray sockets are bound to non-VPN network {network}.");
+            LogStatusOnce("Embedded Xray sockets are bound to a current non-VPN network.");
             return true;
         }
-        catch (System.Exception exception)
+        catch (System.Exception)
         {
-            directBindUnavailable = true;
-            Log.Debug(LogTag, $"Could not bind embedded Xray socket outside VPN: {exception.Message}");
             LogStatusOnce("Android denied external VPN bypass; embedded Xray will use the active network path.");
             return true;
         }
@@ -90,10 +80,8 @@ internal sealed class AndroidXrayDialerController : Object, global::LibXray.IDia
             using var result = method.Invoke(manager, boxedFd);
             return result is Java.Lang.Boolean value && value.BooleanValue();
         }
-        catch (Java.Lang.Exception exception)
+        catch (Java.Lang.Exception)
         {
-            protectFromVpnUnavailable = true;
-            Log.Debug(LogTag, $"Android protectFromVpn is unavailable, falling back to network bind: {exception.Message}");
             return false;
         }
     }

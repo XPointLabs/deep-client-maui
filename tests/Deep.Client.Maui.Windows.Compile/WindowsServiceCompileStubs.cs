@@ -73,23 +73,6 @@ namespace Deep.Client.Maui
         string SpiderX,
         int LocalPort);
 
-    internal sealed class RealityStartupCoordinator
-    {
-        public RealityStartupCoordinator(
-            Func<bool, CancellationToken, Task> startAsync,
-            Func<int, CancellationToken, Task<bool>> probeListenerAsync,
-            TimeSpan initialRetryDelay,
-            TimeSpan maximumRetryDelay,
-            TimeSpan listenerPollInterval,
-            Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
-            Action<Exception>? startupFailed = null)
-        {
-        }
-
-        public Task EnsureStartedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task WaitUntilReadyAsync(int listenerPort, CancellationToken cancellationToken) => Task.CompletedTask;
-    }
 }
 
 namespace Deep.Client.Maui.Services

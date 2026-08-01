@@ -30,6 +30,10 @@
   <ItemGroup>
     <Compile Include="..\..\src\Deep.Client.Maui\Services\IncomingMessageNotificationCoordinator.cs"
              Link="Services\IncomingMessageNotificationCoordinator.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\IRealityTransportRuntime.cs"
+             Link="Services\IRealityTransportRuntime.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\RealityTransportRuntime.cs"
+             Link="Services\RealityTransportRuntime.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsAppLockService.cs"
              Link="Platform\WindowsAppLockService.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsPushNotificationService.cs"

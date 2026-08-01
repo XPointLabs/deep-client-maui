@@ -76,6 +76,7 @@ public class MainActivity : MauiAppCompatActivity
 
     protected override void OnPause()
     {
+        App.Services?.GetService<IRealityTransportRuntime>()?.SetForeground(false);
         ResolveActiveConversationTracker()?.SetApplicationForeground(false);
         base.OnPause();
     }
@@ -145,6 +146,22 @@ public class MainActivity : MauiAppCompatActivity
         }
 
         HandleIntent(intent);
+        var realityTransport = App.Services?.GetService<IRealityTransportRuntime>();
+        if (realityTransport is not null)
+        {
+            try
+            {
+                await realityTransport.OnForegroundAsync().ConfigureAwait(false);
+            }
+            catch (System.OperationCanceledException)
+            {
+                // App shutdown owns cancellation; no retry loop is started from the Activity.
+            }
+            catch (Exception exception)
+            {
+                CrashDiagnostics.LogException("Android.RealityTransportForeground", exception);
+            }
+        }
     }
 
     private static IAppLockService? ResolveAppLock() =>

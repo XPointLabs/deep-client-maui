@@ -28,6 +28,7 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ClientRuntimeBootstrapper.cs" Link="Services\ClientRuntimeBootstrapper.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\CallSessionCoordinator.cs" Link="Services\CallSessionCoordinator.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\RealityTransportConfiguration.cs" Link="Services\RealityTransportConfiguration.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\IRealityTransportRuntime.cs" Link="Services\IRealityTransportRuntime.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\RealityTransportRuntime.cs" Link="Services\RealityTransportRuntime.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\WnsPushPayloadCodec.cs" Link="Services\WnsPushPayloadCodec.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ExifOrientationTransform.cs" Link="Services\ExifOrientationTransform.cs" />

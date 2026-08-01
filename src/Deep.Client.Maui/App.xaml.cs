@@ -8,16 +8,23 @@ public partial class App : Application
 {
     private readonly IServiceProvider services;
     private readonly ClientRuntimeBootstrapper runtimeBootstrapper;
+    private readonly IRealityTransportRuntime realityTransportRuntime;
     private readonly SemaphoreSlim startupGate = new(1, 1);
+    private readonly object shutdownSync = new();
     private readonly StartupLocalStateResetContext localStateResetContext = new();
+    private Task? realityShutdownTask;
 
     public static IServiceProvider? Services { get; private set; }
 
-    public App(IServiceProvider services, ClientRuntimeBootstrapper runtimeBootstrapper)
+    public App(
+        IServiceProvider services,
+        ClientRuntimeBootstrapper runtimeBootstrapper,
+        IRealityTransportRuntime realityTransportRuntime)
     {
         InitializeComponent();
         this.services = services;
         this.runtimeBootstrapper = runtimeBootstrapper;
+        this.realityTransportRuntime = realityTransportRuntime;
         Services = services;
 
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -30,11 +37,13 @@ public partial class App : Application
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
+        realityTransportRuntime.SetForeground(true);
         var startupPage = CreateStartupPage();
         var window = new Window(startupPage.Page)
         {
             Title = "Deep"
         };
+        window.Destroying += OnWindowDestroying;
         startupPage.RetryButton.Clicked += async (_, _) =>
         {
             if (!startupPage.RetryButton.IsEnabled)
@@ -56,6 +65,23 @@ public partial class App : Application
 
         _ = InitializeWindowAsync(window, startupPage);
         return window;
+    }
+
+    private void OnWindowDestroying(object? sender, EventArgs args)
+    {
+        Task shutdown;
+        lock (shutdownSync)
+        {
+            shutdown = realityShutdownTask ??= realityTransportRuntime.DisposeAsync().AsTask();
+        }
+
+        _ = shutdown.ContinueWith(
+            static completed => CrashDiagnostics.LogException(
+                "App.RealityTransportShutdown",
+                completed.Exception?.GetBaseException()),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private async Task InitializeWindowAsync(Window window, StartupPage startupPage)
