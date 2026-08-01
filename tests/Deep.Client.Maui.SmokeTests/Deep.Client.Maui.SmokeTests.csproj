@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Deep.Client.Maui.Core\Deep.Client.Maui.Core.csproj" />
+    <ProjectReference Include="..\..\eng\Deep.AndroidRunner\Deep.AndroidRunner.csproj" />
   </ItemGroup>
 
   <ItemGroup>

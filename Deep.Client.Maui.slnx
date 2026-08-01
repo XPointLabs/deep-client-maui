@@ -1,4 +1,7 @@
 ﻿<Solution>
+  <Folder Name="/eng/">
+    <Project Path="eng/Deep.AndroidRunner/Deep.AndroidRunner.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Deep.Client.Maui.Core/Deep.Client.Maui.Core.csproj" />
     <Project Path="src/Deep.Client.Maui.Outbox/Deep.Client.Maui.Outbox.csproj" />

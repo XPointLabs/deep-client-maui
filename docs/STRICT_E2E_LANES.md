@@ -99,6 +99,29 @@ HTTP. This changes no application production or Release default.
 
 ## Android device lane
 
+Build the repository-owned runner as one self-contained executable for the
+approved Windows lab architecture:
+
+```powershell
+.\eng\Build-AndroidRunner.ps1 -RuntimeIdentifier win-arm64
+```
+
+The publish directory contains exactly `deep-android-runner.exe`. Version 3
+uses the policy-pinned sibling `adb.exe` directly (never a shell), enforces
+bounded command/output/UI waits, revalidates the selected physical device and
+installed APK, and rejects any non-E2E third-party package on the dedicated
+device. Its mandatory rendered flow clears only `network.xpoint.deep.e2e`,
+creates a fresh account through exact UIAutomator resource IDs, proves the
+authenticated Conversations surface, cold-restarts the app, proves that state
+again, and finally clears and removes the E2E package. It never queries, clears,
+installs, or removes the production package except for the wrapper and runner's
+read-only exact-name absence checks.
+
+Copying this executable into the protected source is an explicit lab inventory
+operation performed only after the final APK, Windows payload, commit, device,
+and toolchain are fixed. The repository build script never writes the protected
+source or the provisioned `.secrets/android-lab` destination.
+
 Build the Debug-only E2E APK. Mr. X must provision and approve a commit-bound lab policy plus all referenced files below the ignored `.secrets/android-lab/` directory. Start from `eng/policies/android-lab-policy.template.json`, but do not edit that checked-in blocking template into a credential: copy it to the protected directory and fill exact values there. The policy binds:
 
 - the current 40-character Git commit and a nonzero policy ID;
