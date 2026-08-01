@@ -70,6 +70,11 @@ internal sealed class SecureRecoverySessionStore(
     public Task UpdateAsync(Message message, CancellationToken cancellationToken = default) =>
         inner.UpdateAsync(message, cancellationToken);
 
+    public Task EnsureLogicalDispatchPlanAsync(
+        DurableLogicalDispatchPlan plan,
+        CancellationToken cancellationToken = default) =>
+        inner.EnsureLogicalDispatchPlanAsync(plan, cancellationToken);
+
     public Task DeleteAsync(MessageId id, CancellationToken cancellationToken = default) =>
         inner.DeleteAsync(id, cancellationToken);
 

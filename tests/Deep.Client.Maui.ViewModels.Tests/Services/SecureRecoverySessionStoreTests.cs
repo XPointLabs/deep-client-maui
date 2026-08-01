@@ -77,6 +77,37 @@ public sealed class SecureRecoverySessionStoreTests
     }
 
     [Fact]
+    public async Task LogicalDispatchPlan_IsForwardedWithExactRetryAndConflictSemantics()
+    {
+        using var store = new SecureRecoverySessionStore(new InMemorySessionStore());
+        var sender = SessionId.CreateNew();
+        var recipient = SessionId.CreateNew();
+        var plan = new DurableLogicalDispatchPlan(
+            sender,
+            new MessageId("durable-plan-message"),
+            DurableLogicalDispatchKind.DirectMessage,
+            [new DurableLogicalDispatchTarget(
+                recipient,
+                new MessageId("durable-plan-wire"),
+                DurableLogicalDispatchRoute.DirectP2p,
+                ReadOnlyMemory<byte>.Empty)],
+            DateTimeOffset.Parse("2026-07-11T00:00:00Z"));
+
+        await store.EnsureLogicalDispatchPlanAsync(plan);
+        await store.EnsureLogicalDispatchPlanAsync(plan);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.EnsureLogicalDispatchPlanAsync(plan with
+            {
+                Targets = [new DurableLogicalDispatchTarget(
+                    recipient,
+                    new MessageId("changed-wire"),
+                    DurableLogicalDispatchRoute.DirectP2p,
+                    ReadOnlyMemory<byte>.Empty)]
+            }));
+    }
+
+    [Fact]
     public async Task BulkInboxCleanup_IsForwardedOnceWithoutUsingTheDefaultPerItemFallback()
     {
         var proxyStore = DispatchProxy.Create<ILocalSessionStore, TrackingInboxStoreProxy>();
