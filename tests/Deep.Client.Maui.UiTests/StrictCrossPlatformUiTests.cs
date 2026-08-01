@@ -19,6 +19,29 @@ public sealed class StrictCrossPlatformUiTests
     public void Physical_android_and_windows_exchange_persist_and_decrypt_an_attachment()
     {
         var options = CrossPlatformOptions.Load();
+        switch (options.Phase)
+        {
+            case Mau2PhysicalPhase.Attach:
+                AttachToExistingProvisionedClients(options);
+                return;
+            case Mau2PhysicalPhase.HappyPath:
+                ExchangeOnExistingProvisionedClients(options);
+                return;
+            case Mau2PhysicalPhase.RestartDurability:
+                RestartAndAssertDeduplicatedReceive(options);
+                return;
+            default:
+                throw new InvalidOperationException("Unsupported physical MAU2 phase.");
+        }
+    }
+
+    // This regression fixture is intentionally callable only through a second,
+    // explicit destructive gate. The provisioned physical MAU2 phase dispatcher
+    // above never invokes it.
+    [StrictLegacyCrossPlatformUiFact]
+    public void Legacy_destructive_fixture_is_not_a_physical_mau2_phase()
+    {
+        var options = CrossPlatformOptions.Load();
         File.Delete(options.ResultPath); // A pass may never reuse evidence from an earlier invocation.
         var cleanup = new StrictCrossPlatformContracts.CleanupScope();
         var attemptCleanup = new StrictCrossPlatformContracts.AttemptCleanupState();
@@ -164,6 +187,168 @@ public sealed class StrictCrossPlatformUiTests
         evidence.Write(options.ResultPath);
     }
 
+    private static void AttachToExistingProvisionedClients(CrossPlatformOptions options)
+    {
+        var evidence = CreatePhaseEvidence(options);
+        var android = new AndroidUiautomatorClient(options);
+        android.AssertPhysicalConnectedDevice();
+        android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
+        android.ColdStart();
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+        var androidIdentity = ReadAndroidIdentity(android, options);
+
+        using var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot);
+        Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(45)), "Conversations.NewConversation");
+        var windowsIdentity = ReadWindowsIdentity(windows);
+        Assert.NotEqual(androidIdentity, windowsIdentity);
+
+        evidence.AddHash("androidIdentityHash", androidIdentity);
+        evidence.AddHash("windowsIdentityHash", windowsIdentity);
+        evidence.AddBoolean("provisionedStatePreserved", true);
+        evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
+        CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void ExchangeOnExistingProvisionedClients(CrossPlatformOptions options)
+    {
+        var evidence = CreatePhaseEvidence(options);
+        var android = new AndroidUiautomatorClient(options);
+        android.AssertPhysicalConnectedDevice();
+        android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
+        android.ColdStart();
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+        var androidIdentity = ReadAndroidIdentity(android, options);
+        var windowsToAndroid = StrictCrossPlatformContracts.NewMarker("windows-to-android");
+        var androidToWindows = StrictCrossPlatformContracts.NewMarker("android-to-windows");
+        var attachmentMarker = StrictCrossPlatformContracts.NewMarker("attachment") + ".bin";
+        var fixtureSha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(options.AttachmentFixturePath)));
+        var downloadsDirectory = options.ResolveProductionDownloadsDirectory();
+        var createdDownloads = new List<string>();
+
+        try
+        {
+            using var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot);
+            Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(45)), "Conversations.NewConversation");
+            var windowsIdentity = ReadWindowsIdentity(windows);
+            Assert.NotEqual(androidIdentity, windowsIdentity);
+
+            // Contacts are created from identities kept in this process only. They
+            // are deliberately never emitted into the run state or test evidence.
+            AddAndroidContact(android, options, windowsIdentity);
+            AddWindowsContact(windows, androidIdentity);
+            SendWindowsMessage(windows, windowsToAndroid);
+            android.WaitForText(options.App("Chat.MessageBody"), windowsToAndroid, TimeSpan.FromSeconds(60));
+            SendAndroidMessage(android, options, androidToWindows);
+            WaitForWindowsText(windows, "DesktopWorkspace.DirectMessageBody", androidToWindows);
+            Require(windows.WaitForAutomationId("DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectDeliveryStatus");
+
+            android.PushFixture(options.AttachmentFixturePath, attachmentMarker);
+            StageAndSendAndroidAttachment(android, options, attachmentMarker);
+            SaveOpenAndVerifyWindowsAttachment(windows, downloadsDirectory, createdDownloads, attachmentMarker, fixtureSha256);
+        }
+        finally
+        {
+            android.DeletePushedFixture(attachmentMarker);
+            foreach (var path in createdDownloads)
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+        }
+
+        evidence.AddHash("windowsToAndroidMarkerHash", windowsToAndroid);
+        evidence.AddHash("androidToWindowsMarkerHash", androidToWindows);
+        evidence.AddBoolean("windowsToAndroidReceived", true);
+        evidence.AddBoolean("androidToWindowsReceived", true);
+        evidence.AddBoolean("senderDeliveryStatusObserved", true);
+        evidence.AddSafeValue("attachmentFixtureSha256", fixtureSha256);
+        evidence.AddBoolean("attachmentOpenSaveDecryptVerified", true);
+        // There is no self-copy AutomationId/action in the product contract. A test
+        // must not synthesize one or make a false pass claim.
+        evidence.AddBoolean("selfCopyUiSupported", false);
+        evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
+        CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void RestartAndAssertDeduplicatedReceive(CrossPlatformOptions options)
+    {
+        var evidence = CreatePhaseEvidence(options);
+        var android = new AndroidUiautomatorClient(options);
+        android.AssertPhysicalConnectedDevice();
+        android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
+        android.ColdStart();
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+        var androidIdentity = ReadAndroidIdentity(android, options);
+        var marker = StrictCrossPlatformContracts.NewMarker("restart-resend");
+        int firstWindowsPid;
+        using (var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot))
+        {
+            firstWindowsPid = windows.ProcessId;
+            AddWindowsContact(windows, androidIdentity);
+            SendWindowsMessage(windows, marker);
+            android.WaitForText(options.App("Chat.MessageBody"), marker, TimeSpan.FromSeconds(60));
+        }
+
+        android.ForceStop();
+        android.ColdStart();
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+        android.Tap(options.App("Conversations.ConversationRow"));
+        // FindExactlyOneResourceIdContainingText is intentionally an exact-once
+        // assertion. A duplicate after restart is a failure, not a best-effort poll.
+        android.WaitForText(options.App("Chat.MessageBody"), marker, TimeSpan.FromSeconds(45));
+
+        using (var restartedWindows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot))
+        {
+            StrictCrossPlatformContracts.AssertDistinctProcessIds(firstWindowsPid, restartedWindows.ProcessId);
+            Require(restartedWindows.WaitForAutomationId("DesktopWorkspace.DirectDraft", TimeSpan.FromSeconds(45)), "DesktopWorkspace.DirectDraft");
+            WaitForWindowsText(restartedWindows, "DesktopWorkspace.DirectMessageBody", marker);
+        }
+
+        evidence.AddHash("markerHash", marker);
+        evidence.AddBoolean("androidRestarted", true);
+        evidence.AddBoolean("windowsRestartedWithDistinctPid", true);
+        evidence.AddBoolean("receivedExactlyOnceAfterRestart", true);
+        // This is deliberately a restart-durability result, not a resend result.
+        // The product currently has no resend AutomationId/action; that is tracked
+        // as a separate P1 survival case and cannot be inferred from this phase.
+        evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
+        CompletePhaseEvidence(options, evidence);
+    }
+
+    private static StrictCrossPlatformContracts.SanitizedEvidence CreatePhaseEvidence(CrossPlatformOptions options)
+    {
+        var evidence = new StrictCrossPlatformContracts.SanitizedEvidence();
+        evidence.AddSafeValue("schema", "deep.physical-mau2-phase.v1");
+        evidence.AddSafeValue("phase", options.Phase.ToString());
+        evidence.AddSafeValue("sourceCommit", options.SourceCommit);
+        evidence.AddSafeValue("policyId", (ApprovedCrossPlatformPolicy.Current ?? throw new InvalidOperationException("Approved policy was not loaded.")).PolicyId);
+        evidence.AddSafeValue("storageReplication", "shared-dev-storage-non-replicated");
+        return evidence;
+    }
+
+    private static void CompletePhaseEvidence(CrossPlatformOptions options, StrictCrossPlatformContracts.SanitizedEvidence evidence)
+    {
+        evidence.AddBoolean("productionPackageUntouched", true);
+        evidence.AddSafeValue("status", "passed");
+        evidence.Write(options.ResultPath);
+    }
+
+    private static string ReadAndroidIdentity(AndroidUiautomatorClient android, CrossPlatformOptions options)
+    {
+        android.Tap(options.App("Conversations.ProfileSettings"));
+        var identity = StrictCrossPlatformContracts.RequireSessionId(android.WaitForResource(options.App("Settings.SessionId"), TimeSpan.FromSeconds(20)).Text, "Android settings");
+        android.Tap(options.App("Settings.Back"));
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(20));
+        return identity;
+    }
+
+    private static string ReadWindowsIdentity(WindowsUiSmokeTests.WindowsUiTestSession windows)
+    {
+        windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.ProfileSettings", TimeSpan.FromSeconds(20)), "DesktopWorkspace.ProfileSettings"));
+        var identity = StrictCrossPlatformContracts.RequireSessionId(Require(windows.WaitForAutomationId("Settings.SessionId", TimeSpan.FromSeconds(20)), "Settings.SessionId").Properties.Name.ValueOrDefault ?? string.Empty, "Windows settings");
+        windows.ActivateExact(Require(windows.WaitForAutomationId("Settings.Back", TimeSpan.FromSeconds(10)), "Settings.Back"));
+        return identity;
+    }
+
     private static string CreateAndroidIdentity(AndroidUiautomatorClient android, CrossPlatformOptions options)
     {
         android.WaitForResource(options.App("Welcome.DisplayName"), TimeSpan.FromSeconds(30));
@@ -298,6 +483,21 @@ public sealed class StrictCrossPlatformUiFactAttribute : FactAttribute
     }
 }
 
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class StrictLegacyCrossPlatformUiFactAttribute : FactAttribute
+{
+    public StrictLegacyCrossPlatformUiFactAttribute()
+    {
+        Skip = !string.Equals(
+            Environment.GetEnvironmentVariable("DEEP_ALLOW_LEGACY_DESTRUCTIVE_CROSS_PLATFORM_UI"),
+            "1",
+            StringComparison.Ordinal)
+            ? "NOT-RUN: legacy destructive cross-platform regression requires DEEP_ALLOW_LEGACY_DESTRUCTIVE_CROSS_PLATFORM_UI=1."
+            : CrossPlatformOptions.NotRunReason();
+        if (Skip is null) Skip = WindowsDesktopGate.NotRunReason();
+    }
+}
+
 internal sealed class CrossPlatformOptions
 {
     private static readonly string[] RequiredAppRoles =
@@ -309,21 +509,24 @@ internal sealed class CrossPlatformOptions
         "Chat.Attach", "Chat.PickFile", "Chat.StagedAttachmentFilename"
     ];
     private readonly Dictionary<string, string> androidSelectors;
-    private CrossPlatformOptions(string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string fixturePath, string artifactDirectory, Dictionary<string, string> selectors, string pickerDownloads, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string releaseInvocationId, string policySha256)
+    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string fixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerDownloads, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string releaseInvocationId, string policySha256)
     {
         AndroidSerial = serial; AdbPath = adbPath; ApkPath = apkPath; AaptPath = aaptPath; ApksignerPath = apksignerPath; AttachmentFixturePath = fixturePath; ArtifactDirectory = artifactDirectory;
         androidSelectors = selectors; PickerDownloadsResourceId = pickerDownloads; PickerFileResourceId = pickerFile; PickerConfirmResourceId = pickerConfirm;
-        ResultPath = Path.Combine(artifactDirectory, "cross-platform-ui-result.json"); InvocationId = Guid.NewGuid().ToString("N"); DeviceFingerprint = fingerprint; DeviceModel = model; SourceCommit = sourceCommit; WindowsExeSha256 = windowsExeSha256;
+        Phase = phase; WindowsAppDataRoot = windowsAppDataRoot;
+        ResultPath = Path.Combine(artifactDirectory, Mau2PhysicalPhaseContract.GetResultFileName(phase)); InvocationId = Guid.NewGuid().ToString("N"); DeviceFingerprint = fingerprint; DeviceModel = model; SourceCommit = sourceCommit; WindowsExeSha256 = windowsExeSha256;
         ReleaseInvocationId = releaseInvocationId;
         PolicySha256 = policySha256;
     }
     internal string AndroidSerial { get; }
+    internal Mau2PhysicalPhase Phase { get; }
     internal string AdbPath { get; }
     internal string ApkPath { get; }
     internal string AaptPath { get; }
     internal string ApksignerPath { get; }
     internal string AttachmentFixturePath { get; }
     internal string ArtifactDirectory { get; }
+    internal string WindowsAppDataRoot { get; }
     internal string PickerFileResourceId { get; }
     internal string PickerDownloadsResourceId { get; }
     internal string? PickerConfirmResourceId { get; }
@@ -340,7 +543,7 @@ internal sealed class CrossPlatformOptions
     internal static string? NotRunReason()
     {
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_STRICT_CROSS_PLATFORM_UI"), "1", StringComparison.Ordinal)) return "NOT-RUN: set DEEP_STRICT_CROSS_PLATFORM_UI=1 on an approved unlocked physical Android and Windows UI lab.";
-        var required = new[] { "DEEP_E2E_ANDROID_SERIAL", "DEEP_E2E_ADB", "DEEP_E2E_ANDROID_APK", "DEEP_E2E_AAPT", "DEEP_E2E_APKSIGNER", "DEEP_E2E_ATTACHMENT_FIXTURE", "DEEP_E2E_ARTIFACTS", "DEEP_E2E_ANDROID_SELECTORS_JSON", "DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID", "DEEP_E2E_ANDROID_PICKER_FILE_ID", "DEEP_MAUI_EXE", "DEEP_E2E_APPDATA_ROOT", "DEEP_E2E_BOOTSTRAP", "DEEP_E2E_ANDROID_POLICY", "DEEP_MR_X_PUBLIC_KEY_SHA256", "DEEP_RELEASE_INVOCATION_ID" };
+        var required = new[] { "DEEP_E2E_ANDROID_SERIAL", "DEEP_E2E_ADB", "DEEP_E2E_ANDROID_APK", "DEEP_E2E_AAPT", "DEEP_E2E_APKSIGNER", "DEEP_E2E_ATTACHMENT_FIXTURE", "DEEP_E2E_ARTIFACTS", "DEEP_E2E_ANDROID_SELECTORS_JSON", "DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID", "DEEP_E2E_ANDROID_PICKER_FILE_ID", "DEEP_MAUI_EXE", "DEEP_E2E_APPDATA_ROOT", "DEEP_E2E_BOOTSTRAP", "DEEP_E2E_ANDROID_POLICY", "DEEP_MR_X_PUBLIC_KEY_SHA256", "DEEP_RELEASE_INVOCATION_ID", "DEEP_MAU2_E2E_PHASE", "DEEP_MAU2_E2E_RUN_STATE" };
         var missing = required.Where(key => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key))).ToArray();
         return missing.Length == 0 ? null : "NOT-RUN: missing physical lane prerequisites: " + string.Join(", ", missing);
     }
@@ -348,6 +551,13 @@ internal sealed class CrossPlatformOptions
     internal static CrossPlatformOptions Load()
     {
         if (NotRunReason() is { } reason) throw new InvalidOperationException(reason);
+        var phase = Mau2PhysicalPhaseContract.LoadRequired();
+        Mau2PhysicalPhaseContract.RequireSanitizedRunStatePath();
+        if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_PROTOCOL"), "authenticated-mau2", StringComparison.Ordinal) ||
+            !string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_OWNERSHIP"), "user-managed", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Physical MAU2 E2E requires the exact authenticated-mau2/user-managed runtime environment.");
+        }
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_E2E_BOOTSTRAP"), "live", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Physical cross-platform UI requires DEEP_E2E_BOOTSTRAP=live; stub is not evidence.");
         var selectors = ParseSelectors(Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_SELECTORS_JSON")!);
         var pickerDownloads = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID")!; var pickerFile = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_FILE_ID")!; var pickerConfirm = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_CONFIRM_ID");
@@ -379,7 +589,7 @@ internal sealed class CrossPlatformOptions
         policy.ValidateTool(apksigner, "apksigner");
         var releaseInvocation = Environment.GetEnvironmentVariable("DEEP_RELEASE_INVOCATION_ID")!;
         if (!System.Text.RegularExpressions.Regex.IsMatch(releaseInvocation, "^[a-f0-9]{32}$")) throw new InvalidOperationException("Release invocation ID must be fresh 32-hex.");
-        return new CrossPlatformOptions(policy.Device.Serial, adb, apk, aapt, apksigner, fixture, artifacts, selectors, pickerDownloads, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, releaseInvocation, policy.PolicySha256);
+        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, fixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerDownloads, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, releaseInvocation, policy.PolicySha256);
     }
     internal StrictCrossPlatformContracts.ApkMetadata ReadAndValidateApkMetadata()
     {

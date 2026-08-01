@@ -178,6 +178,9 @@ public sealed class ClientSecurityContractSmokeTests
 
         Assert.Contains("catch (LocalStateResetRequiredException", app, StringComparison.Ordinal);
         Assert.Contains("StartupResetLocalStateButton", app, StringComparison.Ordinal);
+        Assert.Contains("AutomationId = \"Startup.Status\"", app, StringComparison.Ordinal);
+        Assert.Contains("AutomationId = \"Startup.Error\"", app, StringComparison.Ordinal);
+        Assert.Contains("AutomationId = \"Startup.Retry\"", app, StringComparison.Ordinal);
         Assert.Contains("DisplayAlertAsync(", app, StringComparison.Ordinal);
         Assert.Contains("Сбросить локальные данные", app, StringComparison.Ordinal);
         Assert.Contains("localStateResetContext.TryRequestConfirmedReset()", app, StringComparison.Ordinal);

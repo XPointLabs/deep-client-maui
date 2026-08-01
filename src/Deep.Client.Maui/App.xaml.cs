@@ -264,12 +264,14 @@ public partial class App : Application
         var status = new Label
         {
             Text = "Подготовка запуска...",
+            AutomationId = "Startup.Status",
             FontSize = 16,
             HorizontalTextAlignment = TextAlignment.Center
         };
         var error = new Label
         {
             Text = string.Empty,
+            AutomationId = "Startup.Error",
             LineBreakMode = LineBreakMode.WordWrap
         };
         var activity = new ActivityIndicator
@@ -284,6 +286,7 @@ public partial class App : Application
         var retryButton = new Button
         {
             Text = "Повторить",
+            AutomationId = "Startup.Retry",
             IsEnabled = false
         };
 

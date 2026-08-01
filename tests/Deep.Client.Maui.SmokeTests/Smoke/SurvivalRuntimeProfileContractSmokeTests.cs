@@ -123,6 +123,43 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
     }
 
     [Fact]
+    public void PhysicalMau2RunnerIsPhasedSanitizedAndNeverOwnsProductionOrLiveRuntime()
+    {
+        var runner = File.ReadAllText(WorkspacePath(
+            "eng", "Invoke-PhysicalMau2CrossPlatform.ps1"));
+        var ui = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+
+        Assert.Contains("ValidateSet('Attach', 'HappyPath', 'RestartDurability')", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
+        Assert.Contains("e2e-runs", runner, StringComparison.Ordinal);
+        Assert.Contains("Assert-SanitizedState", runner, StringComparison.Ordinal);
+        Assert.Contains("shared-dev-storage-non-replicated", runner, StringComparison.Ordinal);
+        Assert.Contains("DEEP_TRANSPORT_PROTOCOL=authenticated-mau2", runner, StringComparison.Ordinal);
+        Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=user-managed", runner, StringComparison.Ordinal);
+        Assert.Contains("git -C $repoRoot status --porcelain=v1 --untracked-files=all", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("$productionBefore = Get-PackageSnapshot $productionPackage", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("$productionBefore -cne $productionAfter", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("-Action Status", runner, StringComparison.Ordinal);
+        Assert.DoesNotContain("pm clear", runner, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("uninstall", runner, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("docker compose", runner, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Legacy_destructive_fixture_is_not_a_physical_mau2_phase", ui,
+            StringComparison.Ordinal);
+        Assert.Contains("DEEP_ALLOW_LEGACY_DESTRUCTIVE_CROSS_PLATFORM_UI", ui,
+            StringComparison.Ordinal);
+        Assert.Contains("case Mau2PhysicalPhase.Attach", ui, StringComparison.Ordinal);
+        Assert.Contains("case Mau2PhysicalPhase.HappyPath", ui, StringComparison.Ordinal);
+        Assert.Contains("case Mau2PhysicalPhase.RestartDurability", ui, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClearE2ePackageData();", ui[..ui.IndexOf("Legacy_destructive_fixture_is_not_a_physical_mau2_phase", StringComparison.Ordinal)],
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WindowsMailboxBootstrapStagesOnlyAProtectedFirstInstallRuntime()
     {
         var script = File.ReadAllText(WorkspacePath(
