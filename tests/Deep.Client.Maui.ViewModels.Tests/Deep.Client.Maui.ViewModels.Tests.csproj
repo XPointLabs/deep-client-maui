@@ -37,6 +37,7 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\BackgroundSyncSchedulingCoordinator.cs" Link="Services\BackgroundSyncSchedulingCoordinator.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ClientRuntimeBootstrapper.cs" Link="Services\ClientRuntimeBootstrapper.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\IncomingMessageNotificationCoordinator.cs" Link="Services\IncomingMessageNotificationCoordinator.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\IncomingCallPollingBackoff.cs" Link="Services\IncomingCallPollingBackoff.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PushUnsubscribeRetryStateCodec.cs" Link="Services\PushUnsubscribeRetryStateCodec.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PushUnsubscribeRetryBootstrapper.cs" Link="Services\PushUnsubscribeRetryBootstrapper.cs" />
     <Compile Remove="Services\PushNotificationSecureStorageTests.cs" Condition="'$(SkipPushNotificationFocusedTests)' == 'true'" />

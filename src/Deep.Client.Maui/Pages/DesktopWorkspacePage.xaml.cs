@@ -25,6 +25,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
     private readonly PushRegistrationLifecycleCoordinator pushRegistrationLifecycle;
     private readonly SyncPollingPolicy syncPollingPolicy;
     private readonly BackgroundSyncSchedulingCoordinator backgroundSyncScheduling;
+    private IncomingCallPollingBackoff incomingCallPolling = new();
     private readonly VoiceMessagePlaybackService voicePlayback = new();
     private readonly SemaphoreSlim voiceGestureCompletionGate = new(1, 1);
     private readonly List<object> messageSearchMatches = [];
@@ -90,6 +91,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         pageActivityCancellation?.Cancel();
         pageActivityCancellation?.Dispose();
         pageActivityCancellation = new CancellationTokenSource();
+        incomingCallPolling = new IncomingCallPollingBackoff();
         var cancellationToken = pageActivityCancellation.Token;
 
         SubscribeEvents();
@@ -1281,7 +1283,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         incomingCallTimer ??= Dispatcher.CreateTimer();
         incomingCallTimer.Tick -= OnIncomingCallTick;
         incomingCallTimer.Tick += OnIncomingCallTick;
-        incomingCallTimer.Interval = TimeSpan.FromSeconds(30);
+        incomingCallTimer.Interval = incomingCallPolling.CurrentDelay;
         incomingCallTimer.Start();
     }
 
@@ -1345,12 +1347,30 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             return;
         }
 
+        var polling = incomingCallPolling;
         try
         {
             checkingCalls = true;
             var offers = await callCoordinator.ReceiveIncomingOffersAsync(activity.Token);
+            activity.Token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(incomingCallPolling, polling))
+            {
+                return;
+            }
+            var success = polling.RecordSuccess();
+            if (incomingCallTimer is not null)
+            {
+                incomingCallTimer.Interval = success.NextDelay;
+            }
+            if (success.Recovered)
+            {
+                CrashDiagnostics.LogInfo(
+                    "DesktopWorkspacePage.IncomingCalls",
+                    "Incoming-call polling recovered.");
+            }
             foreach (var offer in offers)
             {
+                activity.Token.ThrowIfCancellationRequested();
                 var known = viewModel.ConversationList.Conversations
                     .FirstOrDefault(item => item.Id.Value == offer.RemoteParty.Value);
                 var call = known is null ? offer : offer with { DisplayName = known.Title };
@@ -1360,6 +1380,11 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
                     $"{call.DisplayName} звонит вам в Deep.",
                     "Ответить",
                     "Отклонить");
+                activity.Token.ThrowIfCancellationRequested();
+                if (!ReferenceEquals(incomingCallPolling, polling))
+                {
+                    return;
+                }
                 if (!accepted)
                 {
                     await callCoordinator.SendAsync(
@@ -1379,9 +1404,28 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         catch (OperationCanceledException) when (activity.IsCancellationRequested)
         {
         }
-        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or System.Net.WebException)
+        catch (Exception exception)
         {
-            CrashDiagnostics.LogException("DesktopWorkspacePage.IncomingCalls", exception);
+            var failure = polling.RecordFailure(
+                exception,
+                activity.Token);
+            if (ReferenceEquals(incomingCallPolling, polling) &&
+                incomingCallTimer is not null)
+            {
+                incomingCallTimer.Interval = failure.NextDelay;
+            }
+            if (failure.EnteredDegraded)
+            {
+                CrashDiagnostics.LogInfo(
+                    "DesktopWorkspacePage.IncomingCalls",
+                    "Incoming-call polling degraded; retry cadence reduced.");
+            }
+            if (failure.ShouldLogUnexpected)
+            {
+                CrashDiagnostics.LogException(
+                    "DesktopWorkspacePage.IncomingCalls.Unexpected",
+                    exception);
+            }
         }
         finally
         {

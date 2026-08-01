@@ -26,6 +26,7 @@ public partial class ConversationsPage : ContentPage
     private readonly CallSessionCoordinator callCoordinator;
     private readonly SyncPollingPolicy syncPollingPolicy;
     private readonly BackgroundSyncSchedulingCoordinator backgroundSyncScheduling;
+    private IncomingCallPollingBackoff incomingCallPolling = new();
     private bool checkingCalls;
     private bool preloadingChatOpenCache;
     private readonly object syncPumpGate = new();
@@ -63,6 +64,7 @@ public partial class ConversationsPage : ContentPage
         pageActivityCancellation?.Dispose();
         var activityCancellation = new CancellationTokenSource();
         pageActivityCancellation = activityCancellation;
+        incomingCallPolling = new IncomingCallPollingBackoff();
         var cancellationToken = activityCancellation.Token;
         networkStatusService.StatusChanged -= OnNetworkStatusChanged;
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
@@ -120,7 +122,9 @@ public partial class ConversationsPage : ContentPage
             cancellationToken.ThrowIfCancellationRequested();
             await MainThread.InvokeOnMainThreadAsync(ConfigureAutoSyncAsync).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            await MainThread.InvokeOnMainThreadAsync(ConfigureIncomingCallPollingAsync).ConfigureAwait(false);
+            await MainThread.InvokeOnMainThreadAsync(
+                () => ConfigureIncomingCallPollingAsync(cancellationToken))
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -374,15 +378,23 @@ public partial class ConversationsPage : ContentPage
         if (incomingCallTimer is null)
         {
             incomingCallTimer = Dispatcher.CreateTimer();
-            incomingCallTimer.Interval = TimeSpan.FromSeconds(30);
             incomingCallTimer.Tick += OnIncomingCallTick;
         }
 
+        incomingCallTimer.Interval = incomingCallPolling.CurrentDelay;
         incomingCallTimer.Start();
     }
 
-    private Task ConfigureIncomingCallPollingAsync()
+    private Task ConfigureIncomingCallPollingAsync(
+        CancellationToken cancellationToken)
     {
+        if (!IncomingCallPollingBackoff.IsCurrentActivity(
+                pageActivityCancellation,
+                cancellationToken))
+        {
+            return Task.CompletedTask;
+        }
+
         EnsureIncomingCallPolling();
         return Task.CompletedTask;
     }
@@ -604,17 +616,36 @@ public partial class ConversationsPage : ContentPage
 
     private async Task CheckIncomingCallsAsync()
     {
-        if (checkingCalls)
+        if (checkingCalls || pageActivityCancellation is not { } activity)
         {
             return;
         }
 
+        var cancellationToken = activity.Token;
+        var polling = incomingCallPolling;
         try
         {
             checkingCalls = true;
-            var offers = await callCoordinator.ReceiveIncomingOffersAsync();
+            var offers = await callCoordinator.ReceiveIncomingOffersAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(incomingCallPolling, polling))
+            {
+                return;
+            }
+            var success = polling.RecordSuccess();
+            if (incomingCallTimer is not null)
+            {
+                incomingCallTimer.Interval = success.NextDelay;
+            }
+            if (success.Recovered)
+            {
+                CrashDiagnostics.LogInfo(
+                    "ConversationsPage.IncomingCalls",
+                    "Incoming-call polling recovered.");
+            }
             foreach (var offer in offers)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var known = viewModel.Conversations.FirstOrDefault(item => item.Id.Value == offer.RemoteParty.Value);
                 var call = known is null ? offer : offer with { DisplayName = known.Title };
                 var kind = call.IsVideo ? "Видеозвонок" : "Аудиозвонок";
@@ -623,12 +654,18 @@ public partial class ConversationsPage : ContentPage
                     $"{call.DisplayName} звонит вам в Deep.",
                     "Ответить",
                     "Отклонить");
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!ReferenceEquals(incomingCallPolling, polling))
+                {
+                    return;
+                }
                 if (!accepted)
                 {
                     await callCoordinator.SendAsync(
                         call,
                         CallSignalType.Bye,
-                        "{\"reason\":\"declined\"}");
+                        "{\"reason\":\"declined\"}",
+                        cancellationToken);
                     continue;
                 }
 
@@ -638,12 +675,31 @@ public partial class ConversationsPage : ContentPage
                 return;
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
-        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or System.Net.WebException)
+        catch (Exception exception)
         {
-            CrashDiagnostics.LogException("ConversationsPage.IncomingCalls", exception);
+            var failure = polling.RecordFailure(
+                exception,
+                cancellationToken);
+            if (ReferenceEquals(incomingCallPolling, polling) &&
+                incomingCallTimer is not null)
+            {
+                incomingCallTimer.Interval = failure.NextDelay;
+            }
+            if (failure.EnteredDegraded)
+            {
+                CrashDiagnostics.LogInfo(
+                    "ConversationsPage.IncomingCalls",
+                    "Incoming-call polling degraded; retry cadence reduced.");
+            }
+            if (failure.ShouldLogUnexpected)
+            {
+                CrashDiagnostics.LogException(
+                    "ConversationsPage.IncomingCalls.Unexpected",
+                    exception);
+            }
         }
         finally
         {
