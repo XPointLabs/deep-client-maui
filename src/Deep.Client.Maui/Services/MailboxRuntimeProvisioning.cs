@@ -22,7 +22,7 @@ internal sealed record MailboxRuntimeProvisioning(
         TimeProvider? timeProvider = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
-        var root = SafeRoot(Path.Combine(appDataDirectory, DirectoryName));
+        var root = SafeRoot(appDataDirectory, DirectoryName);
         var activationBytes = ReadBounded(SafeFile(root, "activation.v1.json"), 32 * 1024);
         using var document = JsonDocument.Parse(activationBytes, new JsonDocumentOptions
         {
@@ -79,12 +79,21 @@ internal sealed record MailboxRuntimeProvisioning(
                 timeProvider ?? TimeProvider.System));
     }
 
-    private static string SafeRoot(string path)
+    private static string SafeRoot(string appDataDirectory, string name)
     {
-        var full = Path.GetFullPath(path);
+        var anchor = CanonicalDirectory(appDataDirectory);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        var fileSystemRoot = Path.GetPathRoot(anchor);
+        Require(!string.IsNullOrEmpty(fileSystemRoot) &&
+                !anchor.Equals(CanonicalDirectory(fileSystemRoot), comparison),
+            "App-private data directory cannot be a filesystem root.");
+        Require(Directory.Exists(anchor), "App-private data directory is missing.");
+        var full = SafeChild(anchor, name);
         Require(Directory.Exists(full), "App-private mailbox runtime directory is missing.");
-        RequireNoReparse(full);
-        return full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        RequireNoReparse(full, anchor);
+        return full;
     }
 
     private static string SafeDirectory(string root, string name)
@@ -113,26 +122,38 @@ internal sealed record MailboxRuntimeProvisioning(
                 ? StringComparison.OrdinalIgnoreCase
                 : StringComparison.Ordinal),
             "Mailbox runtime path escaped app-private storage.");
-        RequireNoReparse(path);
+        RequireNoReparse(path, root);
         return path;
     }
 
-    private static void RequireNoReparse(string path)
+    private static void RequireNoReparse(string path, string anchor)
     {
         var current = Path.GetFullPath(path);
-        while (!string.IsNullOrEmpty(current))
+        var canonicalAnchor = CanonicalDirectory(anchor);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        Require(current.Equals(canonicalAnchor, comparison) ||
+                current.StartsWith(canonicalAnchor + Path.DirectorySeparatorChar, comparison),
+            "Mailbox runtime path escaped its trusted app-private anchor.");
+        while (true)
         {
             if (File.Exists(current) || Directory.Exists(current))
             {
                 Require((File.GetAttributes(current) & FileAttributes.ReparsePoint) == 0,
                     "Mailbox runtime path contains a reparse point.");
             }
+            if (current.Equals(canonicalAnchor, comparison)) return;
             var parent = Path.GetDirectoryName(current);
-            if (string.IsNullOrEmpty(parent) ||
-                string.Equals(parent, current, StringComparison.Ordinal)) return;
-            current = parent;
+            Require(!string.IsNullOrEmpty(parent) &&
+                    !string.Equals(parent, current, comparison),
+                "Mailbox runtime path did not reach its trusted app-private anchor.");
+            current = parent!;
         }
     }
+
+    private static string CanonicalDirectory(string path) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 
     private static byte[] ReadBounded(string path, int maximumBytes)
     {

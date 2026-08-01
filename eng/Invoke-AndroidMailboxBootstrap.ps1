@@ -36,54 +36,147 @@ function Resolve-Adb {
     throw 'adb was not found. Set -AdbPath or DEEP_ADB_PATH.'
 }
 
-function Invoke-AdbChecked([string[]]$Arguments) {
-    $previousPreference = $ErrorActionPreference
+function ConvertTo-NativeArguments([string[]]$Arguments) {
+    return (@($Arguments | ForEach-Object {
+        if ($null -eq $_ -or $_ -match '[\x00\r\n"]') {
+            throw 'Native process argument is not canonical.'
+        }
+        if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
+    }) -join ' ')
+}
+
+function ConvertTo-RemoteShellArgument([string]$Command) {
+    if ([string]::IsNullOrWhiteSpace($Command) -or $Command.Contains("'")) {
+        throw 'Remote shell command is not canonical.'
+    }
+    return "'$Command'"
+}
+
+function Invoke-AdbCapture([string[]]$Arguments) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $script:adb
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.Arguments = ConvertTo-NativeArguments $Arguments
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
     try {
-        $ErrorActionPreference = 'Continue'
-        $output = @(& $script:adb @Arguments 2>&1)
-        $exitCode = $LASTEXITCODE
+        if (-not $process.Start()) { throw 'Could not start adb.' }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        return [pscustomobject]@{
+            exitCode = $process.ExitCode
+            stdout = $stdoutTask.GetAwaiter().GetResult()
+            stderr = $stderrTask.GetAwaiter().GetResult()
+        }
     } finally {
-        $ErrorActionPreference = $previousPreference
+        $process.Dispose()
     }
-    if ($exitCode -ne 0) {
-        throw "adb failed: $($output -join [Environment]::NewLine)"
+}
+
+function Invoke-AdbChecked([string[]]$Arguments) {
+    $result = Invoke-AdbCapture $Arguments
+    if ($result.exitCode -ne 0) {
+        throw "adb failed (exit $($result.exitCode), command=$($Arguments -join ' ')): $($result.stderr.Trim())"
     }
-    return $output
+    return @($result.stdout -split '\r?\n' | Where-Object { $_.Length -ne 0 })
+}
+
+function Get-PackagePathSnapshot([string]$PackageName) {
+    $result = Invoke-AdbCapture @('-s', $AndroidSerial, 'shell', 'pm', 'path', $PackageName)
+    $value = $result.stdout.Trim()
+    if ($result.exitCode -ne 0) {
+        throw "adb package snapshot failed (exit $($result.exitCode)): $($result.stderr.Trim())"
+    }
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw 'adb package snapshot returned no canonical path.'
+    }
+    return $value
 }
 
 function Copy-ToAppPrivate(
     [Parameter(Mandatory)][string]$LocalPath,
     [Parameter(Mandatory)][string]$RemotePath) {
-    $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $script:adb
-    $startInfo.UseShellExecute = $false
-    $startInfo.RedirectStandardInput = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    foreach ($argument in @(
-        '-s', $AndroidSerial, 'shell', 'run-as', $package, 'sh', '-c',
-        "umask 077; cat > $RemotePath")) {
-        $null = $startInfo.ArgumentList.Add($argument)
-    }
-    $process = [Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
+    Invoke-AdbChecked @(
+        '-s', $AndroidSerial, 'shell', 'run-as', $package,
+        'rm', '-f', $RemotePath) | Out-Null
+    Invoke-AdbChecked @(
+        '-s', $AndroidSerial, 'shell', 'run-as', $package, 'touch', $RemotePath) | Out-Null
+    Invoke-AdbChecked @(
+        '-s', $AndroidSerial, 'shell', 'run-as', $package,
+        'chmod', '600', $RemotePath) | Out-Null
+    $source = [IO.File]::OpenRead($LocalPath)
+    $rawBuffer = [byte[]]::new(384)
+    $encodedCharacters = [char[]]::new(512)
+    $encodedBytes = [byte[]]::new(512)
     try {
-        if (-not $process.Start()) { throw 'Could not start the app-private ADB stream.' }
-        $source = [IO.File]::OpenRead($LocalPath)
-        try {
-            $source.CopyTo($process.StandardInput.BaseStream)
-        } finally {
-            $source.Dispose()
-            $process.StandardInput.Close()
+        $endOfSource = $false
+        while (-not $endOfSource) {
+            $count = 0
+            while ($count -lt $rawBuffer.Length) {
+                $read = $source.Read(
+                    $rawBuffer, $count, $rawBuffer.Length - $count)
+                if ($read -eq 0) {
+                    $endOfSource = $true
+                    break
+                }
+                $count += $read
+            }
+            if ($count -eq 0) { break }
+            for ($index = 0; $index -lt $encodedBytes.Length; $index++) {
+                $encodedBytes[$index] = 0x20
+            }
+            $encodedCount = [Convert]::ToBase64CharArray(
+                $rawBuffer, 0, $count, $encodedCharacters, 0)
+            for ($index = 0; $index -lt $encodedCount; $index++) {
+                $encodedBytes[$index] = [byte]$encodedCharacters[$index]
+            }
+            $startInfo = [Diagnostics.ProcessStartInfo]::new()
+            $startInfo.FileName = $script:adb
+            $startInfo.UseShellExecute = $false
+            $startInfo.RedirectStandardInput = $true
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+            $appendCommand = ConvertTo-RemoteShellArgument (
+                "base64 -di >> $RemotePath")
+            $startInfo.Arguments = ConvertTo-NativeArguments @(
+                '-s', $AndroidSerial, 'shell', 'run-as', $package,
+                'sh', '-c', $appendCommand)
+            $process = [Diagnostics.Process]::new()
+            $process.StartInfo = $startInfo
+            try {
+                if (-not $process.Start()) {
+                    throw 'Could not start the app-private ADB chunk stream.'
+                }
+                $process.StandardInput.BaseStream.Write(
+                    $encodedBytes, 0, $encodedBytes.Length)
+                $process.StandardInput.BaseStream.Flush()
+                $process.StandardInput.Close()
+                $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+                $stderrTask = $process.StandardError.ReadToEndAsync()
+                $process.WaitForExit()
+                $stdout = $stdoutTask.GetAwaiter().GetResult()
+                $stderr = $stderrTask.GetAwaiter().GetResult()
+                if ($process.ExitCode -ne 0) {
+                    throw "App-private ADB chunk stream failed: $stdout$stderr"
+                }
+            } finally {
+                $process.Dispose()
+            }
+            [Array]::Clear($rawBuffer, 0, $rawBuffer.Length)
+            [Array]::Clear($encodedCharacters, 0, $encodedCharacters.Length)
+            [Array]::Clear($encodedBytes, 0, $encodedBytes.Length)
         }
-        $stdout = $process.StandardOutput.ReadToEnd()
-        $stderr = $process.StandardError.ReadToEnd()
-        $process.WaitForExit()
-        if ($process.ExitCode -ne 0) {
-            throw "App-private ADB stream failed: $stdout$stderr"
-        }
+        Invoke-AdbChecked @(
+            '-s', $AndroidSerial, 'shell', 'run-as', $package,
+            'chmod', '600', $RemotePath) | Out-Null
     } finally {
-        $process.Dispose()
+        [Array]::Clear($rawBuffer, 0, $rawBuffer.Length)
+        [Array]::Clear($encodedCharacters, 0, $encodedCharacters.Length)
+        [Array]::Clear($encodedBytes, 0, $encodedBytes.Length)
+        $source.Dispose()
     }
 }
 
@@ -105,6 +198,25 @@ function Assert-NoReparseTree([string]$Path) {
             throw 'Mailbox runtime tree must not contain a reparse point.'
         }
     }
+}
+
+function Get-RelativeChildPath(
+    [Parameter(Mandatory)][string]$Root,
+    [Parameter(Mandatory)][string]$Child) {
+    $canonicalRoot = [IO.Path]::GetFullPath($Root).TrimEnd(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar)
+    $canonicalChild = [IO.Path]::GetFullPath($Child)
+    $prefix = $canonicalRoot + [IO.Path]::DirectorySeparatorChar
+    $comparison = if ($env:OS -ceq 'Windows_NT') {
+        [StringComparison]::OrdinalIgnoreCase
+    } else {
+        [StringComparison]::Ordinal
+    }
+    if (-not $canonicalChild.StartsWith($prefix, $comparison)) {
+        throw 'Mailbox runtime enumeration escaped its canonical root.'
+    }
+    return $canonicalChild.Substring($prefix.Length).Replace('\', '/')
 }
 
 $adb = Resolve-Adb
@@ -261,14 +373,14 @@ if ((Get-FileHash -Algorithm SHA256 -LiteralPath $authorityPath).Hash.ToLowerInv
 }
 
 $hostFiles = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force |
-    ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') } |
+    ForEach-Object { Get-RelativeChildPath -Root $root -Child $_.FullName } |
     Sort-Object)
 $expectedFiles = @($relativeFiles | Sort-Object)
 if (($hostFiles -join "`n") -cne ($expectedFiles -join "`n")) {
     throw 'Mailbox runtime host root contains missing or unexpected files.'
 }
 $hostDirectories = @(Get-ChildItem -LiteralPath $root -Recurse -Directory -Force |
-    ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') } |
+    ForEach-Object { Get-RelativeChildPath -Root $root -Child $_.FullName } |
     Sort-Object)
 $expectedDirectories = @(
     'pair',
@@ -277,8 +389,7 @@ $expectedDirectories = @(
 if (($hostDirectories -join "`n") -cne ($expectedDirectories -join "`n")) {
     throw 'Mailbox runtime host root contains missing or unexpected directories.'
 }
-$productionBefore = @(Invoke-AdbChecked @(
-    '-s', $AndroidSerial, 'shell', 'pm', 'path', 'network.xpoint.deep')) -join "`n"
+$productionBefore = Get-PackagePathSnapshot 'network.xpoint.deep'
 $appUid = (@(Invoke-AdbChecked @(
     '-s', $AndroidSerial, 'shell', 'run-as', $package, 'id', '-u')) -join '').Trim()
 $appHome = (@(Invoke-AdbChecked @(
@@ -291,18 +402,29 @@ Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'am', 'force-stop', $package)
 $stage = 'files/.mailbox-runtime-v1.stage'
 $published = $false
 try {
-    Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package, 'sh', '-c',
+    $createCommand = ConvertTo-RemoteShellArgument (
         "test ! -e files/mailbox-runtime-v1 && test ! -e $stage && " +
-        "umask 077 && mkdir -p $stage/pair/generations/$generation") | Out-Null
+        "umask 077 && mkdir -p $stage/pair/generations/$generation")
+    Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package, 'sh', '-c',
+        $createCommand) | Out-Null
     foreach ($relative in $relativeFiles) {
         $localPath = Join-Path $root $relative
         Copy-ToAppPrivate -LocalPath $localPath -RemotePath "$stage/$relative"
-        $remoteHash = (@(Invoke-AdbChecked @(
+        $remoteHashLine = @(Invoke-AdbChecked @(
             '-s', $AndroidSerial, 'shell', 'run-as', $package,
-            'sha256sum', "$stage/$relative")) -join ' ').Split(' ')[0].ToLowerInvariant()
+            'sha256sum', "$stage/$relative")) -join ' '
+        if ($remoteHashLine -cnotmatch '^(?<hash>[0-9a-f]{64})\s+') {
+            throw "Staged mailbox runtime returned no canonical SHA-256: $relative"
+        }
+        $remoteHash = $Matches.hash
         $localHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localPath).Hash.ToLowerInvariant()
         if ($remoteHash -cne $localHash) {
-            throw "Staged mailbox runtime hash mismatch: $relative"
+            $remoteLength = (@(Invoke-AdbChecked @(
+                '-s', $AndroidSerial, 'shell', 'run-as', $package,
+                'stat', '-c', '%s', "$stage/$relative")) -join '').Trim()
+            $localLength = (Get-Item -LiteralPath $localPath).Length
+            throw "Staged mailbox runtime hash mismatch: $relative " +
+                "(localBytes=$localLength, remoteBytes=$remoteLength)"
         }
     }
     $remoteFiles = @(Invoke-AdbChecked @(
@@ -313,18 +435,19 @@ try {
     if (($remoteFiles -join "`n") -cne ($expectedFiles -join "`n")) {
         throw 'App-private mailbox staging root contains missing or unexpected files.'
     }
-    Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package, 'sh', '-c',
+    $publishCommand = ConvertTo-RemoteShellArgument (
         "find $stage -type d -exec chmod 700 {} +; " +
         "find $stage -type f -exec chmod 600 {} +; " +
-        "test ! -e files/mailbox-runtime-v1 && mv $stage files/mailbox-runtime-v1") | Out-Null
+        "test ! -e files/mailbox-runtime-v1 && mv $stage files/mailbox-runtime-v1")
+    Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package, 'sh', '-c',
+        $publishCommand) | Out-Null
     $published = $true
 } finally {
     if (-not $published) {
         & $adb -s $AndroidSerial shell run-as $package rm -rf $stage 2>$null | Out-Null
     }
 }
-$productionAfter = @(Invoke-AdbChecked @(
-    '-s', $AndroidSerial, 'shell', 'pm', 'path', 'network.xpoint.deep')) -join "`n"
+$productionAfter = Get-PackagePathSnapshot 'network.xpoint.deep'
 if ($productionAfter -cne $productionBefore) {
     throw 'The production package changed during mailbox runtime staging.'
 }

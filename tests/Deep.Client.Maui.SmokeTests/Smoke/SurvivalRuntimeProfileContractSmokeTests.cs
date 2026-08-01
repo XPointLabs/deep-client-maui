@@ -115,6 +115,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("Deep.AndroidLab.PolicyVerifier", script, StringComparison.Ordinal);
         Assert.Contains("Mr. X Ed25519 approval signature is invalid", script,
             StringComparison.Ordinal);
+        Assert.Contains("Get-RelativeChildPath", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("[IO.Path]::GetRelativePath", script, StringComparison.Ordinal);
         Assert.DoesNotContain("/data/local/tmp", script, StringComparison.Ordinal);
         Assert.DoesNotContain("rm -rf files/mailbox-runtime-v1", script,
             StringComparison.Ordinal);
