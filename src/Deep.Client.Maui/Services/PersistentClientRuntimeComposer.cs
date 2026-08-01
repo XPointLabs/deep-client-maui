@@ -15,6 +15,7 @@ internal static class PersistentClientRuntimeComposer
         IAvatarProfileTransport avatarProfiles,
         string sqlCipherKey,
         bool requireE2eeTransport,
+        IMailboxDeliveryPolicy mailboxDeliveryPolicy,
         IExternalTransportOutboxExecutor? transportOutboxExecutor,
         DeferredVerifiedMembershipRouteCatalogProvider? membershipRouteCatalogProvider = null)
     {
@@ -24,6 +25,7 @@ internal static class PersistentClientRuntimeComposer
         ArgumentNullException.ThrowIfNull(messageTransport);
         ArgumentNullException.ThrowIfNull(avatarProfiles);
         ArgumentException.ThrowIfNullOrWhiteSpace(sqlCipherKey);
+        ArgumentNullException.ThrowIfNull(mailboxDeliveryPolicy);
 
         SecureRecoverySessionStore? secureStore = null;
         var runtime = ClientRuntime.CreatePersistent(
@@ -42,7 +44,8 @@ internal static class PersistentClientRuntimeComposer
                 return secureStore;
             },
             requireE2eeTransport,
-            transportOutboxExecutor);
+            transportOutboxExecutor,
+            mailboxDeliveryPolicy);
         try
         {
             if (membershipRouteCatalogProvider is not null)

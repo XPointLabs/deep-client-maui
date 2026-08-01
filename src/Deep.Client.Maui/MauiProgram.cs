@@ -31,6 +31,7 @@ internal sealed record ApplicationServiceInputs(
     ClientFeatureFlags FeatureFlags,
     IReadOnlyList<PinnedRouterEndpoint> RouterBaseUrls,
     IRealityTransportRuntime RealityTransportRuntime,
+    bool UserManagedTransport,
     string? StorageBaseUrl,
     HttpClient RouterHttpClient,
     RoutedSessionStorageTransportOptions RoutedTransportOptions,
@@ -70,6 +71,7 @@ public static class MauiProgram
     internal const string E2eStrictWindowsEnv = "DEEP_STRICT_WINDOWS_UI";
     internal const string SurvivalEnvironmentEnv = "SURVIVAL_ENV";
     internal const string PersistentTransportOutboxEnv = "DEEP_PERSISTENT_TRANSPORT_OUTBOX";
+    internal const string TransportOwnershipEnv = "DEEP_TRANSPORT_OWNERSHIP";
     internal const string ExternalOutboxWorkerSha256Env = "DEEP_OUTBOX_WORKER_SHA256";
     internal const string ExternalOutboxWorkerBundleSha256Env =
         "DEEP_OUTBOX_WORKER_BUNDLE_SHA256";
@@ -130,9 +132,9 @@ public static class MauiProgram
         {
             if (!string.IsNullOrWhiteSpace(inputs.StorageBaseUrl))
             {
-                return inputs.ServiceTransportFactory.CreateStorage(
+                return ApplyTransportOwnership(inputs.ServiceTransportFactory.CreateStorage(
                     new SessionStorageMessageTransportOptions(inputs.StorageBaseUrl),
-                    clientOptions: inputs.ServiceTransportClientOptions);
+                    clientOptions: inputs.ServiceTransportClientOptions), inputs);
             }
 
             var baseUrl = ResolveRuntimeSettingForComposition(
@@ -148,9 +150,9 @@ public static class MauiProgram
                 return new StubSessionBackend();
             }
 
-            return inputs.ServiceTransportFactory.CreateSession(
+            return ApplyTransportOwnership(inputs.ServiceTransportFactory.CreateSession(
                 new HttpSessionTransportOptions(baseUrl),
-                inputs.ServiceTransportClientOptions);
+                inputs.ServiceTransportClientOptions), inputs);
         });
         }
 #else
@@ -265,8 +267,17 @@ public static class MauiProgram
         services.AddSingleton<ITransportRouteProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<RoutedProductionComposition>().RouteProvider);
         services.AddSingleton<ISessionMessageTransport>(serviceProvider =>
-            serviceProvider.GetRequiredService<RoutedProductionComposition>().SessionMessageTransport);
+            ApplyTransportOwnership(
+                serviceProvider.GetRequiredService<RoutedProductionComposition>().SessionMessageTransport,
+                inputs));
     }
+
+    private static ISessionMessageTransport ApplyTransportOwnership(
+        ISessionMessageTransport transport,
+        ApplicationServiceInputs inputs) =>
+        inputs.UserManagedTransport
+            ? new UserManagedSessionMessageTransport(transport)
+            : transport;
 
 #if ANDROID
     private static void ConfigureAndroidHandlers()
@@ -478,6 +489,7 @@ public static class MauiProgram
             featureFlags,
             routerBaseUrls,
             realityTransportRuntime,
+            ResolveUserManagedTransportOwnership(),
             storageBaseUrl,
             routerHttpClient,
             BuildRoutedTransportOptions(survivalDevelopment),
@@ -499,6 +511,20 @@ public static class MauiProgram
             httpTransportFactories.Calls,
             iceConfigurationFactory,
             desktopWorkspaceFactory);
+    }
+
+    private static bool ResolveUserManagedTransportOwnership()
+    {
+        var value = ResolveRuntimeSetting(TransportOwnershipEnv);
+        if (string.Equals(value, "user-managed", StringComparison.Ordinal))
+            return true;
+        if (string.Equals(value, "direct-p2p", StringComparison.Ordinal))
+            return false;
+        if (string.Equals(value, "official-managed", StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                "Official managed mode requires a verified authority, entitlement, credential importer and native MAU2 transport registration; a mode string is not authority.");
+        throw new InvalidOperationException(
+            "DEEP_TRANSPORT_OWNERSHIP must explicitly select user-managed, direct-p2p, or official-managed.");
     }
 
     private static bool IsSurvivalDevelopmentProfile()
@@ -523,17 +549,7 @@ public static class MauiProgram
     }
 
     private static RoutedSessionStorageTransportOptions BuildRoutedTransportOptions(
-        bool survivalDevelopment)
-    {
-#if DEEP_PHYSICAL_E2E
-        if (survivalDevelopment)
-        {
-            return new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.LegacyCompatibility);
-        }
-#endif
-        return new RoutedSessionStorageTransportOptions();
-    }
+        bool survivalDevelopment) => new();
 
     private static ClientFeatureFlags BuildFeatureFlags(bool survivalDevelopment)
     {
@@ -542,12 +558,6 @@ public static class MauiProgram
         {
             PersistentTransportOutboxEnabled = IsPersistentTransportOutboxRequested()
         };
-#if DEEP_PHYSICAL_E2E
-        if (survivalDevelopment)
-        {
-            return featureFlags with { MetadataPrivateTransportRequired = false };
-        }
-#endif
         return featureFlags;
 #else
         return ClientFeatureFlags.ReleaseDefaults with
@@ -738,6 +748,8 @@ public static class MauiProgram
                 services.GetRequiredService<IAvatarProfileTransport>(),
                 stateDbKey,
                 requireE2eeTransport: true,
+                ResolveMailboxDeliveryPolicy(
+                    services.GetRequiredService<ISessionMessageTransport>()),
                 outboxActivation.Executor,
                 services.GetService<RoutedProductionComposition>()
                     ?.MembershipRouteCatalogProvider as
@@ -748,6 +760,21 @@ public static class MauiProgram
             (outboxActivation.Executor as IDisposable)?.Dispose();
             throw;
         }
+    }
+
+    private static IMailboxDeliveryPolicy ResolveMailboxDeliveryPolicy(
+        ISessionMessageTransport transport)
+    {
+        ArgumentNullException.ThrowIfNull(transport);
+        return transport switch
+        {
+            IDirectP2pSessionMessageTransport => new DirectP2pMailboxDeliveryPolicy(),
+            IUserManagedSessionMessageTransport => new UserManagedMailboxDeliveryPolicy(),
+            IAuthenticatedOpaqueMailboxTransport => throw new InvalidOperationException(
+                "Official managed mailbox transport requires an explicitly verified authority, entitlement and scoped-selector policy."),
+            _ => throw new InvalidOperationException(
+                "The configured transport has no explicit direct-P2P, user-managed, or official-cloud ownership policy.")
+        };
     }
 
     private static ProcessExternalTransportOutboxExecutorOptions? ResolveExternalOutboxWorkerOptions(

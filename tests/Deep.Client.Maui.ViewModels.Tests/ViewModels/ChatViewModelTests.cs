@@ -373,12 +373,10 @@ public sealed class ChatViewModelTests
         var transport = new BlockingMessageTransport();
         var runtime = new ClientRuntime(
             new InMemorySessionStore(),
-            Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults with
-            {
-                MetadataPrivateTransportRequired = false
-            },
+            Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults,
             new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")),
-            transport);
+            transport,
+            mailboxDeliveryPolicy: new DirectP2pMailboxDeliveryPolicy());
         var account = await runtime.Accounts.RegisterAsync("Alice");
         var chat = new ChatViewModel(runtime);
         await chat.OpenOneToOneAsync(account, SessionId.CreateNew(), "Bob");
@@ -1021,8 +1019,12 @@ public sealed class ChatViewModelTests
         public void CompleteStop() => stopCompleted.TrySetResult(attachment);
     }
 
-    private sealed class BlockingMessageTransport : ISessionMessageTransport, IAuthenticatedInboxTransport
+    private sealed class BlockingMessageTransport :
+        IDirectP2pSessionMessageTransport,
+        IAuthenticatedInboxTransport,
+        IMetadataPrivateSessionMessageTransport
     {
+        public bool UsesMetadataPrivateTransport => true;
         private readonly TaskCompletionSource sendGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public async Task SendAsync(OutboundMessageEnvelope envelope, CancellationToken cancellationToken = default) =>

@@ -53,25 +53,23 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("DEEP_PUSH_URL=http://127.0.0.1:41822", environment, StringComparison.Ordinal);
         Assert.Contains("DEEP_CALL_SIGNALING_BASE_URL=http://127.0.0.1:41823", environment, StringComparison.Ordinal);
         Assert.Contains("SURVIVAL_ENV=Development", environment, StringComparison.Ordinal);
+        Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=user-managed", environment, StringComparison.Ordinal);
         Assert.DoesNotContain("DEEP_STORAGE_URL", environment, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void SurvivalCompatibilityModeIsPhysicalE2eOnlyAndDefaultStaysOpaque()
+    public void SurvivalRuntimeHasNoLegacyMetadataCompatibilityRelaxation()
     {
         var program = File.ReadAllText(WorkspacePath("src", "Deep.Client.Maui", "MauiProgram.cs"));
         var factory = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui.Core", "Services", "RoutedProductionCompositionFactory.cs"));
 
-        var legacyMode = program.IndexOf("SessionStorageMetadataMode.LegacyCompatibility", StringComparison.Ordinal);
-        Assert.True(legacyMode >= 0);
-        var guard = program.LastIndexOf("#if DEEP_PHYSICAL_E2E", legacyMode, StringComparison.Ordinal);
-        var guardEnd = program.IndexOf("#endif", legacyMode, StringComparison.Ordinal);
-        Assert.True(guard >= 0);
-        Assert.True(guardEnd > legacyMode);
+        Assert.DoesNotContain("SessionStorageMetadataMode.LegacyCompatibility", program, StringComparison.Ordinal);
         Assert.Contains("SURVIVAL_ENV", program, StringComparison.Ordinal);
-        Assert.Contains("MetadataPrivateTransportRequired = false", program, StringComparison.Ordinal);
-        Assert.Contains("return new RoutedSessionStorageTransportOptions();", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("MetadataPrivateTransportRequired = false", program, StringComparison.Ordinal);
+        Assert.Contains("a mode string is not authority", program, StringComparison.Ordinal);
+        Assert.Contains("ResolveMailboxDeliveryPolicy", program, StringComparison.Ordinal);
+        Assert.Contains("bool survivalDevelopment) => new();", program, StringComparison.Ordinal);
         Assert.Contains("RoutedSessionStorageTransportOptions transportOptions", factory, StringComparison.Ordinal);
         Assert.Contains("new RoutedSessionStorageMessageTransport(", factory, StringComparison.Ordinal);
         Assert.Contains("transportOptions);", factory, StringComparison.Ordinal);

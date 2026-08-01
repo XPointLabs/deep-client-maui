@@ -32,6 +32,7 @@ public sealed class PersistentClientRuntimeComposerTests
                 new DisabledAvatarProfileTransport(),
                 new string('A', 64),
                 requireE2eeTransport: true,
+                new DirectP2pMailboxDeliveryPolicy(),
                 executor,
                 membershipProvider);
 
@@ -88,7 +89,8 @@ public sealed class PersistentClientRuntimeComposerTests
 
     private sealed class AuthenticatedTransport :
         ISessionMessageTransport,
-        IAuthenticatedInboxTransport
+        IAuthenticatedInboxTransport,
+        IDirectP2pSessionMessageTransport
     {
         public Task SendAsync(
             OutboundMessageEnvelope envelope,
