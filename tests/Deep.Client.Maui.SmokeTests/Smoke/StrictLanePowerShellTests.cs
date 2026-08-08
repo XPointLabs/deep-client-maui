@@ -32,6 +32,12 @@ public sealed class StrictLanePowerShellTests
     }
 
     [Fact]
+    public async Task ProductionTrustBundleContractIsExecutable()
+    {
+        await RunScriptAsync("Test-ProductionTrustBundleContract.ps1", TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
     public async Task AndroidLabProvisioningRequiresProtectedSignedAllowlistedBundle()
     {
         var protectedRoot = Path.Combine(

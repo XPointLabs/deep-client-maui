@@ -19,13 +19,37 @@
     <WindowsPackageType>None</WindowsPackageType>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
-    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">26.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">28.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.19041.0</SupportedOSPlatformVersion>
     <TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.19041.0</TargetPlatformMinVersion>
     <EmbedAssembliesIntoApk Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">true</EmbedAssembliesIntoApk>
     <NoWarn>$(NoWarn);NU1608</NoWarn>
     <NoWarn Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">$(NoWarn);BG8403</NoWarn>
+    <ProductionMailboxTrustFloorSupplied Condition="'$(DeepProductionMrXPublicKeySha256)$(DeepProductionNetworkId)$(DeepProductionAuthorityGeneration)$(DeepProductionAuthorityHash)$(DeepProductionRevocationGeneration)$(DeepProductionRevocationHeadHash)$(DeepProductionRevocationSnapshotHash)$(DeepProductionTopologyGeneration)$(DeepProductionTopologyHash)' != ''">true</ProductionMailboxTrustFloorSupplied>
+    <ProductionAndroidBuildIdentitySupplied Condition="'$(DeepProductionAndroidApplicationId)$(DeepProductionAndroidVersionCode)$(DeepProductionAndroidSignerLineageSha256)' != ''">true</ProductionAndroidBuildIdentitySupplied>
+    <ProductionAndroidTransparencySupplied Condition="'$(DeepProductionAndroidCodeTransparencyManifest)' != ''">true</ProductionAndroidTransparencySupplied>
+    <DeepGoogleServicesJson Condition="'$(DeepGoogleServicesJson)' == '' And '$(Configuration)' != 'Release'">Platforms\Android\google-services.json</DeepGoogleServicesJson>
   </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="DeepProductionMrXPublicKeySha256" Value="$(DeepProductionMrXPublicKeySha256)" />
+    <AssemblyMetadata Include="DeepProductionNetworkId" Value="$(DeepProductionNetworkId)" />
+    <AssemblyMetadata Include="DeepProductionAuthorityGeneration" Value="$(DeepProductionAuthorityGeneration)" />
+    <AssemblyMetadata Include="DeepProductionAuthorityHash" Value="$(DeepProductionAuthorityHash)" />
+    <AssemblyMetadata Include="DeepProductionRevocationGeneration" Value="$(DeepProductionRevocationGeneration)" />
+    <AssemblyMetadata Include="DeepProductionRevocationHeadHash" Value="$(DeepProductionRevocationHeadHash)" />
+    <AssemblyMetadata Include="DeepProductionRevocationSnapshotHash" Value="$(DeepProductionRevocationSnapshotHash)" />
+    <AssemblyMetadata Include="DeepProductionTopologyGeneration" Value="$(DeepProductionTopologyGeneration)" />
+    <AssemblyMetadata Include="DeepProductionTopologyHash" Value="$(DeepProductionTopologyHash)" />
+    <AssemblyMetadata Include="DeepProductionAndroidApplicationId" Value="$(DeepProductionAndroidApplicationId)" />
+    <AssemblyMetadata Include="DeepProductionAndroidVersionCode" Value="$(DeepProductionAndroidVersionCode)" />
+    <AssemblyMetadata Include="DeepProductionAndroidSignerLineageSha256" Value="$(DeepProductionAndroidSignerLineageSha256)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Configuration)' == 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(ProductionAndroidTransparencySupplied)' == 'true'">
+    <AndroidAsset Include="$(DeepProductionAndroidCodeTransparencyManifest)"
+                  Link="deep/production/android-code-transparency.act1" />
+  </ItemGroup>
 
   <PropertyGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
     <DefineConstants>$(DefineConstants);DEEP_PHYSICAL_E2E</DefineConstants>
@@ -58,13 +82,17 @@
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
     <PackageReference Include="Xamarin.Firebase.Messaging" Version="124.1.2" />
-    <GoogleServicesJson Include="Platforms\Android\google-services.json" Condition="Exists('Platforms\Android\google-services.json')" />
+    <GoogleServicesJson Include="$(DeepGoogleServicesJson)" Condition="'$(DeepGoogleServicesJson)' != '' And Exists('$(DeepGoogleServicesJson)')" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(DeepSurvivalRuntimeEnv)' == '' Or '$(Configuration)' == 'Release' Or '$(DeepPhysicalE2E)' != 'true'">
     <EmbeddedResource Include="deep.release.env">
       <LogicalName>deep.release.env</LogicalName>
     </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' != 'Release' And '$(DeepPhysicalE2E)' == 'true'">
@@ -136,8 +164,9 @@
     <PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.33" />
   </ItemGroup>
 
-  <Target Name="EnsureGoogleServicesJson" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' and !Exists('Platforms\Android\google-services.json')">
-    <Error Text="Production Android builds require Platforms\Android\google-services.json. Use eng/build-android-play.ps1 with XPOINT_GOOGLE_SERVICES_JSON." />
+  <Target Name="EnsureGoogleServicesJson" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <Error Condition="'$(DeepGoogleServicesJson)' == '' Or !Exists('$(DeepGoogleServicesJson)')"
+           Text="Production Android builds require an external DeepGoogleServicesJson file supplied by the release script." />
   </Target>
 
   <Target Name="EnsureWindowsRuntimeIdentifier" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release' and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(RuntimeIdentifier)' == ''">
@@ -151,6 +180,52 @@
            Text="DeepSurvivalRuntimeEnv is forbidden for Release builds." />
     <Error Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' != 'Release' And '$(DeepPhysicalE2E)' == 'true' And !Exists('$(DeepSurvivalRuntimeEnv)')"
            Text="DeepSurvivalRuntimeEnv does not identify an existing file." />
+  </Target>
+
+  <Target Name="ValidateProductionMailboxTrustFloor" BeforeTargets="PrepareForBuild"
+          Condition="'$(ProductionMailboxTrustFloorSupplied)' == 'true'">
+    <Error Condition="'$(Configuration)' != 'Release'"
+           Text="Production mailbox trust-floor properties are accepted only for Release builds." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionMrXPublicKeySha256)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionNetworkId)', '^[0-9a-f]{32}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionAuthorityHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionRevocationHeadHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionRevocationSnapshotHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionTopologyHash)', '^[0-9a-f]{64}$'))"
+           Text="Production mailbox trust-floor hashes must be complete lowercase hexadecimal values." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionAuthorityGeneration)', '^[1-9][0-9]*$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionRevocationGeneration)', '^[1-9][0-9]*$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionTopologyGeneration)', '^[1-9][0-9]*$'))"
+           Text="Production mailbox trust-floor generations must be positive decimal integers." />
+  </Target>
+
+  <Target Name="RequireProductionMailboxTrustFloor" BeforeTargets="PrepareForBuild"
+          Condition="'$(Configuration)' == 'Release' And ($([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows')">
+    <Error Condition="'$(ProductionMailboxTrustFloorSupplied)' != 'true'"
+           Text="Release Android and Windows builds require the complete production mailbox trust floor." />
+  </Target>
+
+  <Target Name="ValidateProductionAndroidBuildIdentity" BeforeTargets="PrepareForBuild"
+          Condition="'$(ProductionAndroidBuildIdentitySupplied)' == 'true'">
+    <Error Condition="'$(Configuration)' != 'Release' Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'"
+           Text="Production Android build identity properties are accepted only for Android Release builds." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionAndroidSignerLineageSha256)', '^[0-9a-f]{64}(\|[0-9a-f]{64}){0,31}$'))"
+           Text="Production Android Play app-signing lineage must contain complete lowercase SHA-256 values." />
+    <Error Condition="'$(DeepProductionAndroidApplicationId)' != '$(ApplicationId)' Or '$(DeepProductionAndroidApplicationId)' != 'network.xpoint.deep'"
+           Text="Production Android application identity differs from the release package." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepProductionAndroidVersionCode)', '^[1-9][0-9]*$')) Or '$(DeepProductionAndroidVersionCode)' != '$(ApplicationVersion)'"
+           Text="Production Android versionCode differs from the release package." />
+  </Target>
+
+  <Target Name="RequireProductionAndroidBuildIdentity" BeforeTargets="PrepareForBuild"
+          Condition="'$(Configuration)' == 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <Error Condition="'$(ProductionAndroidBuildIdentitySupplied)' != 'true'"
+           Text="Android Release builds require exact applicationId/versionCode and Play app-signing lineage." />
+  </Target>
+
+  <Target Name="RequireProductionAndroidCodeTransparency" BeforeTargets="PrepareForBuild"
+          Condition="'$(Configuration)' == 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(DeepProductionAndroidTransparencyPreparation)' != 'true'">
+    <Error Condition="'$(ProductionAndroidTransparencySupplied)' != 'true' Or !Exists('$(DeepProductionAndroidCodeTransparencyManifest)')"
+           Text="Android Release builds require an external Mr. X-signed ACT1 code-transparency manifest." />
+  </Target>
+
+  <Target Name="ValidateProductionAndroidTransparencyPreparation" BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepProductionAndroidTransparencyPreparation)' != ''">
+    <Error Condition="'$(DeepProductionAndroidTransparencyPreparation)' != 'true' Or '$(Configuration)' != 'Release' Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'"
+           Text="Android transparency preparation is accepted only as the exact value true for Android Release candidate builds." />
   </Target>
 
   <Target Name="GeneratePhysicalLabTrustRoot"

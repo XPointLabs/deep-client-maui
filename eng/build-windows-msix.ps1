@@ -1,5 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
+    [string]$TrustFloorBundle,
+
+    [Parameter(Mandatory = $true)]
     [ValidatePattern('^[A-Za-z0-9.-]{3,50}$')]
     [string]$PackageIdentityName,
 
@@ -25,6 +28,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Read-ProductionTrustBundle.ps1')
+$trustProperties = Import-ProductionTrustBundle -Path $TrustFloorBundle
+$trustMsBuildArguments = @($trustProperties.GetEnumerator() | ForEach-Object {
+    "-p:$($_.Key)=$($_.Value)"
+})
 $targetFramework = 'net10.0-windows10.0.19041.0'
 $project = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\src\Deep.Client.Maui\Deep.Client.Maui.csproj'))
 $template = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\src\Deep.Client.Maui\Platforms\Windows\Package.appxmanifest.template'))
@@ -64,6 +72,7 @@ function Resolve-ProjectTargetName {
         '-p:Configuration=Release',
         "-p:RuntimeIdentifierOverride=$RuntimeIdentifier",
         '-p:WindowsPackageType=MSIX'
+        $trustMsBuildArguments
     )
     $propertyOutput = @(& dotnet @arguments)
     if ($LASTEXITCODE -ne 0) {
@@ -240,6 +249,7 @@ $arguments = @(
     "-p:PackageCertificateThumbprint=$($certificate.Thumbprint)",
     "-p:DeepWindowsAppxManifest=$manifestPath",
     "-p:DeepWindowsReleaseEnv=$windowsEnvironmentPath"
+    $trustMsBuildArguments
 )
 & dotnet @arguments
 if ($LASTEXITCODE -ne 0) {

@@ -3,6 +3,94 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class ClientSecurityContractSmokeTests
 {
     [Fact]
+    public void ProductionMailboxIdentityIsMeasuredFromTheRunningSignedArtifact()
+    {
+        var attestor = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Services",
+            "ProductionMailboxClientIdentityAttestor.cs");
+        var artifactDigest = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Services",
+            "ProductionMailboxArtifactSetDigest.cs");
+        var transparency = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Services",
+            "ProductionAndroidCodeTransparency.cs");
+        Assert.Contains("context.PackageName", attestor, StringComparison.Ordinal);
+        Assert.Contains("GetApkContentsSigners", attestor, StringComparison.Ordinal);
+        Assert.Contains("application?.SourceDir", attestor, StringComparison.Ordinal);
+        Assert.Contains("application?.SplitSourceDirs", attestor, StringComparison.Ordinal);
+        Assert.Contains("GetSigningCertificateHistory", attestor, StringComparison.Ordinal);
+        Assert.Contains("Environment.ProcessPath", attestor, StringComparison.Ordinal);
+        Assert.Contains("AppxSignature.p7x", attestor, StringComparison.Ordinal);
+        Assert.Contains("new SignedCms()", attestor, StringComparison.Ordinal);
+        Assert.Contains("signed.CheckSignature", attestor, StringComparison.Ordinal);
+        Assert.Contains("ProductionMailboxArtifactSetDigest.ComputeAsync", attestor,
+            StringComparison.Ordinal);
+        Assert.Contains("ProductionAndroidCodeTransparencyVerifier.VerifyRuntimeAsync", attestor,
+            StringComparison.Ordinal);
+        Assert.Contains("PublicKeyAuth.VerifyDetached", transparency, StringComparison.Ordinal);
+        Assert.Contains("ProductionAndroidSemanticApkDigest.ComputeAsync", transparency,
+            StringComparison.Ordinal);
+        Assert.Contains("TryLoadAndroidIdentity", attestor, StringComparison.Ordinal);
+        Assert.Contains("beforeTransparency", attestor, StringComparison.Ordinal);
+        Assert.DoesNotContain("buildIdentity.BuildIdSha256", attestor,
+            StringComparison.Ordinal);
+        Assert.Contains("CaptureAndroidPackage", attestor, StringComparison.Ordinal);
+        Assert.Contains("Production Android package changed during attestation.", attestor,
+            StringComparison.Ordinal);
+        Assert.Contains("CaptureWindowsInventory", attestor, StringComparison.Ordinal);
+        Assert.Contains("SHA256.HashDataAsync", artifactDigest, StringComparison.Ordinal);
+        Assert.Contains("EnsureNoReparsePoints", artifactDigest, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetEnvironmentVariable", attestor, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProductionMailboxTrustFloorIsCompiledAndNeverReadFromRuntimeEnvironment()
+    {
+        var project = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Deep.Client.Maui.csproj");
+        var trustFloor = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Services",
+            "ProductionMailboxBuildTrustFloor.cs");
+        Assert.Contains("AssemblyMetadata Include=\"DeepProductionMrXPublicKeySha256\"",
+            project, StringComparison.Ordinal);
+        Assert.Contains("ValidateProductionMailboxTrustFloor", project,
+            StringComparison.Ordinal);
+        Assert.Contains("RequireProductionMailboxTrustFloor", project,
+            StringComparison.Ordinal);
+        Assert.Contains("RequireProductionAndroidBuildIdentity", project,
+            StringComparison.Ordinal);
+        Assert.Contains("DeepProductionAndroidSignerLineageSha256", project,
+            StringComparison.Ordinal);
+        Assert.Contains("DeepProductionAndroidCodeTransparencyManifest", project,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "AssemblyMetadata Include=\"DeepProductionAndroidBuildIdSha256\"",
+            project, StringComparison.Ordinal);
+        Assert.Contains("RequireProductionAndroidCodeTransparency", project,
+            StringComparison.Ordinal);
+        Assert.Contains("Release Android and Windows builds require the complete production mailbox trust floor.",
+            project, StringComparison.Ordinal);
+        Assert.Contains("'$(Configuration)' != 'Release'", project,
+            StringComparison.Ordinal);
+        Assert.Contains("GetCustomAttributes<AssemblyMetadataAttribute>()", trustFloor,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("GetEnvironmentVariable", trustFloor,
+            StringComparison.Ordinal);
+        foreach (var scriptName in new[]
+        {
+            "build-android-play.ps1",
+            "build-windows-msix.ps1"
+        })
+        {
+            var script = ReadWorkspaceFile("eng", scriptName);
+            Assert.Contains("TrustFloorBundle", script, StringComparison.Ordinal);
+            Assert.Contains("Import-ProductionTrustBundle", script,
+                StringComparison.Ordinal);
+            Assert.Contains("trustMsBuildArguments", script, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void RecoveryPhraseEditorDisablesLearningPredictionSpellcheckAndAutofill()
     {
         var xaml = ReadWorkspaceFile("src", "Deep.Client.Maui", "Pages", "OnboardingPage.xaml");
@@ -33,11 +121,73 @@ public sealed class ClientSecurityContractSmokeTests
             "BF8ABED56E852D0902796F9E0131789F188688784A07AD516760F127684204C2",
             script,
             StringComparison.Ordinal);
-        Assert.Contains("--print-certs $finalApk", script, StringComparison.Ordinal);
+        Assert.Contains("--print-certs $candidateApk", script, StringComparison.Ordinal);
         Assert.Contains("Assert-UploadCertificateSha256 -ArtifactName \"APK\"", script, StringComparison.Ordinal);
-        Assert.Contains("-printcert -jarfile $finalBundle -rfc", script, StringComparison.Ordinal);
+        Assert.Contains("-printcert -jarfile $bundle.FullName -rfc", script, StringComparison.Ordinal);
         Assert.Contains("Assert-UploadCertificateSha256 -ArtifactName \"AAB\"", script, StringComparison.Ordinal);
+        Assert.Contains("build-apks", script, StringComparison.Ordinal);
+        Assert.Contains("--mode=default", script, StringComparison.Ordinal);
+        Assert.Contains("Deep.AndroidTransparency.Tool", script, StringComparison.Ordinal);
+        Assert.True(script.IndexOf("Generated default APK set does not match", StringComparison.Ordinal) <
+            script.IndexOf("Copy-Item -LiteralPath $bundle.FullName -Destination $finalBundle", StringComparison.Ordinal));
         Assert.DoesNotContain("jarsigner -strict", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AndroidTransparencyPreparationIsNonPublishingAndHasNoMrXSigner()
+    {
+        var preparation = ReadWorkspaceFile(
+            "eng", "prepare-android-code-transparency.ps1");
+        var publish = ReadWorkspaceFile("eng", "build-android-play.ps1");
+        var tool = ReadWorkspaceFile(
+            "eng", "tools", "Deep.AndroidTransparency.Tool", "Program.cs");
+        var project = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Deep.Client.Maui.csproj");
+
+        Assert.Contains("DeepProductionAndroidTransparencyPreparation=true",
+            preparation, StringComparison.Ordinal);
+        Assert.Contains("build-apks", preparation, StringComparison.Ordinal);
+        Assert.Contains("--mode=default", preparation, StringComparison.Ordinal);
+        Assert.Contains("$archive.Entries.Count -gt 16384", preparation,
+            StringComparison.Ordinal);
+        Assert.Contains("$written -ne $entry.Length", preparation,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("$source.CopyTo($target)", preparation,
+            StringComparison.Ordinal);
+        Assert.Contains("-- prepare", preparation, StringComparison.Ordinal);
+        Assert.DoesNotContain("artifacts\\android-release", preparation,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Copy-Item -LiteralPath $bundle", preparation,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("DeepProductionAndroidTransparencyPreparation=true", publish,
+            StringComparison.Ordinal);
+        Assert.Contains("DeepGoogleServicesJson", preparation, StringComparison.Ordinal);
+        Assert.Contains("DeepGoogleServicesJson", publish, StringComparison.Ordinal);
+        Assert.Contains("Open-PinnedAndroidBundletool", preparation, StringComparison.Ordinal);
+        Assert.Contains("Open-PinnedAndroidBundletool", publish, StringComparison.Ordinal);
+        Assert.Contains("Close-PinnedAndroidBundletool", preparation, StringComparison.Ordinal);
+        Assert.Contains("Close-PinnedAndroidBundletool", publish, StringComparison.Ordinal);
+        Assert.DoesNotContain("firebaseTarget", preparation, StringComparison.Ordinal);
+        Assert.DoesNotContain("firebaseTarget", publish, StringComparison.Ordinal);
+        Assert.DoesNotContain("Copy-Item -LiteralPath $GoogleServicesJson", preparation,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Copy-Item -LiteralPath $GoogleServicesJson", publish,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("SignDetached", tool, StringComparison.Ordinal);
+        Assert.DoesNotContain("PrivateKey", tool, StringComparison.Ordinal);
+        Assert.Contains("EnsureNoReparse(parent)", tool, StringComparison.Ordinal);
+        var bundletoolGate = ReadWorkspaceFile("eng", "Assert-AndroidBundletool.ps1");
+        Assert.Contains(
+            "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29",
+            bundletoolGate, StringComparison.Ordinal);
+        Assert.Contains("FileShare]::None", bundletoolGate, StringComparison.Ordinal);
+        Assert.Contains("FileShare]::Read", bundletoolGate, StringComparison.Ordinal);
+        Assert.Contains("New-PrivateBundletoolDirectory", bundletoolGate,
+            StringComparison.Ordinal);
+        Assert.Contains("'$(DeepProductionAndroidTransparencyPreparation)' != 'true'",
+            project, StringComparison.Ordinal);
+        Assert.Contains("GoogleServicesJson Include=\"$(DeepGoogleServicesJson)\"",
+            project, StringComparison.Ordinal);
     }
 
     [Fact]

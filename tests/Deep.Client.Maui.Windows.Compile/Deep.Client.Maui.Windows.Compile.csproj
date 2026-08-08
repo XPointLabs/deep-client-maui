@@ -14,6 +14,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
@@ -34,6 +35,10 @@
              Link="Services\IRealityTransportRuntime.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\RealityTransportRuntime.cs"
              Link="Services\RealityTransportRuntime.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxArtifactSetDigest.cs"
+             Link="Services\ProductionMailboxArtifactSetDigest.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxClientIdentityAttestor.cs"
+             Link="Services\ProductionMailboxClientIdentityAttestor.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsAppLockService.cs"
              Link="Platform\WindowsAppLockService.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsPushNotificationService.cs"
