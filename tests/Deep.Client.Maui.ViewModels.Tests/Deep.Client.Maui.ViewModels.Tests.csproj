@@ -30,6 +30,8 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\MailboxRuntimeProvisioning.cs" Link="Services\MailboxRuntimeProvisioning.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxOwnerIdentityStore.cs" Link="Services\ProductionMailboxOwnerIdentityStore.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxBuildTrustFloor.cs" Link="Services\ProductionMailboxBuildTrustFloor.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxRegistryJsonCodec.cs" Link="Services\ProductionMailboxRegistryJsonCodec.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxRuntimeProvisioningSource.cs" Link="Services\ProductionMailboxRuntimeProvisioningSource.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxArtifactSetDigest.cs" Link="Services\ProductionMailboxArtifactSetDigest.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionAndroidCodeTransparency.cs" Link="Services\ProductionAndroidCodeTransparency.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\WindowsMailboxAccessControl.cs" Link="Services\WindowsMailboxAccessControl.cs" />
