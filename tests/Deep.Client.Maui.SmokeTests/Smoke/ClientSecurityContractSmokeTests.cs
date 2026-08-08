@@ -91,6 +91,72 @@ public sealed class ClientSecurityContractSmokeTests
     }
 
     [Fact]
+    public void DirectP2pFailsClosedWithoutRealTransportAndDisablesOfficialCloudComposition()
+    {
+        var program = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
+        var compositionStart = program.IndexOf(
+            "private static ApplicationServiceInputs ResolveApplicationServiceInputs()",
+            StringComparison.Ordinal);
+
+        Assert.True(compositionStart >= 0);
+        Assert.Contains("Direct-P2P transport is unavailable until a verified direct peer",
+            program, StringComparison.Ordinal);
+        Assert.Contains("generic HTTP endpoints are rejected", program,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("new DirectP2pSessionMessageTransport", program,
+            StringComparison.Ordinal);
+        Assert.Contains("new RealityTransportBinding(new UnsupportedRealityTransportRuntime(), [])",
+            program, StringComparison.Ordinal);
+        Assert.Contains("var storageBaseUrl = directP2p ? null", program,
+            StringComparison.Ordinal);
+        Assert.Contains("var fileBaseUrl = directP2p ? null", program,
+            StringComparison.Ordinal);
+        Assert.Contains("var pushBaseUrl = directP2p ? null", program,
+            StringComparison.Ordinal);
+        Assert.Contains("var callSignalingBaseUrl = directP2p ? null", program,
+            StringComparison.Ordinal);
+        Assert.Contains("var fileConnectIps = directP2p", program,
+            StringComparison.Ordinal);
+        Assert.Contains("? []", program, StringComparison.Ordinal);
+        Assert.Contains("if (!directP2p && string.IsNullOrWhiteSpace(fileBaseUrl))",
+            program, StringComparison.Ordinal);
+        Assert.Contains(
+            "CallsEnabled = transportMode.Protocol != RuntimeTransportProtocol.DirectP2p",
+            program, StringComparison.Ordinal);
+        Assert.Contains(
+            "AttachmentEncryptionEnabled =\n                transportMode.Protocol != RuntimeTransportProtocol.DirectP2p",
+            program.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "PushNotificationsEnabled =\n                transportMode.Protocol != RuntimeTransportProtocol.DirectP2p",
+            program.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new RuntimeEnvironmentOptions(\n" +
+            "                    null, null, null, null, null, null, null, null, null)",
+            program.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        var directRegistration = program[
+            program.IndexOf(
+                "if (inputs.TransportMode.Protocol == RuntimeTransportProtocol.DirectP2p)",
+                StringComparison.Ordinal)..program.IndexOf(
+                "if (inputs.MembershipRouteCatalogProvider is not null)",
+                StringComparison.Ordinal)];
+        Assert.DoesNotContain("CreateSession", directRegistration,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("IRecoveryProfileLookup", directRegistration,
+            StringComparison.Ordinal);
+        Assert.Contains("direct is not IDirectP2pSessionMessageTransport", program,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("StoreBoundNativeMau2Transport(",
+            program[compositionStart..program.IndexOf(
+                "#if DEBUG && DEEP_PHYSICAL_E2E",
+                compositionStart,
+                StringComparison.Ordinal)],
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RecoveryPhraseEditorDisablesLearningPredictionSpellcheckAndAutofill()
     {
         var xaml = ReadWorkspaceFile("src", "Deep.Client.Maui", "Pages", "OnboardingPage.xaml");

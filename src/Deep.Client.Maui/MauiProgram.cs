@@ -125,20 +125,9 @@ public static class MauiProgram
         if (inputs.TransportMode.Protocol == RuntimeTransportProtocol.DirectP2p)
         {
             services.AddSingleton<ISessionMessageTransport>(_ =>
-            {
-                var baseUrl = ResolveRuntimeSettingForComposition(
-                    TransportBaseUrlEnv,
-                    inputs.RoutedEndpointPolicy);
-                if (string.IsNullOrWhiteSpace(baseUrl))
-                {
-                    throw new InvalidOperationException(
-                        "Direct-P2P mode requires an explicit direct transport endpoint.");
-                }
-
-                return inputs.ServiceTransportFactory.CreateSession(
-                    new HttpSessionTransportOptions(baseUrl),
-                    inputs.ServiceTransportClientOptions);
-            });
+                throw new InvalidOperationException(
+                    "Direct-P2P transport is unavailable until a verified direct peer " +
+                    "implementation is installed; generic HTTP endpoints are rejected."));
         }
         if (inputs.MembershipRouteCatalogProvider is not null)
             services.AddSingleton(inputs.MembershipRouteCatalogProvider);
@@ -345,6 +334,7 @@ public static class MauiProgram
     {
         var survivalDevelopment = IsSurvivalDevelopmentProfile();
         var transportMode = ResolveRuntimeTransportMode();
+        var directP2p = transportMode.Protocol == RuntimeTransportProtocol.DirectP2p;
         var routedEndpointPolicy = survivalDevelopment && IsDebugBuild()
             ? RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment
             : RoutedRuntimeEndpointPolicy.Production;
@@ -353,10 +343,14 @@ public static class MauiProgram
                 ? HttpServiceEndpointPolicy.PhysicalE2eDevelopment
                 : HttpServiceEndpointPolicy.Production);
         var featureFlags = BuildFeatureFlags(survivalDevelopment, transportMode);
-        var realityBinding = ResolveRealityTransportBinding(routedEndpointPolicy);
+        var realityBinding = directP2p
+            ? new RealityTransportBinding(new UnsupportedRealityTransportRuntime(), [])
+            : ResolveRealityTransportBinding(routedEndpointPolicy);
         var realityTransportRuntime = realityBinding.Runtime;
         var routerBaseUrls = realityBinding.RouterEndpoints;
-        var membershipConfiguration =
+        var membershipConfiguration = directP2p
+            ? null
+            :
             DevLocalMembershipRouteConfiguration.Resolve(
                 ResolveRuntimeSetting(DevLocalMembershipTrustUrlEnv),
                 ResolveRuntimeSetting(DevLocalMembershipTrustSha256Env),
@@ -367,20 +361,16 @@ public static class MauiProgram
             throw new InvalidOperationException(
                 "Development membership routing requires configured routed transport.");
         }
-        var storageBaseUrl = ResolveRuntimeSettingForComposition(
-            StorageBaseUrlEnv,
-            routedEndpointPolicy);
-        var fileBaseUrl = ResolveRuntimeSettingForComposition(
-            FileBaseUrlEnv,
-            routedEndpointPolicy);
-        var pushBaseUrl = ResolveRuntimeSettingForComposition(
-            PushBaseUrlEnv,
-            routedEndpointPolicy);
-        var callSignalingBaseUrl = ResolveRuntimeSettingForComposition(
-            CallSignalingBaseUrlEnv,
-            routedEndpointPolicy);
+        var storageBaseUrl = directP2p ? null : ResolveRuntimeSettingForComposition(
+            StorageBaseUrlEnv, routedEndpointPolicy);
+        var fileBaseUrl = directP2p ? null : ResolveRuntimeSettingForComposition(
+            FileBaseUrlEnv, routedEndpointPolicy);
+        var pushBaseUrl = directP2p ? null : ResolveRuntimeSettingForComposition(
+            PushBaseUrlEnv, routedEndpointPolicy);
+        var callSignalingBaseUrl = directP2p ? null : ResolveRuntimeSettingForComposition(
+            CallSignalingBaseUrlEnv, routedEndpointPolicy);
 #if !DEBUG
-        if (string.IsNullOrWhiteSpace(fileBaseUrl))
+        if (!directP2p && string.IsNullOrWhiteSpace(fileBaseUrl))
         {
             throw new InvalidOperationException(
                 "DEEP_FILE_URL is required in non-Debug builds. " +
@@ -397,7 +387,9 @@ public static class MauiProgram
                 "DEEP_CALL_SIGNALING_BASE_URL is required when calls are enabled in non-Debug builds.");
         }
 #endif
-        var fileConnectIps = ParseIpAddresses(ResolveRuntimeSetting(FileConnectIpsEnv));
+        var fileConnectIps = directP2p
+            ? []
+            : ParseIpAddresses(ResolveRuntimeSetting(FileConnectIpsEnv));
         Func<IServiceProvider, IIpCountryLookup> countryLookupFactory =
             _ => new IpCountryLookup(
                 _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_blocks_ipv4")),
@@ -469,10 +461,13 @@ public static class MauiProgram
             httpTransportFactories.ServiceTransportFactory,
             httpTransportFactories.ServiceClientOptions,
             membershipRouteCatalogProvider,
-            RuntimeEnvironmentOptions.FromRuntimeSettings(
-                key => ResolveRuntimeSettingForComposition(
-                    key,
-                    routedEndpointPolicy)),
+            directP2p
+                ? new RuntimeEnvironmentOptions(
+                    null, null, null, null, null, null, null, null, null)
+                : RuntimeEnvironmentOptions.FromRuntimeSettings(
+                    key => ResolveRuntimeSettingForComposition(
+                        key,
+                        routedEndpointPolicy)),
             countryLookupFactory,
             httpTransportFactories.Avatar,
             httpTransportFactories.Attachment,
@@ -521,6 +516,11 @@ public static class MauiProgram
 #if DEBUG
         var featureFlags = ClientFeatureFlags.Defaults with
         {
+            CallsEnabled = false,
+            AttachmentEncryptionEnabled =
+                transportMode.Protocol != RuntimeTransportProtocol.DirectP2p,
+            PushNotificationsEnabled =
+                transportMode.Protocol != RuntimeTransportProtocol.DirectP2p,
             PersistentTransportOutboxEnabled = IsPersistentTransportOutboxRequested(),
             TransportRequired = true,
             StubTransportAllowed = false,
@@ -533,7 +533,16 @@ public static class MauiProgram
 #else
         return ClientFeatureFlags.ReleaseDefaults with
         {
-            PersistentTransportOutboxEnabled = IsPersistentTransportOutboxRequested()
+            CallsEnabled = transportMode.Protocol != RuntimeTransportProtocol.DirectP2p,
+            AttachmentEncryptionEnabled =
+                transportMode.Protocol != RuntimeTransportProtocol.DirectP2p,
+            PushNotificationsEnabled =
+                transportMode.Protocol != RuntimeTransportProtocol.DirectP2p,
+            PersistentTransportOutboxEnabled = IsPersistentTransportOutboxRequested(),
+            MetadataPrivateTransportRequired =
+                transportMode.Protocol == RuntimeTransportProtocol.AuthenticatedMau2,
+            ClientMailboxAdapterEnabled =
+                transportMode.Protocol == RuntimeTransportProtocol.AuthenticatedMau2
         };
 #endif
     }
