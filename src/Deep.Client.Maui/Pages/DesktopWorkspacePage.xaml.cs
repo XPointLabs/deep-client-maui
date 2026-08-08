@@ -25,6 +25,10 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
     private readonly PushRegistrationLifecycleCoordinator pushRegistrationLifecycle;
     private readonly SyncPollingPolicy syncPollingPolicy;
     private readonly BackgroundSyncSchedulingCoordinator backgroundSyncScheduling;
+#if DEBUG && DEEP_PHYSICAL_E2E
+    private readonly PhysicalMailboxRouteUsageTracker physicalRouteUsageTracker;
+    private Label? physicalRouteNodeMarker;
+#endif
     private IncomingCallPollingBackoff incomingCallPolling = new();
     private readonly VoiceMessagePlaybackService voicePlayback = new();
     private readonly SemaphoreSlim voiceGestureCompletionGate = new(1, 1);
@@ -68,7 +72,11 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         IActiveConversationTracker activeConversationTracker,
         PushRegistrationLifecycleCoordinator pushRegistrationLifecycle,
         SyncPollingPolicy syncPollingPolicy,
-        BackgroundSyncSchedulingCoordinator backgroundSyncScheduling)
+        BackgroundSyncSchedulingCoordinator backgroundSyncScheduling
+#if DEBUG && DEEP_PHYSICAL_E2E
+        , IMailboxDispatchRouteUsageObserver physicalRouteUsageObserver
+#endif
+        )
     {
         InitializeComponent();
         this.viewModel = viewModel;
@@ -79,6 +87,12 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         this.pushRegistrationLifecycle = pushRegistrationLifecycle;
         this.syncPollingPolicy = syncPollingPolicy;
         this.backgroundSyncScheduling = backgroundSyncScheduling;
+#if DEBUG && DEEP_PHYSICAL_E2E
+        physicalRouteUsageTracker = physicalRouteUsageObserver as
+            PhysicalMailboxRouteUsageTracker ?? throw new InvalidOperationException(
+                "Physical E2E requires its mailbox route usage tracker.");
+        CreatePhysicalRouteNodeMarker();
+#endif
         BindingContext = viewModel;
     }
 
@@ -108,6 +122,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             }
 
             await viewModel.InitializeAsync(cancellationToken);
+#if DEBUG && DEEP_PHYSICAL_E2E
+            UpdatePhysicalRouteNodeMarker();
+#endif
             await QueueActiveImagePreviewsAsync(cancellationToken);
             RequestSynchronization();
             _ = InitializeRealtimeServicesAsync(cancellationToken);
@@ -190,6 +207,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         ContactProfileUpdateBus.ContactChanged += OnContactProfileChanged;
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         BackgroundSyncBridge.SyncCompleted += OnBackgroundSyncScheduled;
+#if DEBUG && DEEP_PHYSICAL_E2E
+        physicalRouteUsageTracker.Changed += OnPhysicalRouteUsageChanged;
+#endif
     }
 
     private void UnsubscribeEvents()
@@ -210,6 +230,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         ContactProfileUpdateBus.ContactChanged -= OnContactProfileChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         BackgroundSyncBridge.SyncCompleted -= OnBackgroundSyncScheduled;
+#if DEBUG && DEEP_PHYSICAL_E2E
+        physicalRouteUsageTracker.Changed -= OnPhysicalRouteUsageChanged;
+#endif
     }
 
     private void OnWorkspacePropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -225,6 +248,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             or nameof(DesktopWorkspaceViewModel.IsDetailPaneVisible))
         {
             RefreshActiveConversationLease();
+#if DEBUG && DEEP_PHYSICAL_E2E
+            UpdatePhysicalRouteNodeMarker();
+#endif
         }
 
         if (e.PropertyName == nameof(DesktopWorkspaceViewModel.ConversationList))
@@ -257,6 +283,55 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             subscribedGroupChat.Messages.CollectionChanged += OnGroupMessagesChanged;
         }
     }
+
+#if DEBUG && DEEP_PHYSICAL_E2E
+    private void CreatePhysicalRouteNodeMarker()
+    {
+        physicalRouteNodeMarker = new Label
+        {
+            AutomationId = "PhysicalE2E.RouteNodeMarker",
+            IsVisible = false,
+            FontSize = 9,
+            TextColor = Colors.Gray,
+            BackgroundColor = Colors.Transparent,
+            HorizontalOptions = LayoutOptions.End,
+            VerticalOptions = LayoutOptions.Start,
+            InputTransparent = true,
+            ZIndex = 100
+        };
+        DetailContent.Children.Add(physicalRouteNodeMarker);
+    }
+
+    private void UpdatePhysicalRouteNodeMarker()
+    {
+        if (physicalRouteNodeMarker is null) return;
+        var routerId = viewModel.IsDirectDetail &&
+            viewModel.SelectedConversation is { } selected
+                ? physicalRouteUsageTracker.GetCurrentRouterId(selected.Id)
+                : null;
+        physicalRouteNodeMarker.Text = routerId ?? string.Empty;
+        physicalRouteNodeMarker.IsVisible = viewModel.IsDirectDetail &&
+            !string.IsNullOrWhiteSpace(routerId);
+    }
+
+    private void OnPhysicalRouteUsageChanged(
+        object? sender,
+        ConversationId conversationId)
+    {
+        if (!isPageActive)
+            return;
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (!isPageActive ||
+                !viewModel.IsDirectDetail ||
+                viewModel.SelectedConversation?.Id != conversationId)
+            {
+                return;
+            }
+            UpdatePhysicalRouteNodeMarker();
+        });
+    }
+#endif
 
     private void OnWorkspaceSizeChanged(object? sender, EventArgs e)
     {
@@ -1166,6 +1241,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
 
     private void OnDirectMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+#if DEBUG && DEEP_PHYSICAL_E2E
+        UpdatePhysicalRouteNodeMarker();
+#endif
         if (e.NewItems is not null)
         {
             _ = QueueImagePreviewsAsync(e.NewItems.OfType<ChatMessageItem>(), pageActivityCancellation?.Token ?? CancellationToken.None);

@@ -82,7 +82,7 @@
                     </CollectionView.EmptyView>
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:ConversationListItem">
-                            <Border x:Name="ConversationRow" AutomationId="DesktopWorkspace.ConversationRow" Padding="10,8" StrokeThickness="0" Background="{StaticResource PageBackground}" SemanticProperties.Description="Диалог">
+                            <Border x:Name="ConversationRow" AutomationId="DesktopWorkspace.ConversationRow" Padding="10,8" StrokeThickness="0" Background="{StaticResource PageBackground}" SemanticProperties.Description="{Binding Title}">
                                 <Border.Triggers>
                                     <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
                                         <Setter Property="Background" Value="{StaticResource PressedBackground}" />

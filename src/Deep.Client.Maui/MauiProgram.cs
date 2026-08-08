@@ -158,6 +158,11 @@ public static class MauiProgram
         services.AddSingleton<PushRegistrationLifecycleCoordinator>();
         services.AddSingleton<ChatOpenUiCache>();
         services.AddSingleton<IActiveConversationTracker, ActiveConversationTracker>();
+#if DEBUG && DEEP_PHYSICAL_E2E
+        services.AddSingleton<PhysicalMailboxRouteUsageTracker>();
+        services.AddSingleton<IMailboxDispatchRouteUsageObserver>(serviceProvider =>
+            serviceProvider.GetRequiredService<PhysicalMailboxRouteUsageTracker>());
+#endif
         services.AddSingleton<IAccountLogoutCoordinator, MauiAccountLogoutCoordinator>();
         services.AddSingleton<IMediaCodecService, MauiMediaCodecService>();
         services.AddSingleton<IPermissionsService, MauiPermissionsService>();
@@ -786,7 +791,8 @@ public static class MauiProgram
                 platform,
                 holder),
             mode.Ownership,
-            featureFlags);
+            featureFlags,
+            services.GetRequiredService<IMailboxDispatchRouteUsageObserver>());
         return new StoreBoundRuntimeTransportComposition(native, native);
 #else
         throw new InvalidOperationException(

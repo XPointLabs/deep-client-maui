@@ -23,6 +23,7 @@ internal sealed class StoreBoundNativeMau2Transport :
     private readonly Action<MailboxHolderIdentity> holderAvailable;
     private readonly MailboxInfrastructureOwnership ownership;
     private readonly ClientFeatureFlags featureFlags;
+    private readonly IMailboxDispatchRouteUsageObserver? routeUsageObserver;
     private readonly SemaphoreSlim bindGate = new(1, 1);
     private readonly object operationGate = new();
     private BoundRuntime? bound;
@@ -37,7 +38,8 @@ internal sealed class StoreBoundNativeMau2Transport :
         Func<MailboxCredentialBundleImportOptions> importOptionsFactory,
         Action<MailboxHolderIdentity> holderAvailable,
         MailboxInfrastructureOwnership ownership,
-        ClientFeatureFlags featureFlags)
+        ClientFeatureFlags featureFlags,
+        IMailboxDispatchRouteUsageObserver? routeUsageObserver = null)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         this.secureStore = secureStore ?? throw new ArgumentNullException(nameof(secureStore));
@@ -50,6 +52,7 @@ internal sealed class StoreBoundNativeMau2Transport :
             throw new ArgumentOutOfRangeException(nameof(ownership));
         this.ownership = ownership;
         this.featureFlags = featureFlags ?? throw new ArgumentNullException(nameof(featureFlags));
+        this.routeUsageObserver = routeUsageObserver;
         if (!featureFlags.ClientMailboxAdapterEnabled ||
             !featureFlags.MetadataPrivateTransportRequired)
         {
@@ -401,7 +404,8 @@ internal sealed class StoreBoundNativeMau2Transport :
                     : throw new InvalidOperationException(
                         "MAU2 self selector was requested for another account."),
                 ownsIngress: true,
-                importOptions.TimeProvider);
+                timeProvider: importOptions.TimeProvider,
+                routeUsageObserver: routeUsageObserver);
             current = new BoundRuntime(material, transport);
             Volatile.Write(ref bound, current);
             return current;

@@ -78,7 +78,7 @@
                     </CollectionView.EmptyView>
                     <CollectionView.ItemTemplate>
                         <DataTemplate x:DataType="vm:ConversationListItem">
-                            <Border x:Name="RowCard" AutomationId="Conversations.ConversationRow" SemanticProperties.Description="Диалог" Style="{StaticResource ConversationRowBorder}">
+                            <Border x:Name="RowCard" AutomationId="Conversations.ConversationRow" SemanticProperties.Description="{Binding Title}" Style="{StaticResource ConversationRowBorder}">
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Tapped="OnConversationTapped" />
                                 </Border.GestureRecognizers>

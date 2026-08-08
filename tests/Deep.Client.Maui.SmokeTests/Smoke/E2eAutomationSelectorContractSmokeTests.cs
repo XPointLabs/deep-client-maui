@@ -55,6 +55,55 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
+    public void RepeatedConversationRowsExposeTheExactBoundTitleAsAccessibleName()
+    {
+        foreach (var (page, selector) in new[]
+                 {
+                     (LoadPage("ConversationsPage.xaml"),
+                         "Conversations.ConversationRow"),
+                     (LoadPage("DesktopWorkspacePage.xaml"),
+                         "DesktopWorkspace.ConversationRow")
+                 })
+        {
+            var row = Assert.Single(ElementsWithAutomationId(page.Root!, selector));
+            Assert.Equal("{Binding Title}",
+                row.Attribute("SemanticProperties.Description")?.Value);
+        }
+    }
+
+    [Fact]
+    public void PhysicalRouteMarkerIsDebugPhysicalOnlyAndPublishesRawRouterId()
+    {
+        var source = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Pages", "DesktopWorkspacePage.xaml.cs"));
+        var tracker = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Services", "PhysicalMailboxRouteUsageTracker.cs"));
+
+        Assert.Contains("#if DEBUG && DEEP_PHYSICAL_E2E", source,
+            StringComparison.Ordinal);
+        Assert.Contains("AutomationId = \"PhysicalE2E.RouteNodeMarker\"", source,
+            StringComparison.Ordinal);
+        Assert.Contains("physicalRouteUsageTracker.GetCurrentRouterId(selected.Id)", source,
+            StringComparison.Ordinal);
+        Assert.Contains("physicalRouteNodeMarker.Text = routerId ?? string.Empty;", source,
+            StringComparison.Ordinal);
+        Assert.Contains("physicalRouteNodeMarker.IsVisible = viewModel.IsDirectDetail", source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("PhysicalE2E.RouteNodeMarker\" Text=", source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ITransportRouteProvider", source, StringComparison.Ordinal);
+        Assert.Contains("physicalRouteUsageTracker.Changed += OnPhysicalRouteUsageChanged;",
+            source, StringComparison.Ordinal);
+        Assert.Contains("physicalRouteUsageTracker.Changed -= OnPhysicalRouteUsageChanged;",
+            source, StringComparison.Ordinal);
+        Assert.Contains("if (!isPageActive", source, StringComparison.Ordinal);
+        Assert.Contains("active.AttemptId == usage.AttemptId", tracker,
+            StringComparison.Ordinal);
+        Assert.Contains("Convert.ToHexStringLower(usage.EntryRouterId.Span)", tracker,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void E2eAutomationIdsAreLiteralPrivacySafeRolesAndPageSelectorsAreUnique()
     {
         var pages = new[]
