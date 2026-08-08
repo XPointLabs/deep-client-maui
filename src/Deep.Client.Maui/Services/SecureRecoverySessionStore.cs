@@ -9,7 +9,8 @@ namespace Deep.Client.Maui.Services;
 
 internal sealed class SecureRecoverySessionStore(
     ILocalSessionStore inner,
-    IDisposable? ownedLifetime = null) :
+    IDisposable? ownedLifetime = null,
+    Action<ProductionMailboxOwnerIdentityStore.CommitFaultPoint>? accountFaultInjector = null) :
     ILocalSessionStore,
     IOneToOneConversationOpenRepository,
     IMessageSyncRepository,
@@ -17,8 +18,6 @@ internal sealed class SecureRecoverySessionStore(
     IMembershipTrustRepository,
     IDisposable
 {
-    private const string SecureRecoveryPhraseKey = "deep.account.recovery-phrase.v1";
-
     public Task UpsertAsync(Conversation conversation, CancellationToken cancellationToken = default) =>
         inner.UpsertAsync(conversation, cancellationToken);
 
@@ -310,8 +309,11 @@ internal sealed class SecureRecoverySessionStore(
     public async Task PurgeAccountDataAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await ((IAccountDataPurger)inner).PurgeAccountDataAsync(cancellationToken).ConfigureAwait(false);
-        SecureStorage.Remove(SecureRecoveryPhraseKey);
+        await ProductionMailboxOwnerIdentityStore.RemoveAfterDurableMutationAsync(
+            () => ((IAccountDataPurger)inner).PurgeAccountDataAsync(CancellationToken.None),
+            accountFaultInjector,
+            cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public Task PersistGroupStateAsync(
@@ -377,6 +379,30 @@ internal sealed class SecureRecoverySessionStore(
     {
         if (!IsRecoveryPhraseKey(key))
         {
+            if (string.Equals(key, SessionAccountService.ActiveAccountKey,
+                    StringComparison.Ordinal) && value is SessionAccount account)
+            {
+                await ProductionMailboxOwnerIdentityStore.CommitStagedAccountAsync(
+                    account.SessionId,
+                    async () =>
+                    {
+                        try
+                        {
+                            await inner.SetAsync(key, value, cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            var durable = await inner.GetAsync<SessionAccount>(
+                                SessionAccountService.ActiveAccountKey,
+                                CancellationToken.None).ConfigureAwait(false);
+                            if (durable != account) throw;
+                        }
+                    },
+                    accountFaultInjector,
+                    cancellationToken).ConfigureAwait(false);
+                return;
+            }
             await inner.SetAsync(key, value, cancellationToken).ConfigureAwait(false);
             return;
         }
@@ -386,7 +412,8 @@ internal sealed class SecureRecoverySessionStore(
             throw new InvalidOperationException("Recovery phrase must be stored as a string.");
         }
 
-        await SecureStorage.SetAsync(SecureRecoveryPhraseKey, phrase).ConfigureAwait(false);
+        await ProductionMailboxOwnerIdentityStore.StageAccountAsync(
+            phrase, accountFaultInjector, cancellationToken).ConfigureAwait(false);
         await inner.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
     }
 
@@ -402,20 +429,29 @@ internal sealed class SecureRecoverySessionStore(
             throw new InvalidOperationException("Recovery phrase must be read as a string.");
         }
 
-        var phrase = await SecureStorage.GetAsync(SecureRecoveryPhraseKey).ConfigureAwait(false);
+        var phrase = await ProductionMailboxOwnerIdentityStore
+            .GetRecoveryPhraseForDurableAccountAsync(async () =>
+                (await inner.GetAsync<SessionAccount>(
+                    SessionAccountService.ActiveAccountKey,
+                    cancellationToken).ConfigureAwait(false))?.SessionId,
+                cancellationToken)
+            .ConfigureAwait(false);
         return !SessionAccountService.IsCanonicalRecoveryPhrase(phrase)
             ? default
             : (T?)(object)phrase!;
     }
 
-    public Task DeleteAsync(string key, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(string key, CancellationToken cancellationToken = default)
     {
         if (IsRecoveryPhraseKey(key))
         {
-            SecureStorage.Remove(SecureRecoveryPhraseKey);
+            await ProductionMailboxOwnerIdentityStore.RemoveAfterDurableMutationAsync(
+                () => inner.DeleteAsync(key, CancellationToken.None),
+                accountFaultInjector,
+                cancellationToken).ConfigureAwait(false);
+            return;
         }
-
-        return inner.DeleteAsync(key, cancellationToken);
+        await inner.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<AtomicBoundedSettingReadOutcome> ReadAtomicBoundedSettingAsync(

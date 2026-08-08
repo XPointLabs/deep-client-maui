@@ -8,6 +8,7 @@ using System.Runtime.ExceptionServices;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
 
+[Collection("Secure recovery identity isolation")]
 public sealed class SecureRecoverySessionStoreTests
 {
     [Fact]
@@ -135,11 +136,14 @@ public sealed class SecureRecoverySessionStoreTests
     {
         var inner = new InMemorySessionStore();
         using var store = new SecureRecoverySessionStore(inner);
-        var account = new SessionAccount(SessionId.CreateNew(), "Alice", DateTimeOffset.Parse("2026-05-28T00:00:00Z"));
+        const string phrase =
+            "amaze buffet cake entrance symptoms tiger lamb maze nestle python dusted faxed faxed";
+        using var identity = new SessionIdentityProvider(phrase);
+        var account = new SessionAccount(
+            identity.SessionId, "Alice", DateTimeOffset.Parse("2026-05-28T00:00:00Z"));
 
+        await store.SetAsync(SessionAccountService.ActiveRecoveryPhraseKey, phrase);
         await store.SetAsync(LocalSettingsKeys.ActiveAccount, account);
-        await store.SetAsync(SessionAccountService.ActiveRecoveryPhraseKey,
-            "amaze buffet cake entrance symptoms tiger lamb maze nestle python dusted faxed faxed");
 
         await store.PurgeAccountDataAsync();
 
@@ -149,7 +153,7 @@ public sealed class SecureRecoverySessionStoreTests
     }
 
     [Fact]
-    public async Task PurgeAccountData_KeepsRecoveryMaterialWhenDatabasePurgeFails()
+    public async Task PurgeFailureAfterDeletionIntentFailsClosedWithoutIdentityResurrection()
     {
         var inner = new InMemorySessionStore();
         var proxyStore = DispatchProxy.Create<ILocalSessionStore, FailingPurgeStoreProxy>();
@@ -159,15 +163,78 @@ public sealed class SecureRecoverySessionStoreTests
         try
         {
             await store.SetAsync(SessionAccountService.ActiveRecoveryPhraseKey, phrase);
+            using var identity = new SessionIdentityProvider(phrase);
+            await store.SetAsync(SessionAccountService.ActiveAccountKey,
+                new SessionAccount(identity.SessionId, "Alice", DateTimeOffset.UtcNow));
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => store.PurgeAccountDataAsync());
 
-            Assert.Equal(phrase, await store.GetAsync<string>(SessionAccountService.ActiveRecoveryPhraseKey));
+            Assert.Null(await store.GetAsync<string>(SessionAccountService.ActiveRecoveryPhraseKey));
         }
         finally
         {
             await store.DeleteAsync(SessionAccountService.ActiveRecoveryPhraseKey);
         }
+    }
+
+    [Fact]
+    public async Task RecoveryDeleteFailureAfterDeletionIntentFailsClosed()
+    {
+        var inner = new InMemorySessionStore();
+        var proxyStore = DispatchProxy.Create<ILocalSessionStore, FailingDeleteStoreProxy>();
+        var proxy = (FailingDeleteStoreProxy)(object)proxyStore;
+        proxy.Inner = inner;
+        using var store = new SecureRecoverySessionStore(proxyStore);
+        const string phrase =
+            "amaze buffet cake entrance symptoms tiger lamb maze nestle python dusted faxed faxed";
+        using var identity = new SessionIdentityProvider(phrase);
+        var account = new SessionAccount(identity.SessionId, "Alice", DateTimeOffset.UtcNow);
+        await store.SetAsync(SessionAccountService.ActiveRecoveryPhraseKey, phrase);
+        await store.SetAsync(SessionAccountService.ActiveAccountKey, account);
+        proxy.FailSettingsDelete = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.DeleteAsync(SessionAccountService.ActiveRecoveryPhraseKey));
+
+        Assert.Equal(account, await inner.GetAsync<SessionAccount>(
+            SessionAccountService.ActiveAccountKey));
+        Assert.Null(await store.GetAsync<string>(
+            SessionAccountService.ActiveRecoveryPhraseKey));
+    }
+
+    [Fact]
+    public async Task PurgeAndConcurrentStageAreLinearizedAcrossDatabaseAndSecureSlots()
+    {
+        var inner = new InMemorySessionStore();
+        var proxyStore = DispatchProxy.Create<ILocalSessionStore, BlockingPurgeStoreProxy>();
+        var proxy = (BlockingPurgeStoreProxy)(object)proxyStore;
+        proxy.Inner = inner;
+        using var store = new SecureRecoverySessionStore(proxyStore);
+        const string firstPhrase =
+            "amaze buffet cake entrance symptoms tiger lamb maze nestle python dusted faxed faxed";
+        const string secondPhrase =
+            "update vague zinger boxes ornament renting glass gained island nabbing afield calamity nabbing";
+        using (var first = new SessionIdentityProvider(firstPhrase))
+        {
+            await store.SetAsync(SessionAccountService.ActiveRecoveryPhraseKey, firstPhrase);
+            await store.SetAsync(SessionAccountService.ActiveAccountKey,
+                new SessionAccount(first.SessionId, "First", DateTimeOffset.UtcNow));
+        }
+
+        var purge = store.PurgeAccountDataAsync();
+        await proxy.PurgeEntered.Task;
+        var stage = store.SetAsync(SessionAccountService.ActiveRecoveryPhraseKey, secondPhrase);
+        Assert.False(stage.IsCompleted);
+        proxy.ReleasePurge.TrySetResult();
+        await Task.WhenAll(purge, stage);
+
+        Assert.Null(await inner.GetAsync<SessionAccount>(
+            SessionAccountService.ActiveAccountKey));
+        using var second = new SessionIdentityProvider(secondPhrase);
+        await store.SetAsync(SessionAccountService.ActiveAccountKey,
+            new SessionAccount(second.SessionId, "Second", DateTimeOffset.UtcNow));
+        Assert.Equal(secondPhrase, await store.GetAsync<string>(
+            SessionAccountService.ActiveRecoveryPhraseKey));
     }
 
     [Fact]
@@ -232,6 +299,63 @@ public sealed class SecureRecoverySessionStoreTests
                 ExceptionDispatchInfo.Capture(exception.InnerException).Throw();
                 return null;
             }
+        }
+    }
+
+    public class FailingDeleteStoreProxy : DispatchProxy
+    {
+        public ILocalSessionStore Inner { get; set; } = null!;
+        public bool FailSettingsDelete { get; set; }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            ArgumentNullException.ThrowIfNull(targetMethod);
+            if (FailSettingsDelete && targetMethod.Name == nameof(ISettingsRepository.DeleteAsync) &&
+                args is [string key, ..] &&
+                key == SessionAccountService.ActiveRecoveryPhraseKey)
+                return Task.FromException(new InvalidOperationException(
+                    "Injected settings delete failure."));
+            try
+            {
+                return targetMethod.Invoke(Inner, args);
+            }
+            catch (TargetInvocationException exception) when (exception.InnerException is not null)
+            {
+                ExceptionDispatchInfo.Capture(exception.InnerException).Throw();
+                return null;
+            }
+        }
+    }
+
+    public class BlockingPurgeStoreProxy : DispatchProxy
+    {
+        public ILocalSessionStore Inner { get; set; } = null!;
+        public TaskCompletionSource PurgeEntered { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleasePurge { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            ArgumentNullException.ThrowIfNull(targetMethod);
+            if (targetMethod.Name == nameof(IAccountDataPurger.PurgeAccountDataAsync))
+                return PurgeAsync((CancellationToken)args![0]!);
+            try
+            {
+                return targetMethod.Invoke(Inner, args);
+            }
+            catch (TargetInvocationException exception) when (exception.InnerException is not null)
+            {
+                ExceptionDispatchInfo.Capture(exception.InnerException).Throw();
+                return null;
+            }
+        }
+
+        private async Task PurgeAsync(CancellationToken cancellationToken)
+        {
+            PurgeEntered.TrySetResult();
+            await ReleasePurge.Task.WaitAsync(cancellationToken);
+            await ((IAccountDataPurger)Inner).PurgeAccountDataAsync(cancellationToken);
         }
     }
 
