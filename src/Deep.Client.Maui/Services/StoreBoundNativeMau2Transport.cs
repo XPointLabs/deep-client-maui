@@ -5,9 +5,69 @@ using Deep.Client.Shared.Services;
 
 namespace Deep.Client.Maui.Services;
 
+internal sealed record ProvisionedMailboxRuntime(
+    VerifiedOfficialMailboxAuthority Authority,
+    ClientMailboxActivation Activation,
+    IMailboxClientDecodePolicyProvider DecodePolicies,
+    SessionId LocalSessionId,
+    Func<SessionId, MailboxCredentialSelector?> ResolveRecipient,
+    IClientMailboxBinaryIngress Ingress,
+    TimeProvider TimeProvider);
+
+internal interface IMailboxRuntimeProvisioningSource
+{
+    Task<ProvisionedMailboxRuntime> ProvisionAsync(
+        SqliteSessionStore store,
+        MailboxHolderIdentity holder,
+        MailboxInfrastructureOwnership ownership,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>Debug-only adapter for the exact local Android/Windows fixture bundle.</summary>
+internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
+    Func<MailboxCredentialBundleImportOptions> importOptionsFactory,
+    Action<MailboxHolderIdentity> holderAvailable) : IMailboxRuntimeProvisioningSource
+{
+    private readonly Func<MailboxCredentialBundleImportOptions> importOptionsFactory =
+        importOptionsFactory ?? throw new ArgumentNullException(nameof(importOptionsFactory));
+    private readonly Action<MailboxHolderIdentity> holderAvailable =
+        holderAvailable ?? throw new ArgumentNullException(nameof(holderAvailable));
+
+    public async Task<ProvisionedMailboxRuntime> ProvisionAsync(
+        SqliteSessionStore store,
+        MailboxHolderIdentity holder,
+        MailboxInfrastructureOwnership ownership,
+        CancellationToken cancellationToken = default)
+    {
+        holderAvailable(holder);
+        var options = importOptionsFactory() ?? throw new InvalidOperationException(
+            "The DEV-local mailbox provisioning factory returned no options.");
+        var material = await MailboxCredentialBundleImporter.ImportAsync(
+            store, holder, options, ownership, cancellationToken).ConfigureAwait(false);
+#if DEBUG && DEEP_PHYSICAL_E2E
+        return new ProvisionedMailboxRuntime(
+            material.Authority,
+            material.Activation,
+            material.DecodePolicies,
+            material.LocalSessionId,
+            recipient => recipient == material.LocalSessionId
+                ? material.SelfSelector
+                : recipient == material.PeerSessionId
+                    ? material.PeerSelector
+                    : null,
+            HttpClientMailboxBinaryIngress.CreatePhysicalDevelopment(
+                material.Coordinator, material.DecodePolicies),
+            options.TimeProvider);
+#else
+        throw new InvalidOperationException(
+            "DEV-local mailbox credentials are forbidden outside physical Debug builds.");
+#endif
+    }
+}
+
 /// <summary>
-/// App-private, store-bound DEV-local MAU2 composition. Binding is deferred until an account
-/// exists, then the Mr. X-approved pair is imported once and no raw transport fallback exists.
+/// App-private, store-bound MAU2 composition. Binding is deferred until an account exists;
+/// the injected source must return already verified runtime material and an exact ingress.
 /// </summary>
 internal sealed class StoreBoundNativeMau2Transport :
     IAuthenticatedOpaqueMailboxTransport,
@@ -19,8 +79,7 @@ internal sealed class StoreBoundNativeMau2Transport :
 {
     private readonly SqliteSessionStore store;
     private readonly SecureRecoverySessionStore secureStore;
-    private readonly Func<MailboxCredentialBundleImportOptions> importOptionsFactory;
-    private readonly Action<MailboxHolderIdentity> holderAvailable;
+    private readonly IMailboxRuntimeProvisioningSource provisioningSource;
     private readonly MailboxInfrastructureOwnership ownership;
     private readonly ClientFeatureFlags featureFlags;
     private readonly IMailboxDispatchRouteUsageObserver? routeUsageObserver;
@@ -40,13 +99,29 @@ internal sealed class StoreBoundNativeMau2Transport :
         MailboxInfrastructureOwnership ownership,
         ClientFeatureFlags featureFlags,
         IMailboxDispatchRouteUsageObserver? routeUsageObserver = null)
+        : this(
+            store,
+            secureStore,
+            new DevelopmentMailboxRuntimeProvisioningSource(
+                importOptionsFactory, holderAvailable),
+            ownership,
+            featureFlags,
+            routeUsageObserver)
+    {
+    }
+
+    public StoreBoundNativeMau2Transport(
+        SqliteSessionStore store,
+        SecureRecoverySessionStore secureStore,
+        IMailboxRuntimeProvisioningSource provisioningSource,
+        MailboxInfrastructureOwnership ownership,
+        ClientFeatureFlags featureFlags,
+        IMailboxDispatchRouteUsageObserver? routeUsageObserver = null)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         this.secureStore = secureStore ?? throw new ArgumentNullException(nameof(secureStore));
-        this.importOptionsFactory = importOptionsFactory ??
-            throw new ArgumentNullException(nameof(importOptionsFactory));
-        this.holderAvailable = holderAvailable ??
-            throw new ArgumentNullException(nameof(holderAvailable));
+        this.provisioningSource = provisioningSource ??
+            throw new ArgumentNullException(nameof(provisioningSource));
         if (ownership is not (MailboxInfrastructureOwnership.UserManaged or
             MailboxInfrastructureOwnership.OfficialManaged))
             throw new ArgumentOutOfRangeException(nameof(ownership));
@@ -81,19 +156,13 @@ internal sealed class StoreBoundNativeMau2Transport :
         var runtime = await EnsureBoundAsync(
             request.Envelope.Sender, holderPublicKey: null, cancellationToken)
             .ConfigureAwait(false);
-        var selector = request.Envelope.Recipient switch
-        {
-            var recipient when recipient == runtime.Material.LocalSessionId =>
-                runtime.Material.SelfSelector,
-            var recipient when recipient == runtime.Material.PeerSessionId =>
-                runtime.Material.PeerSelector,
-            _ => throw new NotSupportedException(
-                "DEV-local mailbox schema v1 has no third-contact credential.")
-        };
+        var selector = runtime.Provisioned.ResolveRecipient(
+            request.Envelope.Recipient) ?? throw new NotSupportedException(
+                "No verified mailbox credential exists for this recipient.");
         var decision = new MailboxDeliveryDecision(
             MailboxTransportProtocol.AuthenticatedMau2,
             ownership,
-            runtime.Material.Authority,
+            runtime.Provisioned.Authority,
             selector);
         decision.Validate();
         return decision;
@@ -273,7 +342,7 @@ internal sealed class StoreBoundNativeMau2Transport :
         {
             ThrowIfDisposed();
             var current = bound;
-            if (current is not null && current.Material.LocalSessionId != account)
+            if (current is not null && current.Provisioned.LocalSessionId != account)
             {
                 throw new InvalidOperationException(
                     "The stopped account differs from the bound MAU2 account.");
@@ -344,17 +413,12 @@ internal sealed class StoreBoundNativeMau2Transport :
                 return current;
             }
 
-            ImportedMailboxRuntimeMaterial material;
-            MailboxCredentialBundleImportOptions importOptions;
+            ProvisionedMailboxRuntime provisioned;
             if (holderPublicKey is not null)
             {
-                holderAvailable(new MailboxHolderIdentity(sessionId, holderPublicKey));
-                importOptions = importOptionsFactory() ?? throw new InvalidOperationException(
-                    "The DEV-local mailbox provisioning factory returned no options.");
-                material = await MailboxCredentialBundleImporter.ImportAsync(
+                provisioned = await provisioningSource.ProvisionAsync(
                     store,
                     new MailboxHolderIdentity(sessionId, holderPublicKey),
-                    importOptions,
                     ownership,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -375,12 +439,11 @@ internal sealed class StoreBoundNativeMau2Transport :
                 var publicKey = identity.GetEd25519PublicKey();
                 try
                 {
-                    var holder = new MailboxHolderIdentity(sessionId, publicKey);
-                    holderAvailable(holder);
-                    importOptions = importOptionsFactory() ?? throw new InvalidOperationException(
-                        "The DEV-local mailbox provisioning factory returned no options.");
-                    material = await MailboxCredentialBundleImporter.ImportAsync(
-                        store, holder, importOptions, ownership, cancellationToken)
+                    provisioned = await provisioningSource.ProvisionAsync(
+                        store,
+                        new MailboxHolderIdentity(sessionId, publicKey),
+                        ownership,
+                        cancellationToken)
                         .ConfigureAwait(false);
                 }
                 finally
@@ -389,24 +452,25 @@ internal sealed class StoreBoundNativeMau2Transport :
                 }
             }
 
-            var ingress = CreateIngress(material);
             var transport = new NativeMau2MailboxTransport(
                 featureFlags,
-                material.Activation,
-                ingress,
+                provisioned.Activation,
+                provisioned.Ingress,
                 store,
                 new PinnedClientMailboxReceiptVerifier(
                     new SodiumClientMailboxReceiptCrypto()),
-                material.DecodePolicies,
-                material.Authority,
-                account => account == material.LocalSessionId
-                    ? material.SelfSelector
+                provisioned.DecodePolicies,
+                provisioned.Authority,
+                account => account == provisioned.LocalSessionId
+                    ? provisioned.ResolveRecipient(account) ??
+                        throw new InvalidOperationException(
+                            "MAU2 self selector is unavailable.")
                     : throw new InvalidOperationException(
                         "MAU2 self selector was requested for another account."),
                 ownsIngress: true,
-                timeProvider: importOptions.TimeProvider,
+                timeProvider: provisioned.TimeProvider,
                 routeUsageObserver: routeUsageObserver);
-            current = new BoundRuntime(material, transport);
+            current = new BoundRuntime(provisioned, transport);
             Volatile.Write(ref bound, current);
             return current;
         }
@@ -414,19 +478,6 @@ internal sealed class StoreBoundNativeMau2Transport :
         {
             bindGate.Release();
         }
-    }
-
-    private static IClientMailboxBinaryIngress CreateIngress(
-        ImportedMailboxRuntimeMaterial material)
-    {
-#if DEBUG && DEEP_PHYSICAL_E2E
-        return HttpClientMailboxBinaryIngress.CreatePhysicalDevelopment(
-            material.Coordinator,
-            material.DecodePolicies);
-#else
-        throw new InvalidOperationException(
-            "DEV-local mailbox credentials and cleartext ingress are forbidden outside physical Debug builds.");
-#endif
     }
 
     private BoundRuntime RequireBound()
@@ -438,7 +489,7 @@ internal sealed class StoreBoundNativeMau2Transport :
 
     private static void RequireSession(BoundRuntime runtime, SessionId sessionId)
     {
-        if (runtime.Material.LocalSessionId != sessionId)
+        if (runtime.Provisioned.LocalSessionId != sessionId)
             throw new InvalidOperationException(
                 "One app-private MAU2 runtime cannot cross account identities.");
     }
@@ -475,7 +526,7 @@ internal sealed class StoreBoundNativeMau2Transport :
     }
 
     private sealed record BoundRuntime(
-        ImportedMailboxRuntimeMaterial Material,
+        ProvisionedMailboxRuntime Provisioned,
         NativeMau2MailboxTransport Transport);
 
     private sealed class OperationLease(StoreBoundNativeMau2Transport owner) : IDisposable

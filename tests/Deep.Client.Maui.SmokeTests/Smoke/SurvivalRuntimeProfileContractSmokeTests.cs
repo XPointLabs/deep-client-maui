@@ -245,16 +245,11 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("VerifyEd25519Detached", File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Services", "MailboxRuntimeProvisioning.cs")),
             StringComparison.Ordinal);
-        var firstPublish = transport.IndexOf(
-            "holderAvailable(new MailboxHolderIdentity", StringComparison.Ordinal);
-        var firstLoad = transport.IndexOf(
-            "importOptions = importOptionsFactory()", StringComparison.Ordinal);
-        var secondPublish = transport.IndexOf(
-            "holderAvailable(holder);", firstLoad + 1, StringComparison.Ordinal);
-        var secondLoad = transport.IndexOf(
-            "importOptions = importOptionsFactory()", firstLoad + 1, StringComparison.Ordinal);
-        Assert.True(firstPublish >= 0 && firstPublish < firstLoad);
-        Assert.True(secondPublish > firstLoad && secondPublish < secondLoad);
+        var publish = transport.IndexOf(
+            "holderAvailable(holder);", StringComparison.Ordinal);
+        var load = transport.IndexOf(
+            "var options = importOptionsFactory()", StringComparison.Ordinal);
+        Assert.True(publish >= 0 && publish < load);
         Assert.Contains("ed25519PublicKey", bootstrap, StringComparison.Ordinal);
         Assert.Contains("sessionId", bootstrap, StringComparison.Ordinal);
         Assert.DoesNotContain("RecoveryPhrase", bootstrap, StringComparison.Ordinal);

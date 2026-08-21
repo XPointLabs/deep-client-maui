@@ -3,6 +3,30 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class ClientSecurityContractSmokeTests
 {
     [Fact]
+    public void ReleaseSelectsAuthenticatedMau2ExplicitlyAndHasNoImplicitTransportFallback()
+    {
+        var releaseEnvironment = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "deep.release.env");
+        var program = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
+        var mode = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Services", "RuntimeTransportMode.cs");
+
+        Assert.Contains("DEEP_TRANSPORT_PROTOCOL=authenticated-mau2",
+            releaseEnvironment, StringComparison.Ordinal);
+        Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=official-managed",
+            releaseEnvironment, StringComparison.Ordinal);
+        Assert.Contains("production-credentials-unavailable", program,
+            StringComparison.Ordinal);
+        Assert.Contains("direct-p2p", mode, StringComparison.Ordinal);
+        Assert.Contains("authenticated-mau2", mode, StringComparison.Ordinal);
+        Assert.Contains("Transport protocol and infrastructure ownership are incompatible.",
+            mode, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreatePhysicalDevelopment(",
+            program.Split("#else", StringSplitOptions.None).Last(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProductionMailboxIdentityIsMeasuredFromTheRunningSignedArtifact()
     {
         var attestor = ReadWorkspaceFile(

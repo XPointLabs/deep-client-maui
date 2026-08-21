@@ -28,13 +28,14 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\SecureRecoverySessionStore.cs" Link="Services\SecureRecoverySessionStore.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PersistentClientRuntimeComposer.cs" Link="Services\PersistentClientRuntimeComposer.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\MailboxRuntimeProvisioning.cs" Link="Services\MailboxRuntimeProvisioning.cs" />
-    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxOwnerIdentityStore.cs" Link="Services\ProductionMailboxOwnerIdentityStore.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\WindowsMailboxAccessControl.cs" Link="Services\WindowsMailboxAccessControl.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProtectedProductionMailboxTrustStateStore.cs" Link="Services\ProtectedProductionMailboxTrustStateStore.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxBuildTrustFloor.cs" Link="Services\ProductionMailboxBuildTrustFloor.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxOwnerIdentityStore.cs" Link="Services\ProductionMailboxOwnerIdentityStore.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxRegistryJsonCodec.cs" Link="Services\ProductionMailboxRegistryJsonCodec.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxRuntimeProvisioningSource.cs" Link="Services\ProductionMailboxRuntimeProvisioningSource.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxArtifactSetDigest.cs" Link="Services\ProductionMailboxArtifactSetDigest.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionAndroidCodeTransparency.cs" Link="Services\ProductionAndroidCodeTransparency.cs" />
-    <Compile Include="..\..\src\Deep.Client.Maui\Services\WindowsMailboxAccessControl.cs" Link="Services\WindowsMailboxAccessControl.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\StoreBoundNativeMau2Transport.cs" Link="Services\StoreBoundNativeMau2Transport.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PhysicalMailboxRouteUsageTracker.cs" Link="Services\PhysicalMailboxRouteUsageTracker.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PrelaunchPlaintextStateArtifactPurger.cs" Link="Services\PrelaunchPlaintextStateArtifactPurger.cs" />

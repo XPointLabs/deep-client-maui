@@ -804,8 +804,17 @@ public static class MauiProgram
             services.GetRequiredService<IMailboxDispatchRouteUsageObserver>());
         return new StoreBoundRuntimeTransportComposition(native, native);
 #else
-        throw new InvalidOperationException(
-            "DEV-local authenticated MAU2 composition is forbidden outside physical Debug builds.");
+        var productionRoot = Path.Combine(
+            appDataDirectory,
+            "production-mailbox-runtime-v1");
+        if (!ProductionMailboxBuildTrustFloor.TryLoad(out _))
+            throw new InvalidOperationException("production-credentials-unavailable");
+        _ = ProtectedProductionMailboxTrustStateStore.OpenOrCreate(productionRoot);
+        _ = ProductionMailboxClientIdentityAttestor.AttestAsync()
+            .GetAwaiter().GetResult();
+        // The production registry/acquisition seam must supply the exact verified PMA1/PMR1/
+        // PMT1/PMS1/MCG2 set. Never fall back to DEV bundles, raw transport, or cloud routes.
+        throw new InvalidOperationException("production-credentials-unavailable");
 #endif
     }
 

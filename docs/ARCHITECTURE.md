@@ -13,7 +13,7 @@ the sibling `deep-client-shared` repository.
 - canonical 13-word checksummed recovery phrase identity derivation;
 - end-to-end encrypted envelopes and replay protection;
 - three-hop authenticated XPoint onion routing;
-- SQLCipher repositories with exact v10 baseline attestation, durable
+- SQLCipher repositories with exact v13 baseline attestation, durable
   inbox/outbox, and account purge;
 - one-to-one and group conversation services;
 - encrypted attachment and avatar transports;
@@ -71,7 +71,7 @@ process or used after a router failure.
    platform services.
 2. `ClientRuntimeBootstrapper` brings the DI-owned Reality runtime to readiness
    before any routed client network I/O, then initializes encrypted persistence off the UI
-   thread. Fresh state receives the single v10 baseline; existing state is
+   thread. Fresh state receives the single v13 baseline; existing state is
    exactly attested and incompatible state raises an actionable reset-required
    error. Operational failures remain retryable and are not classified as
    reset authorization.

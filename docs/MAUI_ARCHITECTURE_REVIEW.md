@@ -26,7 +26,7 @@ network work away from the first rendered frame.
 | Area | Result | Evidence |
 | --- | --- | --- |
 | Release transport | Pass | Three pinned routers, authenticated route contacts, E2EE-only release runtime, embedded Reality bootstrap |
-| Persistence | Pass | SQLCipher key in secure storage, async initialization, exact v10 schema validation with reset signaling, account-scoped purge, durable inbox/outbox tests |
+| Persistence | Pass | SQLCipher key in secure storage, async initialization, exact v13 schema validation with reset signaling, account-scoped purge, durable inbox/outbox tests |
 | App lifecycle | Pass | Retryable startup, observed activation handlers, bounded background ingress, account-generation cancellation |
 | Android | Pass | Signed v15 APK/AAB, physical cold-start smoke, FCM token path, embedded libXray |
 | Windows build | Pass | Warning-free `win-x64` Release build with architecture-pinned Xray |
