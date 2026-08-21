@@ -182,6 +182,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("[IO.Path]::IsPathFullyQualified", runner,
             StringComparison.Ordinal);
+        Assert.Contains("[Text.UTF8Encoding]::new($false)", runner,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("-Encoding utf8NoBOM", runner,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("pm clear", runner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("uninstall", runner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("docker compose", runner, StringComparison.OrdinalIgnoreCase);

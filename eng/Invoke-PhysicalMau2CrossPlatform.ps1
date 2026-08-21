@@ -244,7 +244,10 @@ try {
         storage = [ordered]@{ replication = 'shared-dev-storage-non-replicated'; before = $null; after = $null }
     }
     Assert-SanitizedState $state
-    $state | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runStatePath -Encoding utf8NoBOM
+    [IO.File]::WriteAllText(
+        $runStatePath,
+        ($state | ConvertTo-Json -Depth 6),
+        [Text.UTF8Encoding]::new($false))
     Set-ProtectedRunTree $runRoot
 
     if ($Execute) {
