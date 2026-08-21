@@ -69,7 +69,13 @@ public sealed class MauiPrivacyScreenService : IPrivacyScreenService
                 return;
             }
 
+#if DEBUG
+            // Physical UI diagnostics may capture only the dedicated Debug/E2E app.
+            // Release builds continue to enforce the user/default privacy setting.
+            var affinity = WindowDisplayAffinity.None;
+#else
             var affinity = enabled ? WindowDisplayAffinity.ExcludeFromCapture : WindowDisplayAffinity.None;
+#endif
             if (!SetWindowDisplayAffinity(handle, affinity))
             {
                 var error = new Win32Exception(Marshal.GetLastWin32Error());

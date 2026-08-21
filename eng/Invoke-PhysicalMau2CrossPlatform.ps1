@@ -7,6 +7,9 @@ param(
     [string]$AdbPath = 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe',
     [string]$MailboxBootstrapRoot = 'C:\Work\DeepSession\secrets\mailbox-bootstrap',
     [string]$MrXPublicKeySha256 = $env:DEEP_MR_X_PUBLIC_KEY_SHA256,
+    [string]$AndroidPickerDownloadsId = 'com.google.android.documentsui:id/item_root',
+    [string]$AndroidPickerFileId = 'android:id/title',
+    [string]$AndroidPickerConfirmId,
     [string]$SupportedChaosEvidence = $env:DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE,
     [string]$SupportedChaosProvider = $env:DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER,
     [switch]$Execute
@@ -58,6 +61,64 @@ function Get-PackageSnapshot([string]$Package) {
 }
 
 function Get-Sha256([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
+
+function Resolve-PolicyPinnedFile(
+    [string]$RelativePath,
+    [string]$ExpectedSha256,
+    [string]$Label) {
+    if ([string]::IsNullOrWhiteSpace($RelativePath) -or
+        $RelativePath -cnotmatch '^[A-Za-z0-9._/-]+$' -or
+        $RelativePath.StartsWith('/') -or
+        $RelativePath.Contains('\') -or
+        @($RelativePath.Split('/') | Where-Object { $_ -ceq '.' -or $_ -ceq '..' }).Count -ne 0 -or
+        $ExpectedSha256 -cnotmatch '^[0-9a-f]{64}$') {
+        throw "$Label has an invalid signed repository-relative path or SHA-256."
+    }
+    $root = $repoRoot.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    $path = [IO.Path]::GetFullPath((Join-Path $repoRoot $RelativePath))
+    if (-not $path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $path -PathType Leaf) -or
+        ((Get-Item -Force -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        (Get-Sha256 $path) -cne $ExpectedSha256) {
+        throw "$Label does not resolve to the exact signed regular file."
+    }
+    return $path
+}
+
+function New-CanonicalAndroidSelectorsJson {
+    $roles = @(
+        'Welcome.DisplayName', 'Welcome.Create', 'Conversations.Root',
+        'Conversations.ProfileSettings', 'Conversations.NewConversationTop',
+        'Conversations.ConversationRow', 'Settings.SessionId', 'Settings.Back',
+        'StartConversation.NewMessage', 'NewConversation.SessionId',
+        'NewConversation.DisplayName', 'NewConversation.Start',
+        'NewConversation.Error', 'NewConversation.Back', 'Chat.Draft',
+        'Chat.Send', 'Chat.MessageBody', 'Chat.Attach', 'Chat.PickFile',
+        'Chat.StagedAttachmentFilename')
+    $selectors = [ordered]@{}
+    foreach ($role in $roles) {
+        $selectors[$role] = "$androidPackage`:id/$role"
+    }
+    return ($selectors | ConvertTo-Json -Compress)
+}
+
+function Assert-ExactPhysicalTestResult([string]$TrxPath) {
+    if (-not (Test-Path -LiteralPath $TrxPath -PathType Leaf)) {
+        throw 'The physical test did not produce its runner-owned TRX result.'
+    }
+    [xml]$trx = Get-Content -Raw -LiteralPath $TrxPath
+    $counters = $trx.TestRun.ResultSummary.Counters
+    if ($null -eq $counters) { throw 'The physical TRX result has no counters.' }
+    $total = [int]$counters.total
+    $executed = [int]$counters.executed
+    $passed = [int]$counters.passed
+    $failed = [int]$counters.failed
+    $notExecuted = [int]$counters.notExecuted
+    if ($total -ne 1 -or $executed -ne 1 -or $passed -ne 1 -or
+        $failed -ne 0 -or $notExecuted -ne 0) {
+        throw "Physical MAU2 requires exactly one executed pass (total=$total executed=$executed passed=$passed failed=$failed notExecuted=$notExecuted)."
+    }
+}
 
 function Get-TreeSha256([string]$Root) {
     $canonical = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
@@ -213,7 +274,17 @@ Set-ProtectedRunTree $runRoot
 $runStatePath = Join-Path $runRoot 'run-state.json'
 $artifacts = Join-Path $runRoot 'artifacts'
 [IO.Directory]::CreateDirectory($artifacts) | Out-Null
-Set-ProtectedRunTree $artifacts
+$attachmentFixture = Join-Path $runRoot 'attachment-fixture.bin'
+$fixtureBytes = [byte[]]::new(4096)
+$random = [Security.Cryptography.RandomNumberGenerator]::Create()
+try {
+    $random.GetBytes($fixtureBytes)
+    [IO.File]::WriteAllBytes($attachmentFixture, $fixtureBytes)
+} finally {
+    $random.Dispose()
+    [Array]::Clear($fixtureBytes, 0, $fixtureBytes.Length)
+}
+Set-ProtectedRunTree $runRoot
 
 $productionBefore = Get-PackageSnapshot $productionPackage
 try {
@@ -225,9 +296,25 @@ try {
 
     $policyObject = Get-Content -Raw -LiteralPath $policy | ConvertFrom-Json
     if ($policyObject.sourceCommitSha -notmatch '^[0-9a-f]{40}$' -or
+        $policyObject.sourceCommitSha -cne $sourceCommit -or
         $policyObject.application.packageId -cne $androidPackage -or
         $policyObject.signature.publicKeySha256 -cne $MrXPublicKeySha256) {
         throw 'Approved lab policy does not bind this exact DEV lane.'
+    }
+    $approvedApk = Resolve-PolicyPinnedFile $policyObject.application.apkRelativePath `
+        $policyObject.application.apkSha256 'Approved Android APK'
+    $approvedAdb = Resolve-PolicyPinnedFile $policyObject.tools.adb.relativePath `
+        $policyObject.tools.adb.sha256 'Approved ADB'
+    $approvedAapt = Resolve-PolicyPinnedFile $policyObject.tools.aapt.relativePath `
+        $policyObject.tools.aapt.sha256 'Approved AAPT'
+    $approvedApksigner = Resolve-PolicyPinnedFile $policyObject.tools.apksigner.relativePath `
+        $policyObject.tools.apksigner.sha256 'Approved APK signer'
+    $approvedWindowsExe = Resolve-PolicyPinnedFile `
+        $policyObject.crossPlatform.windowsExecutableRelativePath `
+        $policyObject.crossPlatform.windowsExecutableSha256 `
+        'Approved Windows executable'
+    if ((Get-Sha256 $adb) -cne $policyObject.tools.adb.sha256) {
+        throw 'The invoked ADB bytes do not equal the signed ADB pin.'
     }
 
     $state = [ordered]@{
@@ -261,12 +348,22 @@ try {
         $env:DEEP_MAU2_E2E_RUN_STATE = $runStatePath
         $env:DEEP_MAU2_E2E_RUNS_ROOT = (Join-Path $bootstrap 'e2e-runs')
         $env:DEEP_E2E_ANDROID_SERIAL = $AndroidSerial
-        $env:DEEP_E2E_ADB = $adb
+        $env:DEEP_E2E_ADB = $approvedAdb
+        $env:DEEP_E2E_ANDROID_APK = $approvedApk
+        $env:DEEP_E2E_AAPT = $approvedAapt
+        $env:DEEP_E2E_APKSIGNER = $approvedApksigner
+        $env:DEEP_E2E_ATTACHMENT_FIXTURE = $attachmentFixture
         $env:DEEP_E2E_ANDROID_POLICY = $policy
         $env:DEEP_MR_X_PUBLIC_KEY_SHA256 = $MrXPublicKeySha256
         $env:DEEP_E2E_ARTIFACTS = $artifacts
+        $env:DEEP_E2E_ANDROID_SELECTORS_JSON = New-CanonicalAndroidSelectorsJson
+        $env:DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID = $AndroidPickerDownloadsId
+        $env:DEEP_E2E_ANDROID_PICKER_FILE_ID = $AndroidPickerFileId
+        $env:DEEP_E2E_ANDROID_PICKER_CONFIRM_ID = $AndroidPickerConfirmId
+        $env:DEEP_MAUI_EXE = $approvedWindowsExe
         $env:DEEP_E2E_APPDATA_ROOT = $windowsAppData
         $env:DEEP_E2E_BOOTSTRAP = 'live'
+        $env:DEEP_RELEASE_INVOCATION_ID = [Guid]::NewGuid().ToString('N')
         $env:DEEP_TRANSPORT_PROTOCOL = 'authenticated-mau2'
         $env:DEEP_TRANSPORT_OWNERSHIP = 'user-managed'
         if ($restartResendPhase) {
@@ -286,8 +383,14 @@ try {
         # The test itself rechecks its policy/tool/APK pins. This wrapper never emits
         # their paths, holders, sessions, message markers, or native/container logs.
         try {
-            & dotnet test (Join-Path $repoRoot 'tests\Deep.Client.Maui.UiTests\Deep.Client.Maui.UiTests.csproj') --no-restore --filter 'FullyQualifiedName~StrictCrossPlatformUiTests'
+            $trxPath = Join-Path $artifacts 'physical-phase.trx'
+            & dotnet test (Join-Path $repoRoot 'tests\Deep.Client.Maui.UiTests\Deep.Client.Maui.UiTests.csproj') `
+                --no-restore `
+                --results-directory $artifacts `
+                --logger 'trx;LogFileName=physical-phase.trx' `
+                --filter 'FullyQualifiedName=Deep.Client.Maui.UiTests.StrictCrossPlatformUiTests.Physical_android_and_windows_exchange_persist_and_decrypt_an_attachment'
             if ($LASTEXITCODE -ne 0) { throw 'Physical MAU2 UI phase failed.' }
+            Assert-ExactPhysicalTestResult $trxPath
         } finally {
             if ($negativePrepared) {
                 & powershell -NoProfile -ExecutionPolicy Bypass -File $negativeGenerator `
@@ -304,4 +407,4 @@ try {
     }
 }
 
-Write-Output "Physical MAU2 phase '$Phase' prepared. Sanitized protected run state: $runId"
+Write-Output "Physical MAU2 phase '$Phase' completed without skipped tests. Sanitized protected run state: $runId"

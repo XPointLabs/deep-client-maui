@@ -193,9 +193,15 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.DoesNotContain("pm clear", runner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("uninstall", runner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("docker compose", runner, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Legacy_destructive_fixture_is_not_a_physical_mau2_phase", ui,
+        Assert.DoesNotContain("Legacy_destructive_fixture", ui, StringComparison.Ordinal);
+        Assert.DoesNotContain("DEEP_ALLOW_LEGACY", ui, StringComparison.Ordinal);
+        Assert.Contains("--logger 'trx;LogFileName=physical-phase.trx'", runner,
             StringComparison.Ordinal);
-        Assert.Contains("DEEP_ALLOW_LEGACY_DESTRUCTIVE_CROSS_PLATFORM_UI", ui,
+        Assert.Contains("Assert-ExactPhysicalTestResult $trxPath", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("$total -ne 1 -or $executed -ne 1 -or $passed -ne 1", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("FullyQualifiedName=Deep.Client.Maui.UiTests.StrictCrossPlatformUiTests.Physical_android_and_windows_exchange_persist_and_decrypt_an_attachment", runner,
             StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.Attach", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.HappyPath", ui, StringComparison.Ordinal);
@@ -209,8 +215,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("Canonical live Windows runtime changed", runner,
             StringComparison.Ordinal);
         Assert.Contains("AssertStartupFailClosed", ui, StringComparison.Ordinal);
-        Assert.DoesNotContain("ClearE2ePackageData();", ui[..ui.IndexOf("Legacy_destructive_fixture_is_not_a_physical_mau2_phase", StringComparison.Ordinal)],
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("ClearE2ePackageData();", ui, StringComparison.Ordinal);
     }
 
     [Fact]

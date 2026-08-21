@@ -306,7 +306,9 @@ centre is derived only from the bounds of one exact resource-id in a fresh
 dumped tree; every Windows action begins with one exact AutomationId.
 
 The lane is `NOT-RUN` at xUnit discovery unless an unlocked Windows desktop and approved physical
-device have all of these inputs: `DEEP_E2E_BOOTSTRAP=live`,
+device have all of these inputs. The supported physical runner derives them from the one
+signed policy and its protected run root; invoking `dotnet test` directly is not evidence:
+`DEEP_E2E_BOOTSTRAP=live`,
 `DEEP_MAUI_EXE`, `DEEP_E2E_APPDATA_ROOT`, `DEEP_E2E_ARTIFACTS`,
 `DEEP_E2E_ANDROID_SERIAL`, absolute `DEEP_E2E_ADB`, `DEEP_E2E_ANDROID_APK`,
 absolute `DEEP_E2E_AAPT`, absolute `DEEP_E2E_APKSIGNER`, and
@@ -324,6 +326,8 @@ versionCode/versionName, SHA-256, and signing-certificate digest. It also requir
 app control used by the test; and exact system-picker resource IDs in
 `DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID` and
 `DEEP_E2E_ANDROID_PICKER_FILE_ID`.
+The runner derives the canonical application selector map itself. Picker IDs remain explicit
+runner parameters because DocumentsUI resource IDs vary by OEM/version.
 `DEEP_E2E_ANDROID_PICKER_CONFIRM_ID` is optional. Set it only for a
 DocumentsUI implementation that requires a separate confirmation action after
 selecting the exact filename; single-selection pickers that immediately return
@@ -357,7 +361,8 @@ contract suite mutation-tests that distinction.
 Only `cross-platform-ui-result.json` is standard evidence: status, safe
 package/version values, hashes, and booleans. It never contains serials,
 identities, messages, paths, raw XML, screenshots, picker content, or ADB
-output. Missing prerequisites/locked desktop are `NOT-RUN`; invalid configured
+output. The runner accepts only a fresh TRX containing exactly one total, executed, passed
+physical test and zero failed or skipped tests. Missing prerequisites/locked desktop are `NOT-RUN`; invalid configured
 selectors, emulator/metadata mismatch, missing UI state, or SHA mismatch fail.
 There is no selector, coordinate, or deterministic-pass fallback.
 
