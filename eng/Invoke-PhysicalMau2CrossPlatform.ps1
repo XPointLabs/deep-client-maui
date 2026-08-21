@@ -4,7 +4,6 @@ param(
     [ValidateSet('Attach', 'HappyPath', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')]
     [string]$Phase,
     [string]$AndroidSerial = '192.168.1.45:43337',
-    [string]$AdbPath = 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe',
     [string]$MailboxBootstrapRoot = 'C:\Work\DeepSession\secrets\mailbox-bootstrap',
     [string]$MrXPublicKeySha256 = $env:DEEP_MR_X_PUBLIC_KEY_SHA256,
     [string]$AndroidPickerDownloadsId = 'com.google.android.documentsui:id/item_root',
@@ -235,7 +234,6 @@ function Assert-DockerHealthy {
     }
 }
 
-$adb = Assert-AbsoluteExisting $AdbPath 'ADB'
 $bootstrap = Assert-AbsoluteExisting $MailboxBootstrapRoot 'Mailbox bootstrap root' -Directory
 if ($Phase -ceq 'NegativeRuntime' -and
     $bootstrap -cne [IO.Path]::GetFullPath(
@@ -264,6 +262,26 @@ $worktreeState = @(& git -C $repoRoot status --porcelain=v1 --untracked-files=al
 if ($LASTEXITCODE -ne 0 -or $worktreeState.Count -ne 0) {
     throw 'Physical commit-bound evidence requires a clean MAUI worktree, including untracked files.'
 }
+$policyObject = Get-Content -Raw -LiteralPath $policy | ConvertFrom-Json
+if ($policyObject.sourceCommitSha -notmatch '^[0-9a-f]{40}$' -or
+    $policyObject.sourceCommitSha -cne $sourceCommit -or
+    $policyObject.application.packageId -cne $androidPackage -or
+    $policyObject.signature.publicKeySha256 -cne $MrXPublicKeySha256) {
+    throw 'Approved lab policy does not bind this exact DEV lane.'
+}
+$approvedApk = Resolve-PolicyPinnedFile $policyObject.application.apkRelativePath `
+    $policyObject.application.apkSha256 'Approved Android APK'
+$approvedAdb = Resolve-PolicyPinnedFile $policyObject.tools.adb.relativePath `
+    $policyObject.tools.adb.sha256 'Approved ADB'
+$approvedAapt = Resolve-PolicyPinnedFile $policyObject.tools.aapt.relativePath `
+    $policyObject.tools.aapt.sha256 'Approved AAPT'
+$approvedApksigner = Resolve-PolicyPinnedFile $policyObject.tools.apksigner.relativePath `
+    $policyObject.tools.apksigner.sha256 'Approved APK signer'
+$approvedWindowsExe = Resolve-PolicyPinnedFile `
+    $policyObject.crossPlatform.windowsExecutableRelativePath `
+    $policyObject.crossPlatform.windowsExecutableSha256 `
+    'Approved Windows executable'
+$adb = $approvedAdb
 
 $runId = [Guid]::NewGuid().ToString('N')
 $e2eRunsRoot = Join-Path $bootstrap 'e2e-runs'
@@ -293,29 +311,6 @@ try {
     if ($devices.Count -ne 1) { throw 'The exact Wi-Fi Android device is not attached.' }
     Get-PackageSnapshot $androidPackage | Out-Null
     Assert-DockerHealthy
-
-    $policyObject = Get-Content -Raw -LiteralPath $policy | ConvertFrom-Json
-    if ($policyObject.sourceCommitSha -notmatch '^[0-9a-f]{40}$' -or
-        $policyObject.sourceCommitSha -cne $sourceCommit -or
-        $policyObject.application.packageId -cne $androidPackage -or
-        $policyObject.signature.publicKeySha256 -cne $MrXPublicKeySha256) {
-        throw 'Approved lab policy does not bind this exact DEV lane.'
-    }
-    $approvedApk = Resolve-PolicyPinnedFile $policyObject.application.apkRelativePath `
-        $policyObject.application.apkSha256 'Approved Android APK'
-    $approvedAdb = Resolve-PolicyPinnedFile $policyObject.tools.adb.relativePath `
-        $policyObject.tools.adb.sha256 'Approved ADB'
-    $approvedAapt = Resolve-PolicyPinnedFile $policyObject.tools.aapt.relativePath `
-        $policyObject.tools.aapt.sha256 'Approved AAPT'
-    $approvedApksigner = Resolve-PolicyPinnedFile $policyObject.tools.apksigner.relativePath `
-        $policyObject.tools.apksigner.sha256 'Approved APK signer'
-    $approvedWindowsExe = Resolve-PolicyPinnedFile `
-        $policyObject.crossPlatform.windowsExecutableRelativePath `
-        $policyObject.crossPlatform.windowsExecutableSha256 `
-        'Approved Windows executable'
-    if ((Get-Sha256 $adb) -cne $policyObject.tools.adb.sha256) {
-        throw 'The invoked ADB bytes do not equal the signed ADB pin.'
-    }
 
     $state = [ordered]@{
         schema = 'deep.mau2-physical-run-state.v1'

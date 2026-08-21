@@ -175,6 +175,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("shared-dev-storage-non-replicated", runner, StringComparison.Ordinal);
         Assert.Contains("DEEP_TRANSPORT_PROTOCOL=authenticated-mau2", runner, StringComparison.Ordinal);
         Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=user-managed", runner, StringComparison.Ordinal);
+        Assert.DoesNotContain("[string]$AdbPath", runner, StringComparison.Ordinal);
+        Assert.Contains("$adb = $approvedAdb", runner, StringComparison.Ordinal);
         Assert.Contains("git -C $repoRoot status --porcelain=v1 --untracked-files=all", runner,
             StringComparison.Ordinal);
         Assert.Contains("$productionBefore = Get-PackageSnapshot $productionPackage", runner,
