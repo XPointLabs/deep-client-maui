@@ -88,11 +88,16 @@ function Set-ProtectedRunItem([string]$Path) {
         [Security.AccessControl.FileSecurity]::new()
     }
     $acl.SetAccessRuleProtection($true, $false)
-    $acl.SetOwner($owner)
     foreach ($sid in @($owner, [Security.Principal.SecurityIdentifier]'S-1-5-18', [Security.Principal.SecurityIdentifier]'S-1-5-32-544')) {
         $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]::None, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow))
     }
-    Set-Acl -LiteralPath $Path -AclObject $acl
+    if ($item.PSIsContainer) {
+        [IO.DirectoryInfo]::new($Path).SetAccessControl(
+            [Security.AccessControl.DirectorySecurity]$acl)
+    } else {
+        [IO.FileInfo]::new($Path).SetAccessControl(
+            [Security.AccessControl.FileSecurity]$acl)
+    }
 }
 
 function Assert-NonReparseDirectory([string]$Path, [string]$Label) {

@@ -159,6 +159,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("Set-ProtectedRunItem $Path", runner,
             StringComparison.Ordinal);
+        Assert.Contains("[IO.DirectoryInfo]::new($Path).SetAccessControl", runner,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Set-Acl -LiteralPath $Path", runner,
+            StringComparison.Ordinal);
         var runsRootGuard = runner.IndexOf(
             "Initialize-ProtectedRunsRoot $e2eRunsRoot",
             StringComparison.Ordinal);
