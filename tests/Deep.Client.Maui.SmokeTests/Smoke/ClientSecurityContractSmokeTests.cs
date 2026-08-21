@@ -367,6 +367,10 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.True(debugGuardIndex >= 0);
         Assert.True(debugGuardEndIndex > bootstrapIndex);
         Assert.InRange(stubRuntimeIndex, bootstrapIndex + 1, debugGuardEndIndex - 1);
+        var stubBlock = program[bootstrapIndex..debugGuardEndIndex];
+        Assert.Contains("PersistentTransportOutboxEnabled = false", stubBlock, StringComparison.Ordinal);
+        Assert.Contains("TransportRequired = false", stubBlock, StringComparison.Ordinal);
+        Assert.Contains("MetadataPrivateTransportRequired = false", stubBlock, StringComparison.Ordinal);
         Assert.Contains(
             "#if !DEBUG\r\n        if (pins.Count == 0)",
             program,

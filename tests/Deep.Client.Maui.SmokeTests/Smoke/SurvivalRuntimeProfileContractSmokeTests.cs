@@ -66,7 +66,19 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
 
         Assert.DoesNotContain("SessionStorageMetadataMode.LegacyCompatibility", program, StringComparison.Ordinal);
         Assert.Contains("SURVIVAL_ENV", program, StringComparison.Ordinal);
-        Assert.DoesNotContain("MetadataPrivateTransportRequired = false", program, StringComparison.Ordinal);
+        const string stubRelaxation = "MetadataPrivateTransportRequired = false";
+        Assert.Equal(1, program.Split(stubRelaxation, StringSplitOptions.None).Length - 1);
+        var relaxationIndex = program.IndexOf(stubRelaxation, StringComparison.Ordinal);
+        var bootstrapIndex = program.LastIndexOf(
+            "Environment.GetEnvironmentVariable(E2eBootstrapEnv)",
+            relaxationIndex,
+            StringComparison.Ordinal);
+        var debugGuardIndex = program.LastIndexOf("#if DEBUG", relaxationIndex, StringComparison.Ordinal);
+        var debugGuardEndIndex = program.IndexOf("#endif", relaxationIndex, StringComparison.Ordinal);
+        Assert.True(bootstrapIndex >= 0);
+        Assert.True(debugGuardIndex >= 0);
+        Assert.True(debugGuardEndIndex > relaxationIndex);
+        Assert.InRange(relaxationIndex, bootstrapIndex + 1, debugGuardEndIndex - 1);
         Assert.Contains("RuntimeTransportProtocol.AuthenticatedMau2", program, StringComparison.Ordinal);
         Assert.Contains("StoreBoundNativeMau2Transport", program, StringComparison.Ordinal);
         Assert.Contains("bool survivalDevelopment) => new();", program, StringComparison.Ordinal);

@@ -686,7 +686,9 @@ public static class MauiProgram
             _ = ResolveAppDataDirectory();
             var stubFeatureFlags = services.GetRequiredService<ClientFeatureFlags>() with
             {
-                PersistentTransportOutboxEnabled = false
+                PersistentTransportOutboxEnabled = false,
+                TransportRequired = false,
+                MetadataPrivateTransportRequired = false
             };
             return ClientRuntime.CreateStubbed(
                 stubFeatureFlags,
