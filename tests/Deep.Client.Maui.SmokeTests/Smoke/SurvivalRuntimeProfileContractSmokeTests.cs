@@ -291,6 +291,9 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("apksigner verify --print-certs", script, StringComparison.Ordinal);
         Assert.Contains("exactly one signer", script, StringComparison.Ordinal);
+        Assert.Contains("$policy.tools.$role.version = Get-ExactToolVersion", script,
+            StringComparison.Ordinal);
+        Assert.Contains("$process.WaitForExit(15000)", script, StringComparison.Ordinal);
         Assert.Contains("PublicKeyAuth.SignDetached", issuer, StringComparison.Ordinal);
         Assert.Contains("PublicKeyAuth.VerifyDetached", issuer, StringComparison.Ordinal);
         Assert.Contains("CryptographicOperations.ZeroMemory(privateKey)", issuer,

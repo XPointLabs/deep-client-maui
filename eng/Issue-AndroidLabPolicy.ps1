@@ -29,6 +29,41 @@ function Get-Sha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Get-ExactToolVersion([string]$Path, [object[]]$Arguments, [string]$Role) {
+    if ($Arguments.Count -lt 1 -or $Arguments.Count -gt 4 -or
+        @($Arguments | Where-Object { [string]$_ -cnotmatch '^[A-Za-z0-9._-]+$' }).Count -ne 0) {
+        throw "$Role version arguments are outside the closed issuer grammar."
+    }
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = [Diagnostics.ProcessStartInfo]::new()
+    $process.StartInfo.FileName = $Path
+    $process.StartInfo.Arguments = (($Arguments | ForEach-Object { [string]$_ }) -join ' ')
+    $process.StartInfo.UseShellExecute = $false
+    $process.StartInfo.CreateNoWindow = $true
+    $process.StartInfo.RedirectStandardOutput = $true
+    $process.StartInfo.RedirectStandardError = $true
+    try {
+        if (-not $process.Start()) { throw "$Role version process did not start." }
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(15000)) {
+            try { $process.Kill() } catch { }
+            throw "$Role version process exceeded its bounded deadline."
+        }
+        if (-not [Threading.Tasks.Task]::WaitAll(@($stdout, $stderr), 15000) -or
+            $process.ExitCode -ne 0) {
+            throw "$Role version process failed or did not close its output."
+        }
+        $version = ($stdout.Result + $stderr.Result).Trim()
+        if ([string]::IsNullOrWhiteSpace($version) -or $version.Length -gt 8192) {
+            throw "$Role version output is empty or unbounded."
+        }
+        return $version
+    } finally {
+        $process.Dispose()
+    }
+}
+
 function Get-RelativeRepositoryPath([string]$Path) {
     $full = [IO.Path]::GetFullPath($Path)
     $prefix = $repoRoot.TrimEnd('\') + '\'
@@ -236,7 +271,10 @@ try {
     foreach ($role in @('runner','adb','aapt','apksigner')) {
         $relative = ([string]$policy.tools.$role.relativePath).Substring(
             '.secrets/android-lab/'.Length).Replace('/', '\')
-        $policy.tools.$role.sha256 = Get-Sha256 (Join-Path $stage $relative)
+        $toolPath = Join-Path $stage $relative
+        $policy.tools.$role.sha256 = Get-Sha256 $toolPath
+        $policy.tools.$role.version = Get-ExactToolVersion $toolPath `
+            @($policy.tools.$role.versionArguments) $role
     }
 
     $payload = [ordered]@{
