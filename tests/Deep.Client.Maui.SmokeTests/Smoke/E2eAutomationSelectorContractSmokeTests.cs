@@ -72,6 +72,22 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
+    public void SettingsExposeTheCanonicalSessionIdOnOneScrollableLine()
+    {
+        var settings = LoadPage("SettingsPage.xaml");
+        var label = Assert.Single(ElementsWithAutomationId(
+            settings.Root!, "Settings.SessionId"));
+
+        Assert.Equal("NoWrap", label.Attribute("LineBreakMode")?.Value);
+        Assert.Equal("Horizontal", label.Parent?.Attribute("Orientation")?.Value);
+        var source = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Pages", "SettingsPage.xaml.cs"));
+        Assert.Contains("return value;", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("string.Join(Environment.NewLine", source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PhysicalRouteMarkerIsDebugPhysicalOnlyAndPublishesRawRouterId()
     {
         var source = File.ReadAllText(WorkspacePath(

@@ -166,21 +166,7 @@ public partial class SettingsPage : ContentPage
             return "-";
         }
 
-        if (value.Length < 48)
-        {
-            return value;
-        }
-
-        var chunkLength = (int)Math.Ceiling(value.Length / 3.0);
-        var chunks = Enumerable.Range(0, (value.Length + chunkLength - 1) / chunkLength)
-            .Select(index =>
-            {
-                var start = index * chunkLength;
-                var length = Math.Min(chunkLength, value.Length - start);
-                return value.Substring(start, length);
-            });
-
-        return string.Join(Environment.NewLine, chunks);
+        return value;
     }
 
     private async void OnDonateClicked(object? sender, EventArgs e)
