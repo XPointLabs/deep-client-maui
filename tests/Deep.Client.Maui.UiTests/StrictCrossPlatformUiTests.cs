@@ -745,8 +745,14 @@ internal sealed class AndroidUiautomatorClient
         var installedHashResult = Adb("shell", "sha256sum", installedPath);
         RequireSuccess(installedHashResult);
         var installedSha = installedHashResult.Output.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant();
-        if (!details.Contains("versionCode=" + apk.VersionCode, StringComparison.Ordinal) || !details.Contains("versionName=" + apk.VersionName, StringComparison.Ordinal) || !details.Replace(":", string.Empty, StringComparison.Ordinal).Contains(apk.SigningDigest, StringComparison.OrdinalIgnoreCase) || !string.Equals(installedSha, apk.Sha256, StringComparison.Ordinal))
-            throw new InvalidOperationException("Installed E2E package metadata, signing digest, or APK identity does not match the supplied APK.");
+        // ReadAndValidateApkMetadata already verifies the exact local bytes with
+        // apksigner. Android 12 dumpsys exposes only a short internal signature
+        // handle, not the certificate digest; exact installed APK SHA-256 equality
+        // therefore carries the verified signer binding without parsing OEM text.
+        if (!details.Contains("versionCode=" + apk.VersionCode, StringComparison.Ordinal) ||
+            !details.Contains("versionName=" + apk.VersionName, StringComparison.Ordinal) ||
+            !string.Equals(installedSha, apk.Sha256, StringComparison.Ordinal))
+            throw new InvalidOperationException("Installed E2E package metadata or exact APK identity does not match the apksigner-verified APK.");
     }
     internal void ClearE2ePackageData() => RequireSuccess(Adb("shell", "pm", "clear", StrictCrossPlatformContracts.AndroidPackage));
     internal void ColdStart() => RequireSuccess(Adb("shell", "monkey", "-p", StrictCrossPlatformContracts.AndroidPackage, "1"));

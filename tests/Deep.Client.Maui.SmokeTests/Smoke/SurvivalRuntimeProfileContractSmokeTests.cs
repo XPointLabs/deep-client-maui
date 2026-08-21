@@ -220,6 +220,9 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("AssertStartupFailClosed", ui, StringComparison.Ordinal);
         Assert.DoesNotContain("ClearE2ePackageData();", ui, StringComparison.Ordinal);
+        Assert.Contains("exact installed APK SHA-256 equality", ui, StringComparison.Ordinal);
+        Assert.DoesNotContain("details.Replace(\":\", string.Empty", ui,
+            StringComparison.Ordinal);
     }
 
     [Fact]
