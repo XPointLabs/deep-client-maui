@@ -273,6 +273,11 @@ try {
             '.secrets/android-lab/'.Length).Replace('/', '\')
         $toolPath = Join-Path $stage $relative
         $policy.tools.$role.sha256 = Get-Sha256 $toolPath
+    }
+    foreach ($role in @('adb','aapt','apksigner')) {
+        $relative = ([string]$policy.tools.$role.relativePath).Substring(
+            '.secrets/android-lab/'.Length).Replace('/', '\')
+        $toolPath = Join-Path $stage $relative
         $policy.tools.$role.version = Get-ExactToolVersion $toolPath `
             @($policy.tools.$role.versionArguments) $role
     }

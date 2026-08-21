@@ -293,6 +293,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("exactly one signer", script, StringComparison.Ordinal);
         Assert.Contains("$policy.tools.$role.version = Get-ExactToolVersion", script,
             StringComparison.Ordinal);
+        Assert.Contains("foreach ($role in @('adb','aapt','apksigner'))", script,
+            StringComparison.Ordinal);
         Assert.Contains("$process.WaitForExit(15000)", script, StringComparison.Ordinal);
         Assert.Contains("PublicKeyAuth.SignDetached", issuer, StringComparison.Ordinal);
         Assert.Contains("PublicKeyAuth.VerifyDetached", issuer, StringComparison.Ordinal);
