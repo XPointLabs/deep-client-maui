@@ -26,6 +26,27 @@ internal static class StrictCrossPlatformContracts
     // exercise only client-side validation rather than a syntactically valid absent peer.
     private static readonly Regex SessionId = new("^(?:05|15|25)[0-9a-f]{64}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    internal static string ExtractExactUiHierarchy(string output)
+    {
+        const string opening = "<?xml";
+        const string closing = "</hierarchy>";
+        var start = output.IndexOf(opening, StringComparison.Ordinal);
+        var end = output.IndexOf(closing, StringComparison.Ordinal);
+        if (start != 0 || end < 0 ||
+            output.IndexOf(opening, opening.Length, StringComparison.Ordinal) >= 0 ||
+            output.IndexOf(closing, end + closing.Length, StringComparison.Ordinal) >= 0)
+        {
+            throw new InvalidOperationException("uiautomator did not emit exactly one bounded XML hierarchy.");
+        }
+        var suffix = output[(end + closing.Length)..].Trim();
+        if (!string.Equals(suffix, "UI hierchary dumped to: /dev/tty", StringComparison.Ordinal) &&
+            !string.Equals(suffix, "UI hierarchy dumped to: /dev/tty", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("uiautomator emitted unexpected trailing output.");
+        }
+        return output[..(end + closing.Length)];
+    }
+
     internal static AndroidNode FindExactlyOneResourceId(string xml, string resourceId)
     {
         ValidateResourceId(resourceId, "resource-id");

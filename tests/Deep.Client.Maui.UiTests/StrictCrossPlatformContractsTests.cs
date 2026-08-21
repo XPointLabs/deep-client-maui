@@ -3,6 +3,21 @@ namespace Deep.Client.Maui.UiTests;
 public sealed class StrictCrossPlatformContractsTests
 {
     [Fact]
+    public void Ui_dump_accepts_one_exact_hierarchy_and_only_the_platform_banner()
+    {
+        const string xml = "<?xml version='1.0'?><hierarchy><node /></hierarchy>";
+
+        Assert.Equal(xml, StrictCrossPlatformContracts.ExtractExactUiHierarchy(
+            xml + "UI hierchary dumped to: /dev/tty\r\n"));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.ExtractExactUiHierarchy("noise" + xml));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.ExtractExactUiHierarchy(xml + "untrusted"));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.ExtractExactUiHierarchy(xml + xml));
+    }
+
+    [Fact]
     public void Resource_id_lookup_requires_one_exact_node_and_derives_its_center()
     {
         const string xml = "<hierarchy><node resource-id='network.xpoint.deep.e2e:id/Chat_Send' text='' bounds='[20,40][100,80]' /></hierarchy>";
