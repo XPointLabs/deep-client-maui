@@ -349,6 +349,7 @@ try {
         $env:DEEP_E2E_APKSIGNER = $approvedApksigner
         $env:DEEP_E2E_ATTACHMENT_FIXTURE = $attachmentFixture
         $env:DEEP_E2E_ANDROID_POLICY = $policy
+        $env:DEEP_E2E_REPOSITORY_ROOT = $repoRoot
         $env:DEEP_MR_X_PUBLIC_KEY_SHA256 = $MrXPublicKeySha256
         $env:DEEP_E2E_ARTIFACTS = $artifacts
         $env:DEEP_E2E_ANDROID_SELECTORS_JSON = New-CanonicalAndroidSelectorsJson
