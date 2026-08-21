@@ -256,6 +256,28 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
     }
 
     [Fact]
+    public void PhysicalLabPolicyIssuerIsCommitBoundAtomicAndZeroizesPrivateMaterial()
+    {
+        var script = File.ReadAllText(WorkspacePath("eng", "Issue-AndroidLabPolicy.ps1"));
+        var issuer = File.ReadAllText(WorkspacePath(
+            "eng", "Deep.AndroidLab.PolicyIssuer", "Program.cs"));
+
+        Assert.Contains("status --porcelain=v1 --untracked-files=all", script,
+            StringComparison.Ordinal);
+        Assert.Contains(".protected-source.stage", script, StringComparison.Ordinal);
+        Assert.Contains(".protected-source.backup", script, StringComparison.Ordinal);
+        Assert.Contains("Published Android lab policy source failed its final reread.", script,
+            StringComparison.Ordinal);
+        Assert.Contains("apksigner verify --print-certs", script, StringComparison.Ordinal);
+        Assert.Contains("exactly one signer", script, StringComparison.Ordinal);
+        Assert.Contains("PublicKeyAuth.SignDetached", issuer, StringComparison.Ordinal);
+        Assert.Contains("PublicKeyAuth.VerifyDetached", issuer, StringComparison.Ordinal);
+        Assert.Contains("CryptographicOperations.ZeroMemory(privateKey)", issuer,
+            StringComparison.Ordinal);
+        Assert.Contains("FileOptions.WriteThrough", issuer, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PhysicalMailboxProvisioningEagerlyRejectsPresentRuntimeAndKeepsBootstrapLazy()
     {
         var program = File.ReadAllText(WorkspacePath(
