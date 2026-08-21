@@ -30,8 +30,14 @@ if ($restartResendPhase -and
     throw 'Restart resend phases require explicit evidence from the supported Deep DevOps chaos provider.'
 }
 
+function Test-AbsoluteWindowsPath([string]$Path) {
+    return -not [string]::IsNullOrWhiteSpace($Path) -and
+        ($Path -cmatch '^[A-Za-z]:[\\/]' -or
+         $Path -cmatch '^\\\\[^\\/]+[\\/][^\\/]+')
+}
+
 function Assert-AbsoluteExisting([string]$Path, [string]$Label, [switch]$Directory) {
-    if (-not [IO.Path]::IsPathFullyQualified($Path) -or
+    if (-not (Test-AbsoluteWindowsPath $Path) -or
         -not (Test-Path -LiteralPath $Path -PathType $(if ($Directory) { 'Container' } else { 'Leaf' }))) {
         throw "$Label must be an existing absolute $($(if ($Directory) { 'directory' } else { 'file' }))."
     }

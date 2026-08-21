@@ -178,6 +178,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("$productionBefore -cne $productionAfter", runner,
             StringComparison.Ordinal);
         Assert.Contains("-Action Status", runner, StringComparison.Ordinal);
+        Assert.Contains("function Test-AbsoluteWindowsPath", runner,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("[IO.Path]::IsPathFullyQualified", runner,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("pm clear", runner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("uninstall", runner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("docker compose", runner, StringComparison.OrdinalIgnoreCase);
