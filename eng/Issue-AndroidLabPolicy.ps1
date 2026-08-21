@@ -19,7 +19,7 @@ function Get-ExactFile([string]$Path, [string]$Label, [Nullable[long]]$Length) {
         -not (Test-Path -LiteralPath $full -PathType Leaf) -or
         ((Get-Item -Force -LiteralPath $full).Attributes -band
             [IO.FileAttributes]::ReparsePoint) -ne 0 -or
-        ($null -ne $Length -and (Get-Item -LiteralPath $full).Length -ne $Length)) {
+        ($null -ne $Length -and (Get-Item -Force -LiteralPath $full).Length -ne $Length)) {
         throw "$Label is not an exact regular file."
     }
     return $full
