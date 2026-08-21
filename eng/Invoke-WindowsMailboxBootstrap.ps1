@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('ExportHolder', 'StageRuntime')]
+    [ValidateSet('ExportHolder', 'PublishRuntime')]
     [string]$Action,
     [Parameter(Mandatory)]
     [string]$WindowsAppDataRoot,
@@ -140,15 +140,12 @@ function Read-ExactHolder([string]$AppRoot) {
     Assert-CanonicalMailboxAcl (Split-Path -Parent $holderPath)
     Assert-CanonicalMailboxAcl $holderPath
     $raw = Get-Content -Raw -LiteralPath $holderPath
-    $document = [Text.Json.JsonDocument]::Parse($raw)
-    try {
-        $names = @($document.RootElement.EnumerateObject() | ForEach-Object { $_.Name } | Sort-Object)
-        if ($document.RootElement.ValueKind -ne [Text.Json.JsonValueKind]::Object -or
-            ($names -join ',') -cne 'developmentOnly,ed25519PublicKey,platform,schemaVersion,sessionId') {
-            throw 'Windows holder bootstrap record has an invalid schema.'
-        }
-    } finally { $document.Dispose() }
     $holder = $raw | ConvertFrom-Json
+    $names = @($holder.PSObject.Properties.Name | Sort-Object)
+    if (($names -join ',') -cne
+        'developmentOnly,ed25519PublicKey,platform,schemaVersion,sessionId') {
+        throw 'Windows holder bootstrap record has an invalid schema.'
+    }
     if ($holder.schemaVersion -ne 1 -or -not $holder.developmentOnly -or
         [string]$holder.platform -cne 'windows' -or
         [string]$holder.sessionId -cnotmatch '^05[0-9a-f]{64}$' -or
@@ -241,7 +238,48 @@ function Assert-SourceRuntime([string]$Root, [string]$Pin) {
     if (($actualDirectories -join "`n") -cne ($directories -join "`n")) {
         throw 'Mailbox runtime source root contains missing or unexpected directories.'
     }
-    return [pscustomobject]@{ Files = $files; Generation = $generation }
+    return [pscustomobject]@{
+        Files = $files
+        Directories = $directories
+        Generation = $generation
+    }
+}
+
+function Test-RuntimeMatchesSource(
+    [Parameter(Mandatory)][string]$Candidate,
+    [Parameter(Mandatory)][string]$Source,
+    [Parameter(Mandatory)][string[]]$Files,
+    [Parameter(Mandatory)][string[]]$Directories) {
+    if (-not (Test-Path -LiteralPath $Candidate -PathType Container)) { return $false }
+    Assert-NoReparseTree $Candidate
+    $actualFiles = @(Get-ChildItem -LiteralPath $Candidate -Recurse -File -Force |
+        ForEach-Object { Get-RelativeChildPath $Candidate $_.FullName } | Sort-Object)
+    if (($actualFiles -join "`n") -cne (($Files | Sort-Object) -join "`n")) {
+        return $false
+    }
+    $actualDirectories = @(Get-ChildItem -LiteralPath $Candidate -Recurse -Directory -Force |
+        ForEach-Object { Get-RelativeChildPath $Candidate $_.FullName } | Sort-Object)
+    if (($actualDirectories -join "`n") -cne (($Directories | Sort-Object) -join "`n")) {
+        return $false
+    }
+    foreach ($relative in $Files) {
+        if ((Get-Sha256Lower (Join-Path $Candidate $relative)) -cne
+            (Get-Sha256Lower (Join-Path $Source $relative))) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Remove-OwnedMailboxTree([string]$Path, [string]$ExpectedName) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    if ((Split-Path -Leaf $Path) -cne $ExpectedName) {
+        throw 'Refusing to remove a mailbox tree with an unexpected name.'
+    }
+    Assert-NoReparseTree $Path
+    Get-ChildItem -LiteralPath $Path -File -Recurse -Force -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.IsReadOnly = $false }
+    Remove-Item -LiteralPath $Path -Recurse -Force
 }
 
 $appRoot = Get-ExactAbsoluteDirectory $WindowsAppDataRoot 'WindowsAppDataRoot'
@@ -251,18 +289,49 @@ if ($Action -eq 'ExportHolder') {
     exit 0
 }
 if (-not (Test-AbsoluteWindowsPath $RuntimeRoot)) {
-    throw 'StageRuntime requires an absolute -RuntimeRoot directory.'
+    throw 'PublishRuntime requires an absolute -RuntimeRoot directory.'
 }
 if ($MrXPublicKeySha256 -cnotmatch '^[0-9a-f]{64}$') {
-    throw 'StageRuntime requires the exact lowercase Mr. X public-key SHA-256 pin.'
+    throw 'PublishRuntime requires the exact lowercase Mr. X public-key SHA-256 pin.'
 }
 $source = Get-ExactAbsoluteDirectory $RuntimeRoot 'RuntimeRoot'
 $runtime = Assert-SourceRuntime $source $MrXPublicKeySha256
+$holder = (Read-ExactHolder $appRoot) | ConvertFrom-Json
+$manifest = Get-Content -Raw -LiteralPath (
+    Join-Path $source "pair\generations\$($runtime.Generation)\pair-manifest.v1.json") |
+    ConvertFrom-Json
+$credentials = Get-Content -Raw -LiteralPath (
+    Join-Path $source "pair\generations\$($runtime.Generation)\windows.mailbox-credentials.v1.json") |
+    ConvertFrom-Json
+if ([string]$credentials.holderPublicKey -cne [string]$holder.ed25519PublicKey -or
+    [string]$manifest.windowsHolderPublicKey -cne [string]$holder.ed25519PublicKey) {
+    throw 'The new mailbox runtime does not belong to the installed Windows holder.'
+}
+$runningClients = @(Get-Process -Name 'Deep.Client.Maui' -ErrorAction SilentlyContinue)
+if ($runningClients.Count -ne 0) {
+    throw 'The Windows Deep client must be stopped before mailbox runtime publication.'
+}
 $destination = Join-Path $appRoot 'mailbox-runtime-v1'
-if (Test-Path -LiteralPath $destination) { throw 'Live Windows mailbox runtime already exists; first-install-only staging refuses replacement.' }
-$stage = Join-Path $appRoot ('.mailbox-runtime-v1.stage.' + [Guid]::NewGuid().ToString('N'))
+$stage = Join-Path $appRoot '.mailbox-runtime-v1.stage'
+$backup = Join-Path $appRoot '.mailbox-runtime-v1.backup'
 $published = $false
 try {
+    if ((Test-Path -LiteralPath $backup) -and -not (Test-Path -LiteralPath $destination)) {
+        [IO.Directory]::Move($backup, $destination)
+    } elseif (Test-Path -LiteralPath $backup) {
+        if (-not (Test-RuntimeMatchesSource $destination $source $runtime.Files $runtime.Directories)) {
+            throw 'An ambiguous interrupted Windows mailbox runtime rotation requires operator review.'
+        }
+        Remove-OwnedMailboxTree $backup '.mailbox-runtime-v1.backup'
+    }
+    if (Test-Path -LiteralPath $stage) {
+        Remove-OwnedMailboxTree $stage '.mailbox-runtime-v1.stage'
+    }
+    if (Test-RuntimeMatchesSource $destination $source $runtime.Files $runtime.Directories) {
+        Assert-CanonicalMailboxTreeAcl $destination
+        Write-Output 'Windows mailbox runtime already matches the verified publication.'
+        exit 0
+    }
     [IO.Directory]::CreateDirectory($stage) | Out-Null
     foreach ($relative in $runtime.Files) {
         $sourceFile = Join-Path $source $relative
@@ -282,15 +351,40 @@ try {
         Set-CanonicalMailboxAcl $entry.FullName
     }
     Assert-CanonicalMailboxTreeAcl $stage
-    if (Test-Path -LiteralPath $destination) { throw 'Live Windows mailbox runtime appeared during staging.' }
-    [IO.Directory]::Move($stage, $destination)
+    if (Test-Path -LiteralPath $destination) {
+        if (Test-Path -LiteralPath $backup) {
+            throw 'Windows mailbox runtime backup appeared during publication.'
+        }
+        [IO.Directory]::Move($destination, $backup)
+    }
+    try {
+        if (Test-Path -LiteralPath $destination) {
+            throw 'Live Windows mailbox runtime appeared during publication.'
+        }
+        [IO.Directory]::Move($stage, $destination)
+        Assert-CanonicalMailboxTreeAcl $destination
+        if (-not (Test-RuntimeMatchesSource $destination $source $runtime.Files $runtime.Directories)) {
+            throw 'Published Windows mailbox runtime failed its final byte-for-byte reread.'
+        }
+    } catch {
+        if (Test-Path -LiteralPath $backup) {
+            if (Test-Path -LiteralPath $destination) {
+                if (Test-Path -LiteralPath $stage) {
+                    throw 'Windows mailbox runtime rollback found an ambiguous stage.'
+                }
+                [IO.Directory]::Move($destination, $stage)
+            }
+            [IO.Directory]::Move($backup, $destination)
+        }
+        throw
+    }
+    if (Test-Path -LiteralPath $backup) {
+        Remove-OwnedMailboxTree $backup '.mailbox-runtime-v1.backup'
+    }
     $published = $true
-    Assert-CanonicalMailboxTreeAcl $destination
 } finally {
     if (-not $published -and (Test-Path -LiteralPath $stage)) {
-        Get-ChildItem -LiteralPath $stage -File -Recurse -Force -ErrorAction SilentlyContinue |
-            ForEach-Object { $_.IsReadOnly = $false }
-        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-OwnedMailboxTree $stage '.mailbox-runtime-v1.stage'
     }
 }
-Write-Output 'Windows mailbox runtime staged.'
+Write-Output 'Windows mailbox runtime published.'

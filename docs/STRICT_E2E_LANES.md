@@ -202,24 +202,28 @@ dotnet build .\eng\Deep.AndroidLab.PolicyVerifier\Deep.AndroidLab.PolicyVerifier
   -c Release --locked-mode
 ```
 
-Then stage the Android root without packaging it in the APK. `StageRuntime`
+Then publish the Android root without packaging it in the APK. `PublishRuntime`
 uses that prebuilt verifier with `--no-build --no-restore`, so dependency
 resolution cannot occur while approval material is in scope:
 
 ```powershell
 .\eng\Invoke-AndroidMailboxBootstrap.ps1 `
-  -Action StageRuntime `
+  -Action PublishRuntime `
   -AndroidSerial 192.168.1.45:43337 `
   -RuntimeRoot C:\protected\deep-mailbox\android\mailbox-runtime-v1 `
   -MrXPublicKeySha256 $env:DEEP_MR_X_PUBLIC_KEY_SHA256
 ```
 
-The staging command force-stops only `network.xpoint.deep.e2e`, streams the
+The publication command force-stops only `network.xpoint.deep.e2e`, streams the
 exact allowlisted files through `run-as`, checks every remote SHA-256, applies
-`0700/0600`, and atomically renames the complete staging directory. It never
-touches `network.xpoint.deep`. Relaunch only after staging completes.
+`0700/0600`, and atomically renames the complete staging directory. For an
+existing holder-bound runtime it first moves the old tree to the fixed owned
+backup name, publishes and rereads the complete new tree, then removes only
+that backup. A restart after the first rename restores the backup; a restart
+after publication accepts only an exact byte-for-byte replay. It never touches
+`network.xpoint.deep`. Relaunch only after publication completes.
 
-### Windows DEV-local mailbox staging
+### Windows DEV-local mailbox publication
 
 The Windows peer uses the same signed pair but is not permitted to receive it
 through an environment variable, package asset, or a shared working folder.
@@ -234,12 +238,12 @@ System, and Builtin Administrators DACL:
   -OutputPath C:\protected\deep-mailbox\holders\windows.holder.v1.json
 ```
 
-After pair issuance, stage the Windows-specific runtime into that same isolated
+After pair issuance, publish the Windows-specific runtime into that same isolated
 app-data root:
 
 ```powershell
 .\eng\Invoke-WindowsMailboxBootstrap.ps1 `
-  -Action StageRuntime `
+  -Action PublishRuntime `
   -WindowsAppDataRoot C:\protected\deep-e2e\windows-appdata `
   -RuntimeRoot C:\protected\deep-mailbox\windows\mailbox-runtime-v1 `
   -MrXPublicKeySha256 $env:DEEP_MR_X_PUBLIC_KEY_SHA256
@@ -248,10 +252,12 @@ app-data root:
 The command uses the prebuilt locked verifier (`--no-build --no-restore`),
 checks the pin, signature, exact ten-file/three-directory inventory, pair
 generation, activation hashes, and minimized authority before copying. It
-creates a same-volume sibling staging directory with a GUID, applies and
+creates fixed same-volume owned staging and backup siblings, applies and
 revalidates the exact non-inherited three-principal DACL to every entry, then
-performs one `Directory.Move`. Existing `mailbox-runtime-v1` is a hard failure:
-the command never replaces or deletes a live runtime. The app repeats the ACL
+rotates through atomic `Directory.Move` operations. It verifies that the new
+pair belongs to the existing Windows holder, stops if the client is running,
+restores the old tree after an interrupted first rename, and removes only the
+owned backup after an exact final reread. The app repeats the ACL
 and reparse validation before loading the runtime. This is DEV-local only;
 production approval and provisioning remain a separate release composition.
 

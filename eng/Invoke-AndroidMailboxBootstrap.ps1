@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('ExportHolder', 'StageRuntime')]
+    [ValidateSet('ExportHolder', 'PublishRuntime')]
     [string]$Action,
     [string]$AndroidSerial,
     [string]$AdbPath = $env:DEEP_ADB_PATH,
@@ -94,6 +94,75 @@ function Get-PackagePathSnapshot([string]$PackageName) {
         throw 'adb package snapshot returned no canonical path.'
     }
     return $value
+}
+
+function Test-AppPrivatePath([string]$RemotePath) {
+    $command = ConvertTo-RemoteShellArgument "test -e $RemotePath"
+    $result = Invoke-AdbCapture @(
+        '-s', $AndroidSerial, 'shell', 'run-as', $package,
+        'sh', '-c', $command)
+    if ($result.exitCode -eq 0) { return $true }
+    if ($result.exitCode -eq 1) { return $false }
+    throw "Could not inspect the app-private mailbox runtime state: $($result.stderr.Trim())"
+}
+
+function Test-AppPrivateRuntimeMatchesSource(
+    [Parameter(Mandatory)][string]$RemoteRoot,
+    [Parameter(Mandatory)][string]$HostRoot,
+    [Parameter(Mandatory)][string[]]$Files,
+    [Parameter(Mandatory)][string[]]$Directories) {
+    if (-not (Test-AppPrivatePath $RemoteRoot)) { return $false }
+    $remoteFiles = @(Invoke-AdbChecked @(
+        '-s', $AndroidSerial, 'shell', 'run-as', $package,
+        'find', $RemoteRoot, '-type', 'f')) | ForEach-Object {
+            $value = ([string]$_).Trim()
+            if (-not $value.StartsWith($RemoteRoot + '/', [StringComparison]::Ordinal)) {
+                throw 'App-private mailbox runtime enumeration escaped its canonical root.'
+            }
+            $value.Substring(($RemoteRoot + '/').Length)
+        } | Sort-Object
+    if (($remoteFiles -join "`n") -cne (($Files | Sort-Object) -join "`n")) {
+        return $false
+    }
+    $remoteDirectories = @(Invoke-AdbChecked @(
+        '-s', $AndroidSerial, 'shell', 'run-as', $package,
+        'find', $RemoteRoot, '-type', 'd')) | ForEach-Object {
+            $value = ([string]$_).Trim()
+            if ($value -ceq $RemoteRoot) { return }
+            if (-not $value.StartsWith($RemoteRoot + '/', [StringComparison]::Ordinal)) {
+                throw 'App-private mailbox runtime directory enumeration escaped its canonical root.'
+            }
+            $value.Substring(($RemoteRoot + '/').Length)
+        } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object
+    if (($remoteDirectories -join "`n") -cne (($Directories | Sort-Object) -join "`n")) {
+        return $false
+    }
+    foreach ($relative in $Files) {
+        $remoteHashLine = @(Invoke-AdbChecked @(
+            '-s', $AndroidSerial, 'shell', 'run-as', $package,
+            'sha256sum', "$RemoteRoot/$relative")) -join ' '
+        if ($remoteHashLine -cnotmatch '^(?<hash>[0-9a-f]{64})\s+' -or
+            $Matches.hash -cne
+                (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $HostRoot $relative)).Hash.ToLowerInvariant()) {
+            return $false
+        }
+        $mode = (@(Invoke-AdbChecked @(
+            '-s', $AndroidSerial, 'shell', 'run-as', $package,
+            'stat', '-c', '%a', "$RemoteRoot/$relative")) -join '').Trim()
+        if ($mode -cne '600') { return $false }
+    }
+    foreach ($relative in @('') + $Directories) {
+        $path = if ([string]::IsNullOrEmpty($relative)) {
+            $RemoteRoot
+        } else {
+            "$RemoteRoot/$relative"
+        }
+        $mode = (@(Invoke-AdbChecked @(
+            '-s', $AndroidSerial, 'shell', 'run-as', $package,
+            'stat', '-c', '%a', $path)) -join '').Trim()
+        if ($mode -cne '700') { return $false }
+    }
+    return $true
 }
 
 function Copy-ToAppPrivate(
@@ -281,10 +350,10 @@ if ($Action -eq 'ExportHolder') {
 
 if ([string]::IsNullOrWhiteSpace($RuntimeRoot) -or
     -not (Test-Path -LiteralPath $RuntimeRoot -PathType Container)) {
-    throw 'StageRuntime requires an existing -RuntimeRoot directory.'
+    throw 'PublishRuntime requires an existing -RuntimeRoot directory.'
 }
 if ($MrXPublicKeySha256 -cnotmatch '^[0-9a-f]{64}$') {
-    throw 'StageRuntime requires the exact lowercase Mr. X public-key SHA-256 pin.'
+    throw 'PublishRuntime requires the exact lowercase Mr. X public-key SHA-256 pin.'
 }
 $root = [IO.Path]::GetFullPath($RuntimeRoot)
 Assert-NoReparseTree $root
@@ -398,12 +467,70 @@ if ($appUid -notmatch '^\d+$' -or
     $appHome -notmatch '^/data/(user/0|data)/network\.xpoint\.deep\.e2e$') {
     throw 'The installed E2E package is not an exact debuggable run-as target.'
 }
+$holderRaw = @(Invoke-AdbChecked @(
+    '-s', $AndroidSerial, 'shell', 'run-as', $package,
+    'cat', 'files/mailbox-holder-bootstrap-v1/android.holder.v1.json')) -join "`n"
+$holder = $holderRaw | ConvertFrom-Json
+$androidCredentials = Get-Content -Raw -LiteralPath (
+    Join-Path $generationRoot 'android.mailbox-credentials.v1.json') | ConvertFrom-Json
+$pairManifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+if ($holder.schemaVersion -ne 1 -or -not $holder.developmentOnly -or
+    [string]$holder.platform -cne 'android' -or
+    [string]$holder.ed25519PublicKey -cnotmatch '^[0-9a-f]{64}$' -or
+    [string]$androidCredentials.holderPublicKey -cne [string]$holder.ed25519PublicKey -or
+    [string]$pairManifest.androidHolderPublicKey -cne [string]$holder.ed25519PublicKey) {
+    throw 'The new mailbox runtime does not belong to the installed Android holder.'
+}
 Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'am', 'force-stop', $package) | Out-Null
 $stage = 'files/.mailbox-runtime-v1.stage'
+$backup = 'files/.mailbox-runtime-v1.backup'
+$destination = 'files/mailbox-runtime-v1'
 $published = $false
 try {
+    $hasDestination = Test-AppPrivatePath $destination
+    $hasBackup = Test-AppPrivatePath $backup
+    if ($hasBackup -and -not $hasDestination) {
+        $recoverCommand = ConvertTo-RemoteShellArgument (
+            "test ! -e $destination && mv $backup $destination")
+        Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package,
+            'sh', '-c', $recoverCommand) | Out-Null
+        $hasDestination = $true
+        $hasBackup = $false
+    } elseif ($hasBackup) {
+        if (-not (Test-AppPrivateRuntimeMatchesSource -RemoteRoot $destination `
+                -HostRoot $root -Files $relativeFiles -Directories $expectedDirectories)) {
+            throw 'An ambiguous interrupted Android mailbox runtime rotation requires operator review.'
+        }
+        Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package,
+            'rm', '-rf', $backup) | Out-Null
+        $hasBackup = $false
+    }
+    if (Test-AppPrivatePath $stage) {
+        Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package,
+            'rm', '-rf', $stage) | Out-Null
+    }
+    if ($hasDestination -and
+        (Test-AppPrivateRuntimeMatchesSource -RemoteRoot $destination `
+            -HostRoot $root -Files $relativeFiles -Directories $expectedDirectories)) {
+        $published = $true
+    }
+    if ($published) {
+        $productionAfter = Get-PackagePathSnapshot 'network.xpoint.deep'
+        if ($productionAfter -cne $productionBefore) {
+            throw 'The production package changed during mailbox runtime publication.'
+        }
+        [pscustomobject]@{
+            serial = $AndroidSerial
+            package = $package
+            action = 'PublishRuntime'
+            generation = $generation
+            publishedFiles = $relativeFiles.Count
+            exactReplay = $true
+        } | Format-List
+        exit 0
+    }
     $createCommand = ConvertTo-RemoteShellArgument (
-        "test ! -e files/mailbox-runtime-v1 && test ! -e $stage && " +
+        "test ! -e $stage && test ! -e $backup && " +
         "umask 077 && mkdir -p $stage/pair/generations/$generation")
     Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package, 'sh', '-c',
         $createCommand) | Out-Null
@@ -435,12 +562,43 @@ try {
     if (($remoteFiles -join "`n") -cne ($expectedFiles -join "`n")) {
         throw 'App-private mailbox staging root contains missing or unexpected files.'
     }
-    $publishCommand = ConvertTo-RemoteShellArgument (
+    $protectCommand = ConvertTo-RemoteShellArgument (
         "find $stage -type d -exec chmod 700 {} +; " +
-        "find $stage -type f -exec chmod 600 {} +; " +
-        "test ! -e files/mailbox-runtime-v1 && mv $stage files/mailbox-runtime-v1")
+        "find $stage -type f -exec chmod 600 {} +")
     Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package, 'sh', '-c',
-        $publishCommand) | Out-Null
+        $protectCommand) | Out-Null
+    if (Test-AppPrivatePath $destination) {
+        $retireCommand = ConvertTo-RemoteShellArgument (
+            "test ! -e $backup && mv $destination $backup")
+        Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package, 'sh', '-c',
+            $retireCommand) | Out-Null
+    }
+    try {
+        $publishCommand = ConvertTo-RemoteShellArgument (
+            "test ! -e $destination && mv $stage $destination")
+        Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package, 'sh', '-c',
+            $publishCommand) | Out-Null
+        if (-not (Test-AppPrivateRuntimeMatchesSource -RemoteRoot $destination `
+                -HostRoot $root -Files $relativeFiles -Directories $expectedDirectories)) {
+            throw 'Published Android mailbox runtime failed its final byte-for-byte reread.'
+        }
+    } catch {
+        if (Test-AppPrivatePath $backup) {
+            $rollbackCommand = if (Test-AppPrivatePath $destination) {
+                ConvertTo-RemoteShellArgument (
+                    "test ! -e $stage && mv $destination $stage && mv $backup $destination")
+            } else {
+                ConvertTo-RemoteShellArgument "mv $backup $destination"
+            }
+            Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package,
+                'sh', '-c', $rollbackCommand) | Out-Null
+        }
+        throw
+    }
+    if (Test-AppPrivatePath $backup) {
+        Invoke-AdbChecked @('-s', $AndroidSerial, 'shell', 'run-as', $package,
+            'rm', '-rf', $backup) | Out-Null
+    }
     $published = $true
 } finally {
     if (-not $published) {
@@ -449,13 +607,14 @@ try {
 }
 $productionAfter = Get-PackagePathSnapshot 'network.xpoint.deep'
 if ($productionAfter -cne $productionBefore) {
-    throw 'The production package changed during mailbox runtime staging.'
+    throw 'The production package changed during mailbox runtime publication.'
 }
 
 [pscustomobject]@{
     serial = $AndroidSerial
     package = $package
-    action = 'StageRuntime'
+    action = 'PublishRuntime'
     generation = $generation
-    stagedFiles = $relativeFiles.Count
+    publishedFiles = $relativeFiles.Count
+    exactReplay = $false
 } | Format-List

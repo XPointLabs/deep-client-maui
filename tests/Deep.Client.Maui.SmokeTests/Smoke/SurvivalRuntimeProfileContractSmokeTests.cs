@@ -113,15 +113,24 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
     }
 
     [Fact]
-    public void AndroidMailboxBootstrapStreamsFirstInstallOnlyIntoAppPrivateStorage()
+    public void AndroidMailboxBootstrapPublishesHolderBoundRuntimeAtomically()
     {
         var script = File.ReadAllText(WorkspacePath(
             "eng", "Invoke-AndroidMailboxBootstrap.ps1"));
 
         Assert.Contains("network.xpoint.deep.e2e", script, StringComparison.Ordinal);
+        Assert.Contains("ValidateSet('ExportHolder', 'PublishRuntime')", script,
+            StringComparison.Ordinal);
         Assert.Contains("Copy-ToAppPrivate", script, StringComparison.Ordinal);
         Assert.Contains("RedirectStandardInput = $true", script, StringComparison.Ordinal);
-        Assert.Contains("test ! -e files/mailbox-runtime-v1", script, StringComparison.Ordinal);
+        Assert.Contains("files/.mailbox-runtime-v1.backup", script, StringComparison.Ordinal);
+        Assert.Contains("The new mailbox runtime does not belong to the installed Android holder.",
+            script, StringComparison.Ordinal);
+        Assert.Contains("Test-AppPrivateRuntimeMatchesSource", script, StringComparison.Ordinal);
+        Assert.Contains("if ($mode -cne '600')", script, StringComparison.Ordinal);
+        Assert.Contains("if ($mode -cne '700')", script, StringComparison.Ordinal);
+        Assert.Contains("Published Android mailbox runtime failed its final byte-for-byte reread.",
+            script, StringComparison.Ordinal);
         Assert.Contains("selections).Count -ne 0", script, StringComparison.Ordinal);
         Assert.Contains("@($_.replicas).Count -ne 0", script, StringComparison.Ordinal);
         Assert.Contains("Deep.AndroidLab.PolicyVerifier", script, StringComparison.Ordinal);
@@ -193,7 +202,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
     }
 
     [Fact]
-    public void WindowsMailboxBootstrapStagesOnlyAProtectedFirstInstallRuntime()
+    public void WindowsMailboxBootstrapPublishesProtectedHolderBoundRuntimeAtomically()
     {
         var script = File.ReadAllText(WorkspacePath(
             "eng", "Invoke-WindowsMailboxBootstrap.ps1"));
@@ -202,12 +211,18 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         var acl = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Services", "WindowsMailboxAccessControl.cs"));
 
-        Assert.Contains("ValidateSet('ExportHolder', 'StageRuntime')", script,
+        Assert.Contains("ValidateSet('ExportHolder', 'PublishRuntime')", script,
             StringComparison.Ordinal);
         Assert.Contains("Deep.AndroidLab.PolicyVerifier", script, StringComparison.Ordinal);
         Assert.Contains("--no-build --no-restore", script, StringComparison.Ordinal);
-        Assert.Contains("Live Windows mailbox runtime already exists", script,
+        Assert.Contains("The new mailbox runtime does not belong to the installed Windows holder.", script,
             StringComparison.Ordinal);
+        Assert.Contains(".mailbox-runtime-v1.backup", script, StringComparison.Ordinal);
+        Assert.Contains("Test-RuntimeMatchesSource", script, StringComparison.Ordinal);
+        Assert.Contains("Directories = $directories", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("[Text.Json.JsonDocument]", script, StringComparison.Ordinal);
+        Assert.Contains("Published Windows mailbox runtime failed its final byte-for-byte reread.",
+            script, StringComparison.Ordinal);
         Assert.Contains("[IO.Directory]::Move($stage, $destination)", script,
             StringComparison.Ordinal);
         Assert.DoesNotContain("Remove-Item -LiteralPath $destination", script,
