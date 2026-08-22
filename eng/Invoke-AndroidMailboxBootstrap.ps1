@@ -269,6 +269,61 @@ function Assert-NoReparseTree([string]$Path) {
     }
 }
 
+function Set-ProtectedHolderOutput([string]$Path) {
+    $item = Get-Item -Force -LiteralPath $Path
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Holder output cannot be a reparse point.'
+    }
+    if ($env:OS -ceq 'Windows_NT') {
+        $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        $acl = [Security.AccessControl.FileSecurity]::new()
+        $acl.SetAccessRuleProtection($true, $false)
+        $acl.SetOwner($owner)
+        foreach ($sid in @(
+                $owner,
+                [Security.Principal.SecurityIdentifier]'S-1-5-18',
+                [Security.Principal.SecurityIdentifier]'S-1-5-32-544')) {
+            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+                $sid,
+                [Security.AccessControl.FileSystemRights]::FullControl,
+                [Security.AccessControl.InheritanceFlags]::None,
+                [Security.AccessControl.PropagationFlags]::None,
+                [Security.AccessControl.AccessControlType]::Allow))
+        }
+        [IO.FileInfo]::new($Path).SetAccessControl($acl)
+
+        $actual = [IO.FileInfo]::new($Path).GetAccessControl()
+        $expected = @(
+            $owner.Value,
+            'S-1-5-18',
+            'S-1-5-32-544') | Sort-Object
+        $rules = @($actual.GetAccessRules($true, $true,
+            [Security.Principal.SecurityIdentifier]) | ForEach-Object {
+                if ($_.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
+                    $_.IsInherited -or
+                    $_.FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl -or
+                    $_.InheritanceFlags -ne [Security.AccessControl.InheritanceFlags]::None -or
+                    $_.PropagationFlags -ne [Security.AccessControl.PropagationFlags]::None) {
+                    throw 'Holder output ACL contains a noncanonical rule.'
+                }
+                ([Security.Principal.SecurityIdentifier]$_.IdentityReference).Value
+            } | Sort-Object)
+        if (-not $actual.AreAccessRulesProtected -or
+            $actual.GetOwner([Security.Principal.SecurityIdentifier]).Value -cne $owner.Value -or
+            ($rules -join ',') -cne ($expected -join ',')) {
+            throw 'Holder output ACL is not the exact current-user/System/Administrators policy.'
+        }
+        return
+    }
+    [IO.File]::SetUnixFileMode(
+        $Path,
+        [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite)
+    if ([IO.File]::GetUnixFileMode($Path) -ne
+        ([IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite)) {
+        throw 'Holder output must have Unix mode 0600.'
+    }
+}
+
 function Get-RelativeChildPath(
     [Parameter(Mandatory)][string]$Root,
     [Parameter(Mandatory)][string]$Child) {
@@ -328,6 +383,9 @@ if ($Action -eq 'ExportHolder') {
                 [IO.FileAttributes]::ReparsePoint) -ne 0) {
             throw 'Holder output parent must be an existing non-reparse directory.'
         }
+        if (Test-Path -LiteralPath $destination) {
+            throw 'Holder output already exists; replace it explicitly outside this command.'
+        }
         $bytes = [Text.UTF8Encoding]::new($false).GetBytes($canonical)
         try {
             $stream = [IO.FileStream]::new(
@@ -341,6 +399,10 @@ if ($Action -eq 'ExportHolder') {
             } finally {
                 $stream.Dispose()
             }
+            Set-ProtectedHolderOutput $destination
+        } catch {
+            Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
+            throw
         } finally {
             [Array]::Clear($bytes, 0, $bytes.Length)
         }

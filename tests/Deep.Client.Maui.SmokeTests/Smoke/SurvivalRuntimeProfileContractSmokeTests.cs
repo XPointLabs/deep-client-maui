@@ -131,6 +131,14 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("if ($mode -cne '700')", script, StringComparison.Ordinal);
         Assert.Contains("Published Android mailbox runtime failed its final byte-for-byte reread.",
             script, StringComparison.Ordinal);
+        Assert.Contains("function Set-ProtectedHolderOutput", script,
+            StringComparison.Ordinal);
+        Assert.Contains("[IO.FileInfo]::new($Path).SetAccessControl($acl)", script,
+            StringComparison.Ordinal);
+        Assert.Contains("Holder output already exists; replace it explicitly outside this command.",
+            script, StringComparison.Ordinal);
+        Assert.Contains("Holder output must have Unix mode 0600.", script,
+            StringComparison.Ordinal);
         Assert.Contains("selections).Count -ne 0", script, StringComparison.Ordinal);
         Assert.Contains("@($_.replicas).Count -ne 0", script, StringComparison.Ordinal);
         Assert.Contains("Deep.AndroidLab.PolicyVerifier", script, StringComparison.Ordinal);
