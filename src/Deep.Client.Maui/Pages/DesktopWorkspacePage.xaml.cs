@@ -568,7 +568,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
 
     private async void OnVideoCallClicked(object? sender, EventArgs e) => await OpenCallAsync(isVideo: true);
 
-    private async void OnOpenSettingsClicked(object? sender, TappedEventArgs e)
+    private async void OnOpenSettingsClicked(object? sender, EventArgs e)
     {
         try
         {

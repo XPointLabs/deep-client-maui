@@ -20,7 +20,9 @@ public sealed class DesktopWorkspaceContractSmokeTests
         Assert.Contains("AutomationId=\"DesktopWorkspace.DirectVoice\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationId=\"DesktopWorkspace.GroupVoice\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationId=\"DesktopWorkspace.GroupMembersPanel\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Tapped=\"OnOpenSettingsClicked\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationId=\"DesktopWorkspace.ProfileSettings\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Clicked=\"OnOpenSettingsClicked\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Border.GestureRecognizers><TapGestureRecognizer Tapped=\"OnOpenSettingsClicked\"", xaml, StringComparison.Ordinal);
         Assert.Equal(2, Count(xaml, "MessageContextGestureBehavior Invoked="));
         Assert.Equal(2, Count(xaml, "ReactionChipTapped"));
         Assert.Equal(2, Count(xaml, "PointerPressed=\"OnVoicePointerPressed\""));

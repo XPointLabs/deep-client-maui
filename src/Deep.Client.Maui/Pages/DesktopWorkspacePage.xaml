@@ -26,10 +26,20 @@
             BackgroundColor="{StaticResource PageBackground}"
             IsVisible="{Binding IsConversationListVisible}">
             <Grid AutomationId="DesktopWorkspace.ListPane" Grid.Row="0" HeightRequest="56" Padding="14,6,10,6" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                <Border AutomationId="DesktopWorkspace.ProfileSettings" SemanticProperties.Description="Открыть профиль и настройки" WidthRequest="40" HeightRequest="40" Padding="0" StrokeThickness="0" Background="{StaticResource AvatarAccentColor}" StrokeShape="RoundRectangle 20">
-                    <Label Text="{Binding ConversationList.AccountInitial}" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="16" />
-                    <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnOpenSettingsClicked" /></Border.GestureRecognizers>
-                </Border>
+                <Button
+                    AutomationId="DesktopWorkspace.ProfileSettings"
+                    SemanticProperties.Description="Открыть профиль и настройки"
+                    Text="{Binding ConversationList.AccountInitial}"
+                    WidthRequest="40"
+                    HeightRequest="40"
+                    Padding="0"
+                    BorderWidth="0"
+                    CornerRadius="20"
+                    Background="{StaticResource AvatarAccentColor}"
+                    TextColor="White"
+                    FontAttributes="Bold"
+                    FontSize="16"
+                    Clicked="OnOpenSettingsClicked" />
                 <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
                     <Label Text="Deep" FontSize="18" FontAttributes="Bold" />
                     <Label Text="XPoint Network" FontSize="11" TextColor="{StaticResource TextTertiary}" />
