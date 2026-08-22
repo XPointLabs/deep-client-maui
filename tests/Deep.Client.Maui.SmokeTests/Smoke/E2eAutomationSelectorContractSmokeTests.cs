@@ -80,6 +80,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
 
         Assert.Equal("NoWrap", label.Attribute("LineBreakMode")?.Value);
         Assert.Equal("1", label.Attribute("MaxLines")?.Value);
+        Assert.Equal("620", label.Attribute("WidthRequest")?.Value);
         Assert.Equal("Start", label.Attribute("HorizontalOptions")?.Value);
         Assert.Equal("Horizontal", label.Parent?.Attribute("Orientation")?.Value);
         var source = File.ReadAllText(WorkspacePath(

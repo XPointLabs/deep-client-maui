@@ -129,7 +129,7 @@
                     <VerticalStackLayout Spacing="5">
                         <Label Text="ID аккаунта Deep" FontSize="12" TextColor="{StaticResource TextSecondary}" />
                         <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
-                            <Label x:Name="SessionIdLabel" AutomationId="Settings.SessionId" Text="{Binding SessionId}" FontSize="13" FontFamily="Consolas" LineBreakMode="NoWrap" MaxLines="1" HorizontalOptions="Start" />
+                            <Label x:Name="SessionIdLabel" AutomationId="Settings.SessionId" Text="{Binding SessionId}" FontSize="13" FontFamily="Consolas" LineBreakMode="NoWrap" MaxLines="1" WidthRequest="620" HorizontalOptions="Start" />
                         </ScrollView>
                     </VerticalStackLayout>
                 </Border>
