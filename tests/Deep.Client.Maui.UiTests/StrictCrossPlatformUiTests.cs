@@ -166,6 +166,7 @@ public sealed class StrictCrossPlatformUiTests
             AddAndroidContact(android, options, windowsIdentity);
             AddWindowsContact(windows, androidIdentity);
             SendWindowsMessage(windows, windowsToAndroid);
+            AssertWindowsXPointRouteObserved(windows);
             android.WaitForText(options.App("Chat.MessageBody"), windowsToAndroid, TimeSpan.FromSeconds(60));
             SendAndroidMessage(android, options, androidToWindows);
             WaitForWindowsText(windows, "DesktopWorkspace.DirectMessageBody", androidToWindows);
@@ -188,6 +189,7 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddHash("androidToWindowsMarkerHash", androidToWindows);
         evidence.AddBoolean("windowsToAndroidReceived", true);
         evidence.AddBoolean("androidToWindowsReceived", true);
+        evidence.AddBoolean("windowsXpointRouteObserved", true);
         evidence.AddBoolean("senderDeliveryStatusObserved", true);
         evidence.AddSafeValue("attachmentFixtureSha256", fixtureSha256);
         evidence.AddBoolean("attachmentOpenSaveDecryptVerified", true);
@@ -400,6 +402,20 @@ public sealed class StrictCrossPlatformUiTests
     {
         Require(windows.WaitForAutomationId("DesktopWorkspace.DirectDraft", TimeSpan.FromSeconds(15)), "DesktopWorkspace.DirectDraft").AsTextBox().Text = message;
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.DirectSend", TimeSpan.FromSeconds(10)), "DesktopWorkspace.DirectSend"));
+    }
+
+    private static void AssertWindowsXPointRouteObserved(
+        WindowsUiSmokeTests.WindowsUiTestSession windows)
+    {
+        var marker = Require(
+            windows.WaitForAutomationId(
+                "PhysicalE2E.RouteNodeMarker",
+                TimeSpan.FromSeconds(30)),
+            "PhysicalE2E.RouteNodeMarker");
+        var routerId = marker.Properties.Name.ValueOrDefault ?? string.Empty;
+        Assert.Equal(64, routerId.Length);
+        Assert.All(routerId, static value =>
+            Assert.True(value is >= '0' and <= '9' or >= 'a' and <= 'f'));
     }
 
     private static void SendAndroidMessage(AndroidUiautomatorClient android, CrossPlatformOptions options, string message)

@@ -89,6 +89,7 @@ public sealed class WindowsUiSmokeTests
             "Page.DesktopWorkspace",
             "Page.Conversations",
             "Conversations.Root",
+            "PhysicalE2E.RouteNodeMarker",
             AuthenticatedControlId
         ];
 
