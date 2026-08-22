@@ -227,6 +227,9 @@ public partial class AppShell : Shell
         return true;
     }
 
+    internal Task<bool> ActivateConversationAsync(ConversationId conversationId) =>
+        NavigateToConversationAsync(conversationId.Value);
+
     private async Task<bool> ApplyShareToComposerAsync(SharePayload share)
     {
         if (string.IsNullOrWhiteSpace(share.Text) && share.FilePaths.Count == 0)

@@ -56,6 +56,14 @@ public sealed class DesktopWorkspaceContractSmokeTests
         Assert.Contains("IActiveComposerProvider", shellCode, StringComparison.Ordinal);
         Assert.Contains("new DesktopWorkspaceViewModel(", mauiProgram, StringComparison.Ordinal);
         Assert.Contains("AddSingleton<DesktopWorkspacePage>()", mauiProgram, StringComparison.Ordinal);
+
+        var newConversation = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Pages", "NewConversationPage.xaml.cs");
+        Assert.Contains("await shell.ActivateConversationAsync(conversation.Id)", newConversation, StringComparison.Ordinal);
+        Assert.Contains(
+            "internal Task<bool> ActivateConversationAsync(ConversationId conversationId)",
+            shellCode,
+            StringComparison.Ordinal);
     }
 
     private static int Count(string value, string marker) =>

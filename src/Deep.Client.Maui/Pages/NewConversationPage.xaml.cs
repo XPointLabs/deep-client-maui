@@ -43,6 +43,14 @@ public partial class NewConversationPage : ContentPage
         KeyboardDismissal.Dismiss(DisplayNameEntry);
         await Task.Delay(150);
 
+#if WINDOWS
+        if (Shell.Current is AppShell shell
+            && await shell.ActivateConversationAsync(conversation.Id))
+        {
+            return;
+        }
+#endif
+
         var route = $"{ShellRouteCatalog.Chat}?sessionId={Uri.EscapeDataString(conversation.Id.Value)}&displayName={Uri.EscapeDataString(conversation.DisplayName)}";
         await Shell.Current.GoToAsync(route);
     }
