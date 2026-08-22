@@ -164,6 +164,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             "src", "Deep.Client.Maui", "Services", "AttachmentOpenService.cs"));
         var mauiProgram = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "MauiProgram.cs"));
+        var startConversation = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Pages", "StartConversationPage.xaml"));
 
         Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
@@ -261,6 +263,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("AutomationProperties.SetAccessibilityView", mauiProgram,
             StringComparison.Ordinal);
         Assert.Contains("AccessibilityView.Content", mauiProgram,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationId=\"StartConversation.NewMessage\" SemanticProperties.Description=\"Новое сообщение\"",
+            startConversation,
             StringComparison.Ordinal);
     }
 

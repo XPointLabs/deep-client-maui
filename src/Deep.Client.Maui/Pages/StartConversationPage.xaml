@@ -47,7 +47,7 @@
                 </Grid>
 
                 <VerticalStackLayout Spacing="0">
-                    <Grid AutomationId="StartConversation.NewMessage" ColumnDefinitions="48,*" ColumnSpacing="12" HeightRequest="58">
+                    <Grid AutomationId="StartConversation.NewMessage" SemanticProperties.Description="Новое сообщение" ColumnDefinitions="48,*" ColumnSpacing="12" HeightRequest="58">
                         <Path Data="M4,5 H20 V16 H9 L4,21 Z" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="26" HeightRequest="26" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                         <Label Grid.Column="1" Text="Новое сообщение" FontSize="17" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers>
@@ -55,7 +55,7 @@
                         </Grid.GestureRecognizers>
                     </Grid>
                     <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" Margin="60,0,0,0" />
-                    <Grid AutomationId="StartConversation.CreateGroup" ColumnDefinitions="48,*" ColumnSpacing="12" HeightRequest="58">
+                    <Grid AutomationId="StartConversation.CreateGroup" SemanticProperties.Description="Создать группу" ColumnDefinitions="48,*" ColumnSpacing="12" HeightRequest="58">
                         <Path Data="M8,11 A4,4 0 1 0 8,3 A4,4 0 1 0 8,11 M16,11 A4,4 0 1 0 16,3 A4,4 0 1 0 16,11 M2,21 C2,16 5,13 8,13 C11,13 14,16 14,21 M10,21 C10,16 13,13 16,13 C19,13 22,16 22,21" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="28" HeightRequest="28" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                         <Label Grid.Column="1" Text="Создать группу" FontSize="17" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers>
@@ -63,7 +63,7 @@
                         </Grid.GestureRecognizers>
                     </Grid>
                     <BoxView HeightRequest="1" Color="{StaticResource DividerColor}" Margin="60,0,0,0" />
-                    <Grid AutomationId="StartConversation.InviteFriend" ColumnDefinitions="48,*" ColumnSpacing="12" HeightRequest="58">
+                    <Grid AutomationId="StartConversation.InviteFriend" SemanticProperties.Description="Пригласить друга" ColumnDefinitions="48,*" ColumnSpacing="12" HeightRequest="58">
                         <Path Data="M9,11 A4,4 0 1 0 9,3 A4,4 0 1 0 9,11 M2,21 C2,16 5,13 9,13 C13,13 16,16 16,21 M19,9 V17 M15,13 H23" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="28" HeightRequest="28" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                         <Label Grid.Column="1" Text="Пригласить друга" FontSize="17" VerticalTextAlignment="Center" />
                         <Grid.GestureRecognizers>
