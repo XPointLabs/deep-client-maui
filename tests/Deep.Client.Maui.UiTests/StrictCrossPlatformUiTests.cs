@@ -314,7 +314,7 @@ public sealed class StrictCrossPlatformUiTests
     {
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.ProfileSettings", TimeSpan.FromSeconds(20)), "DesktopWorkspace.ProfileSettings"));
         var identity = StrictCrossPlatformContracts.RequireSessionId(Require(windows.WaitForAutomationId("Settings.SessionId", TimeSpan.FromSeconds(20)), "Settings.SessionId").Properties.Name.ValueOrDefault ?? string.Empty, "Windows settings");
-        windows.ActivateExact(Require(windows.WaitForAutomationId("Settings.Back", TimeSpan.FromSeconds(10)), "Settings.Back"));
+        CloseWindowsSettings(windows);
         return identity;
     }
 
@@ -338,8 +338,20 @@ public sealed class StrictCrossPlatformUiTests
         windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(30));
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.ProfileSettings", TimeSpan.FromSeconds(20)), "DesktopWorkspace.ProfileSettings"));
         var identity = StrictCrossPlatformContracts.RequireSessionId(Require(windows.WaitForAutomationId("Settings.SessionId", TimeSpan.FromSeconds(20)), "Settings.SessionId").Properties.Name.ValueOrDefault ?? string.Empty, "Windows settings");
-        windows.ActivateExact(Require(windows.WaitForAutomationId("Settings.Back", TimeSpan.FromSeconds(10)), "Settings.Back"));
+        CloseWindowsSettings(windows);
         return identity;
+    }
+
+    private static void CloseWindowsSettings(WindowsUiSmokeTests.WindowsUiTestSession windows)
+    {
+        // WinUI Shell owns the desktop back surface. The Settings.Back border is
+        // the compact/mobile affordance and is not present in the Windows UIA tree.
+        windows.ActivateExact(Require(
+            windows.WaitForAutomationId("NavigationViewBackButton", TimeSpan.FromSeconds(10)),
+            "NavigationViewBackButton"));
+        Require(
+            windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(20)),
+            "Conversations.NewConversation");
     }
 
     private static void VerifyAndroidRejectsInvalidIdWithoutOpeningContact(AndroidUiautomatorClient android, CrossPlatformOptions options)
