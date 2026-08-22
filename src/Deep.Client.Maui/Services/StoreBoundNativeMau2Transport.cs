@@ -197,8 +197,23 @@ internal sealed class StoreBoundNativeMau2Transport :
     {
         using var operation = EnterOperation();
         var runtime = RequireBound();
+#if DEBUG && DEEP_PHYSICAL_E2E
+        try
+        {
+            await runtime.Transport.SendPreparedMailboxAuthenticatedAsync(
+                preparedSend, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException(
+                "PhysicalE2E.MailboxDispatch", exception,
+                "The physical mailbox dispatch failed before a durable receipt.");
+            throw;
+        }
+#else
         await runtime.Transport.SendPreparedMailboxAuthenticatedAsync(
             preparedSend, cancellationToken).ConfigureAwait(false);
+#endif
     }
 
     public Task SendAsync(
