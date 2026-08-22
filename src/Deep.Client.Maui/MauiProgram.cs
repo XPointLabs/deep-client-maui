@@ -309,9 +309,6 @@ public static class MauiProgram
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(
                     element,
                     view.AutomationId);
-                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
-                    element,
-                    Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Content);
             }
         }
 
@@ -320,7 +317,17 @@ public static class MauiProgram
             ApplyAutomationId);
         LayoutHandler.Mapper.AppendToMapping(
             "DeepAutomationId",
-            ApplyAutomationId);
+            (handler, view) =>
+            {
+                ApplyAutomationId(handler, view);
+                if (handler.PlatformView is FrameworkElement element &&
+                    !string.IsNullOrWhiteSpace(view.AutomationId))
+                {
+                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+                        element,
+                        Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Content);
+                }
+            });
     }
 #endif
 
