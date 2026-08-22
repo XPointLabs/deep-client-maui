@@ -581,7 +581,34 @@ internal sealed class CrossPlatformOptions
     private static string RequireAbsoluteFile(string key) { var path = Environment.GetEnvironmentVariable(key)!; if (!Path.IsPathFullyQualified(path) || !File.Exists(path)) throw new InvalidOperationException($"{key} must be an existing absolute path."); return Path.GetFullPath(path); }
     private static string RequirePinnedPath(string key, string approvedPath) { var path = RequireAbsoluteFile(key); if (!string.Equals(path, Path.GetFullPath(approvedPath), StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException($"{key} is not the approved exact path."); return path; }
     internal string ResolveProductionDownloadsDirectory() =>
-        Windows.Storage.DownloadsFolder.CreateFolderAsync("Deep", Windows.Storage.CreationCollisionOption.OpenIfExists).AsTask().GetAwaiter().GetResult().Path;
+        ResolveProductionDownloadsDirectoryAsync().GetAwaiter().GetResult().Path;
+
+    private static async Task<Windows.Storage.StorageFolder> ResolveProductionDownloadsDirectoryAsync()
+    {
+        const string folderName = "Deep";
+        var downloadsPath = Windows.Storage.UserDataPaths.GetDefault().Downloads;
+        if (string.IsNullOrWhiteSpace(downloadsPath))
+            throw new IOException("The Windows downloads directory is unavailable.");
+        var downloads = await Windows.Storage.StorageFolder.GetFolderFromPathAsync(downloadsPath);
+        var existing = await downloads.TryGetItemAsync(folderName);
+        if (existing is Windows.Storage.StorageFolder folder) return folder;
+        if (existing is not null)
+            throw new IOException("The Deep downloads destination is not a directory.");
+        try
+        {
+            return await downloads.CreateFolderAsync(
+                folderName,
+                Windows.Storage.CreationCollisionOption.FailIfExists);
+        }
+        catch (Exception creationFailure)
+        {
+            var raced = await downloads.TryGetItemAsync(folderName);
+            return raced as Windows.Storage.StorageFolder
+                ?? throw new IOException(
+                    "The Deep downloads directory could not be created or reopened.",
+                    creationFailure);
+        }
+    }
     private static Dictionary<string, string> ParseSelectors(string json)
     {
         using var doc = System.Text.Json.JsonDocument.Parse(json); if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) throw new InvalidOperationException("Android selector JSON must be an object.");

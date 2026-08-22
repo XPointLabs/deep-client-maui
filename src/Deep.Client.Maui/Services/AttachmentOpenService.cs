@@ -683,9 +683,7 @@ public static class AttachmentOpenService
         await CopyFileAsync(file.Path, destination, cancellationToken).ConfigureAwait(false);
         return destination;
 #elif WINDOWS
-        var destinationDirectory = await Windows.Storage.DownloadsFolder
-            .CreateFolderAsync("Deep", Windows.Storage.CreationCollisionOption.OpenIfExists)
-            .AsTask(cancellationToken)
+        var destinationDirectory = await ResolveWindowsDownloadsDirectoryAsync(cancellationToken)
             .ConfigureAwait(false);
         var destination = await destinationDirectory
             .CreateFileAsync(file.FileName, Windows.Storage.CreationCollisionOption.GenerateUniqueName)
@@ -716,6 +714,56 @@ public static class AttachmentOpenService
         return destination;
 #endif
     }
+
+#if WINDOWS
+    private static async Task<Windows.Storage.StorageFolder> ResolveWindowsDownloadsDirectoryAsync(
+        CancellationToken cancellationToken)
+    {
+        const string folderName = "Deep";
+        var downloadsPath = Windows.Storage.UserDataPaths.GetDefault().Downloads;
+        if (string.IsNullOrWhiteSpace(downloadsPath))
+        {
+            throw new IOException("The Windows downloads directory is unavailable.");
+        }
+        var downloads = await Windows.Storage.StorageFolder
+            .GetFolderFromPathAsync(downloadsPath)
+            .AsTask(cancellationToken)
+            .ConfigureAwait(false);
+        var existing = await downloads
+            .TryGetItemAsync(folderName)
+            .AsTask(cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is Windows.Storage.StorageFolder existingFolder)
+        {
+            return existingFolder;
+        }
+        if (existing is not null)
+        {
+            throw new IOException("The Deep downloads destination is not a directory.");
+        }
+
+        try
+        {
+            return await downloads
+                .CreateFolderAsync(folderName, Windows.Storage.CreationCollisionOption.FailIfExists)
+                .AsTask(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception creationFailure) when (!cancellationToken.IsCancellationRequested)
+        {
+            // A concurrent save may have created the exact folder after our read.
+            // Accept only that exact directory; do not generate an alternate name.
+            var raced = await downloads
+                .TryGetItemAsync(folderName)
+                .AsTask(cancellationToken)
+                .ConfigureAwait(false);
+            return raced as Windows.Storage.StorageFolder
+                ?? throw new IOException(
+                    "The Deep downloads directory could not be created or reopened.",
+                    creationFailure);
+        }
+    }
+#endif
 
 #if ANDROID
     [SupportedOSPlatform("android29.0")]

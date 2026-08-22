@@ -160,6 +160,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
         var windowsUi = File.ReadAllText(WorkspacePath(
             "tests", "Deep.Client.Maui.UiTests", "WindowsUiSmokeTests.cs"));
+        var attachmentOpen = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Services", "AttachmentOpenService.cs"));
 
         Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
@@ -243,6 +245,14 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.DoesNotContain("ClearE2ePackageData();", ui, StringComparison.Ordinal);
         Assert.Contains("exact installed APK SHA-256 equality", ui, StringComparison.Ordinal);
         Assert.DoesNotContain("details.Replace(\":\", string.Empty", ui,
+            StringComparison.Ordinal);
+        Assert.Contains("ResolveWindowsDownloadsDirectoryAsync", attachmentOpen,
+            StringComparison.Ordinal);
+        Assert.Contains("CreationCollisionOption.FailIfExists", attachmentOpen,
+            StringComparison.Ordinal);
+        Assert.Contains("TryGetItemAsync(folderName)", attachmentOpen,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("CreationCollisionOption.OpenIfExists", attachmentOpen,
             StringComparison.Ordinal);
     }
 
