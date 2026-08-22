@@ -304,7 +304,7 @@ public sealed class StrictCrossPlatformUiTests
     private static string ReadAndroidIdentity(AndroidUiautomatorClient android, CrossPlatformOptions options)
     {
         android.Tap(options.App("Conversations.ProfileSettings"));
-        var identity = StrictCrossPlatformContracts.RequireSessionId(android.WaitForResource(options.App("Settings.SessionId"), TimeSpan.FromSeconds(20)).Text, "Android settings");
+        var identity = StrictCrossPlatformContracts.RequireSessionId(android.WaitForResource(options.App("Settings.SessionId"), TimeSpan.FromSeconds(20)).AccessibleText, "Android settings");
         android.Tap(options.App("Settings.Back"));
         android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(20));
         return identity;
@@ -325,7 +325,7 @@ public sealed class StrictCrossPlatformUiTests
         android.Tap(options.App("Welcome.Create"));
         android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(30));
         android.Tap(options.App("Conversations.ProfileSettings"));
-        var identity = StrictCrossPlatformContracts.RequireSessionId(android.WaitForResource(options.App("Settings.SessionId"), TimeSpan.FromSeconds(20)).Text, "Android settings");
+        var identity = StrictCrossPlatformContracts.RequireSessionId(android.WaitForResource(options.App("Settings.SessionId"), TimeSpan.FromSeconds(20)).AccessibleText, "Android settings");
         android.Tap(options.App("Settings.Back"));
         return identity;
     }

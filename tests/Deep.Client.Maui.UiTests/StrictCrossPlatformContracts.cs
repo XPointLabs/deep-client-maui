@@ -395,13 +395,25 @@ internal static class StrictCrossPlatformContracts
         internal void BeginFixturePush() => FixturePushAttempted = true;
     }
 
-    internal sealed record AndroidNode(string ResourceId, string Text, AndroidBounds Bounds)
+    internal sealed record AndroidNode(
+        string ResourceId,
+        string Text,
+        string ContentDescription,
+        AndroidBounds Bounds)
     {
+        internal string AccessibleText => string.IsNullOrWhiteSpace(Text)
+            ? ContentDescription
+            : Text;
+
         internal static AndroidNode From(XElement node)
         {
             var resourceId = (string?)node.Attribute("resource-id") ?? throw new InvalidOperationException("uiautomator node has no resource-id.");
             var bounds = AndroidBounds.Parse((string?)node.Attribute("bounds") ?? string.Empty);
-            return new AndroidNode(resourceId, (string?)node.Attribute("text") ?? string.Empty, bounds);
+            return new AndroidNode(
+                resourceId,
+                (string?)node.Attribute("text") ?? string.Empty,
+                (string?)node.Attribute("content-desc") ?? string.Empty,
+                bounds);
         }
     }
 

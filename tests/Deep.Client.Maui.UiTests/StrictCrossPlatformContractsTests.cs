@@ -20,11 +20,12 @@ public sealed class StrictCrossPlatformContractsTests
     [Fact]
     public void Resource_id_lookup_requires_one_exact_node_and_derives_its_center()
     {
-        const string xml = "<hierarchy><node resource-id='network.xpoint.deep.e2e:id/Chat_Send' text='' bounds='[20,40][100,80]' /></hierarchy>";
+        const string xml = "<hierarchy><node resource-id='network.xpoint.deep.e2e:id/Chat_Send' text='' content-desc='accessible value' bounds='[20,40][100,80]' /></hierarchy>";
 
         var node = StrictCrossPlatformContracts.FindExactlyOneResourceId(xml, "network.xpoint.deep.e2e:id/Chat_Send");
 
         Assert.Equal((60, 60), node.Bounds.Center);
+        Assert.Equal("accessible value", node.AccessibleText);
     }
 
     [Fact]
