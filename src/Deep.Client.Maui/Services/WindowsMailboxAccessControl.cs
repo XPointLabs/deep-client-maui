@@ -19,25 +19,68 @@ internal static class WindowsMailboxAccessControl
     internal static void ProtectNewDirectory(string path)
     {
         if (!OperatingSystem.IsWindows()) return;
-        ApplyExact(path, isDirectory: true);
+        ApplyExact(path, isDirectory: true, InheritanceFlags.None);
     }
 
     internal static void ProtectNewFile(string path)
     {
         if (!OperatingSystem.IsWindows()) return;
-        ApplyExact(path, isDirectory: false);
+        ApplyExact(path, isDirectory: false, InheritanceFlags.None);
+    }
+
+    internal static void EnsurePrivateAppDataRoot(string path)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        ApplyExact(
+            path,
+            isDirectory: true,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit);
+
+        // Older strict-lane roots were protected without inheritable ACEs. Files
+        // created below them therefore retained an empty DACL after their first
+        // handle closed. Repair only the closed set of app-owned root files; all
+        // future SQLite sidecars and diagnostics inherit the exact root policy.
+        foreach (var name in new[]
+                 {
+                     "client-state.db",
+                     "client-state.db-wal",
+                     "client-state.db-shm",
+                     "crash.log",
+                     "crash.log.1"
+                 })
+        {
+            var candidate = Path.Combine(path, name);
+            if (File.Exists(candidate))
+            {
+                ApplyExact(
+                    candidate,
+                    isDirectory: false,
+                    InheritanceFlags.None,
+                    preserveExistingOwner: true);
+            }
+        }
+    }
+
+    internal static void ValidatePrivateAppDataRoot(string path)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        ValidateExact(
+            path,
+            isDirectory: true,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit);
     }
 
     internal static void ValidateDirectory(string path)
     {
         if (!OperatingSystem.IsWindows()) return;
-        ValidateExact(path, isDirectory: true);
+        ValidateExact(path, isDirectory: true, InheritanceFlags.None);
     }
 
     internal static void ValidateFile(string path)
     {
         if (!OperatingSystem.IsWindows()) return;
-        ValidateExact(path, isDirectory: false);
+        ValidateExact(path, isDirectory: false, InheritanceFlags.None);
     }
 
     internal static void ValidateTree(string root)
@@ -64,21 +107,41 @@ internal static class WindowsMailboxAccessControl
         return user;
     }
 
-    private static void ApplyExact(string path, bool isDirectory)
+    private static void ApplyExact(
+        string path,
+        bool isDirectory,
+        InheritanceFlags inheritanceFlags,
+        bool preserveExistingOwner = false)
     {
         RejectReparse(path);
         var owner = CurrentUser();
+        if (preserveExistingOwner)
+        {
+            FileSystemSecurity existing = isDirectory
+                ? new DirectoryInfo(path).GetAccessControl(AccessControlSections.Owner)
+                : new FileInfo(path).GetAccessControl(AccessControlSections.Owner);
+            var existingOwner = existing.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            if (existingOwner is null || !existingOwner.Equals(owner))
+            {
+                throw new InvalidDataException(
+                    "Windows app-data ACL repair refuses a non-owner path.");
+            }
+        }
+
         FileSystemSecurity security = isDirectory
             ? new DirectorySecurity()
             : new FileSecurity();
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        security.SetOwner(owner);
+        if (!preserveExistingOwner)
+        {
+            security.SetOwner(owner);
+        }
         foreach (var identity in new[] { owner, LocalSystem, BuiltinAdministrators })
         {
             security.AddAccessRule(new FileSystemAccessRule(
                 identity,
                 FileSystemRights.FullControl,
-                InheritanceFlags.None,
+                inheritanceFlags,
                 PropagationFlags.None,
                 AccessControlType.Allow));
         }
@@ -95,10 +158,13 @@ internal static class WindowsMailboxAccessControl
             throw new IOException("Could not establish the exact Windows mailbox ACL.",
                 exception);
         }
-        ValidateExact(path, isDirectory);
+        ValidateExact(path, isDirectory, inheritanceFlags);
     }
 
-    private static void ValidateExact(string path, bool isDirectory)
+    private static void ValidateExact(
+        string path,
+        bool isDirectory,
+        InheritanceFlags inheritanceFlags)
     {
         RejectReparse(path);
         var owner = CurrentUser();
@@ -124,7 +190,7 @@ internal static class WindowsMailboxAccessControl
                 rule.AccessControlType != AccessControlType.Allow ||
                 rule.IsInherited ||
                 rule.FileSystemRights != FileSystemRights.FullControl ||
-                rule.InheritanceFlags != InheritanceFlags.None ||
+                rule.InheritanceFlags != inheritanceFlags ||
                 rule.PropagationFlags != PropagationFlags.None ||
                 rule.IdentityReference is not SecurityIdentifier sid ||
                 !expected.Remove(sid.Value)))

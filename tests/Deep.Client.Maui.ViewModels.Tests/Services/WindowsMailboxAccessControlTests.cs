@@ -4,6 +4,7 @@ using Deep.Client.Maui.Services;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
 
+#pragma warning disable CA1416 // Every test has an OperatingSystem.IsWindows guard.
 public sealed class WindowsMailboxAccessControlTests
 {
     [Fact]
@@ -55,6 +56,51 @@ public sealed class WindowsMailboxAccessControlTests
         }
     }
 
+    [Fact]
+    public void StrictAppDataRootRepairsEmptyDaclAndProtectsFutureFiles()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var root = NewRoot();
+        try
+        {
+            WindowsMailboxAccessControl.ProtectNewDirectory(root);
+            var database = Path.Combine(root, "client-state.db");
+            File.WriteAllText(database, "owned-state");
+
+            var empty = new FileSecurity();
+            empty.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            empty.SetOwner(WindowsIdentity.GetCurrent().User!);
+            new FileInfo(database).SetAccessControl(empty);
+
+            WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(root);
+
+            Assert.Equal("owned-state", File.ReadAllText(database));
+            WindowsMailboxAccessControl.ValidatePrivateAppDataRoot(root);
+            WindowsMailboxAccessControl.ValidateFile(database);
+
+            var sidecar = Path.Combine(root, "client-state.db-wal");
+            File.WriteAllText(sidecar, "future-sidecar");
+            Assert.Equal("future-sidecar", File.ReadAllText(sidecar));
+            var inheritedRules = new FileInfo(sidecar).GetAccessControl()
+                .GetAccessRules(includeExplicit: true, includeInherited: true,
+                    typeof(SecurityIdentifier))
+                .OfType<FileSystemAccessRule>()
+                .Where(static rule => rule.IsInherited)
+                .ToArray();
+            Assert.Equal(3, inheritedRules.Length);
+            Assert.All(inheritedRules, static rule =>
+            {
+                Assert.Equal(AccessControlType.Allow, rule.AccessControlType);
+                Assert.Equal(FileSystemRights.FullControl, rule.FileSystemRights);
+            });
+        }
+        finally
+        {
+            WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(root);
+            TryDelete(root);
+        }
+    }
+
     private static string NewRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "deep-windows-mailbox-" +
@@ -79,3 +125,4 @@ public sealed class WindowsMailboxAccessControlTests
         catch (UnauthorizedAccessException) { }
     }
 }
+#pragma warning restore CA1416

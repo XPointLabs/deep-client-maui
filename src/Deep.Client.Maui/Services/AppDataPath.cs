@@ -1,4 +1,5 @@
 using Microsoft.Maui.Storage;
+using Deep.Client.Maui.Services;
 
 namespace Deep.Client.Maui;
 
@@ -40,6 +41,7 @@ internal static class AppDataPath
             }
             Directory.CreateDirectory(fullPath);
             RejectReparsePoints(fullPath);
+            WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(fullPath);
             return fullPath;
         }
 #endif
