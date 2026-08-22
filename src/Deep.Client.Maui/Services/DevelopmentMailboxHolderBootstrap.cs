@@ -132,6 +132,12 @@ internal static class DevelopmentMailboxHolderBootstrap
 
     private static void RequireUnixMode(string path, UnixFileMode expected)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException(
+                "Unix mailbox permissions cannot be checked on Windows.");
+        }
+
         var actual = File.GetUnixFileMode(path);
         if (actual != expected)
         {
