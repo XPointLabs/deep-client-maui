@@ -12,7 +12,7 @@ public sealed class TransportSettingsUiContractSmokeTests
 
         Assert.Contains("AutomationId=\"Settings.Path\"", settings, StringComparison.Ordinal);
         Assert.Contains("Text=\"Транспорты\"", settings, StringComparison.Ordinal);
-        Assert.Contains("XPoint Network и прямые соединения", settings, StringComparison.Ordinal);
+        Assert.Contains("Доступные маршруты и приоритеты", settings, StringComparison.Ordinal);
         Assert.DoesNotContain("Поддержать сеть", settings, StringComparison.Ordinal);
         Assert.DoesNotContain("Settings.Donate", settings, StringComparison.Ordinal);
         Assert.DoesNotContain("Settings.SessionNetwork", settings, StringComparison.Ordinal);

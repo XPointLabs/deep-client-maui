@@ -172,7 +172,7 @@
                             <Path Data="M5,18 C8,14 10,12 12,12 C14,12 16,10 19,6 M6,6 H19 V19" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2" StrokeLineCap="Round" StrokeLineJoin="Round" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                             <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
                                 <Label Text="Транспорты" FontSize="16" />
-                                <Label Text="XPoint Network и прямые соединения" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="Доступные маршруты и приоритеты" FontSize="12" TextColor="{StaticResource TextSecondary}" />
                             </VerticalStackLayout>
                             <Path Grid.Column="2" Data="M9,5 L16,12 L9,19" Stroke="{StaticResource TextSecondary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
                             <Grid.GestureRecognizers>

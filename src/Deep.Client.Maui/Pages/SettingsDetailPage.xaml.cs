@@ -381,8 +381,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
 
         ContentStack.Children.Add(CreateCategory(
             null,
-            CreateRow("Версия приложения", $"Deep {AppInfo.Current.VersionString}"),
-            CreateRow("Сеть", "XPoint Network")));
+            CreateRow("Версия приложения", $"Deep {AppInfo.Current.VersionString}")));
     }
 
     private Border CreateCategory(string? title, params View[] rows)

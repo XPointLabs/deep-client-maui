@@ -42,7 +42,7 @@
                     Clicked="OnOpenSettingsClicked" />
                 <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
                     <Label Text="Deep" FontSize="18" FontAttributes="Bold" />
-                    <Label Text="XPoint Network" FontSize="11" TextColor="{StaticResource TextTertiary}" />
+                    <Label Text="Защищённый транспорт" FontSize="11" TextColor="{StaticResource TextTertiary}" />
                 </VerticalStackLayout>
                 <Button
                     Grid.Column="2"

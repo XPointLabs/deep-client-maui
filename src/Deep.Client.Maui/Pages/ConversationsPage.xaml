@@ -33,7 +33,7 @@
             </Grid>
             <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
                 <Label Text="Deep" FontSize="20" FontAttributes="Bold" VerticalTextAlignment="Center" />
-                <Label Text="через XPoint Network" FontSize="11" TextColor="{StaticResource TextTertiary}" Margin="0,-2,0,0" />
+                <Label Text="защищённый транспорт" FontSize="11" TextColor="{StaticResource TextTertiary}" Margin="0,-2,0,0" />
             </VerticalStackLayout>
             <Border Grid.Column="2" AutomationId="Conversations.NewConversationTop" WidthRequest="42" HeightRequest="42" Background="Transparent" StrokeThickness="0" SemanticProperties.Description="Новое сообщение" VerticalOptions="Center">
                 <Path Data="M12,5 V19 M5,12 H19" Stroke="{StaticResource PrimaryColor}" StrokeThickness="2.4" StrokeLineCap="Round" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />

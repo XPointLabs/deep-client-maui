@@ -17,7 +17,7 @@
             HorizontalOptions="Fill">
             <Image Source="deep_mark.png" WidthRequest="118" HeightRequest="118" Aspect="AspectFit" HorizontalOptions="Center" SemanticProperties.Description="Логотип Deep" />
             <Label Text="Deep" FontSize="36" FontAttributes="Bold" HorizontalTextAlignment="Center" />
-            <Label Text="Приватные сообщения через XPoint Network." FontSize="15" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+            <Label Text="Приватные сообщения через защищённые транспорты." FontSize="15" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
         </VerticalStackLayout>
 
         <VerticalStackLayout
