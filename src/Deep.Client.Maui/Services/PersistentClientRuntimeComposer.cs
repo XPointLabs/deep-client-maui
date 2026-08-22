@@ -54,7 +54,12 @@ internal static class PersistentClientRuntimeComposer
                 requireE2eeTransport: true,
                 transportOutboxExecutor,
                 composition.DeliveryPolicy,
-                ownsMessageTransport: true);
+                ownsMessageTransport: true,
+#if DEBUG && DEEP_PHYSICAL_E2E
+                messageDispatchFailureObserver: PhysicalE2eMessageDispatchFailureObserver.Instance);
+#else
+                messageDispatchFailureObserver: null);
+#endif
             if (membershipRouteCatalogProvider is not null)
                 membershipRouteCatalogProvider.Bind(secureStore);
             return runtime;

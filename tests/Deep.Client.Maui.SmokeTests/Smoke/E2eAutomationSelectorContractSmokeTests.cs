@@ -75,14 +75,21 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     public void SettingsExposeTheCanonicalSessionIdOnOneScrollableLine()
     {
         var settings = LoadPage("SettingsPage.xaml");
-        var label = Assert.Single(ElementsWithAutomationId(
+        var scroller = Assert.Single(ElementsWithAutomationId(
             settings.Root!, "Settings.SessionId"));
+        Assert.Equal("ScrollView", scroller.Name.LocalName);
+        Assert.Equal("Horizontal", scroller.Attribute("Orientation")?.Value);
+        Assert.Equal("{Binding SessionId}",
+            scroller.Attribute("SemanticProperties.Description")?.Value);
+        var label = Assert.Single(scroller.Descendants(), element =>
+            element.Name.LocalName == "Label" &&
+            element.Attributes().Any(attribute =>
+                attribute.Name.LocalName == "Name" && attribute.Value == "SessionIdLabel"));
 
         Assert.Equal("NoWrap", label.Attribute("LineBreakMode")?.Value);
         Assert.Equal("1", label.Attribute("MaxLines")?.Value);
         Assert.Equal("620", label.Attribute("WidthRequest")?.Value);
         Assert.Equal("Start", label.Attribute("HorizontalOptions")?.Value);
-        Assert.Equal("Horizontal", label.Parent?.Attribute("Orientation")?.Value);
         var source = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Pages", "SettingsPage.xaml.cs"));
         Assert.Contains("return value;", source, StringComparison.Ordinal);
