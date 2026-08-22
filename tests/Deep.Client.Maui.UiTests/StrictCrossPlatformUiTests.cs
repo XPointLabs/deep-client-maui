@@ -21,6 +21,9 @@ public sealed class StrictCrossPlatformUiTests
         var options = CrossPlatformOptions.Load();
         switch (options.Phase)
         {
+            case Mau2PhysicalPhase.ProvisionIdentity:
+                ProvisionOrPreserveIdentities(options);
+                return;
             case Mau2PhysicalPhase.Attach:
                 AttachToExistingProvisionedClients(options);
                 return;
@@ -40,6 +43,81 @@ public sealed class StrictCrossPlatformUiTests
             default:
                 throw new InvalidOperationException("Unsupported physical MAU2 phase.");
         }
+    }
+
+    private static void ProvisionOrPreserveIdentities(CrossPlatformOptions options)
+    {
+        var evidence = CreatePhaseEvidence(options);
+        var android = new AndroidUiautomatorClient(options);
+        android.AssertPhysicalConnectedDevice();
+        android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
+        android.ColdStart();
+        var androidSurface = android.WaitForExactlyOneResource(
+            [
+                options.App("Welcome.DisplayName"),
+                options.App("Conversations.Root"),
+                options.App("Startup.Status")
+            ],
+            TimeSpan.FromSeconds(45));
+        if (string.Equals(androidSurface, options.App("Startup.Status"), StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Android requires an explicit local-state reset before identity provisioning; this non-destructive phase will not approve it.");
+        }
+        var androidCreated = string.Equals(
+            androidSurface, options.App("Welcome.DisplayName"), StringComparison.Ordinal);
+        var androidIdentity = androidCreated
+            ? CreateAndroidIdentity(android, options)
+            : ReadAndroidIdentity(android, options);
+
+        using var windows = WindowsUiSmokeTests.WindowsUiTestSession
+            .CreateStrictWithAppData(options.WindowsAppDataRoot);
+        var windowsSurface = WaitForExactlyOneWindowsSurface(
+            windows,
+            ["Welcome.DisplayName", "Conversations.NewConversation", "Startup.Status"],
+            TimeSpan.FromSeconds(45));
+        if (string.Equals(windowsSurface, "Startup.Status", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Windows requires an explicit local-state reset before identity provisioning; this non-destructive phase will not approve it.");
+        }
+        var windowsCreated = string.Equals(
+            windowsSurface, "Welcome.DisplayName", StringComparison.Ordinal);
+        var windowsIdentity = windowsCreated
+            ? CreateWindowsIdentity(windows)
+            : ReadWindowsIdentity(windows);
+        Assert.NotEqual(androidIdentity, windowsIdentity);
+
+        evidence.AddHash("androidIdentityHash", androidIdentity);
+        evidence.AddHash("windowsIdentityHash", windowsIdentity);
+        evidence.AddBoolean("androidIdentityCreated", androidCreated);
+        evidence.AddBoolean("windowsIdentityCreated", windowsCreated);
+        evidence.AddBoolean("destructiveResetPerformed", false);
+        evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
+        CompletePhaseEvidence(options, evidence);
+    }
+
+    private static string WaitForExactlyOneWindowsSurface(
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        IReadOnlyList<string> automationIds,
+        TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var present = automationIds
+                .Where(automationId => windows.FindAutomationId(automationId) is not null)
+                .ToArray();
+            if (present.Length == 1) return present[0];
+            if (present.Length > 1)
+            {
+                throw new InvalidOperationException(
+                    "Windows exposed more than one mutually exclusive identity-provisioning surface.");
+            }
+            Thread.Sleep(200);
+        }
+        throw new InvalidOperationException(
+            "Windows did not expose one closed identity-provisioning surface.");
     }
 
     private static void RequireReviewedRestartResendLane(Mau2PhysicalPhase phase)
@@ -762,6 +840,32 @@ internal sealed class AndroidUiautomatorClient
     internal StrictCrossPlatformContracts.AndroidNode WaitForResource(string resourceId, TimeSpan timeout) => Wait(resourceId, null, timeout);
     internal void WaitForText(string resourceId, string text, TimeSpan timeout) { var node = WaitByMarker(resourceId, text, timeout); Assert.Contains(text, node.Text, StringComparison.Ordinal); }
     internal StrictCrossPlatformContracts.AndroidNode? FindOptional(string resourceId) => StrictCrossPlatformContracts.FindOptionalResourceId(Dump(), resourceId);
+    internal string WaitForExactlyOneResource(IReadOnlyList<string> resourceIds, TimeSpan timeout)
+    {
+        if (resourceIds.Count == 0 || resourceIds.Any(string.IsNullOrWhiteSpace) ||
+            resourceIds.Distinct(StringComparer.Ordinal).Count() != resourceIds.Count)
+        {
+            throw new InvalidOperationException("Android provisioning resource IDs must be nonempty and distinct.");
+        }
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var hierarchy = Dump();
+            var present = resourceIds
+                .Where(resourceId => StrictCrossPlatformContracts.FindOptionalResourceId(
+                    hierarchy, resourceId) is not null)
+                .ToArray();
+            if (present.Length == 1) return present[0];
+            if (present.Length > 1)
+            {
+                throw new InvalidOperationException(
+                    "Android exposed more than one mutually exclusive identity-provisioning surface.");
+            }
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException(
+            "Android did not expose one closed identity-provisioning surface.");
+    }
     internal void Tap(string resourceId) { var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void TapExactResourceIdWithExactText(string resourceId, string text) { var node = WaitByText(resourceId, text, TimeSpan.FromSeconds(15)); Assert.Equal(text, node.Text); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void Type(string resourceId, string value) { Tap(resourceId); RequireSuccess(Adb("shell", "input", "text", value)); }

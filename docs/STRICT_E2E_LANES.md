@@ -277,8 +277,12 @@ are never written to policy output and are zeroed by the issuer process.
 ## Physical Android ↔ Windows rendered flow (opt-in)
 
 The non-destructive physical runner `eng/Invoke-PhysicalMau2CrossPlatform.ps1`
-requires one explicit phase: `Attach`, `HappyPath`, `RestartDurability`,
+requires one explicit phase: `ProvisionIdentity`, `Attach`, `HappyPath`, `RestartDurability`,
 `ManualResendAfterRestart`, `AutomaticRetryAfterRestart`, or `NegativeRuntime`.
+`ProvisionIdentity` creates a missing Android or Windows identity only through
+the rendered production controls, otherwise reads and preserves the existing
+identity. It never approves or performs a local-state reset; a reset-required
+surface fails the phase closed and requires a separate explicit user action.
 The two resend-after-restart contracts are opt-in and fail closed unless an
 explicit `deep-devops-survival-chaos-v1` evidence input is supplied. They do
 not currently claim a live pass: the reviewed DevOps chaos executor still has

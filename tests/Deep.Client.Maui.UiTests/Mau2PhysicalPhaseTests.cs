@@ -6,6 +6,7 @@ namespace Deep.Client.Maui.UiTests;
 public sealed class Mau2PhysicalPhaseTests
 {
     [Theory]
+    [InlineData("ProvisionIdentity", Mau2PhysicalPhase.ProvisionIdentity)]
     [InlineData("Attach", Mau2PhysicalPhase.Attach)]
     [InlineData("HappyPath", Mau2PhysicalPhase.HappyPath)]
     [InlineData("RestartDurability", Mau2PhysicalPhase.RestartDurability)]
