@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Services;
@@ -97,14 +96,8 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
 
         switch (section)
         {
-            case "donate":
-                BuildDonateSection();
-                break;
             case "path":
                 BuildPathSection();
-                break;
-            case "network":
-                BuildNetworkSection();
                 break;
             case "offline-update":
                 BuildOfflineUpdateSection();
@@ -130,33 +123,17 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         }
     }
 
-    private void BuildDonateSection()
-    {
-        TitleLabel.Text = "Поддержка сети";
-        if (!TryGetUri(environment.StakingPortalUrl, out var stakingPortalUri))
-        {
-            ContentStack.Children.Add(CreateCategory(
-                "XPNT",
-                CreateRow("Портал стейкинга недоступен", "В этой сборке не задан адрес портала стейкинга.")));
-            return;
-        }
-
-        ContentStack.Children.Add(CreateCategory(
-            "XPNT",
-            CreateRow("Стейкинг XPNT", "Откройте портал, чтобы внести вклад в работу сети сервисных нод.", () => OpenAsync(stakingPortalUri)),
-            CreateRow("Скопировать ссылку", stakingPortalUri.ToString(), () => CopyAsync(stakingPortalUri.ToString()))));
-    }
-
     private void BuildPathSection()
     {
-        TitleLabel.Text = "Путь";
-        ContentStack.Children.Add(CreatePathIntro());
-        ContentStack.Children.Add(CreatePathGraph(
+        TitleLabel.Text = "Транспорты";
+        BuildTransportSection(
+            "Подключение проверяется",
+            "Получаем текущий маршрут клиента.",
         [
             new("Вы", null, true),
             new("Маршрут строится", "Получаем текущий маршрут клиента.", false),
             new("Назначение", null, true)
-        ]));
+        ]);
 
         _ = LoadPathAsync();
     }
@@ -203,12 +180,13 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 return;
             }
 
-            ContentStack.Children.Clear();
-            ContentStack.Children.Add(CreatePathIntro());
-
             var routeNodes = await BuildRouteNodesAsync(snapshot);
-            ContentStack.Children.Add(CreatePathGraph(routeNodes));
-            ContentStack.Children.Add(CreateOutlineButton("Узнать больше", () => OpenAsync(XPointUrl)));
+            BuildTransportSection(
+                snapshot is null ? "Готов к подключению" : "Активен",
+                snapshot is null
+                    ? "Маршрут появится после первой сетевой операции."
+                    : networkStatusService.ConnectionLabel,
+                routeNodes);
         }
         catch (Exception)
         {
@@ -217,91 +195,14 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 return;
             }
 
-            ContentStack.Children.Clear();
-            ContentStack.Children.Add(CreatePathIntro());
-            ContentStack.Children.Add(CreatePathGraph(
+            BuildTransportSection(
+                "Временно недоступен",
+                "Не удалось обновить текущий маршрут.",
             [
                 new("Вы", null, true),
                 new("Маршрут временно недоступен", "Не удалось обновить текущий путь. Повторите попытку позже.", false),
                 new("Назначение", null, true)
-            ]));
-        }
-    }
-
-    private void BuildNetworkSection()
-    {
-        TitleLabel.Text = "Сеть XPoint";
-        ContentStack.Children.Add(CreateCategory(
-            "XPNT",
-            CreateRow("Стейкинг XPNT", "Сервисные ноды получают право работать в сети через on-chain стейкинг.", () => OpenIfUriAsync(environment.StakingPortalUrl)),
-            CreateRow("Сеть контрактов", "Arbitrum One")));
-
-        ContentStack.Children.Add(CreateCategory(
-            "Сервисные ноды",
-            CreateRow("Состояние сети", "Загружаем данные из реестра...")));
-        ContentStack.Children.Add(CreateCategory(
-            "Транспорт",
-            CreateSwitchRow(
-                "Обход системного VPN",
-                "Разрешить встроенному Xray подключаться к нодам напрямую, если внешний VPN мешает работе Deep.",
-                ClientSettingKeys.NetworkBypassSystemVpn,
-                false)));
-
-        _ = LoadNetworkSectionAsync();
-    }
-
-    private async Task LoadNetworkSectionAsync()
-    {
-        try
-        {
-            var nodes = await FetchRegistryNodesAsync();
-            if (!string.Equals(section, "network", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            var healthy = nodes.Count(node => node.Healthy);
-            var withTransport = nodes.Count(node => node.HasTransport);
-            ContentStack.Children.Clear();
-            ContentStack.Children.Add(CreateCategory(
-                "XPNT",
-                CreateRow("Стейкинг XPNT", "Сервисные ноды получают право работать в сети через on-chain стейкинг.", () => OpenIfUriAsync(environment.StakingPortalUrl)),
-                CreateRow("Сеть контрактов", "Arbitrum One")));
-
-            ContentStack.Children.Add(CreateCategory(
-                "Сервисные ноды",
-                CreateRow("Зарегистрировано", $"{nodes.Count} нод"),
-                CreateRow("Готовы принимать транспорт", $"{healthy} из {withTransport} нод")));
-            ContentStack.Children.Add(CreateCategory(
-                "Транспорт",
-                CreateSwitchRow(
-                    "Обход системного VPN",
-                    "Разрешить встроенному Xray подключаться к нодам напрямую, если внешний VPN мешает работе Deep.",
-                    ClientSettingKeys.NetworkBypassSystemVpn,
-                    false)));
-        }
-        catch (Exception ex)
-        {
-            if (!string.Equals(section, "network", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            ContentStack.Children.Clear();
-            ContentStack.Children.Add(CreateCategory(
-                "XPNT",
-                CreateRow("Стейкинг XPNT", "Сервисные ноды получают право работать в сети через on-chain стейкинг.", () => OpenIfUriAsync(environment.StakingPortalUrl)),
-                CreateRow("Сеть контрактов", "Arbitrum One")));
-            ContentStack.Children.Add(CreateCategory(
-                "Сервисные ноды",
-                CreateRow("Реестр временно недоступен", ex.Message)));
-            ContentStack.Children.Add(CreateCategory(
-                "Транспорт",
-                CreateSwitchRow(
-                    "Обход системного VPN",
-                    "Разрешить встроенному Xray подключаться к нодам напрямую, если внешний VPN мешает работе Deep.",
-                    ClientSettingKeys.NetworkBypassSystemVpn,
-                    false)));
+            ]);
         }
     }
 
@@ -524,21 +425,128 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
             }
         };
 
+    private void BuildTransportSection(
+        string xpointStatus,
+        string xpointDetail,
+        IReadOnlyList<PathNodeDisplay> routeNodes)
+    {
+        ContentStack.Children.Clear();
+        ContentStack.Children.Add(CreatePathIntro());
+        ContentStack.Children.Add(CreateTransportCard(
+            "XPoint Network",
+            xpointStatus,
+            xpointDetail,
+            "Многоскачковый маршрут через проверенные сервисные ноды.",
+            true));
+        ContentStack.Children.Add(CreateCategory(
+            "Маршрут XPoint Network",
+            CreatePathGraph(routeNodes)));
+        ContentStack.Children.Add(CreateCategory(
+            "Параметры XPoint Network",
+            CreateSwitchRow(
+                "Обход системного VPN",
+                "Разрешить встроенному Xray подключаться к нодам напрямую, если внешний VPN мешает работе Deep.",
+                ClientSettingKeys.NetworkBypassSystemVpn,
+                false)));
+        ContentStack.Children.Add(CreateTransportCard(
+            "Direct P2P",
+            "Не включён",
+            "Wi-Fi и Bluetooth пока не активированы в production-пути.",
+            "Deep не будет имитировать прямое соединение: транспорт появится здесь только после полной проверки радио, криптографии и физического E2E.",
+            false));
+    }
+
     private Border CreatePathIntro() =>
         new()
         {
             Background = Colors.Transparent,
             StrokeThickness = 0,
-            Padding = new Thickness(18, 18, 18, 28),
+            Padding = new Thickness(18, 14, 18, 18),
             Content = new Label
             {
-                Text = "Deep скрывает ваш IP, направляя соединения через несколько сервисных узлов XPoint Network. Вот ваш текущий путь:",
+                Text = "Deep может использовать несколько транспортов. Здесь показаны их честное состояние и фактический путь текущего соединения.",
                 FontSize = 14,
                 TextColor = ColorResource("TextSecondary", Colors.Gray),
                 HorizontalTextAlignment = TextAlignment.Center,
                 LineBreakMode = LineBreakMode.WordWrap
             }
         };
+
+    private Border CreateTransportCard(
+        string title,
+        string status,
+        string detail,
+        string description,
+        bool isAvailable)
+    {
+        var header = new Grid
+        {
+            ColumnDefinitions =
+            [
+                new ColumnDefinition { Width = GridLength.Star },
+                new ColumnDefinition { Width = GridLength.Auto }
+            ],
+            ColumnSpacing = 12
+        };
+        header.Children.Add(new Label
+        {
+            Text = title,
+            FontSize = 17,
+            FontAttributes = FontAttributes.Bold,
+            VerticalTextAlignment = TextAlignment.Center
+        });
+
+        var badge = new Border
+        {
+            Padding = new Thickness(10, 4),
+            StrokeThickness = 0,
+            Background = new SolidColorBrush(isAvailable
+                ? ColorResource("PrimaryColor", Colors.Cyan).WithAlpha(0.16f)
+                : ColorResource("TextSecondary", Colors.Gray).WithAlpha(0.12f)),
+            StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(12) },
+            Content = new Label
+            {
+                Text = status,
+                FontSize = 12,
+                FontAttributes = FontAttributes.Bold,
+                TextColor = isAvailable
+                    ? ColorResource("PrimaryColor", Colors.Cyan)
+                    : ColorResource("TextSecondary", Colors.Gray)
+            }
+        };
+        Grid.SetColumn(badge, 1);
+        header.Children.Add(badge);
+
+        return new Border
+        {
+            Background = new SolidColorBrush(ColorResource("PanelBackground", Colors.Black)),
+            Stroke = Brush.Transparent,
+            StrokeThickness = 0,
+            StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(12) },
+            Padding = new Thickness(16, 14),
+            Content = new VerticalStackLayout
+            {
+                Spacing = 7,
+                Children =
+                {
+                    header,
+                    new Label
+                    {
+                        Text = detail,
+                        FontSize = 14,
+                        LineBreakMode = LineBreakMode.WordWrap
+                    },
+                    new Label
+                    {
+                        Text = description,
+                        FontSize = 13,
+                        TextColor = ColorResource("TextSecondary", Colors.Gray),
+                        LineBreakMode = LineBreakMode.WordWrap
+                    }
+                }
+            }
+        };
+    }
 
     private Border CreatePanel(params View[] rows)
     {
@@ -949,74 +957,6 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         };
     }
 
-    private Border CreateOutlineButton(string text, Func<Task> tapped)
-    {
-        var button = new Border
-        {
-            HeightRequest = 44,
-            HorizontalOptions = LayoutOptions.Fill,
-            Margin = new Thickness(48, 8, 48, 20),
-            Background = Colors.Transparent,
-            Stroke = new SolidColorBrush(ColorResource("PrimaryColor", Colors.Cyan)),
-            StrokeThickness = 2,
-            StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(33) },
-            Content = new Label
-            {
-                Text = text,
-                FontSize = 15,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = ColorResource("PrimaryColor", Colors.Cyan),
-                HorizontalTextAlignment = TextAlignment.Center,
-                VerticalTextAlignment = TextAlignment.Center
-            }
-        };
-        var tap = new TapGestureRecognizer();
-        tap.Tapped += async (_, _) => await tapped();
-        button.GestureRecognizers.Add(tap);
-        return button;
-    }
-
-    private async Task<IReadOnlyList<RegistryRouteNode>> FetchRegistryNodesAsync()
-    {
-        if (!TryGetUri(environment.RegistryUrl, out var registryUri))
-        {
-            return [];
-        }
-
-        var nodesUri = new Uri(registryUri, "/api/nodes");
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-        await using var stream = await httpClient.GetStreamAsync(nodesUri);
-        using var document = await JsonDocument.ParseAsync(stream);
-        if (document.RootElement.ValueKind != JsonValueKind.Array)
-        {
-            return [];
-        }
-
-        var result = new List<RegistryRouteNode>();
-        foreach (var node in document.RootElement.EnumerateArray())
-        {
-            var nodeId = GetString(node, "nodeId") ?? "node";
-            var status = node.TryGetProperty("transportStatus", out var statusElement)
-                ? statusElement
-                : default;
-            var hasTransport = status.ValueKind == JsonValueKind.Object && GetBool(status, "enabled");
-            string? endpoint = null;
-            var healthy = status.ValueKind == JsonValueKind.Object &&
-                          GetBool(status, "enabled") &&
-                          GetBool(status, "running") &&
-                          !GetBool(status, "degraded") &&
-                          !GetBool(status, "mocked");
-            var updatedAt = TryGetDateTimeOffset(node, "updatedAt");
-            result.Add(new RegistryRouteNode(nodeId, endpoint, healthy, hasTransport, updatedAt));
-        }
-
-        return result
-            .OrderByDescending(node => node.Healthy)
-            .ThenByDescending(node => node.UpdatedAt)
-            .ThenBy(node => node.NodeId, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
-
     private async Task<IReadOnlyList<PathNodeDisplay>> BuildRouteNodesAsync(TransportRouteSnapshot? snapshot)
     {
         var nodes = new List<PathNodeDisplay>
@@ -1064,60 +1004,6 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                System.Net.IPAddress.TryParse(endpoint.Host, out var endpointIp)
             ? endpointIp.ToString()
             : null;
-    }
-
-    private static IReadOnlyList<PathNodeDisplay> BuildRouteNodes(IReadOnlyList<RegistryRouteNode> registryNodes)
-    {
-        var selected = registryNodes
-            .Where(node => node.HasTransport)
-            .OrderByDescending(node => node.Healthy)
-            .Take(3)
-            .ToArray();
-
-        var nodes = new List<PathNodeDisplay>
-        {
-            new("Вы", null, true)
-        };
-
-        if (selected.Length == 0)
-        {
-            nodes.Add(new PathNodeDisplay("Маршрут строится", "В реестре пока нет доступных зарегистрированных сервисных нод.", false));
-        }
-        else
-        {
-            for (var index = 0; index < selected.Length; index++)
-            {
-                var node = selected[index];
-                var role = index == 0 ? "Узел входа" : "Сервисный узел";
-                nodes.Add(new PathNodeDisplay(role, RouteNodeLocation(node), node.Healthy));
-            }
-        }
-
-        nodes.Add(new PathNodeDisplay("Назначение", null, true));
-        return nodes;
-    }
-
-    private static string RouteNodeLocation(RegistryRouteNode node)
-    {
-        if (string.IsNullOrWhiteSpace(node.Endpoint))
-        {
-            return "Сервисная нода";
-        }
-
-        if (node.Endpoint.Contains("://192.168.", StringComparison.Ordinal) ||
-            node.Endpoint.Contains("://10.", StringComparison.Ordinal) ||
-            node.Endpoint.Contains("://172.16.", StringComparison.Ordinal))
-        {
-            return "Локальная сеть";
-        }
-
-        var endpoint = node.Endpoint;
-        var protocolSeparator = endpoint.IndexOf("://", StringComparison.Ordinal);
-        var hostStart = protocolSeparator >= 0 ? protocolSeparator + 3 : 0;
-        var hostEnd = endpoint.IndexOf(':', hostStart);
-        return hostEnd > hostStart
-            ? endpoint[hostStart..hostEnd]
-            : endpoint[hostStart..];
     }
 
     private async Task OnFastModeToggledAsync(bool enabled)
@@ -1331,51 +1217,6 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         }
     }
 
-    private Task OpenIfUriAsync(string? value) =>
-        TryGetUri(value, out var uri)
-            ? OpenAsync(uri)
-            : CopyAsync(value ?? string.Empty);
-
-    private static string FormatEndpoint(JsonElement transport, string fallback)
-    {
-        var host = GetString(transport, "host");
-        var port = GetInt(transport, "port");
-        if (string.IsNullOrWhiteSpace(host) || port <= 0)
-        {
-            return fallback;
-        }
-
-        var protocol = GetString(transport, "protocol") ?? "transport";
-        return $"{protocol}://{host}:{port}";
-    }
-
-    private static string? GetString(JsonElement element, string name) =>
-        element.ValueKind == JsonValueKind.Object &&
-        element.TryGetProperty(name, out var property) &&
-        property.ValueKind == JsonValueKind.String
-            ? property.GetString()
-            : null;
-
-    private static bool GetBool(JsonElement element, string name) =>
-        element.ValueKind == JsonValueKind.Object &&
-        element.TryGetProperty(name, out var property) &&
-        property.ValueKind == JsonValueKind.True;
-
-    private static int GetInt(JsonElement element, string name) =>
-        element.ValueKind == JsonValueKind.Object &&
-        element.TryGetProperty(name, out var property) &&
-        property.TryGetInt32(out var value)
-            ? value
-            : 0;
-
-    private static DateTimeOffset? TryGetDateTimeOffset(JsonElement element, string name) =>
-        element.ValueKind == JsonValueKind.Object &&
-        element.TryGetProperty(name, out var property) &&
-        property.ValueKind == JsonValueKind.String &&
-        property.TryGetDateTimeOffset(out var value)
-            ? value
-            : null;
-
     private static string ShortId(string value)
     {
         if (value.Length <= 12)
@@ -1401,5 +1242,4 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
 
     private sealed record PathNodeDisplay(string Title, string? Subtitle, bool IsHealthy);
 
-    private sealed record RegistryRouteNode(string NodeId, string? Endpoint, bool Healthy, bool HasTransport, DateTimeOffset? UpdatedAt);
 }

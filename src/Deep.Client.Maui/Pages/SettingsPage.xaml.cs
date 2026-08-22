@@ -169,19 +169,9 @@ public partial class SettingsPage : ContentPage
         return value;
     }
 
-    private async void OnDonateClicked(object? sender, EventArgs e)
-    {
-        await NavigateToSettingsSectionAsync("donate");
-    }
-
     private async void OnPathClicked(object? sender, EventArgs e)
     {
         await NavigateToSettingsSectionAsync("path");
-    }
-
-    private async void OnSessionNetworkClicked(object? sender, EventArgs e)
-    {
-        await NavigateToSettingsSectionAsync("network");
     }
 
     private async void OnOfflineUpdateClicked(object? sender, EventArgs e)
