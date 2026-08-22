@@ -217,7 +217,6 @@ public sealed class StrictCrossPlatformUiTests
             android.WaitForText(options.App("Chat.MessageBody"), marker, TimeSpan.FromSeconds(60));
         }
 
-        android.ForceStop();
         android.ColdStart();
         android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
         android.Tap(options.App("Conversations.ConversationRow"));
@@ -822,7 +821,14 @@ internal sealed class AndroidUiautomatorClient
             throw new InvalidOperationException("Installed E2E package metadata or exact APK identity does not match the apksigner-verified APK.");
     }
     internal void ClearE2ePackageData() => RequireSuccess(Adb("shell", "pm", "clear", StrictCrossPlatformContracts.AndroidPackage));
-    internal void ColdStart() => RequireSuccess(Adb("shell", "monkey", "-p", StrictCrossPlatformContracts.AndroidPackage, "1"));
+    internal void ColdStart()
+    {
+        // Android can restore the last MAUI navigation stack when monkey targets an
+        // already-running task. A physical phase must begin at the app root, while
+        // preserving all production data, so close the process before every launch.
+        ForceStop();
+        RequireSuccess(Adb("shell", "monkey", "-p", StrictCrossPlatformContracts.AndroidPackage, "1"));
+    }
     internal void ForceStop() => RequireSuccess(Adb("shell", "am", "force-stop", StrictCrossPlatformContracts.AndroidPackage));
     internal void PushFixture(string source, string marker) { var target = "/sdcard/Download/" + marker; RequireSuccess(Adb("push", source, target)); }
     internal void DeletePushedFixture(string marker) => RequireSuccess(Adb("shell", "rm", "-f", "/sdcard/Download/" + marker));
