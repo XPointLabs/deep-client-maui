@@ -309,6 +309,9 @@ public static class MauiProgram
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(
                     element,
                     view.AutomationId);
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(
+                    element,
+                    Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Content);
             }
         }
 

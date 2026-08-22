@@ -258,6 +258,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("LayoutHandler.Mapper.AppendToMapping", mauiProgram,
             StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.SetAccessibilityView", mauiProgram,
+            StringComparison.Ordinal);
+        Assert.Contains("AccessibilityView.Content", mauiProgram,
+            StringComparison.Ordinal);
     }
 
     [Fact]
