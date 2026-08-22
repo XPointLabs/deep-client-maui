@@ -41,6 +41,11 @@ internal static class WindowsMailboxAccessControl
         // created below them therefore retained an empty DACL after their first
         // handle closed. Repair only the closed set of app-owned root files; all
         // future SQLite sidecars and diagnostics inherit the exact root policy.
+        var rootFiles = Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly)
+            .ToDictionary(
+                static candidate => Path.GetFileName(candidate),
+                static candidate => candidate,
+                StringComparer.OrdinalIgnoreCase);
         foreach (var name in new[]
                  {
                      "client-state.db",
@@ -50,8 +55,7 @@ internal static class WindowsMailboxAccessControl
                      "crash.log.1"
                  })
         {
-            var candidate = Path.Combine(path, name);
-            if (File.Exists(candidate))
+            if (rootFiles.TryGetValue(name, out var candidate))
             {
                 ApplyExact(
                     candidate,
