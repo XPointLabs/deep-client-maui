@@ -56,7 +56,7 @@ internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
                     ? material.PeerSelector
                     : null,
             HttpClientMailboxBinaryIngress.CreatePhysicalDevelopment(
-                material.Coordinator, material.DecodePolicies),
+                material.PhysicalCoordinator, material.DecodePolicies),
             options.TimeProvider);
 #else
         throw new InvalidOperationException(
