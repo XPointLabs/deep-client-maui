@@ -162,6 +162,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             "tests", "Deep.Client.Maui.UiTests", "WindowsUiSmokeTests.cs"));
         var attachmentOpen = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Services", "AttachmentOpenService.cs"));
+        var mauiProgram = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "MauiProgram.cs"));
 
         Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
@@ -253,6 +255,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("TryGetItemAsync(folderName)", attachmentOpen,
             StringComparison.Ordinal);
         Assert.DoesNotContain("CreationCollisionOption.OpenIfExists", attachmentOpen,
+            StringComparison.Ordinal);
+        Assert.Contains("LayoutHandler.Mapper.AppendToMapping", mauiProgram,
             StringComparison.Ordinal);
     }
 

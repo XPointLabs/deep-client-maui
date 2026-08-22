@@ -315,6 +315,9 @@ public static class MauiProgram
         ViewHandler.ViewMapper.AppendToMapping(
             "DeepAutomationId",
             ApplyAutomationId);
+        LayoutHandler.Mapper.AppendToMapping(
+            "DeepAutomationId",
+            ApplyAutomationId);
     }
 #endif
 
