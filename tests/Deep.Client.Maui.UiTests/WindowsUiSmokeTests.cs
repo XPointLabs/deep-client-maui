@@ -147,6 +147,11 @@ public sealed class WindowsUiSmokeTests
                 WorkingDirectory = Path.GetDirectoryName(appPath)
                     ?? throw new InvalidOperationException("The MAUI executable has no parent directory.")
             };
+            // CreateStrict is the only supported Windows physical UI lane. The
+            // application deliberately ignores DEEP_E2E_APPDATA_ROOT unless this
+            // guard is present, so pass it to the spawned process rather than
+            // relying on ambient test-host state.
+            startInfo.Environment[StrictLaneEnvironment.WindowsUiEnabledKey] = "1";
             startInfo.Environment[BootstrapKey] = RequireSetting(BootstrapKey);
             startInfo.Environment[AppDataDirectoryKey] = appDataDirectory;
 

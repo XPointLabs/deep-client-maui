@@ -339,6 +339,7 @@ try {
 
     if ($Execute) {
         $env:DEEP_STRICT_CROSS_PLATFORM_UI = '1'
+        $env:DEEP_STRICT_WINDOWS_UI = '1'
         $env:DEEP_MAU2_E2E_PHASE = $Phase
         $env:DEEP_MAU2_E2E_RUN_STATE = $runStatePath
         $env:DEEP_MAU2_E2E_RUNS_ROOT = (Join-Path $bootstrap 'e2e-runs')

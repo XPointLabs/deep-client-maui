@@ -150,10 +150,18 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             "eng", "Invoke-PhysicalMau2CrossPlatform.ps1"));
         var ui = File.ReadAllText(WorkspacePath(
             "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+        var windowsUi = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "WindowsUiSmokeTests.cs"));
 
         Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
+        Assert.Contains("$env:DEEP_STRICT_WINDOWS_UI = '1'", runner,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "startInfo.Environment[StrictLaneEnvironment.WindowsUiEnabledKey] = \"1\";",
+            windowsUi,
+            StringComparison.Ordinal);
         Assert.Contains("'Startup.Status'", runner, StringComparison.Ordinal);
         Assert.Contains("e2e-runs", runner, StringComparison.Ordinal);
         Assert.Contains("Initialize-ProtectedRunsRoot $e2eRunsRoot", runner,
