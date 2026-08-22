@@ -86,7 +86,7 @@ function Resolve-PolicyPinnedFile(
 
 function New-CanonicalAndroidSelectorsJson {
     $roles = @(
-        'Welcome.DisplayName', 'Welcome.Create', 'Conversations.Root',
+        'Startup.Status', 'Welcome.DisplayName', 'Welcome.Create', 'Conversations.Root',
         'Conversations.ProfileSettings', 'Conversations.NewConversationTop',
         'Conversations.ConversationRow', 'Settings.SessionId', 'Settings.Back',
         'StartConversation.NewMessage', 'NewConversation.SessionId',

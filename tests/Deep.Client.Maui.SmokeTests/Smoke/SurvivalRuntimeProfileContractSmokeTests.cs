@@ -154,6 +154,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
+        Assert.Contains("'Startup.Status'", runner, StringComparison.Ordinal);
         Assert.Contains("e2e-runs", runner, StringComparison.Ordinal);
         Assert.Contains("Initialize-ProtectedRunsRoot $e2eRunsRoot", runner,
             StringComparison.Ordinal);
