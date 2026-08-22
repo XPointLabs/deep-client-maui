@@ -55,15 +55,9 @@ public sealed class StrictCrossPlatformUiTests
         var androidSurface = android.WaitForExactlyOneResource(
             [
                 options.App("Welcome.DisplayName"),
-                options.App("Conversations.Root"),
-                options.App("Startup.Status")
+                options.App("Conversations.Root")
             ],
             TimeSpan.FromSeconds(45));
-        if (string.Equals(androidSurface, options.App("Startup.Status"), StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "Android requires an explicit local-state reset before identity provisioning; this non-destructive phase will not approve it.");
-        }
         var androidCreated = string.Equals(
             androidSurface, options.App("Welcome.DisplayName"), StringComparison.Ordinal);
         var androidIdentity = androidCreated
@@ -74,13 +68,8 @@ public sealed class StrictCrossPlatformUiTests
             .CreateStrictWithAppData(options.WindowsAppDataRoot);
         var windowsSurface = WaitForExactlyOneWindowsSurface(
             windows,
-            ["Welcome.DisplayName", "Conversations.NewConversation", "Startup.Status"],
+            ["Welcome.DisplayName", "Conversations.NewConversation"],
             TimeSpan.FromSeconds(45));
-        if (string.Equals(windowsSurface, "Startup.Status", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "Windows requires an explicit local-state reset before identity provisioning; this non-destructive phase will not approve it.");
-        }
         var windowsCreated = string.Equals(
             windowsSurface, "Welcome.DisplayName", StringComparison.Ordinal);
         var windowsIdentity = windowsCreated
