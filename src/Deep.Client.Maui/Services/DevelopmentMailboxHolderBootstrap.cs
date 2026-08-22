@@ -22,14 +22,14 @@ internal static class DevelopmentMailboxHolderBootstrap
         var rootAlreadyExisted = Directory.Exists(root);
         Directory.CreateDirectory(root);
         RejectReparse(root);
-        if (OperatingSystem.IsWindows())
+        if (rootAlreadyExisted)
         {
-            if (rootAlreadyExisted) WindowsMailboxAccessControl.ValidateDirectory(root);
-            else WindowsMailboxAccessControl.ProtectNewDirectory(root);
+            ValidatePrivateDirectory(root);
         }
         else
-            File.SetUnixFileMode(root, UnixFileMode.UserRead |
-                UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        {
+            ProtectNewPrivateDirectory(root);
+        }
 
         var platformName = platform.ToString().ToLowerInvariant();
         var destination = Path.Combine(root, platformName + ".holder.v1.json");
@@ -48,7 +48,7 @@ internal static class DevelopmentMailboxHolderBootstrap
             if (File.Exists(destination))
             {
                 RejectReparse(destination);
-                WindowsMailboxAccessControl.ValidateFile(destination);
+                ValidatePrivateFile(destination);
                 var info = new FileInfo(destination);
                 if (info.Length == payload.Length)
                 {
@@ -70,18 +70,73 @@ internal static class DevelopmentMailboxHolderBootstrap
                 stream.Write(payload);
                 stream.Flush(flushToDisk: true);
             }
-            if (!OperatingSystem.IsWindows())
-                File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            else
-                WindowsMailboxAccessControl.ProtectNewFile(temporary);
+            ProtectNewPrivateFile(temporary);
             File.Move(temporary, destination, overwrite: true);
             RejectReparse(destination);
-            WindowsMailboxAccessControl.ValidateFile(destination);
+            ValidatePrivateFile(destination);
         }
         finally
         {
             CryptographicOperations.ZeroMemory(payload);
             if (File.Exists(temporary)) File.Delete(temporary);
+        }
+    }
+
+    private static void ProtectNewPrivateDirectory(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsMailboxAccessControl.ProtectNewDirectory(path);
+            return;
+        }
+
+        File.SetUnixFileMode(path, UnixFileMode.UserRead |
+            UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        ValidatePrivateDirectory(path);
+    }
+
+    private static void ProtectNewPrivateFile(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsMailboxAccessControl.ProtectNewFile(path);
+            return;
+        }
+
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        ValidatePrivateFile(path);
+    }
+
+    private static void ValidatePrivateDirectory(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsMailboxAccessControl.ValidateDirectory(path);
+            return;
+        }
+
+        RequireUnixMode(path, UnixFileMode.UserRead |
+            UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    private static void ValidatePrivateFile(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsMailboxAccessControl.ValidateFile(path);
+            return;
+        }
+
+        RequireUnixMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+
+    private static void RequireUnixMode(string path, UnixFileMode expected)
+    {
+        var actual = File.GetUnixFileMode(path);
+        if (actual != expected)
+        {
+            throw new InvalidDataException(
+                "Mailbox holder bootstrap permissions are not canonical.");
         }
     }
 

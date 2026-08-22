@@ -377,6 +377,15 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("sessionId", bootstrap, StringComparison.Ordinal);
         Assert.DoesNotContain("RecoveryPhrase", bootstrap, StringComparison.Ordinal);
         Assert.DoesNotContain("PrivateKey", bootstrap, StringComparison.Ordinal);
+        var platformHelpers = bootstrap.IndexOf(
+            "private static void ProtectNewPrivateDirectory", StringComparison.Ordinal);
+        Assert.True(platformHelpers > 0);
+        Assert.DoesNotContain(
+            "WindowsMailboxAccessControl",
+            bootstrap[..platformHelpers],
+            StringComparison.Ordinal);
+        Assert.Contains("File.GetUnixFileMode(path)", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("actual != expected", bootstrap, StringComparison.Ordinal);
     }
 
     [Fact]
