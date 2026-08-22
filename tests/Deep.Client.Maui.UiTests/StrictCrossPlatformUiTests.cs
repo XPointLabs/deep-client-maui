@@ -848,13 +848,24 @@ internal sealed class AndroidUiautomatorClient
             throw new InvalidOperationException("Android provisioning resource IDs must be nonempty and distinct.");
         }
         var until = DateTime.UtcNow + timeout;
+        Exception? last = null;
         while (DateTime.UtcNow < until)
         {
-            var hierarchy = Dump();
-            var present = resourceIds
-                .Where(resourceId => StrictCrossPlatformContracts.FindOptionalResourceId(
-                    hierarchy, resourceId) is not null)
-                .ToArray();
+            string[] present;
+            try
+            {
+                var hierarchy = Dump();
+                present = resourceIds
+                    .Where(resourceId => StrictCrossPlatformContracts.FindOptionalResourceId(
+                        hierarchy, resourceId) is not null)
+                    .ToArray();
+            }
+            catch (Exception exception)
+            {
+                last = exception;
+                Thread.Sleep(250);
+                continue;
+            }
             if (present.Length == 1) return present[0];
             if (present.Length > 1)
             {
@@ -864,7 +875,7 @@ internal sealed class AndroidUiautomatorClient
             Thread.Sleep(250);
         }
         throw new InvalidOperationException(
-            "Android did not expose one closed identity-provisioning surface.");
+            "Android did not expose one closed identity-provisioning surface.", last);
     }
     internal void Tap(string resourceId) { var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void TapExactResourceIdWithExactText(string resourceId, string text) { var node = WaitByText(resourceId, text, TimeSpan.FromSeconds(15)); Assert.Equal(text, node.Text); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
