@@ -265,7 +265,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("AccessibilityView.Content", mauiProgram,
             StringComparison.Ordinal);
         Assert.Contains(
-            "AutomationId=\"StartConversation.NewMessage\" SemanticProperties.Description=\"Новое сообщение\"",
+            "<Button Grid.ColumnSpan=\"2\" AutomationId=\"StartConversation.NewMessage\" SemanticProperties.Description=\"Новое сообщение\"",
             startConversation,
             StringComparison.Ordinal);
     }
