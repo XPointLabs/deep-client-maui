@@ -160,6 +160,10 @@ public sealed class ChatMessageItem : INotifyPropertyChanged
 
     public string AttachmentSubtitle => attachmentSubtitle;
 
+    public string ImageMetadataDescription => PrimaryImageAttachment is { } image
+        ? $"{image.FileName}; {image.ContentType}; {image.SizeBytes}; {image.Width ?? 0}x{image.Height ?? 0}"
+        : string.Empty;
+
     public string VoiceDurationLabel => voiceDurationLabel;
 
     public string ImageCountLabel => imageCountLabel;

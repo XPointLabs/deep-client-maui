@@ -199,7 +199,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         const string openConversation =
             "android.Tap(options.App(\"Conversations.ConversationRow\"));";
 
-        Assert.Equal(2, physical.Split(openConversation, StringSplitOptions.None).Length - 1);
+        Assert.Equal(3, physical.Split(openConversation, StringSplitOptions.None).Length - 1);
         Assert.True(
             physical.IndexOf(openConversation, StringComparison.Ordinal) <
             physical.IndexOf(
@@ -252,14 +252,14 @@ public sealed class E2eAutomationSelectorContractSmokeTests
 
         Assert.Contains("android.Hold(options.App(\"Chat.Voice\")", physical,
             StringComparison.Ordinal);
-        Assert.Contains("windows.WaitForLastAutomationIdContainingDescendant(", physical,
+        Assert.Contains("windows.WaitForOneNewAutomationId(", physical,
             StringComparison.Ordinal);
         Assert.Contains("options.App(\"Chat.MessageBubble\")", physical,
             StringComparison.Ordinal);
-        Assert.Contains("PhysicalE2E.VoicePlaybackMarker", physical,
+        Assert.Contains("PhysicalE2E.VoicePlaybackState", physical,
             StringComparison.Ordinal);
         Assert.Contains("snapshot.IsPlaying", desktop, StringComparison.Ordinal);
-        Assert.Contains("PhysicalE2E.VoicePlaybackMarker", desktop,
+        Assert.Contains("PhysicalE2E.VoicePlaybackState", desktop,
             StringComparison.Ordinal);
     }
 
@@ -362,10 +362,15 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         AssertSelectorExists(pages, "DesktopWorkspace.ConversationRow");
         AssertSelectorExists(pages, "Chat.StagedAttachmentFilename");
         AssertSelectorExists(pages, "Chat.MessageBubble");
+        AssertSelectorExists(pages, "Chat.ImagePreview");
+        AssertSelectorExists(pages, "Chat.ImageMetadata");
+        AssertSelectorExists(pages, "Chat.AttachmentMetadata");
         AssertSelectorExists(pages, "GroupChat.StagedAttachmentFilename");
         AssertSelectorExists(pages, "DesktopWorkspace.DirectMessageBubble");
         AssertSelectorExists(pages, "DesktopWorkspace.DirectMessageBody");
         AssertSelectorExists(pages, "DesktopWorkspace.DirectDeliveryStatus");
+        AssertSelectorExists(pages, "DesktopWorkspace.DirectAttachmentMetadata");
+        AssertSelectorExists(pages, "DesktopWorkspace.DirectImagePreview");
         AssertSelectorExists(pages, "DesktopWorkspace.DirectRetry");
         AssertSelectorExists(pages, "DesktopWorkspace.GroupMessageBubble");
         AssertSelectorExists(pages, "DesktopWorkspace.GroupMessageBody");

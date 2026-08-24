@@ -107,6 +107,79 @@ internal static class StrictCrossPlatformContracts
         return AndroidNode.From(last);
     }
 
+    internal static AndroidNode FindExactlyOneCorrelatedDescendant(
+        string xml,
+        string ancestorResourceId,
+        string correlationResourceId,
+        string correlationText,
+        string targetResourceId)
+    {
+        ValidateResourceId(ancestorResourceId, "ancestor resource-id");
+        ValidateResourceId(correlationResourceId, "correlation resource-id");
+        ValidateResourceId(targetResourceId, "target resource-id");
+        var document = XDocument.Parse(xml, LoadOptions.None);
+        var ancestors = document.Descendants("node")
+            .Where(node => string.Equals(
+                (string?)node.Attribute("resource-id"), ancestorResourceId,
+                StringComparison.Ordinal))
+            .Where(node => node.Descendants("node").Any(descendant =>
+                string.Equals((string?)descendant.Attribute("resource-id"),
+                    correlationResourceId, StringComparison.Ordinal)
+                && string.Equals(
+                    ReadAccessibleText(descendant), correlationText,
+                    StringComparison.Ordinal)))
+            .ToArray();
+        if (ancestors.Length != 1)
+        {
+            throw new InvalidOperationException(
+                "Android correlation did not identify exactly one message ancestor.");
+        }
+        var targets = ancestors[0].Descendants("node")
+            .Where(node => string.Equals(
+                (string?)node.Attribute("resource-id"), targetResourceId,
+                StringComparison.Ordinal))
+            .Select(AndroidNode.From)
+            .ToArray();
+        return targets.Length == 1
+            ? targets[0]
+            : throw new InvalidOperationException(
+                "Correlated Android message did not contain exactly one target descendant.");
+    }
+
+    internal static AndroidNode FindExactlyOneResourceIdContainingDescendantText(
+        string xml,
+        string ancestorResourceId,
+        string descendantResourceId,
+        string descendantText)
+    {
+        ValidateResourceId(ancestorResourceId, "ancestor resource-id");
+        ValidateResourceId(descendantResourceId, "descendant resource-id");
+        var document = XDocument.Parse(xml, LoadOptions.None);
+        var matches = document.Descendants("node")
+            .Where(node => string.Equals(
+                (string?)node.Attribute("resource-id"), ancestorResourceId,
+                StringComparison.Ordinal))
+            .Where(node => node.Descendants("node").Any(descendant =>
+                string.Equals((string?)descendant.Attribute("resource-id"),
+                    descendantResourceId, StringComparison.Ordinal)
+                && string.Equals(ReadAccessibleText(descendant), descendantText,
+                    StringComparison.Ordinal)))
+            .Select(AndroidNode.From)
+            .ToArray();
+        return matches.Length == 1
+            ? matches[0]
+            : throw new InvalidOperationException(
+                "Android descendant text did not correlate exactly one ancestor.");
+    }
+
+    private static string ReadAccessibleText(XElement node)
+    {
+        var text = (string?)node.Attribute("text") ?? string.Empty;
+        return string.IsNullOrWhiteSpace(text)
+            ? (string?)node.Attribute("content-desc") ?? string.Empty
+            : text;
+    }
+
     internal static AndroidNode? FindOptionalResourceId(string xml, string resourceId)
     {
         ValidateResourceId(resourceId, "resource-id");

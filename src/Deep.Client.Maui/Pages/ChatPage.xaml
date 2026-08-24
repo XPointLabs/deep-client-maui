@@ -103,7 +103,7 @@
                         </Border>
                         <Border AutomationId="Chat.AttachmentCard" Padding="0" StrokeThickness="0" Background="{StaticResource PanelBackgroundAlt}" StrokeShape="RoundRectangle 14">
                             <Grid WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}">
-                                <Image Source="{Binding ImagePreviewPath}" Aspect="AspectFill" IsVisible="{Binding HasImagePreview}" WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}" />
+                                <Image AutomationId="Chat.ImagePreview" Source="{Binding ImagePreviewPath}" Aspect="AspectFill" IsVisible="{Binding HasImagePreview}" WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}" SemanticProperties.Description="{Binding ImageMetadataDescription}" />
                                 <Grid IsVisible="{Binding IsImagePreviewLoading}" BackgroundColor="{StaticResource PanelBackgroundAlt}">
                                     <ActivityIndicator IsRunning="{Binding IsImagePreviewLoading}" Color="{StaticResource PrimaryColor}" WidthRequest="28" HeightRequest="28" HorizontalOptions="Center" VerticalOptions="Center" />
                                 </Grid>
@@ -118,6 +118,7 @@
                                 <TapGestureRecognizer Tapped="OnAttachmentTapped" />
                             </Border.GestureRecognizers>
                         </Border>
+                        <Label AutomationId="Chat.ImageMetadata" Text="{Binding ImageMetadataDescription}" IsVisible="{Binding HasImagePreview}" Margin="5,0" FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
                         <Label AutomationId="Chat.MessageBody" Text="{Binding Body}" IsVisible="{Binding HasVisibleBody}" Margin="5,0" FontSize="15" LineBreakMode="WordWrap" />
                         <FlexLayout Margin="5,0" Direction="Row" Wrap="Wrap" AlignItems="Center" IsVisible="{Binding HasReactions}" BindableLayout.ItemsSource="{Binding ReactionChips}">
                             <BindableLayout.ItemTemplate>
@@ -180,7 +181,7 @@
                     <VerticalStackLayout Spacing="4">
                         <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}"><VerticalStackLayout Spacing="2"><Label Text="Ответ" FontSize="10" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" /><Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="2" /></VerticalStackLayout></Border>
                         <Border AutomationId="Chat.AttachmentCard" Style="{StaticResource AttachmentCard}">
-                            <Grid ColumnDefinitions="42,*,Auto" ColumnSpacing="9"><Border WidthRequest="38" HeightRequest="38" Background="{StaticResource PrimaryColorMuted}" StrokeThickness="0" StrokeShape="RoundRectangle 19"><Path Data="M8,5 H19 L24,10 V27 H8 Z M19,5 V10 H24 M11,18 H21 M11,22 H18" Stroke="White" StrokeThickness="1.8" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" /></Border><VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center"><Label AutomationId="Chat.AttachmentFilename" Text="{Binding AttachmentTitle}" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" /><Label Text="{Binding AttachmentSubtitle}" FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" /></VerticalStackLayout><Path Grid.Column="2" Data="M9,5 L16,12 L9,19" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" /></Grid>
+                            <Grid ColumnDefinitions="42,*,Auto" ColumnSpacing="9"><Border WidthRequest="38" HeightRequest="38" Background="{StaticResource PrimaryColorMuted}" StrokeThickness="0" StrokeShape="RoundRectangle 19"><Path Data="M8,5 H19 L24,10 V27 H8 Z M19,5 V10 H24 M11,18 H21 M11,22 H18" Stroke="White" StrokeThickness="1.8" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" /></Border><VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center"><Label AutomationId="Chat.AttachmentFilename" Text="{Binding AttachmentTitle}" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" /><Label AutomationId="Chat.AttachmentMetadata" Text="{Binding AttachmentSubtitle}" FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" /></VerticalStackLayout><Path Grid.Column="2" Data="M9,5 L16,12 L9,19" Stroke="{StaticResource TextTertiary}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" /></Grid>
                             <Border.Behaviors><controls:MessageContextGestureBehavior Invoked="OnMessageContextRequested" /></Border.Behaviors>
                             <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnAttachmentTapped" /></Border.GestureRecognizers>
                         </Border>
@@ -370,7 +371,7 @@
                     <BoxView Style="{StaticResource TelegramSheetHandle}" />
                     <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
                         <VerticalStackLayout Spacing="7" HorizontalOptions="Center">
-                            <Border Style="{StaticResource AttachSheetIcon}">
+                            <Border AutomationId="Chat.PickPhoto" Style="{StaticResource AttachSheetIcon}">
                                 <Path Data="M5,7 H23 V21 H5 Z M8,18 L12,14 L15,17 L17,15 L22,20 M10,10 A2,2 0 1 0 10,14 A2,2 0 1 0 10,10" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="26" HeightRequest="26" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                                 <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnPickPhotoClicked" /></Border.GestureRecognizers>
                             </Border>

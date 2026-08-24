@@ -1,15 +1,13 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'VoiceMessage', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')]
+    [ValidateSet('ProvisionIdentity', 'Attach', 'PayloadMatrix', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')]
     [string]$Phase,
     [string]$AndroidSerial = '192.168.1.45:43337',
     [string]$MailboxBootstrapRoot = 'C:\Work\DeepSession\secrets\mailbox-bootstrap',
     [string]$MrXPublicKeySha256 = $env:DEEP_MR_X_PUBLIC_KEY_SHA256,
     [string]$AndroidPickerFileId = 'android:id/title',
     [string]$AndroidPickerConfirmId,
-    [string]$SupportedChaosEvidence = $env:DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE,
-    [string]$SupportedChaosProvider = $env:DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER,
     [switch]$Execute
 )
 
@@ -24,12 +22,6 @@ $devOpsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot '..\deep-devops'))
 $androidPackage = 'network.xpoint.deep.e2e'
 $productionPackage = 'network.xpoint.deep'
 $policyPath = Join-Path $repoRoot '.secrets\android-lab\approved-policy.json'
-$restartResendPhase = $Phase -cin @('ManualResendAfterRestart', 'AutomaticRetryAfterRestart')
-if ($restartResendPhase -and
-    ($SupportedChaosProvider -cne 'deep-devops-survival-chaos-v1' -or
-     [string]::IsNullOrWhiteSpace($SupportedChaosEvidence))) {
-    throw 'Restart resend phases require explicit evidence from the supported Deep DevOps chaos provider.'
-}
 
 function Test-AbsoluteWindowsPath([string]$Path) {
     return -not [string]::IsNullOrWhiteSpace($Path) -and
@@ -92,8 +84,12 @@ function New-CanonicalAndroidSelectorsJson {
         'StartConversation.NewMessage', 'NewConversation.SessionId',
         'NewConversation.DisplayName', 'NewConversation.Start',
         'NewConversation.Error', 'NewConversation.Back', 'Chat.Back', 'Chat.Draft',
-        'Chat.Send', 'Chat.MessageBody', 'Chat.MessageBubble', 'Chat.Attach', 'Chat.PickFile',
-        'Chat.StagedAttachmentFilename', 'Chat.Voice', 'Chat.VoicePlayButton',
+        'Chat.Send', 'Chat.MessageBody', 'Chat.MessageBubble', 'Chat.DeliveryStatus',
+        'Chat.Attach', 'Chat.PickFile', 'Chat.PickPhoto', 'Chat.StagedAttachmentFilename',
+        'Chat.AttachmentFilename', 'Chat.AttachmentMetadata', 'Chat.AttachmentOpen',
+        'Chat.AttachmentSave', 'Chat.MessageAttachmentOpen', 'Chat.MessageAttachmentSave',
+        'Chat.ImagePreview', 'Chat.ImageMetadata',
+        'Chat.Voice', 'Chat.VoicePlayButton', 'PhysicalE2E.VoicePlaybackState',
         'Call.Root', 'Call.Status', 'Call.MediaState', 'Call.Microphone',
         'Call.MicrophoneState', 'Call.Hangup')
     $selectors = [ordered]@{}
@@ -256,12 +252,12 @@ function Set-ProtectedRunTree([string]$Path) {
 
 function Assert-SanitizedState([object]$State) {
     $json = $State | ConvertTo-Json -Depth 6 -Compress
-    # VoiceMessage is a closed phase identifier, not user/message material. Remove only that
-    # exact phase property from the broad content-leak heuristic; every other occurrence of
-    # "message" remains forbidden.
+    # PayloadMatrix is a closed phase identifier, not user material. Remove only that
+    # exact phase property from the broad content-leak heuristic; every other occurrence
+    # of "payload" remains forbidden.
     $inspectionJson = $json -creplace `
-        [regex]::Escape('"phase":"VoiceMessage"'), `
-        '"phase":"VoicePhase"'
+        [regex]::Escape('"phase":"PayloadMatrix"'), `
+        '"phase":"MatrixPhase"'
     foreach ($forbidden in @('sessionId', 'holder', 'credential', 'capability', 'privateKey', 'seed', 'payload', 'message')) {
         if ($inspectionJson -match [regex]::Escape($forbidden)) { throw 'Run state attempted to contain secret or message material.' }
     }
@@ -348,16 +344,18 @@ Set-ProtectedRunTree $runRoot
 $runStatePath = Join-Path $runRoot 'run-state.json'
 $artifacts = Join-Path $runRoot 'artifacts'
 [IO.Directory]::CreateDirectory($artifacts) | Out-Null
-$attachmentFixture = Join-Path $runRoot 'attachment-fixture.bin'
-$fixtureBytes = [byte[]]::new(4096)
-$random = [Security.Cryptography.RandomNumberGenerator]::Create()
-try {
-    $random.GetBytes($fixtureBytes)
-    [IO.File]::WriteAllBytes($attachmentFixture, $fixtureBytes)
-} finally {
-    $random.Dispose()
-    [Array]::Clear($fixtureBytes, 0, $fixtureBytes.Length)
-}
+$genericFixture = Join-Path $runRoot "payload-$runId-generic.bin"
+$documentFixture = Join-Path $runRoot "payload-$runId-document.pdf"
+$imageFixture = Join-Path $runRoot "payload-$runId-image.png"
+[IO.File]::WriteAllBytes(
+    $genericFixture,
+    [Text.UTF8Encoding]::new($false).GetBytes("deep-payload-generic-v1`n0123456789abcdef`n"))
+[IO.File]::WriteAllBytes(
+    $documentFixture,
+    [Text.ASCIIEncoding]::new().GetBytes("%PDF-1.4`n% Deep deterministic physical UAT document v1`n%%EOF`n"))
+[IO.File]::WriteAllBytes(
+    $imageFixture,
+    [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='))
 Set-ProtectedRunTree $runRoot
 
 $productionBefore = Get-PackageSnapshot $productionPackage
@@ -404,7 +402,9 @@ try {
         $env:DEEP_E2E_ANDROID_APK = $approvedApk
         $env:DEEP_E2E_AAPT = $approvedAapt
         $env:DEEP_E2E_APKSIGNER = $approvedApksigner
-        $env:DEEP_E2E_ATTACHMENT_FIXTURE = $attachmentFixture
+        $env:DEEP_E2E_GENERIC_FIXTURE = $genericFixture
+        $env:DEEP_E2E_DOCUMENT_FIXTURE = $documentFixture
+        $env:DEEP_E2E_IMAGE_FIXTURE = $imageFixture
         $env:DEEP_E2E_ANDROID_POLICY = $policy
         $env:DEEP_E2E_REPOSITORY_ROOT = $repoRoot
         $env:DEEP_MR_X_PUBLIC_KEY_SHA256 = $MrXPublicKeySha256
@@ -418,10 +418,6 @@ try {
         $env:DEEP_RELEASE_INVOCATION_ID = [Guid]::NewGuid().ToString('N')
         $env:DEEP_TRANSPORT_PROTOCOL = 'authenticated-mau2'
         $env:DEEP_TRANSPORT_OWNERSHIP = 'user-managed'
-        if ($restartResendPhase) {
-            $env:DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE = $SupportedChaosEvidence
-            $env:DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER = $SupportedChaosProvider
-        }
         $env:DEEP_STORAGE_URL = $null
         $negativeGenerator = Join-Path $devOpsRoot 'scripts\survival-dev-mailbox-negative-runtime.ps1'
         $negativePrepared = $false

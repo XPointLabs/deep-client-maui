@@ -178,7 +178,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         var startConversation = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Pages", "StartConversationPage.xaml"));
 
-        Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'VoiceMessage', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')", runner,
+        Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'PayloadMatrix', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
         Assert.Contains("$env:DEEP_STRICT_WINDOWS_UI = '1'", runner,
@@ -210,9 +210,9 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.True(runsRootGuard >= 0 && firstChildWrite > runsRootGuard,
             "The existing e2e-runs anchor must be rejected when it is a junction before any child write.");
         Assert.Contains("Assert-SanitizedState", runner, StringComparison.Ordinal);
-        Assert.Contains("[regex]::Escape('\"phase\":\"VoiceMessage\"')", runner,
+        Assert.Contains("[regex]::Escape('\"phase\":\"PayloadMatrix\"')", runner,
             StringComparison.Ordinal);
-        Assert.Contains("'\"phase\":\"VoicePhase\"'", runner,
+        Assert.Contains("'\"phase\":\"MatrixPhase\"'", runner,
             StringComparison.Ordinal);
         Assert.Contains("shared-dev-storage-non-replicated", runner, StringComparison.Ordinal);
         Assert.Contains("DEEP_TRANSPORT_PROTOCOL=authenticated-mau2", runner, StringComparison.Ordinal);
@@ -251,11 +251,11 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.ProvisionIdentity", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.Attach", ui, StringComparison.Ordinal);
-        Assert.Contains("case Mau2PhysicalPhase.HappyPath", ui, StringComparison.Ordinal);
-        Assert.Contains("case Mau2PhysicalPhase.VoiceMessage", ui, StringComparison.Ordinal);
+        Assert.Contains("case Mau2PhysicalPhase.PayloadMatrix", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.RestartDurability", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.ManualResendAfterRestart", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.AutomaticRetryAfterRestart", ui, StringComparison.Ordinal);
+        Assert.Contains("case Mau2PhysicalPhase.AckCrashWindow", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.NegativeRuntime", ui, StringComparison.Ordinal);
         Assert.Contains("android.DismissKeyboard();", ui, StringComparison.Ordinal);
         Assert.Contains("KEYCODE_BACK", ui, StringComparison.Ordinal);
@@ -264,7 +264,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("internal void ColdStart()", ui, StringComparison.Ordinal);
         Assert.Contains("ForceStop();", ui, StringComparison.Ordinal);
         Assert.Contains("already-running task", ui, StringComparison.Ordinal);
-        Assert.Contains("RequireSupportedChaosEvidence", ui, StringComparison.Ordinal);
+        Assert.Contains("RequireHttpsChaosSupport", ui, StringComparison.Ordinal);
         Assert.Contains("survival-dev-mailbox-negative-runtime.ps1", runner,
             StringComparison.Ordinal);
         Assert.Contains("Canonical live Windows runtime changed", runner,

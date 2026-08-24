@@ -67,6 +67,9 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private ChatMessageItem? selectedAttachmentMessage;
     private AttachmentMetadata? imageViewerAttachment;
     private ChatMessageItem? imageViewerMessage;
+#if DEBUG && DEEP_PHYSICAL_E2E
+    private Label? physicalVoicePlaybackState;
+#endif
 #if ANDROID
     private AndroidView? voiceButtonPlatformView;
 #endif
@@ -81,6 +84,9 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     {
         var constructionStopwatch = System.Diagnostics.Stopwatch.StartNew();
         InitializeComponent();
+#if DEBUG && DEEP_PHYSICAL_E2E
+        CreatePhysicalVoicePlaybackState();
+#endif
         CrashDiagnostics.LogInfo("Perf.Chat", $"ConstructPage elapsedMs={constructionStopwatch.ElapsedMilliseconds}");
         this.viewModel = viewModel;
         this.networkStatusService = networkStatusService;
@@ -1538,6 +1544,13 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
     private void ApplyVoicePlaybackSnapshot(VoicePlaybackSnapshot snapshot)
     {
+#if DEBUG && DEEP_PHYSICAL_E2E
+        if (physicalVoicePlaybackState is not null && snapshot.AttachmentId is not null)
+        {
+            physicalVoicePlaybackState.Text = snapshot.IsPlaying ? "playing" : "completed";
+            physicalVoicePlaybackState.IsVisible = true;
+        }
+#endif
         if (!string.Equals(activeVoiceAttachmentId, snapshot.AttachmentId, StringComparison.Ordinal))
         {
             ClearVoicePlayback(activeVoiceAttachmentId);
@@ -1561,6 +1574,24 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             StopVoicePlaybackTimer();
         }
     }
+
+#if DEBUG && DEEP_PHYSICAL_E2E
+    private void CreatePhysicalVoicePlaybackState()
+    {
+        physicalVoicePlaybackState = new Label
+        {
+            AutomationId = "PhysicalE2E.VoicePlaybackState",
+            Text = "idle",
+            IsVisible = false,
+            FontSize = 1,
+            Opacity = 0.01,
+            InputTransparent = true,
+            ZIndex = 130
+        };
+        PageLayout.Children.Add(physicalVoicePlaybackState);
+        Grid.SetRowSpan(physicalVoicePlaybackState, 5);
+    }
+#endif
 
     private ChatMessageItem? FindVoiceMessageItem(string attachmentId) =>
         viewModel.Messages.FirstOrDefault(message =>

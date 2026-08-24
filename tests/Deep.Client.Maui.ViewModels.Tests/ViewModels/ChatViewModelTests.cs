@@ -97,6 +97,21 @@ public sealed class ChatViewModelTests
         Assert.Equal("music.wav", item.AttachmentTitle);
     }
 
+    [Fact]
+    public void InlineImagePublishesExactPrivacySafeAutomationMetadata()
+    {
+        var attachment = new AttachmentMetadata(
+            "image-1", "uat.png", "image/png", 67,
+            Width: 1, Height: 1, IsDocument: false);
+        var item = new ChatMessageItem(
+            MessageId.NewId(), MessageAttachmentPresentation.GenericAttachmentPlaceholder,
+            MessageDirection.Incoming, MessageDeliveryState.Delivered,
+            DateTimeOffset.Parse("2026-07-13T00:00:00Z"), [attachment], null, []);
+
+        Assert.True(item.IsImageMessage);
+        Assert.Equal("uat.png; image/png; 67; 1x1", item.ImageMetadataDescription);
+    }
+
     [Theory]
     [InlineData("application/pdf", 4, false)]
     [InlineData("audio/wav", 0, false)]

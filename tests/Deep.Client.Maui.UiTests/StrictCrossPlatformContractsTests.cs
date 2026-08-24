@@ -3,6 +3,19 @@ namespace Deep.Client.Maui.UiTests;
 public sealed class StrictCrossPlatformContractsTests
 {
     [Fact]
+    public void Correlated_message_descendant_requires_one_exact_ancestor_and_target()
+    {
+        const string xml = "<hierarchy><node resource-id='pkg:id/bubble' bounds='[0,0][20,20]'><node resource-id='pkg:id/body' text='exact' bounds='[1,1][5,5]'/><node resource-id='pkg:id/status' content-desc='Sent' bounds='[6,6][9,9]'/></node><node resource-id='pkg:id/bubble' bounds='[20,0][40,20]'><node resource-id='pkg:id/body' text='other' bounds='[21,1][25,5]'/></node></hierarchy>";
+
+        var target = StrictCrossPlatformContracts.FindExactlyOneCorrelatedDescendant(
+            xml, "pkg:id/bubble", "pkg:id/body", "exact", "pkg:id/status");
+
+        Assert.Equal("Sent", target.AccessibleText);
+        Assert.Equal("pkg:id/bubble",
+            StrictCrossPlatformContracts.FindExactlyOneResourceIdContainingDescendantText(
+                xml, "pkg:id/bubble", "pkg:id/body", "exact").ResourceId);
+    }
+    [Fact]
     public void Ui_dump_accepts_one_exact_hierarchy_and_only_the_platform_banner()
     {
         const string xml = "<?xml version='1.0'?><hierarchy><node /></hierarchy>";

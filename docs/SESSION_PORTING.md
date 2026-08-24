@@ -51,6 +51,7 @@ For every Session-derived behavior:
 - The opt-in Windows-to-Android physical call gate uses the real authenticated signaling and signed ICE path, and accepts media only after both peers report a selected ICE pair and bidirectional audio RTP. It also verifies microphone mute/restore acknowledgement and remote hangup; no SDP, candidate address, credential, identity, or audio content enters standard evidence.
 - Desktop-style split inbox/detail layout is allowed on wide screens, while mobile should route directly into the chat.
 - Attachment upload metadata can be staged through shared attachment models before final backend storage cutover is complete. Voice messages use the explicit shared `AttachmentKind.VoiceMessage`; audio MIME alone is rendered as a generic attachment and malformed voice metadata fails closed.
+- Physical payload acceptance is one clean-break `PayloadMatrix` phase: bidirectional text, generic/PDF documents, inline image rendering, and explicit voice messages are correlated to exact rendered rows, sender state, plaintext hashes where Save applies, and restart persistence. Open-action evidence is never conflated with saved-plaintext evidence.
 
 ## Non-Negotiable Parity
 

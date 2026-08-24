@@ -235,12 +235,13 @@
                                                 <Label Text="{Binding VoicePlaybackLabel}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
                                             </VerticalStackLayout>
                                         </Grid>
-                                        <Image Source="{Binding ImagePreviewPath}" IsVisible="{Binding HasImagePreview}" WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}" MaximumWidthRequest="420" MaximumHeightRequest="320" Aspect="AspectFill">
+                                        <Image AutomationId="DesktopWorkspace.DirectImagePreview" Source="{Binding ImagePreviewPath}" IsVisible="{Binding HasImagePreview}" WidthRequest="{Binding ImagePreviewWidthRequest}" HeightRequest="{Binding ImagePreviewHeightRequest}" MaximumWidthRequest="420" MaximumHeightRequest="320" Aspect="AspectFill" SemanticProperties.Description="{Binding ImageMetadataDescription}">
                                             <Image.GestureRecognizers><TapGestureRecognizer Tapped="OnDirectAttachmentTapped" /></Image.GestureRecognizers>
                                         </Image>
                                         <Label AutomationId="DesktopWorkspace.DirectAttachmentFilename" Text="{Binding AttachmentSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding HasNonVoiceAttachments}">
                                             <Label.GestureRecognizers><TapGestureRecognizer Tapped="OnDirectAttachmentTapped" /></Label.GestureRecognizers>
                                         </Label>
+                                        <Label AutomationId="DesktopWorkspace.DirectAttachmentMetadata" Text="{Binding AttachmentSubtitle}" FontSize="11" TextColor="{StaticResource TextTertiary}" IsVisible="{Binding HasGenericAttachments}" />
                                         <Label AutomationId="DesktopWorkspace.DirectMessageBody" Text="{Binding Body}" FontSize="14" LineBreakMode="WordWrap" IsVisible="{Binding HasVisibleBody}" />
                                         <FlexLayout BindableLayout.ItemsSource="{Binding ReactionChips}" Direction="Row" Wrap="Wrap" AlignItems="Start" IsVisible="{Binding HasReactions}">
                                             <BindableLayout.ItemTemplate>

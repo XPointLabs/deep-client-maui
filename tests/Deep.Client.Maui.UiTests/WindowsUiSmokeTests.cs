@@ -6,6 +6,8 @@ using System.Text;
 using System.Text.Json;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
+using FlaUI.Core.Input;
 using FlaUI.Core.Tools;
 using FlaUI.UIA3;
 using Xunit;
@@ -351,6 +353,23 @@ public sealed class WindowsUiSmokeTests
             .FindAllDescendants(condition => condition.ByAutomationId(automationId))
             .Length;
 
+        internal void WaitForExactAutomationIdCount(
+            string automationId, int expected, TimeSpan timeout)
+        {
+            var until = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < until)
+            {
+                var count = CountAutomationId(automationId);
+                if (count == expected) return;
+                if (count > expected)
+                    throw new InvalidOperationException(
+                        "Windows rendered duplicate correlated automation elements.");
+                Thread.Sleep(200);
+            }
+            throw new InvalidOperationException(
+                "Windows did not render the exact expected automation-element count.");
+        }
+
         internal AutomationElement? WaitForOneNewAutomationId(
             string automationId,
             int previousCount,
@@ -442,6 +461,103 @@ public sealed class WindowsUiSmokeTests
                 TimeSpan.FromMilliseconds(200),
                 throwOnTimeout: false);
             return result.Result;
+        }
+
+        internal AutomationElement? WaitForCorrelatedDescendant(
+            string ancestorAutomationId,
+            string correlationAutomationId,
+            string correlationName,
+            string targetAutomationId,
+            TimeSpan timeout,
+            string? targetName = null)
+        {
+            var result = Retry.WhileNull(
+                () =>
+                {
+                    try
+                    {
+                        var ancestors = CurrentWindow().FindAllDescendants(
+                                condition => condition.ByAutomationId(ancestorAutomationId))
+                            .Where(ancestor => ancestor.FindAllDescendants(
+                                    condition => condition.ByAutomationId(correlationAutomationId))
+                                .Any(candidate => string.Equals(
+                                    candidate.Properties.Name.ValueOrDefault,
+                                    correlationName, StringComparison.Ordinal)))
+                            .ToArray();
+                        if (ancestors.Length != 1) return null;
+                        var targets = ancestors[0].FindAllDescendants(
+                            condition => condition.ByAutomationId(targetAutomationId));
+                        if (targets.Length != 1) return null;
+                        return targetName is null || string.Equals(
+                            targets[0].Properties.Name.ValueOrDefault,
+                            targetName, StringComparison.Ordinal)
+                                ? targets[0]
+                                : null;
+                    }
+                    catch (COMException) when (!application.HasExited) { return null; }
+                },
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            return result.Result;
+        }
+
+        internal AutomationElement WaitForExactButtonName(string name, TimeSpan timeout)
+        {
+            var result = Retry.WhileNull(
+                () =>
+                {
+                    var matches = CurrentWindow().FindAllDescendants()
+                        .Where(element => element.ControlType == ControlType.Button
+                            && string.Equals(element.Properties.Name.ValueOrDefault,
+                                name, StringComparison.Ordinal))
+                        .ToArray();
+                    return matches.Length == 1 ? matches[0] : null;
+                }, timeout, TimeSpan.FromMilliseconds(200), throwOnTimeout: false);
+            return result.Result ?? throw new InvalidOperationException(
+                "The app did not expose one exact requested action-sheet button.");
+        }
+
+        internal void ChooseSingleFileFromOwnedPicker(string absolutePath, TimeSpan timeout)
+        {
+            if (!Path.IsPathFullyQualified(absolutePath) || !File.Exists(absolutePath))
+                throw new InvalidOperationException("Picker input must be one existing absolute file.");
+            var mainHandle = CurrentWindow().Properties.NativeWindowHandle.ValueOrDefault;
+            var result = Retry.WhileNull(
+                () => automation.GetDesktop().FindAllChildren()
+                    .Where(element => element.ControlType == ControlType.Window
+                        && element.Properties.NativeWindowHandle.ValueOrDefault != mainHandle)
+                    .Where(element => element.Properties.ProcessId.ValueOrDefault == application.ProcessId
+                        || GetWindow(element.Properties.NativeWindowHandle.ValueOrDefault, 4) == mainHandle)
+                    .SingleOrDefault(element => element.FindAllDescendants(
+                        condition => condition.ByControlType(ControlType.Edit)).Length > 0),
+                timeout, TimeSpan.FromMilliseconds(200), throwOnTimeout: false);
+            var picker = result.Result ?? throw new InvalidOperationException(
+                "The file picker was not uniquely owned by the exact app window.");
+            var editors = picker.FindAllDescendants(
+                condition => condition.ByControlType(ControlType.Edit));
+            var editor = editors.SingleOrDefault(element =>
+                    element.Properties.AutomationId.ValueOrDefault is "FileNameControlHost" or "1148")
+                ?? (editors.Length == 1 ? editors[0] : null)
+                ?? throw new InvalidOperationException("The owned file picker has no unique filename editor.");
+            editor.AsTextBox().Text = absolutePath;
+            var openButtons = picker.FindAllDescendants(condition => condition.ByControlType(ControlType.Button))
+                .Where(element => element.Properties.AutomationId.ValueOrDefault == "1")
+                .ToArray();
+            if (openButtons.Length != 1)
+                throw new InvalidOperationException("The owned file picker has no unique affirmative button.");
+            ActivateExact(openButtons[0]);
+        }
+
+        internal void HoldExact(AutomationElement element, TimeSpan duration)
+        {
+            if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10))
+                throw new ArgumentOutOfRangeException(nameof(duration));
+            var point = element.GetClickablePoint();
+            Mouse.MoveTo(point);
+            Mouse.Down(MouseButton.Left);
+            try { Thread.Sleep(duration); }
+            finally { Mouse.Up(MouseButton.Left); }
         }
 
         internal AutomationElement? WaitForAutomationIdWithDescendantNameContaining(
@@ -747,6 +863,9 @@ public sealed class WindowsUiSmokeTests
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool PrintWindow(IntPtr windowHandle, IntPtr deviceContext, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetWindow(IntPtr windowHandle, uint command);
 
         private static void WriteLaunchFailure(string artifactDirectory, Application app, Exception exception)
         {

@@ -27,11 +27,8 @@ public sealed class StrictCrossPlatformUiTests
             case Mau2PhysicalPhase.Attach:
                 AttachToExistingProvisionedClients(options);
                 return;
-            case Mau2PhysicalPhase.HappyPath:
-                ExchangeOnExistingProvisionedClients(options);
-                return;
-            case Mau2PhysicalPhase.VoiceMessage:
-                ExchangeVoiceMessageOnExistingProvisionedClients(options);
+            case Mau2PhysicalPhase.PayloadMatrix:
+                ExercisePayloadMatrixOnExistingProvisionedClients(options);
                 return;
             case Mau2PhysicalPhase.Call:
                 ExchangeAudioCallOnExistingProvisionedClients(options);
@@ -41,7 +38,8 @@ public sealed class StrictCrossPlatformUiTests
                 return;
             case Mau2PhysicalPhase.ManualResendAfterRestart:
             case Mau2PhysicalPhase.AutomaticRetryAfterRestart:
-                RequireReviewedRestartResendLane(options.Phase);
+            case Mau2PhysicalPhase.AckCrashWindow:
+                Mau2PhysicalPhaseContract.RequireHttpsChaosSupport(options.Phase);
                 return;
             case Mau2PhysicalPhase.NegativeRuntime:
                 AssertInvalidWindowsRuntimesFailClosed(options);
@@ -118,13 +116,6 @@ public sealed class StrictCrossPlatformUiTests
             "Windows did not expose one closed identity-provisioning surface.");
     }
 
-    private static void RequireReviewedRestartResendLane(Mau2PhysicalPhase phase)
-    {
-        _ = Mau2PhysicalPhaseContract.RequireSupportedChaosEvidence(phase);
-        throw new InvalidOperationException(
-            "Restart resend evidence is fail-closed until the reviewed Deep DevOps chaos executor is integrated.");
-    }
-
     private static void AttachToExistingProvisionedClients(CrossPlatformOptions options)
     {
         var evidence = CreatePhaseEvidence(options);
@@ -149,7 +140,7 @@ public sealed class StrictCrossPlatformUiTests
         CompletePhaseEvidence(options, evidence);
     }
 
-    private static void ExchangeOnExistingProvisionedClients(CrossPlatformOptions options)
+    private static void ExercisePayloadMatrixOnExistingProvisionedClients(CrossPlatformOptions options)
     {
         var evidence = CreatePhaseEvidence(options);
         var android = new AndroidUiautomatorClient(options);
@@ -160,36 +151,65 @@ public sealed class StrictCrossPlatformUiTests
         var androidIdentity = ReadAndroidIdentity(android, options);
         var windowsToAndroid = StrictCrossPlatformContracts.NewMarker("windows-to-android");
         var androidToWindows = StrictCrossPlatformContracts.NewMarker("android-to-windows");
-        var attachmentMarker = StrictCrossPlatformContracts.NewMarker("attachment") + ".bin";
-        var fixtureSha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(options.AttachmentFixturePath)));
+        var genericName = Path.GetFileName(options.GenericFixturePath);
+        var documentName = Path.GetFileName(options.DocumentFixturePath);
+        var imageName = Path.GetFileName(options.ImageFixturePath);
+        var genericSha256 = StrictCrossPlatformContracts.Sha256File(options.GenericFixturePath);
+        var documentSha256 = StrictCrossPlatformContracts.Sha256File(options.DocumentFixturePath);
         var downloadsDirectory = options.ResolveProductionDownloadsDirectory();
         var createdDownloads = new List<string>();
 
         try
         {
-            using var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot);
-            Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(45)), "Conversations.NewConversation");
-            var windowsIdentity = ReadWindowsIdentity(windows);
-            Assert.NotEqual(androidIdentity, windowsIdentity);
+            using (var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot))
+            {
+                Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(45)), "Conversations.NewConversation");
+                var windowsIdentity = ReadWindowsIdentity(windows);
+                Assert.NotEqual(androidIdentity, windowsIdentity);
 
-            // Contacts are created from identities kept in this process only. They
-            // are deliberately never emitted into the run state or test evidence.
-            AddAndroidContact(android, options, windowsIdentity);
-            AddWindowsContact(windows, androidIdentity);
-            SendWindowsMessage(windows, windowsToAndroid);
-            AssertWindowsXPointRouteObserved(windows);
-            android.WaitForText(options.App("Chat.MessageBody"), windowsToAndroid, TimeSpan.FromSeconds(60));
-            SendAndroidMessage(android, options, androidToWindows);
-            WaitForWindowsText(windows, "DesktopWorkspace.DirectMessageBody", androidToWindows);
-            Require(windows.WaitForAutomationId("DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectDeliveryStatus");
+                // Contacts are created from identities kept in this process only. They
+                // are deliberately never emitted into the run state or test evidence.
+                AddAndroidContact(android, options, windowsIdentity);
+                AddWindowsContact(windows, androidIdentity);
+                SendWindowsMessageAndAssertSent(windows, windowsToAndroid);
+                AssertWindowsXPointRouteObserved(windows);
+                android.WaitForText(options.App("Chat.MessageBody"), windowsToAndroid, TimeSpan.FromSeconds(60));
+                SendAndroidMessageAndAssertSent(android, options, androidToWindows);
+                WaitForWindowsText(windows, "DesktopWorkspace.DirectMessageBody", androidToWindows);
 
-            android.PushFixture(options.AttachmentFixturePath, attachmentMarker);
-            StageAndSendAndroidAttachment(android, options, attachmentMarker);
-            SaveOpenAndVerifyWindowsAttachment(windows, downloadsDirectory, createdDownloads, attachmentMarker, fixtureSha256);
+                ExchangeAndroidDocument(android, windows, options, options.GenericFixturePath,
+                    genericName, genericSha256, downloadsDirectory, createdDownloads,
+                    verifyOpen: false);
+                ExchangeAndroidDocument(android, windows, options, options.DocumentFixturePath,
+                    documentName, documentSha256, downloadsDirectory, createdDownloads,
+                    verifyOpen: true);
+                ExchangeWindowsDocument(windows, android, options, options.GenericFixturePath,
+                    genericName, genericSha256, verifyOpen: false);
+                ExchangeWindowsDocument(windows, android, options, options.DocumentFixturePath,
+                    documentName, documentSha256, verifyOpen: true);
+                ExchangeInlineImagesBothDirections(android, windows, options, imageName);
+                ExchangeVoiceMessagesBothDirections(android, windows, options);
+            }
+
+            android.ColdStart();
+            android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+            android.Tap(options.App("Conversations.ConversationRow"));
+            android.WaitForExactResourceCount(options.App("Chat.VoicePlayButton"), 2,
+                TimeSpan.FromSeconds(45));
+
+            using var restartedWindows = WindowsUiSmokeTests.WindowsUiTestSession
+                .CreateStrictWithAppData(options.WindowsAppDataRoot);
+            restartedWindows.ActivateExact(Require(
+                restartedWindows.WaitForAutomationId("DesktopWorkspace.ConversationRow", TimeSpan.FromSeconds(45)),
+                "DesktopWorkspace.ConversationRow"));
+            restartedWindows.WaitForExactAutomationIdCount(
+                "DesktopWorkspace.DirectVoicePlay", 2, TimeSpan.FromSeconds(45));
         }
         finally
         {
-            android.DeletePushedFixture(attachmentMarker);
+            android.DeletePushedFixture(genericName);
+            android.DeletePushedFixture(documentName);
+            android.DeletePushedMediaFixture(imageName);
             foreach (var path in createdDownloads)
             {
                 if (File.Exists(path)) File.Delete(path);
@@ -202,8 +222,15 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddBoolean("androidToWindowsReceived", true);
         evidence.AddBoolean("windowsXpointRouteObserved", true);
         evidence.AddBoolean("senderDeliveryStatusObserved", true);
-        evidence.AddSafeValue("attachmentFixtureSha256", fixtureSha256);
-        evidence.AddBoolean("attachmentOpenSaveDecryptVerified", true);
+        evidence.AddSafeValue("genericPlaintextSha256", genericSha256);
+        evidence.AddSafeValue("documentPlaintextSha256", documentSha256);
+        evidence.AddBoolean("genericAndDocumentMetadataVerifiedBothDirections", true);
+        evidence.AddBoolean("attachmentOpenActionInvoked", true);
+        evidence.AddBoolean("attachmentSavePlaintextSha256VerifiedBothDirections", true);
+        evidence.AddBoolean("inlineImagePreviewAndMetadataVerified", true);
+        evidence.AddBoolean("voiceDeliveredExactlyOnceBothDirections", true);
+        evidence.AddBoolean("voicePlaybackStartedAndCompletedBothDirections", true);
+        evidence.AddBoolean("voiceMessagesPersistedAcrossRestart", true);
         // There is no self-copy AutomationId/action in the product contract. A test
         // must not synthesize one or make a false pass claim.
         evidence.AddBoolean("selfCopyUiSupported", false);
@@ -258,53 +285,6 @@ public sealed class StrictCrossPlatformUiTests
         // This is deliberately a restart-durability result, not a resend result.
         // Product resend controls are covered separately; their physical phases
         // require reviewed DevOps chaos evidence and cannot be inferred here.
-        evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
-        CompletePhaseEvidence(options, evidence);
-    }
-
-    private static void ExchangeVoiceMessageOnExistingProvisionedClients(
-        CrossPlatformOptions options)
-    {
-        var evidence = CreatePhaseEvidence(options);
-        var android = new AndroidUiautomatorClient(options);
-        android.AssertPhysicalConnectedDevice();
-        android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
-        android.ColdStart();
-        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
-        var androidIdentity = ReadAndroidIdentity(android, options);
-
-        using var windows = WindowsUiSmokeTests.WindowsUiTestSession
-            .CreateStrictWithAppData(options.WindowsAppDataRoot);
-        var windowsIdentity = ReadWindowsIdentity(windows);
-        AddAndroidContact(android, options, windowsIdentity);
-        AddWindowsContact(windows, androidIdentity);
-
-        var anchor = StrictCrossPlatformContracts.NewMarker("voice-anchor");
-        SendAndroidMessage(android, options, anchor);
-        android.WaitForText(options.App("Chat.MessageBody"), anchor, TimeSpan.FromSeconds(45));
-        WaitForWindowsText(windows, "DesktopWorkspace.DirectMessageBody", anchor);
-        android.Hold(options.App("Chat.Voice"), TimeSpan.FromSeconds(4));
-        android.WaitForLastResourceIdContainingDescendant(
-            options.App("Chat.MessageBubble"),
-            options.App("Chat.VoicePlayButton"),
-            TimeSpan.FromSeconds(60));
-
-        var receivedVoice = Require(
-            windows.WaitForLastAutomationIdContainingDescendant(
-                "DesktopWorkspace.DirectMessageBubble",
-                "DesktopWorkspace.DirectVoicePlay",
-                TimeSpan.FromSeconds(60)),
-            "DesktopWorkspace.DirectVoicePlay");
-        windows.ActivateExact(receivedVoice);
-        Require(
-            windows.WaitForAutomationId(
-                "PhysicalE2E.VoicePlaybackMarker",
-                TimeSpan.FromSeconds(15)),
-            "PhysicalE2E.VoicePlaybackMarker");
-
-        evidence.AddBoolean("voiceRecordedFromPhysicalMicrophone", true);
-        evidence.AddBoolean("voiceEncryptedAttachmentDelivered", true);
-        evidence.AddBoolean("voicePlaybackStartedAfterDecrypt", true);
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
         CompletePhaseEvidence(options, evidence);
     }
@@ -584,6 +564,19 @@ public sealed class StrictCrossPlatformUiTests
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.DirectSend", TimeSpan.FromSeconds(10)), "DesktopWorkspace.DirectSend"));
     }
 
+    private static void SendWindowsMessageAndAssertSent(
+        WindowsUiSmokeTests.WindowsUiTestSession windows, string message)
+    {
+        SendWindowsMessage(windows, message);
+        var status = Require(windows.WaitForCorrelatedDescendant(
+            "DesktopWorkspace.DirectMessageBubble",
+            "DesktopWorkspace.DirectMessageBody", message,
+            "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(30),
+            "Отправлено"),
+            "DesktopWorkspace.DirectDeliveryStatus");
+        Assert.Equal("Отправлено", status.Properties.Name.ValueOrDefault);
+    }
+
     private static void AssertWindowsXPointRouteObserved(
         WindowsUiSmokeTests.WindowsUiTestSession windows)
     {
@@ -604,6 +597,204 @@ public sealed class StrictCrossPlatformUiTests
         android.Tap(options.App("Chat.Send"));
     }
 
+    private static void SendAndroidMessageAndAssertSent(
+        AndroidUiautomatorClient android, CrossPlatformOptions options, string message)
+    {
+        SendAndroidMessage(android, options, message);
+        var status = android.WaitForCorrelatedDescendant(
+            options.App("Chat.MessageBubble"), options.App("Chat.MessageBody"), message,
+            options.App("Chat.DeliveryStatus"), TimeSpan.FromSeconds(30),
+            "Отправлено");
+        Assert.Equal("Отправлено", status.AccessibleText);
+    }
+
+    private static void ExchangeAndroidDocument(
+        AndroidUiautomatorClient android,
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        CrossPlatformOptions options,
+        string fixturePath,
+        string fileName,
+        string sha256,
+        string downloadsDirectory,
+        ICollection<string> createdDownloads,
+        bool verifyOpen)
+    {
+        android.PushFixture(fixturePath, fileName);
+        StageAndSendAndroidAttachment(android, options, fileName);
+        var androidStatus = android.WaitForCorrelatedDescendant(
+            options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
+            fileName, options.App("Chat.DeliveryStatus"), TimeSpan.FromSeconds(30),
+            "Отправлено");
+        Assert.Equal("Отправлено", androidStatus.AccessibleText);
+        var attachment = Require(windows.WaitForAutomationIdWithName(
+            "DesktopWorkspace.DirectAttachmentFilename", fileName,
+            TimeSpan.FromSeconds(60)), "DesktopWorkspace.DirectAttachmentFilename");
+        Assert.Contains(fileName, attachment.Properties.Name.ValueOrDefault, StringComparison.Ordinal);
+        var expectedMetadata = ExpectedAttachmentMetadata(fixturePath);
+        var metadata = Require(windows.WaitForCorrelatedDescendant(
+            "DesktopWorkspace.DirectMessageBubble",
+            "DesktopWorkspace.DirectAttachmentFilename", fileName,
+            "DesktopWorkspace.DirectAttachmentMetadata", TimeSpan.FromSeconds(15),
+            expectedMetadata), "DesktopWorkspace.DirectAttachmentMetadata");
+        Assert.Equal(expectedMetadata, metadata.Properties.Name.ValueOrDefault);
+        SaveOpenAndVerifyWindowsAttachment(windows, downloadsDirectory,
+            createdDownloads, fileName, sha256, verifyOpen);
+    }
+
+    private static void ExchangeWindowsDocument(
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        AndroidUiautomatorClient android,
+        CrossPlatformOptions options,
+        string fixturePath,
+        string fileName,
+        string sha256,
+        bool verifyOpen)
+    {
+        windows.ActivateExact(Require(windows.WaitForAutomationId(
+            "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.DirectAttach"));
+        windows.ActivateExact(windows.WaitForExactButtonName("Файл", TimeSpan.FromSeconds(15)));
+        windows.ChooseSingleFileFromOwnedPicker(fixturePath, TimeSpan.FromSeconds(20));
+        Require(windows.WaitForAutomationIdWithName(
+            "DesktopWorkspace.DirectStagedAttachmentFilename", fileName,
+            TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectStagedAttachmentFilename");
+        windows.ActivateExact(Require(windows.WaitForAutomationId(
+            "DesktopWorkspace.DirectSend", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.DirectSend"));
+        var windowsStatus = Require(windows.WaitForCorrelatedDescendant(
+            "DesktopWorkspace.DirectMessageBubble",
+            "DesktopWorkspace.DirectAttachmentFilename", fileName,
+            "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(30),
+            "Отправлено"),
+            "DesktopWorkspace.DirectDeliveryStatus");
+        Assert.Equal("Отправлено", windowsStatus.Properties.Name.ValueOrDefault);
+
+        var file = android.WaitForCorrelatedDescendant(
+            options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
+            fileName, options.App("Chat.AttachmentFilename"), TimeSpan.FromSeconds(60));
+        Assert.Equal(fileName, file.AccessibleText);
+        var metadata = android.WaitForCorrelatedDescendant(
+            options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
+            fileName, options.App("Chat.AttachmentMetadata"), TimeSpan.FromSeconds(15));
+        Assert.Equal(ExpectedAttachmentMetadata(fixturePath), metadata.AccessibleText);
+
+        if (verifyOpen)
+        {
+            android.Tap(file);
+            android.Tap(options.App("Chat.AttachmentOpen"));
+            android.WaitForExternalActivity(TimeSpan.FromSeconds(15));
+            android.PressBack();
+            android.WaitForMessageBubbleContaining(options.App("Chat.AttachmentFilename"),
+                fileName, TimeSpan.FromSeconds(20));
+        }
+
+        var before = android.SnapshotDownloadPaths();
+        file = android.WaitForCorrelatedDescendant(
+            options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
+            fileName, options.App("Chat.AttachmentFilename"), TimeSpan.FromSeconds(15));
+        android.Tap(file);
+        android.Tap(options.App("Chat.AttachmentSave"));
+        android.WaitForSavedPlaintext(before, fileName, sha256, options.ArtifactDirectory,
+            TimeSpan.FromSeconds(30));
+    }
+
+    private static void ExchangeInlineImagesBothDirections(
+        AndroidUiautomatorClient android,
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        CrossPlatformOptions options,
+        string imageName)
+    {
+        var expectedSentName = Path.ChangeExtension(imageName, ".jpg");
+        var previousWindowsImages = windows.CountAutomationId(
+            "DesktopWorkspace.DirectImagePreview");
+        android.PushMediaFixture(options.ImageFixturePath, imageName);
+        android.Tap(options.App("Chat.Attach"));
+        android.Tap(options.App("Chat.PickPhoto"));
+        android.TapExactResourceIdWithExactText(options.PickerFileResourceId, imageName);
+        if (options.PickerConfirmResourceId is not null)
+            android.Tap(options.PickerConfirmResourceId);
+        android.WaitForText(options.App("Chat.StagedAttachmentFilename"),
+            expectedSentName, TimeSpan.FromSeconds(30));
+        android.Tap(options.App("Chat.Send"));
+
+        var preview = Require(windows.WaitForOneNewAutomationId(
+            "DesktopWorkspace.DirectImagePreview", previousWindowsImages,
+            TimeSpan.FromSeconds(60)), "DesktopWorkspace.DirectImagePreview");
+        var metadata = preview.Properties.Name.ValueOrDefault ?? string.Empty;
+        Assert.Contains(expectedSentName, metadata, StringComparison.Ordinal);
+        Assert.Contains("image/jpeg", metadata, StringComparison.Ordinal);
+        Assert.Contains("1x1", metadata, StringComparison.Ordinal);
+
+        var previousAndroidImages = android.CountResourceId(options.App("Chat.ImagePreview"));
+        var previousAndroidImageMetadata = android.CountResourceId(
+            options.App("Chat.ImageMetadata"));
+        windows.ActivateExact(Require(windows.WaitForAutomationId(
+            "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.DirectAttach"));
+        windows.ActivateExact(windows.WaitForExactButtonName(
+            "Фото из галереи", TimeSpan.FromSeconds(15)));
+        windows.ChooseSingleFileFromOwnedPicker(options.ImageFixturePath,
+            TimeSpan.FromSeconds(20));
+        Require(windows.WaitForAutomationIdWithName(
+            "DesktopWorkspace.DirectStagedAttachmentFilename", expectedSentName,
+            TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectStagedAttachmentFilename");
+        windows.ActivateExact(Require(windows.WaitForAutomationId(
+            "DesktopWorkspace.DirectSend", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.DirectSend"));
+
+        _ = android.WaitForOneNewResourceId(options.App("Chat.ImagePreview"),
+            previousAndroidImages, TimeSpan.FromSeconds(60));
+        var androidMetadata = android.WaitForOneNewResourceId(
+            options.App("Chat.ImageMetadata"), previousAndroidImageMetadata,
+            TimeSpan.FromSeconds(15)).AccessibleText;
+        Assert.Contains(expectedSentName, androidMetadata, StringComparison.Ordinal);
+        Assert.Contains("image/jpeg", androidMetadata, StringComparison.Ordinal);
+        Assert.Contains("1x1", androidMetadata, StringComparison.Ordinal);
+    }
+
+    private static string ExpectedAttachmentMetadata(string fixturePath)
+    {
+        var size = new FileInfo(fixturePath).Length;
+        var kind = string.Equals(Path.GetExtension(fixturePath), ".pdf",
+            StringComparison.OrdinalIgnoreCase) ? "PDF" : "Файл";
+        var formatted = size < 1024
+            ? $"{size} Б"
+            : size < 1024 * 1024
+                ? $"{size / 1024d:0.#} КБ"
+                : $"{size / 1024d / 1024d:0.#} МБ";
+        return $"{kind} · {formatted}";
+    }
+
+    private static void ExchangeVoiceMessagesBothDirections(
+        AndroidUiautomatorClient android,
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        CrossPlatformOptions options)
+    {
+        var windowsBefore = windows.CountAutomationId("DesktopWorkspace.DirectVoicePlay");
+        android.Hold(options.App("Chat.Voice"), TimeSpan.FromSeconds(4));
+        var windowsReceived = Require(windows.WaitForOneNewAutomationId(
+            "DesktopWorkspace.DirectVoicePlay", windowsBefore, TimeSpan.FromSeconds(60)),
+            "DesktopWorkspace.DirectVoicePlay");
+        windows.ActivateExact(windowsReceived);
+        Require(windows.WaitForAutomationIdWithName("PhysicalE2E.VoicePlaybackState",
+            "playing", TimeSpan.FromSeconds(10)), "PhysicalE2E.VoicePlaybackState:playing");
+        Require(windows.WaitForAutomationIdWithName("PhysicalE2E.VoicePlaybackState",
+            "completed", TimeSpan.FromSeconds(20)), "PhysicalE2E.VoicePlaybackState:completed");
+
+        var androidBefore = android.CountResourceId(options.App("Chat.VoicePlayButton"));
+        var voiceButton = Require(windows.WaitForAutomationId(
+            "DesktopWorkspace.DirectVoice", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.DirectVoice");
+        windows.HoldExact(voiceButton, TimeSpan.FromSeconds(4));
+        var androidReceived = android.WaitForOneNewResourceId(
+            options.App("Chat.VoicePlayButton"), androidBefore, TimeSpan.FromSeconds(60));
+        android.Tap(androidReceived);
+        android.WaitForText(options.App("PhysicalE2E.VoicePlaybackState"),
+            "playing", TimeSpan.FromSeconds(10));
+        android.WaitForText(options.App("PhysicalE2E.VoicePlaybackState"),
+            "completed", TimeSpan.FromSeconds(20));
+    }
+
     private static void StageAndSendAndroidAttachment(AndroidUiautomatorClient android, CrossPlatformOptions options, string marker)
     {
         android.Tap(options.App("Chat.Attach"));
@@ -620,13 +811,16 @@ public sealed class StrictCrossPlatformUiTests
         android.Tap(options.App("Chat.Send"));
     }
 
-    private static void SaveOpenAndVerifyWindowsAttachment(WindowsUiSmokeTests.WindowsUiTestSession windows, string downloadsDirectory, ICollection<string> createdDownloads, string marker, string expectedSha256)
+    private static void SaveOpenAndVerifyWindowsAttachment(WindowsUiSmokeTests.WindowsUiTestSession windows, string downloadsDirectory, ICollection<string> createdDownloads, string marker, string expectedSha256, bool verifyOpen)
     {
         var attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(45)), "DesktopWorkspace.DirectAttachmentFilename");
-        windows.RequestContextMenuOnAncestor(attachment, "DesktopWorkspace.DirectMessageBubble");
-        windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.AttachmentOpen", TimeSpan.FromSeconds(15)), "DesktopWorkspace.AttachmentOpen"));
-        // Open may replace the attachment menu.  Re-select the same exact correlated filename before Save.
-        attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(15)), "DesktopWorkspace.DirectAttachmentFilename");
+        if (verifyOpen)
+        {
+            windows.RequestContextMenuOnAncestor(attachment, "DesktopWorkspace.DirectMessageBubble");
+            windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.AttachmentOpen", TimeSpan.FromSeconds(15)), "DesktopWorkspace.AttachmentOpen"));
+            // Open may replace the attachment menu. Re-select the same exact correlated filename before Save.
+            attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(15)), "DesktopWorkspace.DirectAttachmentFilename");
+        }
         windows.RequestContextMenuOnAncestor(attachment, "DesktopWorkspace.DirectMessageBubble");
         var before = StrictCrossPlatformContracts.SnapshotDownloads(downloadsDirectory);
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.AttachmentSave", TimeSpan.FromSeconds(15)), "DesktopWorkspace.AttachmentSave"));
@@ -669,14 +863,18 @@ internal sealed class CrossPlatformOptions
         "Conversations.NewConversationTop", "Conversations.ConversationRow", "Settings.SessionId", "Settings.Back",
         "StartConversation.NewMessage", "NewConversation.SessionId", "NewConversation.DisplayName", "NewConversation.Start",
         "NewConversation.Error", "NewConversation.Back", "Chat.Back", "Chat.Draft", "Chat.Send", "Chat.MessageBody", "Chat.MessageBubble",
-        "Chat.Attach", "Chat.PickFile", "Chat.StagedAttachmentFilename",
-        "Chat.Voice", "Chat.VoicePlayButton", "Call.Root", "Call.Status",
+        "Chat.Attach", "Chat.PickFile", "Chat.PickPhoto", "Chat.StagedAttachmentFilename",
+        "Chat.AttachmentFilename", "Chat.AttachmentMetadata", "Chat.AttachmentOpen",
+        "Chat.AttachmentSave", "Chat.MessageAttachmentOpen", "Chat.MessageAttachmentSave",
+        "Chat.ImagePreview", "Chat.ImageMetadata",
+        "Chat.DeliveryStatus", "Chat.Voice", "Chat.VoicePlayButton",
+        "PhysicalE2E.VoicePlaybackState", "Call.Root", "Call.Status",
         "Call.MediaState", "Call.Microphone", "Call.MicrophoneState", "Call.Hangup"
     ];
     private readonly Dictionary<string, string> androidSelectors;
-    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string fixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256)
+    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string genericFixturePath, string documentFixturePath, string imageFixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256)
     {
-        AndroidSerial = serial; AdbPath = adbPath; ApkPath = apkPath; AaptPath = aaptPath; ApksignerPath = apksignerPath; AttachmentFixturePath = fixturePath; ArtifactDirectory = artifactDirectory;
+        AndroidSerial = serial; AdbPath = adbPath; ApkPath = apkPath; AaptPath = aaptPath; ApksignerPath = apksignerPath; GenericFixturePath = genericFixturePath; DocumentFixturePath = documentFixturePath; ImageFixturePath = imageFixturePath; ArtifactDirectory = artifactDirectory;
         androidSelectors = selectors; PickerFileResourceId = pickerFile; PickerConfirmResourceId = pickerConfirm;
         Phase = phase; WindowsAppDataRoot = windowsAppDataRoot;
         ResultPath = Path.Combine(artifactDirectory, Mau2PhysicalPhaseContract.GetResultFileName(phase)); InvocationId = Guid.NewGuid().ToString("N"); DeviceFingerprint = fingerprint; DeviceModel = model; SourceCommit = sourceCommit; WindowsExeSha256 = windowsExeSha256; WindowsOutputTreeSha256 = windowsOutputTreeSha256;
@@ -689,7 +887,9 @@ internal sealed class CrossPlatformOptions
     internal string ApkPath { get; }
     internal string AaptPath { get; }
     internal string ApksignerPath { get; }
-    internal string AttachmentFixturePath { get; }
+    internal string GenericFixturePath { get; }
+    internal string DocumentFixturePath { get; }
+    internal string ImageFixturePath { get; }
     internal string ArtifactDirectory { get; }
     internal string WindowsAppDataRoot { get; }
     internal string PickerFileResourceId { get; }
@@ -708,7 +908,7 @@ internal sealed class CrossPlatformOptions
     internal static string? NotRunReason()
     {
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_STRICT_CROSS_PLATFORM_UI"), "1", StringComparison.Ordinal)) return "NOT-RUN: set DEEP_STRICT_CROSS_PLATFORM_UI=1 on an approved unlocked physical Android and Windows UI lab.";
-        var required = new[] { "DEEP_E2E_ANDROID_SERIAL", "DEEP_E2E_ADB", "DEEP_E2E_ANDROID_APK", "DEEP_E2E_AAPT", "DEEP_E2E_APKSIGNER", "DEEP_E2E_ATTACHMENT_FIXTURE", "DEEP_E2E_ARTIFACTS", "DEEP_E2E_ANDROID_SELECTORS_JSON", "DEEP_E2E_ANDROID_PICKER_FILE_ID", "DEEP_MAUI_EXE", "DEEP_E2E_APPDATA_ROOT", "DEEP_E2E_BOOTSTRAP", "DEEP_E2E_ANDROID_POLICY", "DEEP_E2E_REPOSITORY_ROOT", "DEEP_MR_X_PUBLIC_KEY_SHA256", "DEEP_RELEASE_INVOCATION_ID", "DEEP_MAU2_E2E_PHASE", "DEEP_MAU2_E2E_RUN_STATE" };
+        var required = new[] { "DEEP_E2E_ANDROID_SERIAL", "DEEP_E2E_ADB", "DEEP_E2E_ANDROID_APK", "DEEP_E2E_AAPT", "DEEP_E2E_APKSIGNER", "DEEP_E2E_GENERIC_FIXTURE", "DEEP_E2E_DOCUMENT_FIXTURE", "DEEP_E2E_IMAGE_FIXTURE", "DEEP_E2E_ARTIFACTS", "DEEP_E2E_ANDROID_SELECTORS_JSON", "DEEP_E2E_ANDROID_PICKER_FILE_ID", "DEEP_MAUI_EXE", "DEEP_E2E_APPDATA_ROOT", "DEEP_E2E_BOOTSTRAP", "DEEP_E2E_ANDROID_POLICY", "DEEP_E2E_REPOSITORY_ROOT", "DEEP_MR_X_PUBLIC_KEY_SHA256", "DEEP_RELEASE_INVOCATION_ID", "DEEP_MAU2_E2E_PHASE", "DEEP_MAU2_E2E_RUN_STATE" };
         var missing = required.Where(key => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key))).ToArray();
         return missing.Length == 0 ? null : "NOT-RUN: missing physical lane prerequisites: " + string.Join(", ", missing);
     }
@@ -744,7 +944,7 @@ internal sealed class CrossPlatformOptions
             repositoryRoot,
             Environment.GetEnvironmentVariable("DEEP_MR_X_PUBLIC_KEY_SHA256")!);
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_SERIAL"), policy.Device.Serial, StringComparison.Ordinal)) throw new InvalidOperationException("Configured Android serial does not match approved inventory.");
-        var apk = RequirePinnedPath("DEEP_E2E_ANDROID_APK", policy.Apk.Path); var fixture = RequireAbsoluteFile("DEEP_E2E_ATTACHMENT_FIXTURE"); var adb = RequirePinnedPath("DEEP_E2E_ADB", policy.Adb.Path); var aapt = RequirePinnedPath("DEEP_E2E_AAPT", policy.Aapt.Path); var apksigner = RequirePinnedPath("DEEP_E2E_APKSIGNER", policy.Apksigner.Path); var artifacts = Path.GetFullPath(Environment.GetEnvironmentVariable("DEEP_E2E_ARTIFACTS")!);
+        var apk = RequirePinnedPath("DEEP_E2E_ANDROID_APK", policy.Apk.Path); var genericFixture = RequireAbsoluteFile("DEEP_E2E_GENERIC_FIXTURE"); var documentFixture = RequireAbsoluteFile("DEEP_E2E_DOCUMENT_FIXTURE"); var imageFixture = RequireAbsoluteFile("DEEP_E2E_IMAGE_FIXTURE"); var adb = RequirePinnedPath("DEEP_E2E_ADB", policy.Adb.Path); var aapt = RequirePinnedPath("DEEP_E2E_AAPT", policy.Aapt.Path); var apksigner = RequirePinnedPath("DEEP_E2E_APKSIGNER", policy.Apksigner.Path); var artifacts = Path.GetFullPath(Environment.GetEnvironmentVariable("DEEP_E2E_ARTIFACTS")!);
         var windowsExe = Environment.GetEnvironmentVariable("DEEP_MAUI_EXE")!;
         var appDataRoot = Environment.GetEnvironmentVariable("DEEP_E2E_APPDATA_ROOT")!;
         if (!Path.IsPathFullyQualified(windowsExe) || !File.Exists(windowsExe) || !Path.IsPathFullyQualified(appDataRoot) || !string.Equals(Path.GetFullPath(windowsExe), policy.WindowsExePath, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Configured Windows executable or app-data root is invalid.");
@@ -760,7 +960,7 @@ internal sealed class CrossPlatformOptions
         policy.ValidateTool(apksigner, "apksigner");
         var releaseInvocation = Environment.GetEnvironmentVariable("DEEP_RELEASE_INVOCATION_ID")!;
         if (!System.Text.RegularExpressions.Regex.IsMatch(releaseInvocation, "^[a-f0-9]{32}$")) throw new InvalidOperationException("Release invocation ID must be fresh 32-hex.");
-        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, fixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256);
+        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, genericFixture, documentFixture, imageFixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256);
     }
     internal StrictCrossPlatformContracts.ApkMetadata ReadAndValidateApkMetadata()
     {
@@ -1077,9 +1277,31 @@ internal sealed class AndroidUiautomatorClient
     internal void ForceStop() => RequireSuccess(Adb("shell", "am", "force-stop", StrictCrossPlatformContracts.AndroidPackage));
     internal void PushFixture(string source, string marker) { var target = "/sdcard/Download/" + marker; RequireSuccess(Adb("push", source, target)); }
     internal void DeletePushedFixture(string marker) => RequireSuccess(Adb("shell", "rm", "-f", "/sdcard/Download/" + marker));
+    internal void PushMediaFixture(string source, string marker)
+    {
+        var target = "/sdcard/Pictures/" + marker;
+        RequireSuccess(Adb("push", source, target));
+        RequireSuccess(Adb("shell", "am", "broadcast", "-a",
+            "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file://" + target));
+    }
+    internal void DeletePushedMediaFixture(string marker) =>
+        RequireSuccess(Adb("shell", "rm", "-f", "/sdcard/Pictures/" + marker));
     internal StrictCrossPlatformContracts.AndroidNode WaitForResource(string resourceId, TimeSpan timeout) => Wait(resourceId, null, timeout);
     internal int CountResourceId(string resourceId) =>
         StrictCrossPlatformContracts.FindAllResourceIds(Dump(), resourceId).Length;
+    internal void WaitForExactResourceCount(string resourceId, int expected, TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var count = CountResourceId(resourceId);
+            if (count == expected) return;
+            if (count > expected)
+                throw new InvalidOperationException("Android rendered duplicate correlated resources.");
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException("Android did not render the exact expected resource count.");
+    }
     internal StrictCrossPlatformContracts.AndroidNode WaitForOneNewResourceId(
         string resourceId,
         int previousCount,
@@ -1120,6 +1342,47 @@ internal sealed class AndroidUiautomatorClient
             last);
     }
     internal void WaitForText(string resourceId, string text, TimeSpan timeout) { var node = WaitByMarker(resourceId, text, timeout); Assert.Contains(text, node.Text, StringComparison.Ordinal); }
+    internal StrictCrossPlatformContracts.AndroidNode WaitForCorrelatedDescendant(
+        string ancestorResourceId, string correlationResourceId, string correlationText,
+        string targetResourceId, TimeSpan timeout, string? targetAccessibleText = null)
+    {
+        var until = DateTime.UtcNow + timeout;
+        Exception? last = null;
+        while (DateTime.UtcNow < until)
+        {
+            try
+            {
+                var target = StrictCrossPlatformContracts.FindExactlyOneCorrelatedDescendant(
+                    Dump(), ancestorResourceId, correlationResourceId, correlationText,
+                    targetResourceId);
+                if (targetAccessibleText is not null && !string.Equals(
+                        target.AccessibleText, targetAccessibleText, StringComparison.Ordinal))
+                    throw new InvalidOperationException(
+                        "Correlated Android message target has not reached its exact state.");
+                return target;
+            }
+            catch (Exception exception) { last = exception; }
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException("Correlated Android message target was not observed.", last);
+    }
+    internal StrictCrossPlatformContracts.AndroidNode WaitForMessageBubbleContaining(
+        string descendantResourceId, string exactText, TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        Exception? last = null;
+        while (DateTime.UtcNow < until)
+        {
+            try
+            {
+                return StrictCrossPlatformContracts.FindExactlyOneResourceIdContainingDescendantText(
+                    Dump(), options.App("Chat.MessageBubble"), descendantResourceId, exactText);
+            }
+            catch (Exception exception) { last = exception; }
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException("Correlated Android message bubble was not observed.", last);
+    }
     internal StrictCrossPlatformContracts.AndroidNode WaitForLastResourceIdContainingDescendant(string resourceId, string descendantResourceId, TimeSpan timeout) { var until = DateTime.UtcNow + timeout; Exception? last = null; while (DateTime.UtcNow < until) { try { return StrictCrossPlatformContracts.FindLastResourceIdContainingDescendant(Dump(), resourceId, descendantResourceId); } catch (Exception ex) { last = ex; } Thread.Sleep(250); } throw new InvalidOperationException($"Last Android {resourceId} did not contain {descendantResourceId}.", last); }
     internal StrictCrossPlatformContracts.AndroidNode? FindOptional(string resourceId) => StrictCrossPlatformContracts.FindOptionalResourceId(Dump(), resourceId);
     internal string WaitForExactlyOneResource(IReadOnlyList<string> resourceIds, TimeSpan timeout)
@@ -1160,7 +1423,9 @@ internal sealed class AndroidUiautomatorClient
             "Android did not expose one closed identity-provisioning surface.", last);
     }
     internal void Tap(string resourceId) { var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
+    internal void Tap(StrictCrossPlatformContracts.AndroidNode node) { var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void Hold(string resourceId, TimeSpan duration) { if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10)) throw new ArgumentOutOfRangeException(nameof(duration)); var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "swipe", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), ((int)duration.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
+    internal void Hold(StrictCrossPlatformContracts.AndroidNode node, TimeSpan duration) { if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10)) throw new ArgumentOutOfRangeException(nameof(duration)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "swipe", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), ((int)duration.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void TapExactResourceIdWithExactText(string resourceId, string text) { var node = WaitByText(resourceId, text, TimeSpan.FromSeconds(15)); Assert.Equal(text, node.Text); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal bool AllowMicrophonePermissionIfRequested(TimeSpan timeout)
     {
@@ -1196,6 +1461,79 @@ internal sealed class AndroidUiautomatorClient
     }
     internal void Type(string resourceId, string value) { Tap(resourceId); RequireSuccess(Adb("shell", "input", "text", value)); }
     internal void DismissKeyboard() { RequireSuccess(Adb("shell", "input", "keyevent", "KEYCODE_BACK")); }
+    internal void PressBack() => RequireSuccess(Adb("shell", "input", "keyevent", "KEYCODE_BACK"));
+    internal void WaitForExternalActivity(TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var result = Adb("shell", "dumpsys", "activity", "activities");
+            RequireSuccess(result);
+            var resumed = result.Output.Split('\n')
+                .FirstOrDefault(line => line.Contains("ResumedActivity", StringComparison.Ordinal));
+            if (resumed is not null && !resumed.Contains(
+                    StrictCrossPlatformContracts.AndroidPackage + "/", StringComparison.Ordinal))
+                return;
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException(
+            "Attachment Open did not hand off to an external Android activity.");
+    }
+    internal IReadOnlySet<string> SnapshotDownloadPaths()
+    {
+        var result = Adb("shell", "find", "/sdcard/Download", "-type", "f");
+        RequireSuccess(result);
+        return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(static value => value.Trim())
+            .Where(static value => value.StartsWith("/sdcard/Download/", StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+    }
+    internal void WaitForSavedPlaintext(
+        IReadOnlySet<string> before,
+        string originalFileName,
+        string expectedSha256,
+        string artifactDirectory,
+        TimeSpan timeout)
+    {
+        var stem = Path.GetFileNameWithoutExtension(originalFileName);
+        var extension = Path.GetExtension(originalFileName);
+        var correlated = new System.Text.RegularExpressions.Regex(
+            "^" + System.Text.RegularExpressions.Regex.Escape(stem)
+            + "(?: \\([2-9][0-9]*\\))?"
+            + System.Text.RegularExpressions.Regex.Escape(extension) + "$",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var matches = SnapshotDownloadPaths()
+                .Where(path => !before.Contains(path)
+                    && correlated.IsMatch(path.Split('/')[^1]))
+                .ToArray();
+            if (matches.Length > 1)
+                throw new InvalidOperationException(
+                    "Android Save produced more than one correlated plaintext file.");
+            if (matches.Length == 1)
+            {
+                var local = Path.Combine(artifactDirectory,
+                    "android-saved-" + Guid.NewGuid().ToString("N") + extension);
+                RequireSuccess(Adb("pull", matches[0], local));
+                try
+                {
+                    Assert.Equal(expectedSha256,
+                        StrictCrossPlatformContracts.Sha256File(local));
+                }
+                finally
+                {
+                    if (File.Exists(local)) File.Delete(local);
+                    RequireSuccess(Adb("shell", "rm", "-f", matches[0]));
+                }
+                return;
+            }
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException(
+            "Android Save did not create one correlated plaintext file.");
+    }
     private StrictCrossPlatformContracts.AndroidNode Wait(string resourceId, string? expectedText, TimeSpan timeout) { var until = DateTime.UtcNow + timeout; Exception? last = null; while (DateTime.UtcNow < until) { try { var node = StrictCrossPlatformContracts.FindExactlyOneResourceId(Dump(), resourceId); if (expectedText is null || string.Equals(node.Text, expectedText, StringComparison.Ordinal)) return node; } catch (Exception ex) { last = ex; } Thread.Sleep(250); } throw new InvalidOperationException($"Required Android resource-id did not reach its expected state: {resourceId}.", last); }
     private StrictCrossPlatformContracts.AndroidNode WaitByText(string resourceId, string text, TimeSpan timeout) { var until = DateTime.UtcNow + timeout; Exception? last = null; while (DateTime.UtcNow < until) { try { return StrictCrossPlatformContracts.FindExactlyOneResourceIdWithText(Dump(), resourceId, text); } catch (Exception ex) { last = ex; } Thread.Sleep(250); } throw new InvalidOperationException($"Required Android resource-id/text pair did not reach its expected state: {resourceId}.", last); }
     private StrictCrossPlatformContracts.AndroidNode WaitByMarker(string resourceId, string text, TimeSpan timeout) { var until = DateTime.UtcNow + timeout; Exception? last = null; while (DateTime.UtcNow < until) { try { return StrictCrossPlatformContracts.FindExactlyOneResourceIdContainingText(Dump(), resourceId, text); } catch (Exception ex) { last = ex; } Thread.Sleep(250); } throw new InvalidOperationException($"Required Android resource-id/text marker did not reach its expected state: {resourceId}.", last); }

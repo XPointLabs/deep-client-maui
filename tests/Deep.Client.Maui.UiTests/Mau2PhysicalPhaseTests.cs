@@ -8,12 +8,12 @@ public sealed class Mau2PhysicalPhaseTests
     [Theory]
     [InlineData("ProvisionIdentity", Mau2PhysicalPhase.ProvisionIdentity)]
     [InlineData("Attach", Mau2PhysicalPhase.Attach)]
-    [InlineData("HappyPath", Mau2PhysicalPhase.HappyPath)]
-    [InlineData("VoiceMessage", Mau2PhysicalPhase.VoiceMessage)]
+    [InlineData("PayloadMatrix", Mau2PhysicalPhase.PayloadMatrix)]
     [InlineData("Call", Mau2PhysicalPhase.Call)]
     [InlineData("RestartDurability", Mau2PhysicalPhase.RestartDurability)]
     [InlineData("ManualResendAfterRestart", Mau2PhysicalPhase.ManualResendAfterRestart)]
     [InlineData("AutomaticRetryAfterRestart", Mau2PhysicalPhase.AutomaticRetryAfterRestart)]
+    [InlineData("AckCrashWindow", Mau2PhysicalPhase.AckCrashWindow)]
     [InlineData("NegativeRuntime", Mau2PhysicalPhase.NegativeRuntime)]
     public void Exact_phase_names_are_accepted_without_destructive_default(string value, Mau2PhysicalPhase expected)
     {
@@ -32,24 +32,14 @@ public sealed class Mau2PhysicalPhaseTests
     [Theory]
     [InlineData(Mau2PhysicalPhase.ManualResendAfterRestart)]
     [InlineData(Mau2PhysicalPhase.AutomaticRetryAfterRestart)]
-    public void Restart_resend_phases_fail_closed_without_supported_chaos_evidence(
+    [InlineData(Mau2PhysicalPhase.AckCrashWindow)]
+    public void Retry_and_ack_phases_fail_closed_without_https_ingress_chaos(
         Mau2PhysicalPhase phase)
     {
-        var previousEvidence = Environment.GetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE");
-        var previousProvider = Environment.GetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER");
-        try
-        {
-            Environment.SetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE", null);
-            Environment.SetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER", null);
-
-            Assert.Throws<InvalidOperationException>(() =>
-                Mau2PhysicalPhaseContract.RequireSupportedChaosEvidence(phase));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE", previousEvidence);
-            Environment.SetEnvironmentVariable("DEEP_MAU2_SUPPORTED_CHAOS_PROVIDER", previousProvider);
-        }
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            Mau2PhysicalPhaseContract.RequireHttpsChaosSupport(phase));
+        Assert.Contains("CA-trusted HTTPS ingress", exception.Message,
+            StringComparison.Ordinal);
     }
 
     [Theory]
@@ -57,6 +47,8 @@ public sealed class Mau2PhysicalPhaseTests
     [InlineData("")]
     [InlineData("legacy")]
     [InlineData("HappyPath ")]
+    [InlineData("HappyPath")]
+    [InlineData("VoiceMessage")]
     [InlineData("negativeRuntime")]
     public void Missing_or_noncanonical_phase_fails_closed(string? value)
     {

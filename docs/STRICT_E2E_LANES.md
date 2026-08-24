@@ -279,17 +279,30 @@ are never written to policy output and are zeroed by the issuer process.
 ## Physical Android ↔ Windows rendered flow (opt-in)
 
 The non-destructive physical runner `eng/Invoke-PhysicalMau2CrossPlatform.ps1`
-requires one explicit phase: `ProvisionIdentity`, `Attach`, `HappyPath`, `VoiceMessage`, `Call`, `RestartDurability`,
+requires one explicit phase: `ProvisionIdentity`, `Attach`, `PayloadMatrix`, `Call`, `RestartDurability`,
 `ManualResendAfterRestart`, `AutomaticRetryAfterRestart`, or `NegativeRuntime`.
 `ProvisionIdentity` creates a missing Android or Windows identity only through
 the rendered production controls, otherwise reads and preserves the existing
 identity. It never approves or performs a local-state reset; a reset-required
 surface fails the phase closed and requires a separate explicit user action.
-The two resend-after-restart contracts are opt-in and fail closed unless an
-explicit `deep-devops-survival-chaos-v1` evidence input is supplied. They do
-not currently claim a live pass: the reviewed DevOps chaos executor still has
-to be integrated, and the runner never substitutes raw Docker lifecycle
-commands. `RestartDurability` remains the existing delivered-message
+`PayloadMatrix` replaces the earlier partial happy-path and voice phases. In one
+HTTPS/UAT run it requires exact text in both directions and the correlated sender
+`Sent` state; deterministic generic and PDF documents in both directions with
+filename/type/size metadata and a SHA-256 of the saved plaintext; an inline image
+with a stable preview selector and filename/MIME/dimension metadata; and one new
+explicit voice message in each direction. Both voice messages must expose playback
+start and natural completion, and both voice rows must remain exactly present
+after both processes restart. Open action evidence and Save/decrypt/hash evidence
+are separate booleans; invoking Open never implies that plaintext Save succeeded.
+
+The two resend-after-restart contracts remain fail closed. The available
+`deep-devops-survival-chaos-v1` seam replaces the old HTTP `:41801` publisher,
+while physical clients now require the CA-trusted HTTPS ingress on that port.
+It therefore cannot currently inject an app-visible post-durable response drop
+without destroying the transport being tested. An HTTPS-ingress-aware, bounded
+one-shot control must be added in Deep DevOps before manual retry, automatic retry,
+or ACK crash-window evidence can pass; static evidence from the HTTP integration
+test is not substituted. `RestartDurability` remains the existing delivered-message
 durability claim. `NegativeRuntime` does not clear or reinstall either Android
 package and does not mutate Android app data. It materializes three disposable,
 exact-DACL Windows app-data roots below the protected
@@ -327,7 +340,9 @@ signed policy and its protected run root; invoking `dotnet test` directly is not
 `DEEP_MAUI_EXE`, `DEEP_E2E_APPDATA_ROOT`, `DEEP_E2E_ARTIFACTS`,
 `DEEP_E2E_ANDROID_SERIAL`, absolute `DEEP_E2E_ADB`, `DEEP_E2E_ANDROID_APK`,
 absolute `DEEP_E2E_AAPT`, absolute `DEEP_E2E_APKSIGNER`, and
-`DEEP_E2E_ATTACHMENT_FIXTURE`, one common `DEEP_RELEASE_INVOCATION_ID`, and an
+the runner-owned deterministic `DEEP_E2E_GENERIC_FIXTURE`,
+`DEEP_E2E_DOCUMENT_FIXTURE`, and `DEEP_E2E_IMAGE_FIXTURE`, one common
+`DEEP_RELEASE_INVOCATION_ID`, and an
 exact provisioned `DEEP_E2E_ANDROID_POLICY` plus the external
 `DEEP_MR_X_PUBLIC_KEY_SHA256` pin. This is the same protected policy, approval receipt,
 signed payload, and Ed25519 verifier used by the release Android lane; a parallel

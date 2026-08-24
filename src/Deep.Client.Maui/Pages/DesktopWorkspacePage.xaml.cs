@@ -29,7 +29,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
     private readonly PhysicalMailboxRouteUsageTracker physicalRouteUsageTracker;
     private Label? physicalRouteNodeMarker;
     private Label? physicalRuntimeReadyMarker;
-    private Label? physicalVoicePlaybackMarker;
+    private Label? physicalVoicePlaybackState;
 #endif
     private IncomingCallPollingBackoff incomingCallPolling = new();
     private readonly VoiceMessagePlaybackService voicePlayback = new();
@@ -97,7 +97,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
                 "Physical E2E requires its mailbox route usage tracker.");
         CreatePhysicalRouteNodeMarker();
         CreatePhysicalRuntimeReadyMarker();
-        CreatePhysicalVoicePlaybackMarker();
+        CreatePhysicalVoicePlaybackState();
 #endif
         BindingContext = viewModel;
     }
@@ -323,26 +323,27 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         DetailContent.Children.Add(physicalRuntimeReadyMarker);
     }
 
-    private void CreatePhysicalVoicePlaybackMarker()
+    private void CreatePhysicalVoicePlaybackState()
     {
-        physicalVoicePlaybackMarker = new Label
+        physicalVoicePlaybackState = new Label
         {
-            AutomationId = "PhysicalE2E.VoicePlaybackMarker",
-            Text = "playing",
+            AutomationId = "PhysicalE2E.VoicePlaybackState",
+            Text = "idle",
             IsVisible = false,
             FontSize = 1,
             Opacity = 0.01,
             InputTransparent = true,
             ZIndex = 102
         };
-        DetailContent.Children.Add(physicalVoicePlaybackMarker);
+        DetailContent.Children.Add(physicalVoicePlaybackState);
     }
 
     private void UpdatePhysicalVoicePlaybackMarker(VoicePlaybackSnapshot snapshot)
     {
-        if (physicalVoicePlaybackMarker is not null)
+        if (physicalVoicePlaybackState is not null && snapshot.AttachmentId is not null)
         {
-            physicalVoicePlaybackMarker.IsVisible = snapshot.IsPlaying;
+            physicalVoicePlaybackState.Text = snapshot.IsPlaying ? "playing" : "completed";
+            physicalVoicePlaybackState.IsVisible = true;
         }
     }
 
