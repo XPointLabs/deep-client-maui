@@ -1,15 +1,15 @@
 {
   "schema": "deep.physical-chaos-dependencies.v1",
-  "reviewedDevOpsCommit": "d24c733d70560715814618777ed0452112082760",
-  "dependencyTreeSha256": "b11f89cf87c5ed6d8550d0f90e36844acf3a4ca50fb9d49167b4796a77927e12",
+  "reviewedDevOpsCommit": "68de5fb98c7bea76ab052a78786096359a853506",
+  "dependencyTreeSha256": "0dfbc30066965f27dfab9bcccee2e7354002481d9d3b3593685b5e9b67a058f8",
   "files": [
     { "path": "config/survival-uat-tls/haproxy.cfg", "sha256": "43d2bc25d11e08825627061fac0f249761e75d3970f3392d082ebf34bca86fc0" },
-    { "path": "docker-compose.survival-resend-chaos.dev.yml", "sha256": "e6cb18af6bee5044d2ff0f4c92da1aa4bbbdbe58044a8f954cd575c1ff8938ff" },
+    { "path": "docker-compose.survival-resend-chaos.dev.yml", "sha256": "f5486da045e061d21d293bc2f84c793662e82724281e3519415acc78477f6470" },
     { "path": "docker-compose.survival-uat-tls.dev.yml", "sha256": "a574640fc7bd2c725f761e5f28c63a2a9f9ff90b1e94780a80629ce490939946" },
     { "path": "docker-compose.survival.dev.yml", "sha256": "9bc2a67cc2c88bf76baf3aff0c11a7559a79064b41a418f879292ca726b6f0ff" },
     { "path": "scripts/survival-dev-mailbox-build-inputs.ps1", "sha256": "c5e0f08e0816296734195a27b2c8a47a207b0f1ade88f0186caffe02334f1456" },
     { "path": "scripts/survival-dev-private-secrets.ps1", "sha256": "c2db46d258501aa54b263ca8731817c1e2020e4a88e7c0e66e5558dd991c380e" },
-    { "path": "scripts/survival-dev.ps1", "sha256": "4a1ecc5ac13c44bce93c10b16008c7fe442269529be939514cbf160ac7479662" },
+    { "path": "scripts/survival-dev.ps1", "sha256": "d18a745d37cdf56581b8260c85caca65c2863618130cdda2a986f3607e4cef59" },
     { "path": "tools/survival-resend-chaos/control-client.mjs", "sha256": "d759f85f9f97113c719467d7136b7cdbb93e92b0f92c7b051bb0e93721f93b96" },
     { "path": "tools/survival-resend-chaos/resend-chaos-proxy.mjs", "sha256": "c4dcdf0657c3888eabf029be77048237c8ac50753c6a38349f6a02959a079986" },
     { "path": "tools/survival-resend-chaos/resend-chaos-proxy.test.mjs", "sha256": "904d5900499677125c33aa92735931643ea4bf81c88aaa72cbf1e4e5cb774e04" }
@@ -19,6 +19,16 @@
   ],
   "systemExecutables": [
     {
+      "name": "docker",
+      "path": "C:/Program Files/Docker/Docker/resources/bin/docker.exe",
+      "sha256": "7b164efdbbfc2afa6a6b64c638390b3e838a00c33441218976fce2821ee6b6bb"
+    },
+    {
+      "name": "dockerCompose",
+      "path": "C:/Program Files/Docker/Docker/resources/bin/docker-compose.exe",
+      "sha256": "799b55cb8ef0e1872ba4226a1f60da16c10fe29e1e3f5319abbf63694c5eb718"
+    },
+    {
       "name": "dotnet",
       "path": "C:/Program Files/dotnet/dotnet.exe",
       "sha256": "e890cbd860379a3a984b9f6f901207625159689afc07f43c8069206441ea8c31"
@@ -27,6 +37,11 @@
       "name": "powershell",
       "path": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
       "sha256": "b3ceb27e6356848c37a5ee0c844c2d6e91f38d3eed2226757076321b05c65caf"
+    },
+    {
+      "name": "taskkill",
+      "path": "C:/Windows/System32/taskkill.exe",
+      "sha256": "94564fd7962b1117f87d293449a20f0dc2fb57868b0e38b798843bbf42d32a42"
     }
   ]
 }

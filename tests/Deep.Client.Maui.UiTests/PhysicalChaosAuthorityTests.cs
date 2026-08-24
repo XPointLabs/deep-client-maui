@@ -121,13 +121,22 @@ public sealed class PhysicalChaosAuthorityTests
                 PhysicalChaosController.DependencyAuthority.PowerShellPath);
             var dotnetHash = Sha256File(
                 PhysicalChaosController.DependencyAuthority.DotNetPath);
+            var dockerHash = Sha256File(
+                PhysicalChaosController.DependencyAuthority.DockerPath);
+            var dockerComposeHash = Sha256File(
+                PhysicalChaosController.DependencyAuthority.DockerComposePath);
+            var taskKillHash = Sha256File(
+                PhysicalChaosController.DependencyAuthority.TaskKillPath);
             var lines = new[]
             {
                 $"file:scripts/survival-dev.ps1={launcherHash}",
                 $"file:tools/survival-resend-chaos/control-client.mjs={controlHash}",
                 "directory:tools/survival-resend-chaos",
+                $"system:docker|C:/Program Files/Docker/Docker/resources/bin/docker.exe={dockerHash}",
+                $"system:dockerCompose|C:/Program Files/Docker/Docker/resources/bin/docker-compose.exe={dockerComposeHash}",
                 $"system:dotnet|C:/Program Files/dotnet/dotnet.exe={dotnetHash}",
-                $"system:powershell|C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe={powershellHash}"
+                $"system:powershell|C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe={powershellHash}",
+                $"system:taskkill|C:/Windows/System32/taskkill.exe={taskKillHash}"
             };
             var treeMaterial = "deep.physical-chaos.dependency-tree.v1\0"
                 + string.Concat(lines.Order(StringComparer.Ordinal).Select(static line => line + "\n"));
@@ -147,6 +156,18 @@ public sealed class PhysicalChaosAuthorityTests
                 {
                     new
                     {
+                        name = "docker",
+                        path = "C:/Program Files/Docker/Docker/resources/bin/docker.exe",
+                        sha256 = dockerHash
+                    },
+                    new
+                    {
+                        name = "dockerCompose",
+                        path = "C:/Program Files/Docker/Docker/resources/bin/docker-compose.exe",
+                        sha256 = dockerComposeHash
+                    },
+                    new
+                    {
                         name = "dotnet", path = "C:/Program Files/dotnet/dotnet.exe",
                         sha256 = dotnetHash
                     },
@@ -155,6 +176,11 @@ public sealed class PhysicalChaosAuthorityTests
                         name = "powershell",
                         path = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
                         sha256 = powershellHash
+                    },
+                    new
+                    {
+                        name = "taskkill", path = "C:/Windows/System32/taskkill.exe",
+                        sha256 = taskKillHash
                     }
                 }
             };

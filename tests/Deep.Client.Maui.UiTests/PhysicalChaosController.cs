@@ -8,9 +8,9 @@ namespace Deep.Client.Maui.UiTests;
 
 internal sealed class PhysicalChaosController
 {
-    internal const string DevOpsCommit = "d24c733d70560715814618777ed0452112082760";
+    internal const string DevOpsCommit = "68de5fb98c7bea76ab052a78786096359a853506";
     internal const string DependencyManifestSha256 =
-        "3f55806343b21104af421a25df593907804e626b78a304455aafc7cff838de15";
+        "b54d10ad358802e7d1b536976e27316d474d3d160d05f46c60b832f7ca3a77dd";
     internal const int TtlSeconds = 300;
     private const int CleanupAttempts = 3;
     private readonly string launcher;
@@ -37,14 +37,36 @@ internal sealed class PhysicalChaosController
     internal static PhysicalChaosController LoadRequired()
     {
         var repositoryRoot = RequireDirectory("DEEP_E2E_REPOSITORY_ROOT");
+        var runState = RequireFile("DEEP_MAU2_E2E_RUN_STATE");
+        var runRoot = Path.GetDirectoryName(runState)
+            ?? throw new InvalidOperationException("Physical run state has no parent directory.");
+        var snapshotRoot = Path.Combine(runRoot, "chaos-authority");
+        var expectedDevOpsRoot = Path.Combine(snapshotRoot, "deep-devops");
+        var expectedManifest = Path.Combine(snapshotRoot,
+            "physical-chaos-dependencies.v1.json");
         var devOpsRoot = RequireDirectory("DEEP_E2E_CHAOS_DEVOPS_ROOT");
-        var expectedDevOpsRoot = Path.GetFullPath(Path.Combine(repositoryRoot, "..", "deep-devops"));
         if (!string.Equals(devOpsRoot, expectedDevOpsRoot, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Physical chaos must use the sibling deep-devops checkout.");
-        var manifest = Path.Combine(repositoryRoot, "eng", "physical-chaos-dependencies.v1.json");
+            throw new InvalidOperationException("Physical chaos must use its private run snapshot.");
+        var manifest = RequireFile("DEEP_E2E_CHAOS_MANIFEST");
+        if (!string.Equals(manifest, expectedManifest, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Physical chaos manifest must come from its private run snapshot.");
         var authority = new DependencyAuthority(
-            repositoryRoot, devOpsRoot, manifest, DependencyManifestSha256, DevOpsCommit);
+            snapshotRoot, devOpsRoot, manifest, DependencyManifestSha256, DevOpsCommit);
         authority.Verify();
+        var snapshotSha256 = RequireHashEnvironment("DEEP_E2E_CHAOS_SNAPSHOT_SHA256");
+        if (!string.Equals(snapshotSha256, authority.ExecutionSnapshotSha256,
+                StringComparison.Ordinal))
+            throw new InvalidOperationException("Physical chaos snapshot digest is invalid.");
+        RequireExactEnvironmentPath("DEEP_PHYSICAL_E2E_DOCKER_PATH",
+            DependencyAuthority.DockerPath);
+        RequireExactEnvironmentPath("DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_PATH",
+            DependencyAuthority.DockerComposePath);
+        RequireExactEnvironmentHash("DEEP_PHYSICAL_E2E_DOCKER_SHA256",
+            authority.DockerSha256);
+        RequireExactEnvironmentHash("DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_SHA256",
+            authority.DockerComposeSha256);
+        RequireExactEnvironmentPath("DEEP_PHYSICAL_E2E_DEVOPS_RUNTIME_ROOT",
+            Path.GetFullPath(Path.Combine(repositoryRoot, "..", "deep-devops")));
 
         var originRaw = Environment.GetEnvironmentVariable("DEEP_E2E_CHAOS_HTTPS_ORIGIN");
         if (!Uri.TryCreate(originRaw, UriKind.Absolute, out var origin)
@@ -61,7 +83,10 @@ internal sealed class PhysicalChaosController
             throw new InvalidOperationException(
                 "Physical chaos requires the exact CA-trusted HTTPS IPv4 :41801 origin.");
         }
-        return new PhysicalChaosController(authority.Launcher, origin.Host, authority.Verify);
+        return new PhysicalChaosController(authority.Launcher, origin.Host, authority.Verify)
+        {
+            ExecutionSnapshotSha256 = snapshotSha256
+        };
     }
 
     internal static PhysicalChaosController CreateForTests(
@@ -69,6 +94,8 @@ internal sealed class PhysicalChaosController
             StrictCrossPlatformContracts.ProcessResult> invokeCommand,
         Action? verifyAuthority = null) =>
         new("test-launcher", "127.0.0.1", verifyAuthority ?? (() => { }), invokeCommand);
+
+    internal string ExecutionSnapshotSha256 { get; private init; } = new string('0', 64);
 
     internal ChaosStatus Begin(string fault, string expectedOperation)
     {
@@ -204,11 +231,50 @@ internal sealed class PhysicalChaosController
         return Path.GetFullPath(value);
     }
 
+    private static string RequireFile(string key)
+    {
+        var value = Environment.GetEnvironmentVariable(key);
+        if (string.IsNullOrWhiteSpace(value) || !Path.IsPathFullyQualified(value)
+            || !File.Exists(value))
+            throw new InvalidOperationException($"{key} must be an existing absolute file.");
+        return Path.GetFullPath(value);
+    }
+
+    private static string RequireHashEnvironment(string key)
+    {
+        var value = Environment.GetEnvironmentVariable(key);
+        return value is not null && Regex.IsMatch(value, "^[a-f0-9]{64}$",
+            RegexOptions.CultureInvariant)
+            ? value
+            : throw new InvalidOperationException($"{key} must be canonical lower-case SHA-256.");
+    }
+
+    private static void RequireExactEnvironmentPath(string key, string expected)
+    {
+        var actual = Environment.GetEnvironmentVariable(key);
+        if (string.IsNullOrWhiteSpace(actual) || !Path.IsPathFullyQualified(actual)
+            || !string.Equals(Path.GetFullPath(actual), Path.GetFullPath(expected),
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"{key} does not match reviewed authority.");
+    }
+
+    private static void RequireExactEnvironmentHash(string key, string expected)
+    {
+        var actual = RequireHashEnvironment(key);
+        if (!string.Equals(actual, expected, StringComparison.Ordinal))
+            throw new InvalidOperationException($"{key} does not match reviewed authority.");
+    }
+
     internal sealed class DependencyAuthority
     {
         internal const string PowerShellPath =
             "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
         internal const string DotNetPath = "C:\\Program Files\\dotnet\\dotnet.exe";
+        internal const string DockerPath =
+            "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe";
+        internal const string DockerComposePath =
+            "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker-compose.exe";
+        internal const string TaskKillPath = "C:\\Windows\\System32\\taskkill.exe";
         private const string TreeDomain = "deep.physical-chaos.dependency-tree.v1\0";
         private static readonly HashSet<string> ExactRootProperties = new(StringComparer.Ordinal)
         {
@@ -226,8 +292,11 @@ internal sealed class PhysicalChaosController
         private static readonly IReadOnlyDictionary<string, string> RequiredSystemExecutables =
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
+                ["docker"] = DockerPath.Replace('\\', '/'),
+                ["dockerCompose"] = DockerComposePath.Replace('\\', '/'),
                 ["dotnet"] = DotNetPath.Replace('\\', '/'),
-                ["powershell"] = PowerShellPath.Replace('\\', '/')
+                ["powershell"] = PowerShellPath.Replace('\\', '/'),
+                ["taskkill"] = TaskKillPath.Replace('\\', '/')
             };
 
         private readonly string repositoryRoot;
@@ -252,6 +321,9 @@ internal sealed class PhysicalChaosController
         }
 
         internal string Launcher { get; }
+        internal string ExecutionSnapshotSha256 { get; private set; } = string.Empty;
+        internal string DockerSha256 { get; private set; } = string.Empty;
+        internal string DockerComposeSha256 { get; private set; } = string.Empty;
 
         internal void Verify()
         {
@@ -305,6 +377,12 @@ internal sealed class PhysicalChaosController
                         ResolveDevOpsPath("scripts/survival-dev.ps1", "launcher"),
                         StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("Reviewed physical chaos launcher is missing.");
+                using var snapshot = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                snapshot.AppendData("deep.physical-chaos.execution-snapshot.v1\0"u8);
+                snapshot.AppendData(Encoding.ASCII.GetBytes(expectedManifestSha256));
+                snapshot.AppendData("|"u8);
+                snapshot.AppendData(Encoding.ASCII.GetBytes(expectedTreeHash));
+                ExecutionSnapshotSha256 = Convert.ToHexStringLower(snapshot.GetHashAndReset());
             }
             finally
             {
@@ -367,6 +445,8 @@ internal sealed class PhysicalChaosController
                 RequireRegularFile(nativePath, "system executable");
                 if (!string.Equals(Sha256File(nativePath), hash, StringComparison.Ordinal))
                     throw new InvalidOperationException("A pinned system executable changed.");
+                if (name == "docker") DockerSha256 = hash;
+                if (name == "dockerCompose") DockerComposeSha256 = hash;
                 lines.Add($"system:{name}|{path}={hash}");
             }
             RequireUniqueSorted(orderedNames, "system executables");

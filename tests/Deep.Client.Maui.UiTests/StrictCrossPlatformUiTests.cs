@@ -329,6 +329,8 @@ public sealed class StrictCrossPlatformUiTests
             evidence.AddSafeValue("chaosStatusSha256", statusSha);
             evidence.AddSafeValue("chaosDependencyManifestSha256",
                 PhysicalChaosController.DependencyManifestSha256);
+            evidence.AddSafeValue("chaosExecutionSnapshotSha256",
+                controller.ExecutionSnapshotSha256);
             evidence.AddBoolean("senderFailedStatePersistedAcrossRestart", true);
             evidence.AddBoolean("manualRetryActionInvoked", true);
             evidence.AddBoolean("senderSentAfterExactRetry", true);
@@ -404,6 +406,8 @@ public sealed class StrictCrossPlatformUiTests
             evidence.AddSafeValue("chaosStatusSha256", statusSha);
             evidence.AddSafeValue("chaosDependencyManifestSha256",
                 PhysicalChaosController.DependencyManifestSha256);
+            evidence.AddSafeValue("chaosExecutionSnapshotSha256",
+                controller.ExecutionSnapshotSha256);
             evidence.AddBoolean("senderRestartedWithDistinctPid", true);
             evidence.AddBoolean("manualRetryActionInvoked", false);
             evidence.AddBoolean("automaticRetryReachedSent", true);
@@ -531,6 +535,8 @@ public sealed class StrictCrossPlatformUiTests
             evidence.AddSafeValue("chaosStatusSha256", statusSha);
             evidence.AddSafeValue("chaosDependencyManifestSha256",
                 PhysicalChaosController.DependencyManifestSha256);
+            evidence.AddSafeValue("chaosExecutionSnapshotSha256",
+                controller.ExecutionSnapshotSha256);
             evidence.AddSafeValue("ackCorrelationEvidenceSha256",
                 recovered.SanitizedEvidenceHash());
             evidence.AddBoolean("recipientDurablyRenderedBeforeCrash", true);

@@ -326,7 +326,7 @@ namespace Deep.PhysicalE2E
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $devOpsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot '..\deep-devops'))
 $chaosManifestPath = Join-Path $repoRoot 'eng\physical-chaos-dependencies.v1.json'
-$chaosManifestSha256 = '3f55806343b21104af421a25df593907804e626b78a304455aafc7cff838de15'
+$chaosManifestSha256 = 'b54d10ad358802e7d1b536976e27316d474d3d160d05f46c60b832f7ca3a77dd'
 $androidPackage = 'network.xpoint.deep.e2e'
 $productionPackage = 'network.xpoint.deep'
 $policyPath = Join-Path $repoRoot '.secrets\android-lab\approved-policy.json'
@@ -402,6 +402,32 @@ function Read-ExactPinnedUtf8([string]$Path, [string]$ExpectedSha256, [int]$Maxi
     }
 }
 
+function Read-ExactPinnedBytes([string]$Path, [string]$ExpectedSha256, [int]$MaximumBytes) {
+    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+    try {
+        if ($stream.Length -lt 1 -or $stream.Length -gt $MaximumBytes) {
+            throw 'Pinned dependency length is outside its closed bound.'
+        }
+        $bytes = [byte[]]::new([int]$stream.Length)
+        $offset = 0
+        while ($offset -lt $bytes.Length) {
+            $read = $stream.Read($bytes, $offset, $bytes.Length - $offset)
+            if ($read -eq 0) { throw 'Pinned dependency ended before its declared length.' }
+            $offset += $read
+        }
+        if ($stream.ReadByte() -ne -1) { throw 'Pinned dependency changed while being read.' }
+        $algorithm = [Security.Cryptography.SHA256]::Create()
+        try {
+            $digest = -join ($algorithm.ComputeHash($bytes) |
+                ForEach-Object { $_.ToString('x2') })
+        } finally { $algorithm.Dispose() }
+        if ($digest -cne $ExpectedSha256) {
+            throw 'Pinned dependency bytes do not match the reviewed SHA-256.'
+        }
+        return ,$bytes
+    } finally { $stream.Dispose() }
+}
+
 function Assert-RegularNonReparseFile([string]$Path, [string]$Label) {
     $full = Assert-AbsoluteExisting $Path $Label
     $item = Get-Item -Force -LiteralPath $full
@@ -436,7 +462,7 @@ function Assert-ChaosDependencyAuthority {
         'schema', 'reviewedDevOpsCommit', 'dependencyTreeSha256',
         'files', 'closedDirectories', 'systemExecutables') 'Chaos dependency manifest'
     if ($manifest.schema -cne 'deep.physical-chaos-dependencies.v1' -or
-        $manifest.reviewedDevOpsCommit -cne 'd24c733d70560715814618777ed0452112082760' -or
+        $manifest.reviewedDevOpsCommit -cne '68de5fb98c7bea76ab052a78786096359a853506' -or
         $manifest.dependencyTreeSha256 -cnotmatch '^[a-f0-9]{64}$') {
         throw 'Chaos dependency manifest identity is invalid.'
     }
@@ -503,8 +529,11 @@ function Assert-ChaosDependencyAuthority {
     }
 
     $expectedSystems = [ordered]@{
+        docker = 'C:/Program Files/Docker/Docker/resources/bin/docker.exe'
+        dockerCompose = 'C:/Program Files/Docker/Docker/resources/bin/docker-compose.exe'
         dotnet = 'C:/Program Files/dotnet/dotnet.exe'
         powershell = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
+        taskkill = 'C:/Windows/System32/taskkill.exe'
     }
     $systemPaths = @{}
     $previous = $null
@@ -538,11 +567,120 @@ function Assert-ChaosDependencyAuthority {
     }
     return [pscustomobject]@{
         Launcher = Join-Path $script:devOpsRoot 'scripts\survival-dev.ps1'
+        DevOpsRoot = $script:devOpsRoot
+        Manifest = $manifestFile
+        Files = @($manifest.files)
+        Docker = $systemPaths['docker']
+        DockerSha256 = [string](@($manifest.systemExecutables |
+            Where-Object { $_.name -ceq 'docker' })[0].sha256)
+        DockerCompose = $systemPaths['dockerCompose']
+        DockerComposeSha256 = [string](@($manifest.systemExecutables |
+            Where-Object { $_.name -ceq 'dockerCompose' })[0].sha256)
         PowerShell = $systemPaths['powershell']
         DotNet = $systemPaths['dotnet']
         ManifestSha256 = $script:chaosManifestSha256
         DependencyTreeSha256 = [string]$manifest.dependencyTreeSha256
     }
+}
+
+function New-ChaosDependencySnapshot([object]$Authority, [string]$SnapshotRoot) {
+    if (Test-Path -LiteralPath $SnapshotRoot) {
+        throw 'Chaos dependency snapshot path must be fresh.'
+    }
+    [void][IO.Directory]::CreateDirectory($SnapshotRoot)
+    Set-ProtectedRunTree $SnapshotRoot
+    $snapshotDevOps = Join-Path $SnapshotRoot 'deep-devops'
+    [void][IO.Directory]::CreateDirectory($snapshotDevOps)
+    foreach ($entry in @($Authority.Files)) {
+        $relative = [string]$entry.path
+        $source = Join-Path $Authority.DevOpsRoot ($relative.Replace('/', '\'))
+        $destination = Join-Path $snapshotDevOps ($relative.Replace('/', '\'))
+        [void][IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
+        $bytes = Read-ExactPinnedBytes $source ([string]$entry.sha256) (4 * 1024 * 1024)
+        try {
+            $stream = [IO.File]::Open(
+                $destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) }
+            finally { $stream.Dispose() }
+        } finally { [Array]::Clear($bytes, 0, $bytes.Length) }
+        if ((Get-Sha256 $destination) -cne [string]$entry.sha256) {
+            throw 'Chaos dependency snapshot reread verification failed.'
+        }
+        [IO.File]::SetAttributes(
+            $destination,
+            [IO.File]::GetAttributes($destination) -bor [IO.FileAttributes]::ReadOnly)
+    }
+    $snapshotManifest = Join-Path $SnapshotRoot 'physical-chaos-dependencies.v1.json'
+    $manifestBytes = Read-ExactPinnedBytes $Authority.Manifest $script:chaosManifestSha256 65536
+    try { [IO.File]::WriteAllBytes($snapshotManifest, $manifestBytes) }
+    finally { [Array]::Clear($manifestBytes, 0, $manifestBytes.Length) }
+    [IO.File]::SetAttributes(
+        $snapshotManifest,
+        [IO.File]::GetAttributes($snapshotManifest) -bor [IO.FileAttributes]::ReadOnly)
+    Set-ProtectedRunTree $SnapshotRoot
+    $snapshotDigest = Get-TextSha256 (
+        'deep.physical-chaos.execution-snapshot.v1' + [char]0 +
+        $Authority.ManifestSha256 + '|' + $Authority.DependencyTreeSha256)
+    $leases = [Collections.Generic.List[IO.FileStream]]::new()
+    try {
+        foreach ($entry in @($Authority.Files)) {
+            $path = Join-Path $snapshotDevOps (([string]$entry.path).Replace('/', '\'))
+            $leases.Add([IO.File]::Open(
+                $path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
+        }
+        $leases.Add([IO.File]::Open(
+            $snapshotManifest, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
+    } catch {
+        foreach ($lease in $leases) { $lease.Dispose() }
+        throw
+    }
+    return [pscustomobject]@{
+        Root = $SnapshotRoot
+        DevOpsRoot = $snapshotDevOps
+        Manifest = $snapshotManifest
+        Files = @($Authority.Files)
+        Launcher = Join-Path $snapshotDevOps 'scripts\survival-dev.ps1'
+        Docker = $Authority.Docker
+        DockerSha256 = $Authority.DockerSha256
+        DockerCompose = $Authority.DockerCompose
+        DockerComposeSha256 = $Authority.DockerComposeSha256
+        PowerShell = $Authority.PowerShell
+        DotNet = $Authority.DotNet
+        ManifestSha256 = $Authority.ManifestSha256
+        DependencyTreeSha256 = $Authority.DependencyTreeSha256
+        SnapshotSha256 = $snapshotDigest
+        Leases = $leases
+    }
+}
+
+function Close-ChaosDependencySnapshot([object]$Authority) {
+    if ($null -eq $Authority) { return }
+    $failures = [Collections.Generic.List[Exception]]::new()
+    foreach ($lease in @($Authority.Leases)) {
+        try { $lease.Dispose() } catch { $failures.Add($_.Exception) }
+    }
+    if ($failures.Count -ne 0) {
+        throw [AggregateException]::new('Private chaos snapshot lease release failed.', $failures)
+    }
+}
+
+function Get-ChaosExecutionAuthority {
+    $authority = $script:chaosExecutionAuthority
+    if ($null -eq $authority) { throw 'Private chaos execution snapshot is not initialized.' }
+    if ((Get-Sha256 $authority.Manifest) -cne $authority.ManifestSha256) {
+        throw 'Private chaos snapshot manifest changed after creation.'
+    }
+    foreach ($entry in @($authority.Files)) {
+        $path = Join-Path $authority.DevOpsRoot (([string]$entry.path).Replace('/', '\'))
+        $file = Assert-RegularNonReparseFile $path 'Private chaos snapshot dependency'
+        Assert-AuthorityPathAncestors $authority.Root $file 'Private chaos snapshot dependency'
+        if (-not ((Get-Item -Force -LiteralPath $file).Attributes -band
+                [IO.FileAttributes]::ReadOnly) -or
+            (Get-Sha256 $file) -cne [string]$entry.sha256) {
+            throw 'Private chaos snapshot dependency changed after creation.'
+        }
+    }
+    return $authority
 }
 
 function Invoke-BoundedProcess(
@@ -769,7 +907,7 @@ function Assert-SanitizedState([object]$State) {
 }
 
 function Assert-DockerHealthy {
-    $authority = Assert-ChaosDependencyAuthority
+    $authority = Get-ChaosExecutionAuthority
     # Status is the supported read-only operation; no raw compose lifecycle command is used here.
     $statusResult = Invoke-BoundedProcess $authority.PowerShell @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $authority.Launcher,
@@ -792,7 +930,7 @@ function Get-ExactChaosJson([object[]]$Output, [string]$Schema) {
 }
 
 function Invoke-ChaosCommand([string[]]$Arguments, [string]$Schema) {
-    $authority = Assert-ChaosDependencyAuthority
+    $authority = Get-ChaosExecutionAuthority
     $allArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass',
         '-File', $authority.Launcher) + $Arguments
     $result = Invoke-BoundedProcess $authority.PowerShell $allArguments 180
@@ -905,12 +1043,13 @@ $chaosPhase = $Phase -cin @(
     'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow')
 $chaosLauncher = $null
 $chaosDependencyTreeSha256 = $null
+$chaosExecutionSnapshotSha256 = $null
 $chaosOrigin = $null
 $chaosSecretDirectory = $null
+$sourceChaosAuthority = $null
 if ($chaosPhase) {
-    $authority = Assert-ChaosDependencyAuthority
-    $chaosLauncher = $authority.Launcher
-    $chaosDependencyTreeSha256 = $authority.DependencyTreeSha256
+    $sourceChaosAuthority = Assert-ChaosDependencyAuthority
+    $chaosDependencyTreeSha256 = $sourceChaosAuthority.DependencyTreeSha256
     $originMatches = [regex]::Matches(
         $runtimeEnvironmentText,
         '(?m)^XNODE_URLS=[0-9a-f]{64}\|(?<origin>https://(?<host>[0-9]{1,3}(?:\.[0-9]{1,3}){3}):41801);')
@@ -926,8 +1065,6 @@ if ($chaosPhase) {
     $chaosSecretDirectory = Assert-AbsoluteExisting `
         'C:\Work\DeepSession\secrets\survival-uat-tls' 'UAT TLS secret directory' -Directory
     $env:SURVIVAL_UAT_TLS_SECRET_DIR = $chaosSecretDirectory
-    Assert-ChaosOffBaseline (Invoke-ChaosCommand @('-Action', 'ChaosStatus') `
-        'deep-survival-resend-chaos-status.v2')
 }
 $sourceCommit = @(& git -C $repoRoot rev-parse HEAD)
 if ($LASTEXITCODE -ne 0 -or $sourceCommit.Count -ne 1 -or $sourceCommit[0].Trim() -cnotmatch '^[0-9a-f]{40}$') {
@@ -974,6 +1111,22 @@ Initialize-ProtectedRunsRoot $e2eRunsRoot
 $runRoot = Join-Path $e2eRunsRoot $runId
 [IO.Directory]::CreateDirectory($runRoot) | Out-Null
 Set-ProtectedRunTree $runRoot
+$script:chaosExecutionAuthority = $null
+if ($chaosPhase) {
+    $script:chaosExecutionAuthority = New-ChaosDependencySnapshot `
+        $sourceChaosAuthority (Join-Path $runRoot 'chaos-authority')
+    $chaosLauncher = $script:chaosExecutionAuthority.Launcher
+    $chaosManifestPath = $script:chaosExecutionAuthority.Manifest
+    $devOpsRoot = $script:chaosExecutionAuthority.DevOpsRoot
+    $chaosExecutionSnapshotSha256 = $script:chaosExecutionAuthority.SnapshotSha256
+    $env:DEEP_PHYSICAL_E2E_DOCKER_PATH = $script:chaosExecutionAuthority.Docker
+    $env:DEEP_PHYSICAL_E2E_DOCKER_SHA256 = $script:chaosExecutionAuthority.DockerSha256
+    $env:DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_PATH = $script:chaosExecutionAuthority.DockerCompose
+    $env:DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_SHA256 = $script:chaosExecutionAuthority.DockerComposeSha256
+    $env:DEEP_PHYSICAL_E2E_DEVOPS_RUNTIME_ROOT = $sourceChaosAuthority.DevOpsRoot
+    Assert-ChaosOffBaseline (Invoke-ChaosCommand @('-Action', 'ChaosStatus') `
+        'deep-survival-resend-chaos-status.v2')
+}
 $runStatePath = Join-Path $runRoot 'run-state.json'
 $artifacts = Join-Path $runRoot 'artifacts'
 [IO.Directory]::CreateDirectory($artifacts) | Out-Null
@@ -1012,6 +1165,7 @@ try {
         runtimeEnvironmentSha256 = Get-Sha256 $runtimeEnvironment
         chaosDependencyManifestSha256 = $(if ($chaosPhase) { $chaosManifestSha256 } else { $null })
         chaosDependencyTreeSha256 = $(if ($chaosPhase) { $chaosDependencyTreeSha256 } else { $null })
+        chaosExecutionSnapshotSha256 = $(if ($chaosPhase) { $chaosExecutionSnapshotSha256 } else { $null })
         transportProtocol = 'authenticated-mau2'
         transportOwnership = 'user-managed'
         androidRuntimeTreeSha256 = (Get-Sha256 (Join-Path $androidRuntime 'activation.v1.json'))
@@ -1059,6 +1213,7 @@ try {
         if ($chaosPhase) {
             $env:DEEP_E2E_CHAOS_DEVOPS_ROOT = $devOpsRoot
             $env:DEEP_E2E_CHAOS_MANIFEST = $chaosManifestPath
+            $env:DEEP_E2E_CHAOS_SNAPSHOT_SHA256 = $chaosExecutionSnapshotSha256
             $env:DEEP_E2E_CHAOS_HTTPS_ORIGIN = $chaosOrigin
             $env:SURVIVAL_UAT_TLS_SECRET_DIR = $chaosSecretDirectory
         }
@@ -1076,7 +1231,7 @@ try {
         try {
             $trxPath = Join-Path $artifacts 'physical-phase.trx'
             if ($chaosPhase) { $chaosCleanupRequired = $true }
-            $authority = Assert-ChaosDependencyAuthority
+            $authority = Get-ChaosExecutionAuthority
             $testArguments = @(
                 'test',
                 (Join-Path $repoRoot 'tests\Deep.Client.Maui.UiTests\Deep.Client.Maui.UiTests.csproj'),
@@ -1136,6 +1291,11 @@ try {
         if ((Get-TreeSha256 $windowsLiveRuntime) -cne $windowsLiveRuntimeHashBefore) {
             throw 'Canonical live Windows runtime changed during MAU2 E2E.'
         }
+    } catch {
+        $failures.Add($_.Exception)
+    }
+    try {
+        Close-ChaosDependencySnapshot $script:chaosExecutionAuthority
     } catch {
         $failures.Add($_.Exception)
     }

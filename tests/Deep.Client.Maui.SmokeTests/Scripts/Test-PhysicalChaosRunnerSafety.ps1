@@ -44,4 +44,80 @@ try {
     if ($_.Exception.ToString() -notmatch 'aggregate output limit') { throw }
 }
 
+$tokens = $null
+$parseErrors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile(
+    $runner, [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count -ne 0) { throw 'Physical runner did not parse for snapshot safety test.' }
+$requiredFunctions = @(
+    'Get-Sha256', 'Get-TextSha256', 'Read-ExactPinnedBytes',
+    'Set-ProtectedRunItem', 'Set-ProtectedRunTree',
+    'New-ChaosDependencySnapshot', 'Close-ChaosDependencySnapshot')
+foreach ($name in $requiredFunctions) {
+    $matches = @($ast.FindAll({ param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -ceq $name
+    }, $true))
+    if ($matches.Count -ne 1) { throw "Snapshot helper '$name' was not found exactly once." }
+    Invoke-Expression $matches[0].Extent.Text
+}
+
+$snapshotWork = Join-Path $env:TEMP ('deep-physical-snapshot-' + [guid]::NewGuid().ToString('N'))
+$sourceRoot = Join-Path $snapshotWork 'source'
+$sourceScripts = Join-Path $sourceRoot 'scripts'
+$snapshotRoot = Join-Path $snapshotWork 'snapshot'
+$manifest = Join-Path $snapshotWork 'manifest.json'
+$launcher = Join-Path $sourceScripts 'survival-dev.ps1'
+$helper = Join-Path $sourceScripts 'helper.ps1'
+$lease = $null
+try {
+    [void][IO.Directory]::CreateDirectory($sourceScripts)
+    [IO.File]::WriteAllText($launcher, "'reviewed-launcher'`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($helper, "'reviewed-helper'`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($manifest, '{"reviewed":true}', [Text.UTF8Encoding]::new($false))
+    $script:chaosManifestSha256 = Get-Sha256 $manifest
+    $authority = [pscustomobject]@{
+        DevOpsRoot = $sourceRoot
+        Manifest = $manifest
+        Files = @(
+            [pscustomobject]@{ path = 'scripts/helper.ps1'; sha256 = (Get-Sha256 $helper) },
+            [pscustomobject]@{ path = 'scripts/survival-dev.ps1'; sha256 = (Get-Sha256 $launcher) })
+        Docker = 'docker'; DockerSha256 = '0' * 64
+        DockerCompose = 'compose'; DockerComposeSha256 = '1' * 64
+        PowerShell = $powershell; DotNet = 'dotnet'
+        ManifestSha256 = $script:chaosManifestSha256
+        DependencyTreeSha256 = '2' * 64
+    }
+    $lease = New-ChaosDependencySnapshot $authority $snapshotRoot
+
+    [IO.File]::WriteAllText($launcher, "'malicious-launcher'`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($helper, "'malicious-helper'`n", [Text.UTF8Encoding]::new($false))
+    $snapshotLauncher = Join-Path $lease.DevOpsRoot 'scripts\survival-dev.ps1'
+    if ((Get-Content -Raw -LiteralPath $snapshotLauncher) -cne "'reviewed-launcher'`n") {
+        throw 'Snapshot did not retain the exact reviewed source bytes.'
+    }
+    [IO.File]::SetAttributes(
+        $snapshotLauncher,
+        [IO.File]::GetAttributes($snapshotLauncher) -band (-bnot [IO.FileAttributes]::ReadOnly))
+    $mutationRejected = $false
+    try {
+        [IO.File]::WriteAllText($snapshotLauncher, 'replacement')
+    } catch [IO.IOException] { $mutationRejected = $true }
+    if (-not $mutationRejected) { throw 'Snapshot lease allowed write/replace during execution.' }
+
+    Close-ChaosDependencySnapshot $lease
+    $lease = $null
+    [IO.File]::WriteAllText($snapshotLauncher, 'released')
+    if ((Get-Content -Raw -LiteralPath $snapshotLauncher) -cne 'released') {
+        throw 'Snapshot lease did not release after bounded cleanup.'
+    }
+} finally {
+    if ($null -ne $lease) { Close-ChaosDependencySnapshot $lease }
+    if (Test-Path -LiteralPath $snapshotWork) {
+        Get-ChildItem -Force -Recurse -LiteralPath $snapshotWork -File |
+            ForEach-Object { $_.Attributes = $_.Attributes -band (-bnot [IO.FileAttributes]::ReadOnly) }
+        Remove-Item -LiteralPath $snapshotWork -Recurse -Force
+    }
+}
+
 'physical-chaos-bounded-runner-green'
