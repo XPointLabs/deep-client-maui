@@ -640,24 +640,23 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             return;
         }
 
-        if (pushDriven)
-        {
-            autoReceiveTimer?.Stop();
-            return;
-        }
-
-        EnsureAutoReceive();
+        // Push accelerates foreground delivery but is not an authority for liveness.
+        // A cached remote subscription can outlive the platform provider, so an open
+        // chat always keeps a bounded watchdog poll.
+        EnsureAutoReceive(pushDriven
+            ? TimeSpan.FromSeconds(30)
+            : TimeSpan.FromSeconds(10));
     }
 
-    private void EnsureAutoReceive()
+    private void EnsureAutoReceive(TimeSpan interval)
     {
         if (autoReceiveTimer is null)
         {
             autoReceiveTimer = Dispatcher.CreateTimer();
-            autoReceiveTimer.Interval = TimeSpan.FromSeconds(10);
             autoReceiveTimer.Tick += OnAutoReceiveTick;
         }
 
+        autoReceiveTimer.Interval = interval;
         autoReceiveTimer.Start();
     }
 
@@ -700,6 +699,18 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         {
             receivingMessages = true;
             await viewModel.ReceiveAsync(cancellationToken);
+            if (viewModel.HasError)
+            {
+                CrashDiagnostics.LogInfo(
+                    "Chat.Sync",
+                    "Foreground chat synchronization failed; pending work remains queued.");
+            }
+            else
+            {
+                CrashDiagnostics.LogInfo(
+                    "Perf.Chat",
+                    $"ForegroundSync count={viewModel.Messages.Count}");
+            }
         }
         catch (OperationCanceledException)
         {
