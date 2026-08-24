@@ -49,12 +49,7 @@ internal static class StrictCrossPlatformContracts
 
     internal static AndroidNode FindExactlyOneResourceId(string xml, string resourceId)
     {
-        ValidateResourceId(resourceId, "resource-id");
-        var document = XDocument.Parse(xml, LoadOptions.None);
-        var matches = document.Descendants("node")
-            .Where(node => string.Equals((string?)node.Attribute("resource-id"), resourceId, StringComparison.Ordinal))
-            .Select(AndroidNode.From)
-            .ToArray();
+        var matches = FindAllResourceIds(xml, resourceId);
 
         return matches.Length switch
         {
@@ -62,6 +57,19 @@ internal static class StrictCrossPlatformContracts
             0 => throw new InvalidOperationException($"Required Android resource-id was not present: {resourceId}."),
             _ => throw new InvalidOperationException($"Android resource-id was not unique: {resourceId} ({matches.Length} matches).")
         };
+    }
+
+    internal static AndroidNode[] FindAllResourceIds(string xml, string resourceId)
+    {
+        ValidateResourceId(resourceId, "resource-id");
+        var document = XDocument.Parse(xml, LoadOptions.None);
+        return document.Descendants("node")
+            .Where(node => string.Equals(
+                (string?)node.Attribute("resource-id"),
+                resourceId,
+                StringComparison.Ordinal))
+            .Select(AndroidNode.From)
+            .ToArray();
     }
 
     internal static AndroidNode? FindOptionalResourceId(string xml, string resourceId)

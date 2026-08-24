@@ -36,6 +36,8 @@ public sealed class StrictCrossPlatformContractsTests
 
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.FindExactlyOneResourceId(empty, "pkg:id/a"));
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.FindExactlyOneResourceId(duplicate, "pkg:id/a"));
+        Assert.Equal(2, StrictCrossPlatformContracts.FindAllResourceIds(
+            duplicate, "pkg:id/a").Length);
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.ValidateResourceId("Chat.Send", "resource-id"));
     }
 

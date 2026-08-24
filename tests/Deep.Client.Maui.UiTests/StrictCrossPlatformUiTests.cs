@@ -278,9 +278,12 @@ public sealed class StrictCrossPlatformUiTests
 
         var previousVoiceCount = windows.CountAutomationId(
             "DesktopWorkspace.DirectVoicePlay");
+        var previousAndroidVoiceCount = android.CountResourceId(
+            options.App("Chat.VoicePlayButton"));
         android.Hold(options.App("Chat.Voice"), TimeSpan.FromSeconds(4));
-        android.WaitForResource(
+        android.WaitForOneNewResourceId(
             options.App("Chat.VoicePlayButton"),
+            previousAndroidVoiceCount,
             TimeSpan.FromSeconds(60));
 
         var receivedVoice = Require(
@@ -983,6 +986,47 @@ internal sealed class AndroidUiautomatorClient
     internal void PushFixture(string source, string marker) { var target = "/sdcard/Download/" + marker; RequireSuccess(Adb("push", source, target)); }
     internal void DeletePushedFixture(string marker) => RequireSuccess(Adb("shell", "rm", "-f", "/sdcard/Download/" + marker));
     internal StrictCrossPlatformContracts.AndroidNode WaitForResource(string resourceId, TimeSpan timeout) => Wait(resourceId, null, timeout);
+    internal int CountResourceId(string resourceId) =>
+        StrictCrossPlatformContracts.FindAllResourceIds(Dump(), resourceId).Length;
+    internal StrictCrossPlatformContracts.AndroidNode WaitForOneNewResourceId(
+        string resourceId,
+        int previousCount,
+        TimeSpan timeout)
+    {
+        if (previousCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(previousCount));
+        }
+
+        var until = DateTime.UtcNow + timeout;
+        Exception? last = null;
+        while (DateTime.UtcNow < until)
+        {
+            try
+            {
+                var matches = StrictCrossPlatformContracts.FindAllResourceIds(
+                    Dump(), resourceId);
+                if (matches.Length > previousCount + 1)
+                {
+                    throw new InvalidOperationException(
+                        "More than one new exact Android resource appeared.");
+                }
+                if (matches.Length == previousCount + 1)
+                {
+                    return matches[^1];
+                }
+            }
+            catch (Exception exception)
+            {
+                last = exception;
+            }
+            Thread.Sleep(250);
+        }
+
+        throw new InvalidOperationException(
+            $"Android resource-id did not increase by exactly one: {resourceId}.",
+            last);
+    }
     internal void WaitForText(string resourceId, string text, TimeSpan timeout) { var node = WaitByMarker(resourceId, text, timeout); Assert.Contains(text, node.Text, StringComparison.Ordinal); }
     internal StrictCrossPlatformContracts.AndroidNode? FindOptional(string resourceId) => StrictCrossPlatformContracts.FindOptionalResourceId(Dump(), resourceId);
     internal string WaitForExactlyOneResource(IReadOnlyList<string> resourceIds, TimeSpan timeout)

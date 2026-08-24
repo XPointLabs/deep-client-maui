@@ -17,6 +17,8 @@ public sealed class MessageContextInputContractSmokeTests
         Assert.Contains("FeedbackConstants.LongPress", behavior, StringComparison.Ordinal);
         Assert.Contains("e.Handled = true", behavior, StringComparison.Ordinal);
         Assert.Contains("view.ContextRequested += OnWindowsContextRequested", behavior, StringComparison.Ordinal);
+        Assert.Contains("view.RightTapped += OnWindowsRightTapped", behavior,
+            StringComparison.Ordinal);
         Assert.Contains("args.Handled = true", behavior, StringComparison.Ordinal);
 
         Assert.Equal(7, Count(chat, "MessageContextGestureBehavior"));

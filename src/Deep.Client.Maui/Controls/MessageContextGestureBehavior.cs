@@ -71,6 +71,7 @@ public sealed class MessageContextGestureBehavior : Behavior<VisualElement>
 
         platformView = view;
         view.ContextRequested += OnWindowsContextRequested;
+        view.RightTapped += OnWindowsRightTapped;
 #endif
     }
 
@@ -87,6 +88,7 @@ public sealed class MessageContextGestureBehavior : Behavior<VisualElement>
         if (platformView is not null)
         {
             platformView.ContextRequested -= OnWindowsContextRequested;
+            platformView.RightTapped -= OnWindowsRightTapped;
             platformView = null;
         }
 #endif
@@ -103,6 +105,14 @@ public sealed class MessageContextGestureBehavior : Behavior<VisualElement>
     private void OnWindowsContextRequested(
         Microsoft.UI.Xaml.UIElement sender,
         Microsoft.UI.Xaml.Input.ContextRequestedEventArgs args)
+    {
+        args.Handled = true;
+        RaiseInvoked();
+    }
+
+    private void OnWindowsRightTapped(
+        object sender,
+        Microsoft.UI.Xaml.Input.RightTappedRoutedEventArgs args)
     {
         args.Handled = true;
         RaiseInvoked();
