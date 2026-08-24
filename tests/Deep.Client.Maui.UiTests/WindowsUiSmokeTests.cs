@@ -194,7 +194,7 @@ public sealed class WindowsUiSmokeTests
         public AutomationElement? WaitForAutomationId(string automationId, TimeSpan timeout)
         {
             var result = Retry.WhileNull(
-                () => FindAutomationId(automationId),
+                () => FindAutomationIdForRetry(automationId),
                 timeout,
                 TimeSpan.FromMilliseconds(200),
                 throwOnTimeout: false);
@@ -209,6 +209,21 @@ public sealed class WindowsUiSmokeTests
 
         public AutomationElement? FindAutomationId(string automationId) =>
             CurrentWindow().FindFirstDescendant(condition => condition.ByAutomationId(automationId));
+
+        private AutomationElement? FindAutomationIdForRetry(string automationId)
+        {
+            try
+            {
+                return FindAutomationId(automationId);
+            }
+            catch (COMException) when (!application.HasExited)
+            {
+                // WinUI can transiently invalidate its UIA provider while replacing
+                // a navigation subtree. Retry only inside the caller's existing
+                // deadline and only while the exact launched PID remains alive.
+                return null;
+            }
+        }
 
         internal IReadOnlySet<string> FindPresentAutomationIds(
             IReadOnlyCollection<string> automationIds)
@@ -227,13 +242,30 @@ public sealed class WindowsUiSmokeTests
         internal AutomationElement? WaitForAutomationIdWithName(string automationId, string name, TimeSpan timeout)
         {
             var result = Retry.WhileNull(
-                () => CurrentWindow()
-                    .FindAllDescendants(condition => condition.ByAutomationId(automationId))
-                    .SingleOrDefault(candidate => string.Equals(candidate.Properties.Name.ValueOrDefault, name, StringComparison.Ordinal)),
+                () => FindAutomationIdWithNameForRetry(automationId, name),
                 timeout,
                 TimeSpan.FromMilliseconds(200),
                 throwOnTimeout: false);
             return result.Result;
+        }
+
+        private AutomationElement? FindAutomationIdWithNameForRetry(
+            string automationId,
+            string name)
+        {
+            try
+            {
+                return CurrentWindow()
+                    .FindAllDescendants(condition => condition.ByAutomationId(automationId))
+                    .SingleOrDefault(candidate => string.Equals(
+                        candidate.Properties.Name.ValueOrDefault,
+                        name,
+                        StringComparison.Ordinal));
+            }
+            catch (COMException) when (!application.HasExited)
+            {
+                return null;
+            }
         }
 
         internal void ActivateExact(AutomationElement element)
