@@ -1,6 +1,6 @@
 {
   "schema": "deep.physical-chaos-dependencies.v1",
-  "reviewedDevOpsCommit": "d78b88a796000a925b42ad3027dad5018aaf537a",
+  "reviewedDevOpsCommit": "68de5fb98c7bea76ab052a78786096359a853506",
   "dependencyTreeSha256": "0dfbc30066965f27dfab9bcccee2e7354002481d9d3b3593685b5e9b67a058f8",
   "files": [
     { "path": "config/survival-uat-tls/haproxy.cfg", "sha256": "43d2bc25d11e08825627061fac0f249761e75d3970f3392d082ebf34bca86fc0" },
