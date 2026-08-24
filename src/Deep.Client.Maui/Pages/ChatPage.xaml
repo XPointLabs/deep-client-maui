@@ -224,7 +224,7 @@
                     </Border>
                     <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center" Margin="1,0,0,0">
                         <Label Text="{Binding ConversationTitle}" FontSize="17" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                        <Label Text="защищено сетью XPoint" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
+                        <Label AutomationId="Chat.SecurityStatus" Text="защищено сквозным шифрованием" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
                     </VerticalStackLayout>
                 </Grid>
                 <Border Grid.Column="2" WidthRequest="40" HeightRequest="40" Background="Transparent" StrokeThickness="0" SemanticProperties.Description="Аудиозвонок">

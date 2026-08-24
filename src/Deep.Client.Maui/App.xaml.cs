@@ -137,10 +137,11 @@ public partial class App : Application
         }
         catch (MailboxRuntimeValidationException exception)
         {
+            var presentation = exception.ToUserPresentation();
             await UpdateStartupPageAsync(
                 startupPage,
-                "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ Deep",
-                "РџСЂРѕРІРµСЂСЊС‚Рµ РїРѕРґРєР»СЋС‡РµРЅРёРµ Рё РїРѕРІС‚РѕСЂРёС‚Рµ РїРѕРїС‹С‚РєСѓ.",
+                presentation.Status,
+                presentation.Guidance,
                 retryEnabled: true,
                 resetEnabled: false,
                 activityRunning: false).ConfigureAwait(false);

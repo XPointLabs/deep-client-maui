@@ -3,6 +3,17 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class TransportSettingsUiContractSmokeTests
 {
     [Fact]
+    public void DirectChatSecurityStatusIsTransportNeutral()
+    {
+        var chat = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Pages", "ChatPage.xaml");
+
+        Assert.Contains("AutomationId=\"Chat.SecurityStatus\"", chat, StringComparison.Ordinal);
+        Assert.Contains("Text=\"защищено сквозным шифрованием\"", chat, StringComparison.Ordinal);
+        Assert.DoesNotContain("защищено сетью XPoint", chat, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SettingsExposeOneTransportNeutralEntryWithoutNetworkDonation()
     {
         var settings = ReadWorkspaceFile(

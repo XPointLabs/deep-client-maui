@@ -248,4 +248,27 @@ internal sealed class MailboxRuntimeValidationException : Exception
     }
 
     internal string Code { get; }
+
+    internal MailboxRuntimeFailurePresentation ToUserPresentation() =>
+        Code switch
+        {
+            "inventory" => new(
+                "Не удалось подготовить Deep",
+                "Локальная конфигурация транспорта отсутствует или повреждена. " +
+                "Установите доверенную конфигурацию приложения и повторите запуск."),
+            "platform-binding" => new(
+                "Конфигурация не подходит устройству",
+                "Конфигурация транспорта выпущена для другой платформы. " +
+                "Установите конфигурацию для этого устройства и повторите запуск."),
+            "approval-signature" => new(
+                "Конфигурация не подтверждена",
+                "Не удалось проверить подпись конфигурации транспорта. " +
+                "Установите доверенную конфигурацию и повторите запуск."),
+            _ => throw new InvalidOperationException(
+                "Mailbox runtime validation code is outside the closed set.")
+        };
 }
+
+internal readonly record struct MailboxRuntimeFailurePresentation(
+    string Status,
+    string Guidance);

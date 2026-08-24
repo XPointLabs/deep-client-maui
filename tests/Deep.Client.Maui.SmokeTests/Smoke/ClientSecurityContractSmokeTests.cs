@@ -428,6 +428,11 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("AutomationId = \"Startup.RuntimeFailureCode\"", app,
             StringComparison.Ordinal);
         Assert.Contains("AutomationId = \"Startup.Retry\"", app, StringComparison.Ordinal);
+        Assert.Contains("exception.ToUserPresentation()", app, StringComparison.Ordinal);
+        var mailboxFailureCatch = app[
+            app.IndexOf("catch (MailboxRuntimeValidationException", StringComparison.Ordinal)..
+            app.IndexOf("catch (LocalStateResetRequiredException", StringComparison.Ordinal)];
+        Assert.DoesNotContain("Проверьте подключение", mailboxFailureCatch, StringComparison.Ordinal);
         Assert.Contains("DisplayAlertAsync(", app, StringComparison.Ordinal);
         Assert.Contains("Сбросить локальные данные", app, StringComparison.Ordinal);
         Assert.Contains("localStateResetContext.TryRequestConfirmedReset()", app, StringComparison.Ordinal);

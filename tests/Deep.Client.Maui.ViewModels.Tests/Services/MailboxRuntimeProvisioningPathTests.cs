@@ -5,6 +5,37 @@ namespace Deep.Client.Maui.ViewModels.Tests.Services;
 
 public sealed class MailboxRuntimeProvisioningPathTests
 {
+    [Theory]
+    [InlineData(
+        "inventory",
+        "Не удалось подготовить Deep",
+        "Локальная конфигурация транспорта отсутствует или повреждена. Установите доверенную конфигурацию приложения и повторите запуск.")]
+    [InlineData(
+        "platform-binding",
+        "Конфигурация не подходит устройству",
+        "Конфигурация транспорта выпущена для другой платформы. Установите конфигурацию для этого устройства и повторите запуск.")]
+    [InlineData(
+        "approval-signature",
+        "Конфигурация не подтверждена",
+        "Не удалось проверить подпись конфигурации транспорта. Установите доверенную конфигурацию и повторите запуск.")]
+    public void RuntimeValidationCodesHaveSafeActionablePresentation(
+        string code,
+        string expectedStatus,
+        string expectedGuidance)
+    {
+        var exception = new MailboxRuntimeValidationException(
+            code,
+            new InvalidDataException("sensitive internal detail"));
+
+        var presentation = exception.ToUserPresentation();
+
+        Assert.Equal(expectedStatus, presentation.Status);
+        Assert.Equal(expectedGuidance, presentation.Guidance);
+        Assert.DoesNotContain("sensitive", presentation.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sensitive", presentation.Guidance, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("подключ", presentation.Guidance, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void PinnedApprovalRejectsTamperAndWrongPinBeforeRuntimeImport()
     {
