@@ -252,7 +252,9 @@ public sealed class E2eAutomationSelectorContractSmokeTests
 
         Assert.Contains("android.Hold(options.App(\"Chat.Voice\")", physical,
             StringComparison.Ordinal);
-        Assert.Contains("windows.WaitForOneNewAutomationId(", physical,
+        Assert.Contains("windows.WaitForLastAutomationIdContainingDescendant(", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("options.App(\"Chat.MessageBubble\")", physical,
             StringComparison.Ordinal);
         Assert.Contains("PhysicalE2E.VoicePlaybackMarker", physical,
             StringComparison.Ordinal);
@@ -293,6 +295,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         AssertSelectorExists(pages, "Conversations.ConversationRow");
         AssertSelectorExists(pages, "DesktopWorkspace.ConversationRow");
         AssertSelectorExists(pages, "Chat.StagedAttachmentFilename");
+        AssertSelectorExists(pages, "Chat.MessageBubble");
         AssertSelectorExists(pages, "GroupChat.StagedAttachmentFilename");
         AssertSelectorExists(pages, "DesktopWorkspace.DirectMessageBubble");
         AssertSelectorExists(pages, "DesktopWorkspace.DirectMessageBody");

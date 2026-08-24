@@ -92,7 +92,7 @@ function New-CanonicalAndroidSelectorsJson {
         'StartConversation.NewMessage', 'NewConversation.SessionId',
         'NewConversation.DisplayName', 'NewConversation.Start',
         'NewConversation.Error', 'NewConversation.Back', 'Chat.Draft',
-        'Chat.Send', 'Chat.MessageBody', 'Chat.Attach', 'Chat.PickFile',
+        'Chat.Send', 'Chat.MessageBody', 'Chat.MessageBubble', 'Chat.Attach', 'Chat.PickFile',
         'Chat.StagedAttachmentFilename', 'Chat.Voice', 'Chat.VoicePlayButton')
     $selectors = [ordered]@{}
     foreach ($role in $roles) {
