@@ -7,12 +7,14 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:controls="clr-namespace:Deep.Client.Maui.Controls"
     xmlns:domain="clr-namespace:Deep.Client.Shared.Domain;assembly=Deep.Client.Shared"
+    xmlns:local="clr-namespace:Deep.Client.Maui.Pages"
     xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
     x:DataType="vm:ChatViewModel"
     BackgroundColor="{StaticResource PageBackground}"
     Shell.NavBarIsVisible="False"
     Title="Сообщения">
     <ContentPage.Resources>
+        <local:VoiceMessageSemanticDescriptionConverter x:Key="VoiceMessageSemanticDescription" />
         <DataTemplate x:Key="ChatPlainTextMessageTemplate" x:DataType="vm:ChatMessageItem">
             <Grid Padding="2,0,2,4">
                 <Border AutomationId="Chat.MessageBubble" SemanticProperties.Description="Входящее сообщение" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="11,7" HorizontalOptions="Start" MaximumWidthRequest="318">
@@ -153,7 +155,7 @@
                         <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 6" IsVisible="{Binding HasReply}"><VerticalStackLayout Spacing="2"><Label Text="Ответ" FontSize="10" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" /><Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" MaxLines="2" /></VerticalStackLayout></Border>
                         <Border AutomationId="Chat.AttachmentCard" Style="{StaticResource AttachmentCard}">
                             <Grid ColumnDefinitions="38,*,Auto" ColumnSpacing="9">
-                                <Border AutomationId="Chat.VoicePlayButton" SemanticProperties.Description="{Binding VoiceAttachmentId}" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
+                                <Border AutomationId="Chat.VoicePlayButton" SemanticProperties.Description="{Binding VoiceAttachmentId, Converter={StaticResource VoiceMessageSemanticDescription}}" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
                                     <Grid WidthRequest="18" HeightRequest="18" HorizontalOptions="Center" VerticalOptions="Center"><Path Data="M10,7 L23,18 L10,29 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoiceIdle}" /><Path Data="M8,6 H11 V22 H8 Z M17,6 H20 V22 H17 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoicePlaying}" /></Grid>
                                     <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnVoiceMessageTapped" /></Border.GestureRecognizers>
                                 </Border>

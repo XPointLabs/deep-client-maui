@@ -264,6 +264,39 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
+    public void VoiceCorrelationIdIsExposedOnlyByTheExistingPhysicalCompileGate()
+    {
+        var chat = LoadPage("ChatPage.xaml");
+        var desktop = LoadPage("DesktopWorkspacePage.xaml");
+        const string gatedBinding =
+            "{Binding VoiceAttachmentId, Converter={StaticResource VoiceMessageSemanticDescription}}";
+
+        var voiceActions = new[]
+        {
+            Assert.Single(ElementsWithAutomationId(chat.Root!, "Chat.VoicePlayButton")),
+            Assert.Single(ElementsWithAutomationId(
+                desktop.Root!, "DesktopWorkspace.DirectVoicePlay")),
+            Assert.Single(ElementsWithAutomationId(
+                desktop.Root!, "DesktopWorkspace.GroupVoicePlay"))
+        };
+        Assert.All(voiceActions, action => Assert.Equal(
+            gatedBinding,
+            action.Attribute("SemanticProperties.Description")?.Value));
+
+        var converter = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Pages",
+            "VoiceMessageSemanticDescriptionConverter.cs"));
+        Assert.Contains("#if DEBUG && DEEP_PHYSICAL_E2E", converter,
+            StringComparison.Ordinal);
+        Assert.Contains("return value as string ?? string.Empty;", converter,
+            StringComparison.Ordinal);
+        Assert.Contains("Воспроизвести голосовое сообщение", converter,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Environment.GetEnvironmentVariable", converter,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PhysicalCallLaneRequiresAuthenticatedIceBidirectionalMediaMuteAndRemoteHangup()
     {
         var physical = File.ReadAllText(WorkspacePath(

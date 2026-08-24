@@ -5,11 +5,16 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:controls="clr-namespace:Deep.Client.Maui.Controls"
+    xmlns:local="clr-namespace:Deep.Client.Maui.Pages"
     xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
     x:DataType="vm:DesktopWorkspaceViewModel"
     BackgroundColor="{StaticResource PageBackground}"
     Shell.NavBarIsVisible="False"
     Title="Диалоги">
+
+    <ContentPage.Resources>
+        <local:VoiceMessageSemanticDescriptionConverter x:Key="VoiceMessageSemanticDescription" />
+    </ContentPage.Resources>
 
     <Grid
         x:Name="WorkspaceRoot"
@@ -223,7 +228,7 @@
                                             <Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" MaxLines="2" LineBreakMode="TailTruncation" />
                                         </Border>
                                         <Grid ColumnDefinitions="38,*" ColumnSpacing="9" MinimumWidthRequest="190" IsVisible="{Binding IsVoiceMessage}">
-                                            <Border AutomationId="DesktopWorkspace.DirectVoicePlay" SemanticProperties.Description="{Binding VoiceAttachmentId}" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
+                                            <Border AutomationId="DesktopWorkspace.DirectVoicePlay" SemanticProperties.Description="{Binding VoiceAttachmentId, Converter={StaticResource VoiceMessageSemanticDescription}}" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
                                                 <Grid WidthRequest="18" HeightRequest="18" HorizontalOptions="Center" VerticalOptions="Center">
                                                     <Path Data="M10,7 L23,18 L10,29 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoiceIdle}" />
                                                     <Path Data="M8,6 H11 V22 H8 Z M17,6 H20 V22 H17 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoicePlaying}" />
@@ -321,7 +326,7 @@
                                         <Label Text="{Binding SenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" IsVisible="{Binding ShowSenderLabel}" />
                                         <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 4" IsVisible="{Binding HasReply}"><Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" MaxLines="2" LineBreakMode="TailTruncation" /></Border>
                                         <Grid ColumnDefinitions="38,*" ColumnSpacing="9" MinimumWidthRequest="190" IsVisible="{Binding IsVoiceMessage}">
-                                            <Border AutomationId="DesktopWorkspace.GroupVoicePlay" SemanticProperties.Description="{Binding VoiceAttachmentId}" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
+                                            <Border AutomationId="DesktopWorkspace.GroupVoicePlay" SemanticProperties.Description="{Binding VoiceAttachmentId, Converter={StaticResource VoiceMessageSemanticDescription}}" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
                                                 <Grid WidthRequest="18" HeightRequest="18" HorizontalOptions="Center" VerticalOptions="Center">
                                                     <Path Data="M10,7 L23,18 L10,29 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoiceIdle}" />
                                                     <Path Data="M8,6 H11 V22 H8 Z M17,6 H20 V22 H17 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoicePlaying}" />
