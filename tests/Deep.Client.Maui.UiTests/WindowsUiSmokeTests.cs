@@ -364,6 +364,52 @@ public sealed class WindowsUiSmokeTests
             return result.Result;
         }
 
+        internal AutomationElement? WaitForLastAutomationIdContainingDescendant(
+            string ancestorAutomationId,
+            string descendantAutomationId,
+            TimeSpan timeout)
+        {
+            var result = Retry.WhileNull(
+                () => FindLastAutomationIdContainingDescendantForRetry(
+                    ancestorAutomationId, descendantAutomationId),
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            return result.Result;
+        }
+
+        private AutomationElement? FindLastAutomationIdContainingDescendantForRetry(
+            string ancestorAutomationId,
+            string descendantAutomationId)
+        {
+            try
+            {
+                var candidates = CurrentWindow()
+                    .FindAllDescendants(condition => condition.ByAutomationId(ancestorAutomationId));
+                if (candidates.Length == 0)
+                {
+                    return null;
+                }
+
+                var last = candidates
+                    .OrderBy(candidate => candidate.BoundingRectangle.Top)
+                    .Last();
+                var descendants = last.FindAllDescendants(
+                    condition => condition.ByAutomationId(descendantAutomationId));
+                if (descendants.Length > 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Last {ancestorAutomationId} contained more than one {descendantAutomationId}.");
+                }
+
+                return descendants.SingleOrDefault();
+            }
+            catch (COMException) when (!application.HasExited)
+            {
+                return null;
+            }
+        }
+
         private AutomationElement? FindOneNewAutomationIdForRetry(
             string automationId,
             int previousCount)

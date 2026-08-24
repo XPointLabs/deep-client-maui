@@ -276,20 +276,20 @@ public sealed class StrictCrossPlatformUiTests
         AddAndroidContact(android, options, windowsIdentity);
         AddWindowsContact(windows, androidIdentity);
 
-        var previousVoiceCount = windows.CountAutomationId(
-            "DesktopWorkspace.DirectVoicePlay");
-        var previousAndroidVoiceCount = android.CountResourceId(
-            options.App("Chat.VoicePlayButton"));
+        var anchor = StrictCrossPlatformContracts.NewMarker("voice-anchor");
+        SendAndroidMessage(android, options, anchor);
+        android.WaitForText(options.App("Chat.MessageBody"), anchor, TimeSpan.FromSeconds(45));
+        WaitForWindowsText(windows, "DesktopWorkspace.DirectMessageBody", anchor);
         android.Hold(options.App("Chat.Voice"), TimeSpan.FromSeconds(4));
-        android.WaitForOneNewResourceId(
+        android.WaitForLastResourceIdContainingDescendant(
+            options.App("Chat.MessageBubble"),
             options.App("Chat.VoicePlayButton"),
-            previousAndroidVoiceCount,
             TimeSpan.FromSeconds(60));
 
         var receivedVoice = Require(
-            windows.WaitForOneNewAutomationId(
+            windows.WaitForLastAutomationIdContainingDescendant(
+                "DesktopWorkspace.DirectMessageBubble",
                 "DesktopWorkspace.DirectVoicePlay",
-                previousVoiceCount,
                 TimeSpan.FromSeconds(60)),
             "DesktopWorkspace.DirectVoicePlay");
         windows.ActivateExact(receivedVoice);
@@ -1028,6 +1028,7 @@ internal sealed class AndroidUiautomatorClient
             last);
     }
     internal void WaitForText(string resourceId, string text, TimeSpan timeout) { var node = WaitByMarker(resourceId, text, timeout); Assert.Contains(text, node.Text, StringComparison.Ordinal); }
+    internal StrictCrossPlatformContracts.AndroidNode WaitForLastResourceIdContainingDescendant(string resourceId, string descendantResourceId, TimeSpan timeout) { var until = DateTime.UtcNow + timeout; Exception? last = null; while (DateTime.UtcNow < until) { try { return StrictCrossPlatformContracts.FindLastResourceIdContainingDescendant(Dump(), resourceId, descendantResourceId); } catch (Exception ex) { last = ex; } Thread.Sleep(250); } throw new InvalidOperationException($"Last Android {resourceId} did not contain {descendantResourceId}.", last); }
     internal StrictCrossPlatformContracts.AndroidNode? FindOptional(string resourceId) => StrictCrossPlatformContracts.FindOptionalResourceId(Dump(), resourceId);
     internal string WaitForExactlyOneResource(IReadOnlyList<string> resourceIds, TimeSpan timeout)
     {

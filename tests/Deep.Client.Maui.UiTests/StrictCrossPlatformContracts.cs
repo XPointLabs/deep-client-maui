@@ -72,6 +72,41 @@ internal static class StrictCrossPlatformContracts
             .ToArray();
     }
 
+    internal static AndroidNode FindLastResourceIdContainingDescendant(
+        string xml,
+        string resourceId,
+        string descendantResourceId)
+    {
+        ValidateResourceId(resourceId, "resource-id");
+        ValidateResourceId(descendantResourceId, "descendant resource-id");
+        var document = XDocument.Parse(xml, LoadOptions.None);
+        var candidates = document.Descendants("node")
+            .Where(node => string.Equals(
+                (string?)node.Attribute("resource-id"),
+                resourceId,
+                StringComparison.Ordinal))
+            .ToArray();
+        if (candidates.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Required Android resource-id was not present: {resourceId}.");
+        }
+
+        var last = candidates[^1];
+        var descendants = last.Descendants("node")
+            .Count(node => string.Equals(
+                (string?)node.Attribute("resource-id"),
+                descendantResourceId,
+                StringComparison.Ordinal));
+        if (descendants != 1)
+        {
+            throw new InvalidOperationException(
+                $"Last Android {resourceId} did not contain exactly one {descendantResourceId} descendant.");
+        }
+
+        return AndroidNode.From(last);
+    }
+
     internal static AndroidNode? FindOptionalResourceId(string xml, string resourceId)
     {
         ValidateResourceId(resourceId, "resource-id");

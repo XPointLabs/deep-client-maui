@@ -63,6 +63,28 @@ public sealed class StrictCrossPlatformContractsTests
     }
 
     [Fact]
+    public void Last_item_descendant_correlation_survives_collection_virtualization()
+    {
+        const string bubble = "network.xpoint.deep.e2e:id/Chat.MessageBubble";
+        const string play = "network.xpoint.deep.e2e:id/Chat.VoicePlayButton";
+        var xml = $"<hierarchy><node resource-id='{bubble}' text='' content-desc='' bounds='[0,0][10,10]'><node resource-id='{play}' text='' content-desc='' bounds='[0,0][1,1]'/></node><node resource-id='{bubble}' text='' content-desc='' bounds='[0,10][10,20]'><node resource-id='network.xpoint.deep.e2e:id/Chat.MessageBody' text='anchor' content-desc='' bounds='[0,10][1,11]'/></node></hierarchy>";
+
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.FindLastResourceIdContainingDescendant(
+                xml, bubble, play));
+
+        var appended = xml.Replace(
+            "</hierarchy>",
+            $"<node resource-id='{bubble}' text='' content-desc='outgoing' bounds='[0,20][10,30]'><node resource-id='{play}' text='' content-desc='' bounds='[0,20][1,21]'/></node></hierarchy>",
+            StringComparison.Ordinal);
+        var correlated = StrictCrossPlatformContracts.FindLastResourceIdContainingDescendant(
+            appended, bubble, play);
+
+        Assert.Equal("outgoing", correlated.ContentDescription);
+        Assert.Equal(3, StrictCrossPlatformContracts.FindAllResourceIds(appended, bubble).Length);
+    }
+
+    [Fact]
     public void Bounds_and_process_restart_contracts_fail_closed()
     {
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.AndroidBounds.Parse("[9,9][9,10]"));
