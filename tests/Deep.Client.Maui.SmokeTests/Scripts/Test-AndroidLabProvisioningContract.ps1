@@ -43,13 +43,13 @@ function Get-TextSha256Lower([string]$Value) {
 }
 
 function Get-TreeDigest([string]$Root) {
-    $manifest = Get-ChildItem -LiteralPath $Root -File -Recurse -Force |
-        ForEach-Object {
-            $relative = [IO.Path]::GetRelativePath($Root, $_.FullName).Replace('\', '/')
-            "$relative|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
-        } |
-        Sort-Object
-    return Get-TextSha256Lower ($manifest -join "`n")
+    $canonical = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+    $manifest = foreach ($file in Get-ChildItem -LiteralPath $canonical -File -Recurse -Force |
+        Sort-Object FullName) {
+        $relative = $file.FullName.Substring($canonical.Length + 1).Replace('\', '/')
+        "$relative`t$($file.Length)`t$((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
+    }
+    return Get-TextSha256Lower (($manifest -join "`n") + "`n")
 }
 
 function Remove-TestOwnedDestination {
@@ -109,6 +109,9 @@ try {
     $policy.application.signingCertificateSha256 = 'd' * 64
     $policy.crossPlatform.windowsExecutableRelativePath = (Get-RelativePathCompat -Root $repoRoot -Candidate $boundWindows).Replace('\', '/')
     $policy.crossPlatform.windowsExecutableSha256 = (Get-FileHash $boundWindows -Algorithm SHA256).Hash.ToLowerInvariant()
+    $boundWindowsOutput = Split-Path -Parent $boundWindows
+    $policy.crossPlatform.windowsOutputDirectoryRelativePath = (Get-RelativePathCompat -Root $repoRoot -Candidate $boundWindowsOutput).Replace('\', '/')
+    $policy.crossPlatform.windowsOutputTreeSha256 = Get-TreeDigest $boundWindowsOutput
     foreach ($role in @('runner', 'adb', 'aapt', 'apksigner')) {
         $definition = $policy.tools.$role
         $toolRelative = ([string]$definition.relativePath).Substring('.secrets/android-lab/'.Length)
@@ -158,6 +161,7 @@ try {
         apkSha256 = $policy.application.apkSha256
         apkSigningDigest = $policy.application.signingCertificateSha256
         windowsExeSha256 = $policy.crossPlatform.windowsExecutableSha256
+        windowsOutputTreeSha256 = $policy.crossPlatform.windowsOutputTreeSha256
         fixtureSha256 = (Get-FileHash $boundFixture -Algorithm SHA256).Hash.ToLowerInvariant()
         approvedPolicySha256 = (Get-FileHash $policyPath -Algorithm SHA256).Hash.ToLowerInvariant()
         policyId = $policy.policyId
@@ -207,7 +211,8 @@ try {
         'device.serial', 'device.fingerprint', 'device.model', 'device.product', 'device.hardware',
         'device.sdk', 'device.characteristics', 'device.kernelQemu', 'device.class',
         'device.dedicated', 'device.inventoryState', 'device.inventoryApprovedBy',
-        'crossPlatform.windowsExecutableRelativePath', 'crossPlatform.windowsExecutableSha256')
+        'crossPlatform.windowsExecutableRelativePath', 'crossPlatform.windowsExecutableSha256',
+        'crossPlatform.windowsOutputDirectoryRelativePath', 'crossPlatform.windowsOutputTreeSha256')
     foreach ($mutation in $trustMutations) {
         (Get-Item $policyPath -Force).IsReadOnly = $false
         $mutated = $originalProvisionedPolicyText | ConvertFrom-Json
@@ -241,6 +246,8 @@ try {
             'device.inventoryApprovedBy' { $mutated.device.inventoryApprovedBy = 'mutated' }
             'crossPlatform.windowsExecutableRelativePath' { $mutated.crossPlatform.windowsExecutableRelativePath = 'artifacts/mutated.exe' }
             'crossPlatform.windowsExecutableSha256' { $mutated.crossPlatform.windowsExecutableSha256 = 'f' * 64 }
+            'crossPlatform.windowsOutputDirectoryRelativePath' { $mutated.crossPlatform.windowsOutputDirectoryRelativePath = 'artifacts' }
+            'crossPlatform.windowsOutputTreeSha256' { $mutated.crossPlatform.windowsOutputTreeSha256 = 'f' * 64 }
         }
         $mutated | ConvertTo-Json -Depth 8 | Set-Content $policyPath -Encoding utf8
         (Get-Item $policyPath -Force).IsReadOnly = $true
@@ -267,6 +274,7 @@ try {
         apkSha256 = ('f' * 64)
         apkSigningDigest = ('f' * 64)
         windowsExeSha256 = ('f' * 64)
+        windowsOutputTreeSha256 = ('f' * 64)
         fixtureSha256 = ('f' * 64)
         approvedPolicySha256 = ('f' * 64)
         policyId = ('f' * 64)
@@ -297,6 +305,7 @@ try {
     }
     foreach ($removedField in @(
         'apkSizeBytes', 'apkSha256', 'apkSigningDigest', 'windowsExeSha256',
+        'windowsOutputTreeSha256',
         'approvalReceiptSha256', 'mrXPublicKeySha256', 'androidFingerprintHash'))
     {
         $mutatedResult = $originalCrossResultText | ConvertFrom-Json

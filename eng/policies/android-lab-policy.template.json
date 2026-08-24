@@ -69,7 +69,9 @@
     "signingCertificateSha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "crossPlatform": {
-    "windowsExecutableRelativePath": "src/Deep.Client.Maui/bin/Debug/net10.0-windows10.0.19041.0/Deep.Client.Maui.exe",
-    "windowsExecutableSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    "windowsExecutableRelativePath": "src/Deep.Client.Maui/bin/Debug/net10.0-windows10.0.19041.0/win-x64/Deep.Client.Maui.exe",
+    "windowsExecutableSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "windowsOutputDirectoryRelativePath": "src/Deep.Client.Maui/bin/Debug/net10.0-windows10.0.19041.0/win-x64",
+    "windowsOutputTreeSha256": "0000000000000000000000000000000000000000000000000000000000000000"
   }
 }

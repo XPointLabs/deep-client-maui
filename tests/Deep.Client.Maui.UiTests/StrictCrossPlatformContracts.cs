@@ -175,6 +175,39 @@ internal static class StrictCrossPlatformContracts
     internal static string Sha256File(string path) =>
         Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path)));
 
+    internal static string Sha256Tree(string root)
+    {
+        if (!Path.IsPathFullyQualified(root) || !Directory.Exists(root) ||
+            File.GetAttributes(root).HasFlag(FileAttributes.ReparsePoint))
+        {
+            throw new InvalidOperationException("Pinned tree must be an existing absolute regular directory.");
+        }
+
+        var entries = Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories).ToArray();
+        if (entries.Any(path => File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint)))
+        {
+            throw new InvalidOperationException("Pinned tree must not contain reparse points.");
+        }
+
+        var canonical = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var lines = entries.Where(File.Exists)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .Select(path =>
+            {
+                var relative = Path.GetFullPath(path)[(canonical.Length + 1)..].Replace('\\', '/');
+                return $"{relative}\t{new FileInfo(path).Length}\t{Sha256File(path)}";
+            });
+        var bytes = Encoding.UTF8.GetBytes(string.Join('\n', lines) + "\n");
+        try
+        {
+            return Convert.ToHexStringLower(SHA256.HashData(bytes));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+        }
+    }
+
     internal static void RequirePinnedFile(string path, string expectedSha256, string role)
     {
         if (!Path.IsPathFullyQualified(path) || !File.Exists(path))
@@ -186,6 +219,15 @@ internal static class StrictCrossPlatformContracts
             !string.Equals(Sha256File(path), expectedSha256, StringComparison.Ordinal))
         {
             throw new InvalidOperationException($"{role} does not match its independently pinned SHA-256.");
+        }
+    }
+
+    internal static void RequirePinnedTree(string path, string expectedSha256, string role)
+    {
+        if (!Regex.IsMatch(expectedSha256, "^[a-f0-9]{64}$", RegexOptions.CultureInvariant) ||
+            !string.Equals(Sha256Tree(path), expectedSha256, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"{role} does not match its independently pinned tree SHA-256.");
         }
     }
 

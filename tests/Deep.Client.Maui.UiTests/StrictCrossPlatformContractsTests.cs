@@ -109,6 +109,29 @@ public sealed class StrictCrossPlatformContractsTests
     }
 
     [Fact]
+    public void Windows_output_tree_pin_covers_adjacent_runtime_files()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "deep-output-tree-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "Deep.Client.Maui.exe"), "apphost");
+            File.WriteAllText(Path.Combine(root, "Deep.Client.Shared.dll"), "shared-v1");
+            var pinned = StrictCrossPlatformContracts.Sha256Tree(root);
+
+            StrictCrossPlatformContracts.RequirePinnedTree(root, pinned, "Windows output tree");
+            File.WriteAllText(Path.Combine(root, "Deep.Client.Shared.dll"), "shared-v2");
+
+            Assert.Throws<InvalidOperationException>(() =>
+                StrictCrossPlatformContracts.RequirePinnedTree(root, pinned, "Windows output tree"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Bounded_process_rejects_hang_and_nonzero_version_exit()
     {
         var command = Path.Combine(

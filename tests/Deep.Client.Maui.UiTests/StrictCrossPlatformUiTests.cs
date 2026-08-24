@@ -302,6 +302,7 @@ public sealed class StrictCrossPlatformUiTests
     private static void CompletePhaseEvidence(CrossPlatformOptions options, StrictCrossPlatformContracts.SanitizedEvidence evidence)
     {
         evidence.AddBoolean("productionPackageUntouched", true);
+        evidence.AddSafeValue("windowsOutputTreeSha256", options.WindowsOutputTreeSha256);
         evidence.AddSafeValue("status", "passed");
         evidence.Write(options.ResultPath);
     }
@@ -520,12 +521,12 @@ internal sealed class CrossPlatformOptions
         "Chat.Attach", "Chat.PickFile", "Chat.StagedAttachmentFilename"
     ];
     private readonly Dictionary<string, string> androidSelectors;
-    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string fixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerDownloads, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string releaseInvocationId, string policySha256)
+    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string fixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerDownloads, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256)
     {
         AndroidSerial = serial; AdbPath = adbPath; ApkPath = apkPath; AaptPath = aaptPath; ApksignerPath = apksignerPath; AttachmentFixturePath = fixturePath; ArtifactDirectory = artifactDirectory;
         androidSelectors = selectors; PickerDownloadsResourceId = pickerDownloads; PickerFileResourceId = pickerFile; PickerConfirmResourceId = pickerConfirm;
         Phase = phase; WindowsAppDataRoot = windowsAppDataRoot;
-        ResultPath = Path.Combine(artifactDirectory, Mau2PhysicalPhaseContract.GetResultFileName(phase)); InvocationId = Guid.NewGuid().ToString("N"); DeviceFingerprint = fingerprint; DeviceModel = model; SourceCommit = sourceCommit; WindowsExeSha256 = windowsExeSha256;
+        ResultPath = Path.Combine(artifactDirectory, Mau2PhysicalPhaseContract.GetResultFileName(phase)); InvocationId = Guid.NewGuid().ToString("N"); DeviceFingerprint = fingerprint; DeviceModel = model; SourceCommit = sourceCommit; WindowsExeSha256 = windowsExeSha256; WindowsOutputTreeSha256 = windowsOutputTreeSha256;
         ReleaseInvocationId = releaseInvocationId;
         PolicySha256 = policySha256;
     }
@@ -547,6 +548,7 @@ internal sealed class CrossPlatformOptions
     internal string DeviceModel { get; }
     internal string SourceCommit { get; }
     internal string WindowsExeSha256 { get; }
+    internal string WindowsOutputTreeSha256 { get; }
     internal string ReleaseInvocationId { get; }
     internal string PolicySha256 { get; }
     internal string App(string role) => androidSelectors.TryGetValue(role, out var id) ? id : throw new InvalidOperationException($"Missing Android selector for {role}.");
@@ -595,7 +597,10 @@ internal sealed class CrossPlatformOptions
         var appDataRoot = Environment.GetEnvironmentVariable("DEEP_E2E_APPDATA_ROOT")!;
         if (!Path.IsPathFullyQualified(windowsExe) || !File.Exists(windowsExe) || !Path.IsPathFullyQualified(appDataRoot) || !string.Equals(Path.GetFullPath(windowsExe), policy.WindowsExePath, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Configured Windows executable or app-data root is invalid.");
         StrictCrossPlatformContracts.RequirePinnedFile(windowsExe, policy.WindowsExeSha256, "Windows executable");
+        if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(windowsExe)), policy.WindowsOutputDirectoryPath, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Configured Windows executable is outside the signed output tree.");
+        StrictCrossPlatformContracts.RequirePinnedTree(policy.WindowsOutputDirectoryPath, policy.WindowsOutputTreeSha256, "Windows output tree");
         var windowsHash = StrictCrossPlatformContracts.Sha256File(windowsExe);
+        var windowsOutputTreeHash = StrictCrossPlatformContracts.Sha256Tree(policy.WindowsOutputDirectoryPath);
         Directory.CreateDirectory(artifacts);
         var commit = StrictCrossPlatformContracts.RequireCurrentCommit(repositoryRoot, policy.SourceCommit);
         policy.ValidateTool(adb, "adb");
@@ -603,7 +608,7 @@ internal sealed class CrossPlatformOptions
         policy.ValidateTool(apksigner, "apksigner");
         var releaseInvocation = Environment.GetEnvironmentVariable("DEEP_RELEASE_INVOCATION_ID")!;
         if (!System.Text.RegularExpressions.Regex.IsMatch(releaseInvocation, "^[a-f0-9]{32}$")) throw new InvalidOperationException("Release invocation ID must be fresh 32-hex.");
-        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, fixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerDownloads, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, releaseInvocation, policy.PolicySha256);
+        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, fixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerDownloads, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256);
     }
     internal StrictCrossPlatformContracts.ApkMetadata ReadAndValidateApkMetadata()
     {
@@ -670,9 +675,9 @@ internal sealed class ApprovedCrossPlatformPolicy
     internal sealed record ApkPin(string Path, long SizeBytes, string Sha256, string VersionCode, string VersionName, string SigningDigest);
     internal sealed record DevicePin(string Serial, string Fingerprint, string Model, string Product, string Hardware, int Sdk, string Characteristics);
 
-    private ApprovedCrossPlatformPolicy(string sourceCommit, string policyId, string approvalReceiptSha256, string mrXPublicKeySha256, string windowsExePath, string windowsExeSha256, string policySha256, ToolPin adb, ToolPin aapt, ToolPin apksigner, ApkPin apk, DevicePin device)
+    private ApprovedCrossPlatformPolicy(string sourceCommit, string policyId, string approvalReceiptSha256, string mrXPublicKeySha256, string windowsExePath, string windowsExeSha256, string windowsOutputDirectoryPath, string windowsOutputTreeSha256, string policySha256, ToolPin adb, ToolPin aapt, ToolPin apksigner, ApkPin apk, DevicePin device)
     {
-        SourceCommit = sourceCommit; PolicyId = policyId; ApprovalReceiptSha256 = approvalReceiptSha256; MrXPublicKeySha256 = mrXPublicKeySha256; WindowsExePath = windowsExePath; WindowsExeSha256 = windowsExeSha256; PolicySha256 = policySha256; Adb = adb; Aapt = aapt; Apksigner = apksigner; Apk = apk; Device = device;
+        SourceCommit = sourceCommit; PolicyId = policyId; ApprovalReceiptSha256 = approvalReceiptSha256; MrXPublicKeySha256 = mrXPublicKeySha256; WindowsExePath = windowsExePath; WindowsExeSha256 = windowsExeSha256; WindowsOutputDirectoryPath = windowsOutputDirectoryPath; WindowsOutputTreeSha256 = windowsOutputTreeSha256; PolicySha256 = policySha256; Adb = adb; Aapt = aapt; Apksigner = apksigner; Apk = apk; Device = device;
     }
 
     internal static ApprovedCrossPlatformPolicy? Current { get; private set; }
@@ -682,6 +687,8 @@ internal sealed class ApprovedCrossPlatformPolicy
     internal string MrXPublicKeySha256 { get; }
     internal string WindowsExePath { get; }
     internal string WindowsExeSha256 { get; }
+    internal string WindowsOutputDirectoryPath { get; }
+    internal string WindowsOutputTreeSha256 { get; }
     internal string PolicySha256 { get; }
     internal ToolPin Adb { get; }
     internal ToolPin Aapt { get; }
@@ -771,6 +778,8 @@ internal sealed class ApprovedCrossPlatformPolicy
             mrXPublicKeySha256,
             ResolveRepositoryPath(repositoryRoot, crossPlatform.GetProperty("windowsExecutableRelativePath").GetString()!),
             crossPlatform.GetProperty("windowsExecutableSha256").GetString()!,
+            ResolveRepositoryPath(repositoryRoot, crossPlatform.GetProperty("windowsOutputDirectoryRelativePath").GetString()!),
+            crossPlatform.GetProperty("windowsOutputTreeSha256").GetString()!,
             StrictCrossPlatformContracts.Sha256File(path),
             ReadTool("adb"),
             ReadTool("aapt"),
@@ -812,7 +821,7 @@ internal sealed class ApprovedCrossPlatformPolicy
         {
             if (!System.Text.RegularExpressions.Regex.IsMatch(value, $"^[a-f0-9]{{{length}}}$") || value.All(character => character == '0')) throw new InvalidOperationException($"{role} is malformed.");
         }
-        Hex(SourceCommit, 40, "source commit"); Hex(PolicyId, 64, "policy ID"); Hex(ApprovalReceiptSha256, 64, "approval receipt"); Hex(MrXPublicKeySha256, 64, "Mr. X key"); Hex(WindowsExeSha256, 64, "Windows hash"); Hex(Apk.Sha256, 64, "APK hash"); Hex(Apk.SigningDigest, 64, "APK signer");
+        Hex(SourceCommit, 40, "source commit"); Hex(PolicyId, 64, "policy ID"); Hex(ApprovalReceiptSha256, 64, "approval receipt"); Hex(MrXPublicKeySha256, 64, "Mr. X key"); Hex(WindowsExeSha256, 64, "Windows hash"); Hex(WindowsOutputTreeSha256, 64, "Windows output tree hash"); Hex(Apk.Sha256, 64, "APK hash"); Hex(Apk.SigningDigest, 64, "APK signer");
         foreach (var tool in new[] { Adb, Aapt, Apksigner })
         {
             Hex(tool.Sha256, 64, "tool hash");

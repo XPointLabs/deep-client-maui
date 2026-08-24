@@ -263,12 +263,14 @@ production approval and provisioning remain a separate release composition.
 
 The preflight supports an explicit `-AndroidSerial` and configures `adb reverse` for local UAT ports when requested. The runner must bind its v3 result to the policy ID/hash, source commit, both invocation IDs, APK SHA-256, package/version, signing certificate, selected serial, fingerprint/product hashes, SDK/class, its own binary hash/exact version, JUnit hash, and cleanup attestations before and after execution. JUnit counters are independently parsed and cross-checked. Any DTD/entity, system output/error, attachment, absolute Windows/Unix path, absolute URI, sensitive property/value, or non-whitespace text blocks sanitization. Raw JUnit, logcat, screenshots, runner result, and runner output remain below `quarantine/raw` and are never uploaded. Only `android-device-summary.json`, containing allowlisted hashes, counters, safe versions, and booleans (not a raw serial or path), is standard evidence.
 
-When the committed client, APK, Windows executable, runner, or selected physical
-device binding changes, reissue the protected source with
+When the committed client, APK, Windows executable, any adjacent file in the
+Windows application output tree, runner, or selected physical device binding
+changes, reissue the protected source with
 `eng/Issue-AndroidLabPolicy.ps1`. The command requires a clean committed source
 tree and the protected Mr. X private/public key pair, inspects the real APK and
-device through the pinned tools, signs only the bounded canonical payload, and
-self-verifies the Ed25519 result. It publishes the protected source with fixed
+device through the pinned tools, binds both the apphost and the complete
+canonical Windows output-tree transcript, signs only the bounded canonical
+payload, and self-verifies the Ed25519 result. It publishes the protected source with fixed
 same-volume stage/backup names and an exact final tree reread. Private-key bytes
 are never written to policy output and are zeroed by the issuer process.
 

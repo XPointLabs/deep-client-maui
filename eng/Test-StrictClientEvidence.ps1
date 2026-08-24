@@ -75,6 +75,33 @@ function Get-TextSha256Lower {
     }
 }
 
+function Get-CanonicalTreeSha256Lower {
+    param([Parameter(Mandatory)][string]$Root)
+    $canonical = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+    if (-not (Test-Path -LiteralPath $canonical -PathType Container) -or
+        ((Get-Item -Force -LiteralPath $canonical).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Windows output tree root is not a regular directory.'
+    }
+    $entries = @(Get-ChildItem -LiteralPath $canonical -Recurse -Force)
+    if (@($entries | Where-Object {
+        ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+    }).Count -ne 0) {
+        throw 'Windows output tree contains a reparse point.'
+    }
+    $lines = foreach ($file in $entries | Where-Object { -not $_.PSIsContainer } |
+        Sort-Object FullName) {
+        $relative = $file.FullName.Substring($canonical.Length + 1).Replace('\', '/')
+        "$relative`t$($file.Length)`t$(Get-Sha256Lower -Path $file.FullName)"
+    }
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($lines -join "`n") + "`n")
+    try {
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+        } finally { $sha.Dispose() }
+    } finally { [Array]::Clear($bytes, 0, $bytes.Length) }
+}
+
 foreach ($laneKey in $lanes.Keys) {
     $resultPath = Join-Path $ArtifactDirectory ("result-{0}.json" -f $laneKey)
     $preflightPath = Join-Path $ArtifactDirectory ("preflight-{0}.json" -f $laneKey)
@@ -473,10 +500,16 @@ if (Test-Path -LiteralPath $crossPlatformPath -PathType Leaf) {
         $signedWindowsPath = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
             [IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$crossPolicy.crossPlatform.windowsExecutableRelativePath)))
         )
+        $signedWindowsOutputDirectory = Get-CanonicalContainedPath -Root $repoRoot -Candidate (
+            [IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$crossPolicy.crossPlatform.windowsOutputDirectoryRelativePath)))
+        )
         if (-not [StringComparer]::OrdinalIgnoreCase.Equals($apkPath, $signedApkPath) -or
-            -not [StringComparer]::OrdinalIgnoreCase.Equals($windowsPath, $signedWindowsPath)) {
+            -not [StringComparer]::OrdinalIgnoreCase.Equals($windowsPath, $signedWindowsPath) -or
+            -not [StringComparer]::OrdinalIgnoreCase.Equals(
+                (Split-Path -Parent $signedWindowsPath), $signedWindowsOutputDirectory)) {
             throw 'Cross-platform executable/APK paths do not match signed inventory.'
         }
+        $windowsOutputTreeSha256 = Get-CanonicalTreeSha256Lower $signedWindowsOutputDirectory
         $toolBindingsValid = $true
         foreach ($role in @('adb', 'aapt', 'apksigner')) {
             $definition = $crossPolicy.tools.$role
@@ -508,7 +541,8 @@ if (Test-Path -LiteralPath $crossPlatformPath -PathType Leaf) {
             -not [string]::IsNullOrWhiteSpace([string]$crossPolicy.device.characteristics) -and
             [int]$crossPolicy.device.sdk -ge 26 -and [int]$crossPolicy.device.sdk -le 100 -and
             [string]$crossPolicy.device.inventoryApprovalReceiptSha256 -ceq [string]$crossPolicy.approval.receiptSha256 -and
-            (Test-NonZeroSha256Value ([string]$crossPolicy.crossPlatform.windowsExecutableSha256))
+            (Test-NonZeroSha256Value ([string]$crossPolicy.crossPlatform.windowsExecutableSha256)) -and
+            (Test-NonZeroSha256Value ([string]$crossPolicy.crossPlatform.windowsOutputTreeSha256))
         $crossPlatformPassed =
             $cross.schema -ceq 'deep.strict-cross-platform-ui.v2' -and
             $cross.status -ceq 'passed' -and
@@ -530,6 +564,8 @@ if (Test-Path -LiteralPath $crossPlatformPath -PathType Leaf) {
             $cross.apkSigningDigest -ceq [string]$crossPolicy.application.signingCertificateSha256 -and
             $cross.windowsExeSha256 -ceq (Get-Sha256Lower -Path $windowsPath) -and
             $cross.windowsExeSha256 -ceq [string]$crossPolicy.crossPlatform.windowsExecutableSha256 -and
+            $cross.windowsOutputTreeSha256 -ceq $windowsOutputTreeSha256 -and
+            $cross.windowsOutputTreeSha256 -ceq [string]$crossPolicy.crossPlatform.windowsOutputTreeSha256 -and
             $cross.fixtureSha256 -ceq (Get-Sha256Lower -Path $fixturePath) -and
             $cross.approvedPolicySha256 -ceq (Get-Sha256Lower -Path $policyPath) -and
             $cross.policyId -ceq [string]$crossPolicy.policyId -and
@@ -552,6 +588,7 @@ if (Test-Path -LiteralPath $crossPlatformPath -PathType Leaf) {
         $crossPlatformStatus = 'failed'
     }
 }
+
 $checks.Add([ordered]@{
     lane = 'cross-platform-ui'
     optional = $true

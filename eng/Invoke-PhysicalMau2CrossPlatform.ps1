@@ -121,12 +121,22 @@ function Assert-ExactPhysicalTestResult([string]$TrxPath) {
 
 function Get-TreeSha256([string]$Root) {
     $canonical = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+    if (-not (Test-Path -LiteralPath $canonical -PathType Container) -or
+        ((Get-Item -Force -LiteralPath $canonical).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Tree digest root must be an existing regular directory.'
+    }
+    $entries = @(Get-ChildItem -LiteralPath $canonical -Recurse -Force)
+    if (@($entries | Where-Object {
+        ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+    }).Count -ne 0) {
+        throw 'Tree digest input must not contain reparse points.'
+    }
     $lines = foreach ($file in Get-ChildItem -LiteralPath $canonical -File -Recurse -Force |
         Sort-Object FullName) {
         $relative = $file.FullName.Substring($canonical.Length + 1).Replace('\', '/')
-        "$relative`n$((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())`n$($file.Length)"
+        "$relative`t$($file.Length)`t$((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
     }
-    $bytes = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($lines -join "`n") + "`n")
     $hasher = [Security.Cryptography.SHA256]::Create()
     try {
         return ([BitConverter]::ToString($hasher.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
@@ -134,6 +144,28 @@ function Get-TreeSha256([string]$Root) {
         $hasher.Dispose()
         [Array]::Clear($bytes, 0, $bytes.Length)
     }
+}
+
+function Resolve-PolicyPinnedDirectory(
+    [string]$RelativePath,
+    [string]$ExpectedTreeSha256,
+    [string]$Label) {
+    if ([string]::IsNullOrWhiteSpace($RelativePath) -or
+        $RelativePath -cnotmatch '^[A-Za-z0-9._/-]+$' -or
+        $RelativePath.StartsWith('/') -or
+        $RelativePath.Contains('\') -or
+        @($RelativePath.Split('/') | Where-Object { $_ -ceq '.' -or $_ -ceq '..' }).Count -ne 0 -or
+        $ExpectedTreeSha256 -cnotmatch '^[0-9a-f]{64}$') {
+        throw "$Label has an invalid signed repository-relative path or tree SHA-256."
+    }
+    $root = $repoRoot.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    $path = [IO.Path]::GetFullPath((Join-Path $repoRoot $RelativePath))
+    if (-not $path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $path -PathType Container) -or
+        (Get-TreeSha256 $path) -cne $ExpectedTreeSha256) {
+        throw "$Label does not resolve to the exact signed regular directory tree."
+    }
+    return $path
 }
 
 function Set-ProtectedRunItem([string]$Path) {
@@ -285,6 +317,15 @@ $approvedWindowsExe = Resolve-PolicyPinnedFile `
     $policyObject.crossPlatform.windowsExecutableRelativePath `
     $policyObject.crossPlatform.windowsExecutableSha256 `
     'Approved Windows executable'
+$approvedWindowsOutputDirectory = Resolve-PolicyPinnedDirectory `
+    $policyObject.crossPlatform.windowsOutputDirectoryRelativePath `
+    $policyObject.crossPlatform.windowsOutputTreeSha256 `
+    'Approved Windows output directory'
+if (-not [StringComparer]::OrdinalIgnoreCase.Equals(
+        (Split-Path -Parent $approvedWindowsExe),
+        $approvedWindowsOutputDirectory)) {
+    throw 'Approved Windows executable must be an immediate child of the signed output tree.'
+}
 $adb = $approvedAdb
 
 $runId = [Guid]::NewGuid().ToString('N')

@@ -127,6 +127,16 @@ function Write-Utf8NoBom([string]$Path, [string]$Value) {
 
 function Get-TreeDigest([string]$Root) {
     $canonical = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    if (-not (Test-Path -LiteralPath $canonical -PathType Container) -or
+        ((Get-Item -Force -LiteralPath $canonical).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Tree digest root must be an existing regular directory.'
+    }
+    $entries = @(Get-ChildItem -LiteralPath $canonical -Recurse -Force)
+    if (@($entries | Where-Object {
+        ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+    }).Count -ne 0) {
+        throw 'Tree digest input must not contain reparse points.'
+    }
     $lines = foreach ($file in Get-ChildItem -LiteralPath $canonical -File -Recurse -Force |
         Sort-Object FullName) {
         $relative = $file.FullName.Substring($canonical.Length + 1).Replace('\', '/')
@@ -268,6 +278,10 @@ try {
     $policy.crossPlatform.windowsExecutableRelativePath =
         Get-RelativeRepositoryPath $windowsExe
     $policy.crossPlatform.windowsExecutableSha256 = Get-Sha256 $windowsExe
+    $windowsOutputDirectory = [IO.Path]::GetFullPath((Split-Path -Parent $windowsExe))
+    $policy.crossPlatform.windowsOutputDirectoryRelativePath =
+        Get-RelativeRepositoryPath $windowsOutputDirectory
+    $policy.crossPlatform.windowsOutputTreeSha256 = Get-TreeDigest $windowsOutputDirectory
     foreach ($role in @('runner','adb','aapt','apksigner')) {
         $relative = ([string]$policy.tools.$role.relativePath).Substring(
             '.secrets/android-lab/'.Length).Replace('/', '\')
