@@ -237,6 +237,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("case Mau2PhysicalPhase.ManualResendAfterRestart", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.AutomaticRetryAfterRestart", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.NegativeRuntime", ui, StringComparison.Ordinal);
+        Assert.Contains("android.DismissKeyboard();", ui, StringComparison.Ordinal);
+        Assert.Contains("KEYCODE_BACK", ui, StringComparison.Ordinal);
         Assert.Contains("internal void ColdStart()", ui, StringComparison.Ordinal);
         Assert.Contains("ForceStop();", ui, StringComparison.Ordinal);
         Assert.Contains("already-running task", ui, StringComparison.Ordinal);
