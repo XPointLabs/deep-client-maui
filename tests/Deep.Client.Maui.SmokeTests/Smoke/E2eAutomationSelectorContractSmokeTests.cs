@@ -217,6 +217,15 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             "\"DesktopWorkspace.ConversationRow\",\n                    windowsConversationTitle,",
             physical,
             StringComparison.Ordinal);
+
+        var windows = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "WindowsUiSmokeTests.cs"));
+        Assert.Contains("app.Close(killIfCloseFails: true);", windows, StringComparison.Ordinal);
+        Assert.Contains("process.WaitForExit(TimeSpan.FromSeconds(15))", windows, StringComparison.Ordinal);
+        Assert.Contains(
+            "The exact launched Windows process did not exit before session disposal.",
+            windows,
+            StringComparison.Ordinal);
     }
 
     [Fact]

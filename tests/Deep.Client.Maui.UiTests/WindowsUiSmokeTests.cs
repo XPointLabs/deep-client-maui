@@ -586,9 +586,10 @@ public sealed class WindowsUiSmokeTests
 
         private static void CloseApplication(Application app)
         {
+            var processId = app.ProcessId;
             try
             {
-                app.Close();
+                app.Close(killIfCloseFails: true);
             }
             catch
             {
@@ -601,7 +602,34 @@ public sealed class WindowsUiSmokeTests
                 }
             }
 
-            app.Dispose();
+            try
+            {
+                using var process = Process.GetProcessById(processId);
+                if (!process.WaitForExit(TimeSpan.FromSeconds(15)))
+                {
+                    try
+                    {
+                        app.Kill();
+                    }
+                    catch
+                    {
+                    }
+
+                    if (!process.WaitForExit(TimeSpan.FromSeconds(15)))
+                    {
+                        throw new InvalidOperationException(
+                            "The exact launched Windows process did not exit before session disposal.");
+                    }
+                }
+            }
+            catch (ArgumentException)
+            {
+                // The exact PID has already exited and was removed from the process table.
+            }
+            finally
+            {
+                app.Dispose();
+            }
         }
 
         public void Dispose()
