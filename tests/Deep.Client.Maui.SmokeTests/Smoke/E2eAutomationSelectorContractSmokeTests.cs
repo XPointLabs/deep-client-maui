@@ -206,11 +206,11 @@ public sealed class E2eAutomationSelectorContractSmokeTests
                 "android.WaitForText(options.App(\"Chat.MessageBody\"), marker, TimeSpan.FromSeconds(60));",
                 StringComparison.Ordinal));
         Assert.Contains(
-            "restartedWindows.WaitForAutomationIdWithDescendantName(",
+            "restartedWindows.WaitForAutomationIdWithDescendantNameContaining(",
             physical,
             StringComparison.Ordinal);
         Assert.Contains(
-            "\"DesktopWorkspace.ConversationRow\",\n                    marker,",
+            "\"DesktopWorkspace.ConversationRow\",\n                    marker[..32],",
             physical,
             StringComparison.Ordinal);
 
@@ -237,7 +237,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             windows,
             StringComparison.Ordinal);
         Assert.Contains(
-            "FindAutomationIdWithDescendantNameForRetry(",
+            "FindAutomationIdWithDescendantNameContainingForRetry(",
             windows,
             StringComparison.Ordinal);
     }

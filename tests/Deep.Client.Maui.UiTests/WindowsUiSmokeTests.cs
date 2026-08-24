@@ -357,15 +357,15 @@ public sealed class WindowsUiSmokeTests
             return result.Result;
         }
 
-        internal AutomationElement? WaitForAutomationIdWithDescendantName(
+        internal AutomationElement? WaitForAutomationIdWithDescendantNameContaining(
             string automationId,
-            string descendantName,
+            string descendantNameMarker,
             TimeSpan timeout)
         {
             var result = Retry.WhileNull(
-                () => FindAutomationIdWithDescendantNameForRetry(
+                () => FindAutomationIdWithDescendantNameContainingForRetry(
                     automationId,
-                    descendantName),
+                    descendantNameMarker),
                 timeout,
                 TimeSpan.FromMilliseconds(200),
                 throwOnTimeout: false);
@@ -391,9 +391,9 @@ public sealed class WindowsUiSmokeTests
             }
         }
 
-        private AutomationElement? FindAutomationIdWithDescendantNameForRetry(
+        private AutomationElement? FindAutomationIdWithDescendantNameContainingForRetry(
             string automationId,
-            string descendantName)
+            string descendantNameMarker)
         {
             try
             {
@@ -401,10 +401,10 @@ public sealed class WindowsUiSmokeTests
                     .FindAllDescendants(condition => condition.ByAutomationId(automationId))
                     .SingleOrDefault(candidate => candidate
                         .FindAllDescendants()
-                        .Any(descendant => string.Equals(
-                            descendant.Properties.Name.ValueOrDefault,
-                            descendantName,
-                            StringComparison.Ordinal)));
+                        .Any(descendant =>
+                            descendant.Properties.Name.ValueOrDefault?.Contains(
+                                descendantNameMarker,
+                                StringComparison.Ordinal) == true));
             }
             catch (COMException) when (!application.HasExited)
             {

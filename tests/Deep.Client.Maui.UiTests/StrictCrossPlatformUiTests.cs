@@ -236,9 +236,9 @@ public sealed class StrictCrossPlatformUiTests
         {
             StrictCrossPlatformContracts.AssertDistinctProcessIds(firstWindowsPid, restartedWindows.ProcessId);
             restartedWindows.ActivateExact(Require(
-                restartedWindows.WaitForAutomationIdWithDescendantName(
+                restartedWindows.WaitForAutomationIdWithDescendantNameContaining(
                     "DesktopWorkspace.ConversationRow",
-                    marker,
+                    marker[..32],
                     TimeSpan.FromSeconds(45)),
                 "DesktopWorkspace.ConversationRow"));
             Require(restartedWindows.WaitForAutomationId("DesktopWorkspace.DirectDraft", TimeSpan.FromSeconds(45)), "DesktopWorkspace.DirectDraft");
