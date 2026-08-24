@@ -128,10 +128,22 @@ public partial class CallPage : ContentPage, IQueryAttributable
                 case "state":
                     UpdateConnectionState(root.GetProperty("state").GetString());
                     break;
+                case "media":
+                    UpdateMediaState(root);
+                    break;
+                case "control":
+                    UpdateControlState(root);
+                    break;
                 case "error":
-                    StatusLabel.Text = root.TryGetProperty("message", out var message)
-                        ? message.GetString() ?? "Ошибка звонка"
-                        : "Ошибка звонка";
+                    StatusLabel.Text = root.TryGetProperty("code", out var code)
+                        && code.ValueKind == JsonValueKind.String
+                        && string.Equals(
+                            code.GetString(),
+                            "media-operation-failed",
+                            StringComparison.Ordinal)
+                            ? "Не удалось установить звонок"
+                            : throw new InvalidOperationException(
+                                "Malformed WebRTC error state.");
                     break;
             }
         }
@@ -357,6 +369,53 @@ public partial class CallPage : ContentPage, IQueryAttributable
         {
             coordinator.ReleaseCall(descriptor.CallId);
         }
+    }
+
+    private void UpdateMediaState(JsonElement root)
+    {
+        if (!TryReadBoolean(root, "iceSelected", out var iceSelected)
+            || !TryReadBoolean(root, "inboundAudioActive", out var inboundAudioActive)
+            || !TryReadBoolean(root, "outboundAudioActive", out var outboundAudioActive))
+        {
+            throw new InvalidOperationException("Malformed WebRTC media state.");
+        }
+
+        MediaStateLabel.Text = iceSelected && inboundAudioActive && outboundAudioActive
+            ? "Двусторонний аудиоканал активен"
+            : "Проверка медиаканала...";
+    }
+
+    private void UpdateControlState(JsonElement root)
+    {
+        var control = root.TryGetProperty("control", out var controlValue)
+            && controlValue.ValueKind == JsonValueKind.String
+            ? controlValue.GetString()
+            : null;
+        if (!string.Equals(control, "audio", StringComparison.Ordinal)
+            || !TryReadBoolean(root, "enabled", out var enabled))
+        {
+            throw new InvalidOperationException("Malformed WebRTC control state.");
+        }
+
+        MicrophoneStateLabel.Text = enabled
+            ? "Микрофон включен"
+            : "Микрофон выключен";
+    }
+
+    private static bool TryReadBoolean(
+        JsonElement root,
+        string propertyName,
+        out bool value)
+    {
+        value = false;
+        if (!root.TryGetProperty(propertyName, out var property)
+            || property.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            return false;
+        }
+
+        value = property.GetBoolean();
+        return true;
     }
 
     private void OnDurationTimerTick(object? sender, EventArgs e)

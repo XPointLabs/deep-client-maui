@@ -6,7 +6,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     BackgroundColor="#07111F"
     Shell.NavBarIsVisible="False">
-    <Grid>
+    <Grid AutomationId="Call.Root">
         <HybridWebView
             x:Name="CallWebView"
             AutomationId="Call.Media"
@@ -33,9 +33,11 @@
             </Border>
             <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
                 <Label x:Name="DisplayNameLabel" Text="Звонок Deep" FontSize="18" FontAttributes="Bold" TextColor="White" HorizontalTextAlignment="Center" LineBreakMode="TailTruncation" />
-                <Label x:Name="StatusLabel" Text="Подключение..." FontSize="13" TextColor="#C8D2DE" HorizontalTextAlignment="Center" />
+                <Label x:Name="StatusLabel" AutomationId="Call.Status" Text="Подключение..." FontSize="13" TextColor="#C8D2DE" HorizontalTextAlignment="Center" />
+                <Label x:Name="MediaStateLabel" AutomationId="Call.MediaState" Text="Проверка медиаканала..." FontSize="11" TextColor="#A9BACB" HorizontalTextAlignment="Center" />
+                <Label x:Name="MicrophoneStateLabel" AutomationId="Call.MicrophoneState" Text="Микрофон включен" FontSize="11" TextColor="#A9BACB" HorizontalTextAlignment="Center" />
             </VerticalStackLayout>
-            <Label Grid.Column="2" x:Name="DurationLabel" Text="" FontSize="12" TextColor="#C8D2DE" VerticalOptions="Center" HorizontalTextAlignment="Center" />
+            <Label Grid.Column="2" x:Name="DurationLabel" AutomationId="Call.Duration" Text="" FontSize="12" TextColor="#C8D2DE" VerticalOptions="Center" HorizontalTextAlignment="Center" />
         </Grid>
 
         <Border
@@ -45,7 +47,7 @@
             HorizontalOptions="Fill"
             Background="#8A020A14">
             <HorizontalStackLayout Spacing="24" HorizontalOptions="Center">
-                <Border x:Name="MicrophoneButton" WidthRequest="56" HeightRequest="56" Padding="0" StrokeThickness="0" Background="#E8F0F7" StrokeShape="RoundRectangle 28" SemanticProperties.Description="Выключить микрофон">
+                <Border x:Name="MicrophoneButton" AutomationId="Call.Microphone" WidthRequest="56" HeightRequest="56" Padding="0" StrokeThickness="0" Background="#E8F0F7" StrokeShape="RoundRectangle 28" SemanticProperties.Description="Выключить микрофон">
                     <Path x:Name="MicrophoneIcon" Data="M12,3 A3,3 0 0 0 9,6 V12 A3,3 0 0 0 15,12 V6 A3,3 0 0 0 12,3 M6,11 V12 A6,6 0 0 0 18,12 V11 M12,18 V22 M9,22 H15" Stroke="#07111F" StrokeThickness="2" Fill="Transparent" WidthRequest="24" HeightRequest="24" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                     <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnMicrophoneClicked" /></Border.GestureRecognizers>
                 </Border>
@@ -60,7 +62,7 @@
                     <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnSwitchCameraClicked" /></Border.GestureRecognizers>
                 </Border>
 
-                <Border WidthRequest="56" HeightRequest="56" Padding="0" StrokeThickness="0" Background="#E53935" StrokeShape="RoundRectangle 28" SemanticProperties.Description="Завершить звонок">
+                <Border AutomationId="Call.Hangup" WidthRequest="56" HeightRequest="56" Padding="0" StrokeThickness="0" Background="#E53935" StrokeShape="RoundRectangle 28" SemanticProperties.Description="Завершить звонок">
                     <Path Data="M5,13 C8,9 16,9 19,13 L17,17 L14,15 C13,14 11,14 10,15 L7,17 Z" Stroke="White" StrokeThickness="2" Fill="White" WidthRequest="25" HeightRequest="25" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" Rotation="135" />
                     <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnHangupClicked" /></Border.GestureRecognizers>
                 </Border>

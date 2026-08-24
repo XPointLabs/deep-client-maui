@@ -15,6 +15,7 @@ public enum Mau2PhysicalPhase
     Attach,
     HappyPath,
     VoiceMessage,
+    Call,
     RestartDurability,
     ManualResendAfterRestart,
     AutomaticRetryAfterRestart,
@@ -41,7 +42,7 @@ internal static partial class Mau2PhysicalPhaseContract
             !string.Equals(raw, phase.ToString(), StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                "Physical MAU2 E2E requires one exact DEEP_MAU2_E2E_PHASE: ProvisionIdentity, Attach, HappyPath, VoiceMessage, RestartDurability, ManualResendAfterRestart, AutomaticRetryAfterRestart, or NegativeRuntime.");
+                "Physical MAU2 E2E requires one exact DEEP_MAU2_E2E_PHASE: ProvisionIdentity, Attach, HappyPath, VoiceMessage, Call, RestartDurability, ManualResendAfterRestart, AutomaticRetryAfterRestart, or NegativeRuntime.");
         }
 
         return phase;

@@ -178,7 +178,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         var startConversation = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Pages", "StartConversationPage.xaml"));
 
-        Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'VoiceMessage', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')", runner,
+        Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'VoiceMessage', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
         Assert.Contains("$env:DEEP_STRICT_WINDOWS_UI = '1'", runner,

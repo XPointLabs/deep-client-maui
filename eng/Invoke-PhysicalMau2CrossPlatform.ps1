@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'VoiceMessage', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')]
+    [ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'VoiceMessage', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')]
     [string]$Phase,
     [string]$AndroidSerial = '192.168.1.45:43337',
     [string]$MailboxBootstrapRoot = 'C:\Work\DeepSession\secrets\mailbox-bootstrap',
@@ -91,9 +91,11 @@ function New-CanonicalAndroidSelectorsJson {
         'Conversations.ConversationRow', 'Settings.SessionId', 'Settings.Back',
         'StartConversation.NewMessage', 'NewConversation.SessionId',
         'NewConversation.DisplayName', 'NewConversation.Start',
-        'NewConversation.Error', 'NewConversation.Back', 'Chat.Draft',
+        'NewConversation.Error', 'NewConversation.Back', 'Chat.Back', 'Chat.Draft',
         'Chat.Send', 'Chat.MessageBody', 'Chat.MessageBubble', 'Chat.Attach', 'Chat.PickFile',
-        'Chat.StagedAttachmentFilename', 'Chat.Voice', 'Chat.VoicePlayButton')
+        'Chat.StagedAttachmentFilename', 'Chat.Voice', 'Chat.VoicePlayButton',
+        'Call.Root', 'Call.Status', 'Call.MediaState', 'Call.Microphone',
+        'Call.MicrophoneState', 'Call.Hangup')
     $selectors = [ordered]@{}
     foreach ($role in $roles) {
         $selectors[$role] = "$androidPackage`:id/$role"

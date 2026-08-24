@@ -264,6 +264,71 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
+    public void PhysicalCallLaneRequiresAuthenticatedIceBidirectionalMediaMuteAndRemoteHangup()
+    {
+        var physical = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+        var callPage = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Pages", "CallPage.xaml.cs"));
+        var webRtc = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Resources", "Raw", "wwwroot", "call", "app.js"));
+
+        Assert.Contains("case Mau2PhysicalPhase.Call:", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("DesktopWorkspace.AudioCall", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("android:id/alertTitle", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("android:id/button1", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("options.App(\"Call.MediaState\")", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("windows.WaitForAutomationIdWithName(", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("options.App(\"Call.Microphone\")", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("options.App(\"Call.Hangup\")", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("selectedIceCandidatePairObserved", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("bidirectionalAudioRtpObserved", physical,
+            StringComparison.Ordinal);
+
+        Assert.Contains("report.type !== \"candidate-pair\"", webRtc,
+            StringComparison.Ordinal);
+        Assert.Contains("report.type === \"inbound-rtp\"", webRtc,
+            StringComparison.Ordinal);
+        Assert.Contains("report.type === \"outbound-rtp\"", webRtc,
+            StringComparison.Ordinal);
+        Assert.Contains("iceSelected: selectedCandidatePair", webRtc,
+            StringComparison.Ordinal);
+        Assert.Contains("inboundAudioActive: inboundAudioPackets > 0", webRtc,
+            StringComparison.Ordinal);
+        Assert.Contains("outboundAudioActive: outboundAudioPackets > 0", webRtc,
+            StringComparison.Ordinal);
+        Assert.Contains("Malformed WebRTC media state.", callPage,
+            StringComparison.Ordinal);
+        Assert.Contains("Malformed WebRTC control state.", callPage,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CallControlsExposeStablePrivacySafeSelectors()
+    {
+        var chat = LoadPage("ChatPage.xaml");
+        var call = LoadPage("CallPage.xaml");
+
+        AssertTappedAction(chat, "OnAudioCallClicked", "Chat.AudioCall");
+        AssertTappedAction(chat, "OnVideoCallClicked", "Chat.VideoCall");
+        AssertTappedAction(call, "OnMicrophoneClicked", "Call.Microphone");
+        AssertTappedAction(call, "OnHangupClicked", "Call.Hangup");
+        AssertSelectorExists([call], "Call.Root");
+        AssertSelectorExists([call], "Call.Status");
+        AssertSelectorExists([call], "Call.MediaState");
+        AssertSelectorExists([call], "Call.MicrophoneState");
+    }
+
+    [Fact]
     public void E2eAutomationIdsAreLiteralPrivacySafeRolesAndPageSelectorsAreUnique()
     {
         var pages = new[]
@@ -271,7 +336,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             LoadPage("ConversationsPage.xaml"),
             LoadPage("ChatPage.xaml"),
             LoadPage("GroupChatPage.xaml"),
-            LoadPage("DesktopWorkspacePage.xaml")
+            LoadPage("DesktopWorkspacePage.xaml"),
+            LoadPage("CallPage.xaml")
         };
 
         foreach (var automationId in pages

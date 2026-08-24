@@ -10,6 +10,7 @@ public sealed class Mau2PhysicalPhaseTests
     [InlineData("Attach", Mau2PhysicalPhase.Attach)]
     [InlineData("HappyPath", Mau2PhysicalPhase.HappyPath)]
     [InlineData("VoiceMessage", Mau2PhysicalPhase.VoiceMessage)]
+    [InlineData("Call", Mau2PhysicalPhase.Call)]
     [InlineData("RestartDurability", Mau2PhysicalPhase.RestartDurability)]
     [InlineData("ManualResendAfterRestart", Mau2PhysicalPhase.ManualResendAfterRestart)]
     [InlineData("AutomaticRetryAfterRestart", Mau2PhysicalPhase.AutomaticRetryAfterRestart)]

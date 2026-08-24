@@ -146,7 +146,10 @@ public sealed class CallSessionCoordinator
         var result = new List<CallSignalEnvelope>();
         while (queue.Signals.TryDequeue(out var signal))
         {
-            result.Add(signal);
+            if (IsBoundToCall(signal, call))
+            {
+                result.Add(signal);
+            }
         }
 
         if (result.Any(static signal => signal.Type == CallSignalType.Bye))
@@ -161,6 +164,17 @@ public sealed class CallSessionCoordinator
 
         return result;
     }
+
+    private static bool IsBoundToCall(
+        CallSignalEnvelope signal,
+        CallDescriptor call) =>
+        string.Equals(signal.CallId, call.CallId, StringComparison.Ordinal)
+        && string.Equals(
+            signal.ConversationId,
+            call.ConversationId,
+            StringComparison.Ordinal)
+        && signal.Sender == call.RemoteParty
+        && signal.Recipient == call.LocalParty;
 
     public async Task<IReadOnlyList<CallDescriptor>> ReceiveIncomingOffersAsync(
         CancellationToken cancellationToken = default)

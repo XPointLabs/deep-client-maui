@@ -33,6 +33,9 @@ public sealed class StrictCrossPlatformUiTests
             case Mau2PhysicalPhase.VoiceMessage:
                 ExchangeVoiceMessageOnExistingProvisionedClients(options);
                 return;
+            case Mau2PhysicalPhase.Call:
+                ExchangeAudioCallOnExistingProvisionedClients(options);
+                return;
             case Mau2PhysicalPhase.RestartDurability:
                 RestartAndAssertDeduplicatedReceive(options);
                 return;
@@ -302,6 +305,94 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddBoolean("voiceRecordedFromPhysicalMicrophone", true);
         evidence.AddBoolean("voiceEncryptedAttachmentDelivered", true);
         evidence.AddBoolean("voicePlaybackStartedAfterDecrypt", true);
+        evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
+        CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void ExchangeAudioCallOnExistingProvisionedClients(
+        CrossPlatformOptions options)
+    {
+        const string ActiveMediaState = "Двусторонний аудиоканал активен";
+        const string MicrophoneEnabledState = "Микрофон включен";
+        const string MicrophoneMutedState = "Микрофон выключен";
+        var evidence = CreatePhaseEvidence(options);
+        var android = new AndroidUiautomatorClient(options);
+        android.AssertPhysicalConnectedDevice();
+        android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
+        android.ColdStart();
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+        var androidIdentity = ReadAndroidIdentity(android, options);
+
+        using var windows = WindowsUiSmokeTests.WindowsUiTestSession
+            .CreateStrictWithAppData(options.WindowsAppDataRoot);
+        var windowsIdentity = ReadWindowsIdentity(windows);
+        AddAndroidContact(android, options, windowsIdentity);
+        android.Tap(options.App("Chat.Back"));
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(20));
+        android.WaitForResource(
+            options.App("PhysicalE2E.RuntimeReadyMarker"),
+            TimeSpan.FromSeconds(45));
+        AddWindowsContact(windows, androidIdentity);
+
+        windows.ActivateExact(Require(
+            windows.WaitForAutomationId(
+                "DesktopWorkspace.AudioCall",
+                TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.AudioCall"));
+        Assert.Null(android.FindOptional(options.App("Call.Root")));
+        android.WaitForText(
+            "android:id/alertTitle",
+            "Аудиозвонок",
+            TimeSpan.FromSeconds(45));
+        android.TapExactResourceIdWithExactText("android:id/button1", "Ответить");
+        android.WaitForResource(options.App("Call.Root"), TimeSpan.FromSeconds(30));
+        _ = android.AllowMicrophonePermissionIfRequested(TimeSpan.FromSeconds(8));
+        Require(
+            windows.WaitForAutomationId("Call.Root", TimeSpan.FromSeconds(30)),
+            "Call.Root");
+
+        android.WaitForText(
+            options.App("Call.MediaState"),
+            ActiveMediaState,
+            TimeSpan.FromSeconds(90));
+        Require(
+            windows.WaitForAutomationIdWithName(
+                "Call.MediaState",
+                ActiveMediaState,
+                TimeSpan.FromSeconds(90)),
+            "Call.MediaState");
+
+        android.Tap(options.App("Call.Microphone"));
+        android.WaitForText(
+            options.App("Call.MicrophoneState"),
+            MicrophoneMutedState,
+            TimeSpan.FromSeconds(15));
+        android.Tap(options.App("Call.Microphone"));
+        android.WaitForText(
+            options.App("Call.MicrophoneState"),
+            MicrophoneEnabledState,
+            TimeSpan.FromSeconds(15));
+
+        android.Tap(options.App("Call.Hangup"));
+        android.WaitForResource(
+            options.App("Conversations.Root"),
+            TimeSpan.FromSeconds(30));
+        Require(
+            windows.WaitForAutomationId(
+                "DesktopWorkspace.AudioCall",
+                TimeSpan.FromSeconds(30)),
+            "DesktopWorkspace.AudioCall");
+        Assert.Null(android.FindOptional(options.App("Call.Root")));
+        Assert.Null(windows.FindAutomationId("Call.Root"));
+
+        evidence.AddBoolean("outgoingOfferStarted", true);
+        evidence.AddBoolean("incomingRingingObserved", true);
+        evidence.AddBoolean("incomingAnswerAccepted", true);
+        evidence.AddBoolean("selectedIceCandidatePairObserved", true);
+        evidence.AddBoolean("bidirectionalAudioRtpObserved", true);
+        evidence.AddBoolean("microphoneMuteApplied", true);
+        evidence.AddBoolean("microphoneRestoreApplied", true);
+        evidence.AddBoolean("remoteHangupObserved", true);
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
         CompletePhaseEvidence(options, evidence);
     }
@@ -577,9 +668,10 @@ internal sealed class CrossPlatformOptions
         "Startup.Status", "Welcome.DisplayName", "Welcome.Create", "Conversations.Root", "PhysicalE2E.RuntimeReadyMarker", "Conversations.ProfileSettings",
         "Conversations.NewConversationTop", "Conversations.ConversationRow", "Settings.SessionId", "Settings.Back",
         "StartConversation.NewMessage", "NewConversation.SessionId", "NewConversation.DisplayName", "NewConversation.Start",
-        "NewConversation.Error", "NewConversation.Back", "Chat.Draft", "Chat.Send", "Chat.MessageBody", "Chat.MessageBubble",
+        "NewConversation.Error", "NewConversation.Back", "Chat.Back", "Chat.Draft", "Chat.Send", "Chat.MessageBody", "Chat.MessageBubble",
         "Chat.Attach", "Chat.PickFile", "Chat.StagedAttachmentFilename",
-        "Chat.Voice", "Chat.VoicePlayButton"
+        "Chat.Voice", "Chat.VoicePlayButton", "Call.Root", "Call.Status",
+        "Call.MediaState", "Call.Microphone", "Call.MicrophoneState", "Call.Hangup"
     ];
     private readonly Dictionary<string, string> androidSelectors;
     private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string fixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256)
@@ -1070,6 +1162,38 @@ internal sealed class AndroidUiautomatorClient
     internal void Tap(string resourceId) { var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void Hold(string resourceId, TimeSpan duration) { if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10)) throw new ArgumentOutOfRangeException(nameof(duration)); var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "swipe", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), ((int)duration.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void TapExactResourceIdWithExactText(string resourceId, string text) { var node = WaitByText(resourceId, text, TimeSpan.FromSeconds(15)); Assert.Equal(text, node.Text); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
+    internal bool AllowMicrophonePermissionIfRequested(TimeSpan timeout)
+    {
+        string[] permissionButtons =
+        [
+            "com.android.permissioncontroller:id/permission_allow_one_time_button",
+            "com.android.permissioncontroller:id/permission_allow_foreground_only_button",
+            "com.android.permissioncontroller:id/permission_allow_button"
+        ];
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var hierarchy = Dump();
+            var selected = permissionButtons
+                .Select(resourceId => StrictCrossPlatformContracts.FindOptionalResourceId(
+                    hierarchy,
+                    resourceId))
+                .FirstOrDefault(static node => node is not null);
+            if (selected is not null)
+            {
+                var point = selected.Bounds.Center;
+                RequireSuccess(Adb(
+                    "shell",
+                    "input",
+                    "tap",
+                    point.X.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                return true;
+            }
+            Thread.Sleep(200);
+        }
+        return false;
+    }
     internal void Type(string resourceId, string value) { Tap(resourceId); RequireSuccess(Adb("shell", "input", "text", value)); }
     internal void DismissKeyboard() { RequireSuccess(Adb("shell", "input", "keyevent", "KEYCODE_BACK")); }
     private StrictCrossPlatformContracts.AndroidNode Wait(string resourceId, string? expectedText, TimeSpan timeout) { var until = DateTime.UtcNow + timeout; Exception? last = null; while (DateTime.UtcNow < until) { try { var node = StrictCrossPlatformContracts.FindExactlyOneResourceId(Dump(), resourceId); if (expectedText is null || string.Equals(node.Text, expectedText, StringComparison.Ordinal)) return node; } catch (Exception ex) { last = ex; } Thread.Sleep(250); } throw new InvalidOperationException($"Required Android resource-id did not reach its expected state: {resourceId}.", last); }

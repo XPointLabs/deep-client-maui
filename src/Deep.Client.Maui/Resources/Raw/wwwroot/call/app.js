@@ -8,6 +8,7 @@
   let localStream = null;
   let videoEnabled = false;
   let facingMode = "user";
+  let mediaProbeTimer = null;
   const pendingCandidates = [];
 
   const send = message => {
@@ -17,8 +18,8 @@
   };
 
   const reportError = error => {
-    const message = error && error.message ? error.message : String(error || "Unknown call error");
-    send({ type: "error", message });
+    console.error("Deep call media operation failed");
+    send({ type: "error", code: "media-operation-failed" });
   };
 
   async function initialize(config) {
@@ -51,6 +52,8 @@
     });
     localVideo.srcObject = localStream;
     for (const track of localStream.getTracks()) peer.addTrack(track, localStream);
+    reportTrackState("audio");
+    mediaProbeTimer = window.setInterval(() => reportMediaState().catch(reportError), 1000);
 
     if (config.initiator) {
       const offer = await peer.createOffer();
@@ -91,10 +94,57 @@
   }
 
   function setTrackEnabled(kind, enabled) {
-    if (!localStream) return;
+    if (!localStream) throw new Error("Local media is unavailable");
+    let matched = false;
     for (const track of localStream.getTracks()) {
-      if (track.kind === kind) track.enabled = Boolean(enabled);
+      if (track.kind === kind) {
+        track.enabled = Boolean(enabled);
+        matched = true;
+      }
     }
+    if (!matched) throw new Error("Requested local media track is unavailable");
+    reportTrackState(kind);
+  }
+
+  function reportTrackState(kind) {
+    const tracks = localStream ? localStream.getTracks().filter(track => track.kind === kind) : [];
+    if (tracks.length !== 1) throw new Error("Local media track cardinality is invalid");
+    send({ type: "control", control: kind, enabled: Boolean(tracks[0].enabled) });
+  }
+
+  async function reportMediaState() {
+    if (!peer || peer.connectionState !== "connected") return;
+    const stats = await peer.getStats();
+    let inboundAudioPackets = 0;
+    let outboundAudioPackets = 0;
+    let selectedCandidatePair = false;
+    let selectedCandidatePairId = null;
+
+    stats.forEach(report => {
+      if (report.type === "transport" && typeof report.selectedCandidatePairId === "string") {
+        selectedCandidatePairId = report.selectedCandidatePairId;
+      }
+      if (report.type === "inbound-rtp" && !report.isRemote && (report.kind === "audio" || report.mediaType === "audio")) {
+        inboundAudioPackets += Number(report.packetsReceived || 0);
+      }
+      if (report.type === "outbound-rtp" && !report.isRemote && (report.kind === "audio" || report.mediaType === "audio")) {
+        outboundAudioPackets += Number(report.packetsSent || 0);
+      }
+    });
+
+    stats.forEach(report => {
+      if (report.type !== "candidate-pair" || report.state !== "succeeded") return;
+      if ((selectedCandidatePairId && report.id === selectedCandidatePairId) || report.nominated === true || report.selected === true) {
+        selectedCandidatePair = true;
+      }
+    });
+
+    send({
+      type: "media",
+      iceSelected: selectedCandidatePair,
+      inboundAudioActive: inboundAudioPackets > 0,
+      outboundAudioActive: outboundAudioPackets > 0
+    });
   }
 
   async function switchCamera() {
@@ -111,6 +161,8 @@
   }
 
   function hangup() {
+    if (mediaProbeTimer !== null) window.clearInterval(mediaProbeTimer);
+    mediaProbeTimer = null;
     if (peer) peer.close();
     if (localStream) for (const track of localStream.getTracks()) track.stop();
     peer = null;

@@ -227,11 +227,11 @@
                         <Label AutomationId="Chat.SecurityStatus" Text="защищено сквозным шифрованием" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
                     </VerticalStackLayout>
                 </Grid>
-                <Border Grid.Column="2" WidthRequest="40" HeightRequest="40" Background="Transparent" StrokeThickness="0" SemanticProperties.Description="Аудиозвонок">
+                <Border Grid.Column="2" AutomationId="Chat.AudioCall" WidthRequest="40" HeightRequest="40" Background="Transparent" StrokeThickness="0" SemanticProperties.Description="Аудиозвонок">
                     <Path Data="M7,3 L10,8 L7,10 C9,14 12,17 16,19 L18,16 L23,19 C22,22 20,24 17,23 C9,20 4,15 2,7 C1,4 4,2 7,3 Z" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                     <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnAudioCallClicked" /></Border.GestureRecognizers>
                 </Border>
-                <Border Grid.Column="3" WidthRequest="40" HeightRequest="40" Background="Transparent" StrokeThickness="0" SemanticProperties.Description="Видеозвонок">
+                <Border Grid.Column="3" AutomationId="Chat.VideoCall" WidthRequest="40" HeightRequest="40" Background="Transparent" StrokeThickness="0" SemanticProperties.Description="Видеозвонок">
                     <Path Data="M3,6 H16 V18 H3 Z M16,10 L22,7 V17 L16,14 Z" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1.8" Fill="Transparent" WidthRequest="23" HeightRequest="23" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
                     <Border.GestureRecognizers><TapGestureRecognizer Tapped="OnVideoCallClicked" /></Border.GestureRecognizers>
                 </Border>

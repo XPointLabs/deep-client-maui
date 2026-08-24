@@ -62,6 +62,57 @@ public sealed class CallSessionCoordinatorTests
     }
 
     [Fact]
+    public async Task ActiveCallDropsAuthenticatedSignalsOutsideItsExactPartyAndConversationBinding()
+    {
+        using var runtime = ClientRuntime.CreateStubbed();
+        var local = SessionId.CreateNew();
+        var remote = SessionId.CreateNew();
+        var other = SessionId.CreateNew();
+        await SetActiveAccountAsync(runtime, local);
+        var transport = new QueuedCallTransport();
+        var coordinator = CreateCoordinator(runtime, transport);
+        var offer = Signal(
+            "bound-call",
+            local,
+            remote,
+            CallSignalType.Offer,
+            "{\"video\":false}",
+            Now);
+        transport.Enqueue(offer);
+        var call = Assert.Single(await coordinator.ReceiveIncomingOffersAsync());
+
+        transport.Enqueue(
+            offer with
+            {
+                Sender = other,
+                Type = CallSignalType.Bye,
+                Payload = "{\"reason\":\"impostor\"}"
+            },
+            offer with
+            {
+                ConversationId = "wrong-conversation",
+                Type = CallSignalType.Answer,
+                Payload = "{}"
+            },
+            offer with
+            {
+                Type = CallSignalType.IceCandidate,
+                Payload = "{\"candidate\":{\"candidate\":\"candidate:1\"}}"
+            });
+
+        var received = await coordinator.ReceiveForCallAsync(call);
+        Assert.Collection(
+            received,
+            signal => Assert.Equal(CallSignalType.Offer, signal.Type),
+            signal => Assert.Equal(CallSignalType.IceCandidate, signal.Type));
+        Assert.All(received, signal =>
+        {
+            Assert.Equal(remote, signal.Sender);
+            Assert.Equal(call.ConversationId, signal.ConversationId);
+        });
+    }
+
+    [Fact]
     public async Task ExpiredAndFloodedCallSignalsAreDroppedOrStrictlyBounded()
     {
         using var runtime = ClientRuntime.CreateStubbed();

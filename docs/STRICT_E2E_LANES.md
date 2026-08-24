@@ -279,7 +279,7 @@ are never written to policy output and are zeroed by the issuer process.
 ## Physical Android ↔ Windows rendered flow (opt-in)
 
 The non-destructive physical runner `eng/Invoke-PhysicalMau2CrossPlatform.ps1`
-requires one explicit phase: `ProvisionIdentity`, `Attach`, `HappyPath`, `VoiceMessage`, `RestartDurability`,
+requires one explicit phase: `ProvisionIdentity`, `Attach`, `HappyPath`, `VoiceMessage`, `Call`, `RestartDurability`,
 `ManualResendAfterRestart`, `AutomaticRetryAfterRestart`, or `NegativeRuntime`.
 `ProvisionIdentity` creates a missing Android or Windows identity only through
 the rendered production controls, otherwise reads and preserves the existing
@@ -302,6 +302,15 @@ snapshot to remain unchanged. Expiry/revocation and a second valid wrong-holder
 bundle require issuer-backed signed fixtures and are not simulated by editing
 JSON; Android platform/holder binding remains covered by shared loader tests
 until a second disposable Android package is available.
+
+`Call` starts an audio call from the exact Windows conversation, observes the
+native Android ringing prompt, accepts it through its exact system action, and
+requires both clients to report a selected successful ICE candidate pair plus
+nonzero inbound and outbound audio RTP packets. It then verifies the WebRTC
+audio-track acknowledgement for mute and restore, hangs up on Android, and
+requires the authenticated `Bye` to close the exact Windows call surface. The
+standard result contains only booleans; candidate addresses, identities, SDP,
+ICE credentials, and device audio are never persisted.
 
 `DEEP_STRICT_CROSS_PLATFORM_UI=1` enables the separate Debug/live rendered
 acceptance in `Deep.Client.Maui.UiTests`. It uses FlaUI UIA3 only against the
