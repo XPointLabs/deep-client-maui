@@ -443,15 +443,23 @@ function Assert-AuthorityPathAncestors([string]$Root, [string]$Path, [string]$La
     if (-not $pathFull.StartsWith($rootFull + '\', [StringComparison]::OrdinalIgnoreCase)) {
         throw "$Label escaped its authority root."
     }
-    $current = Get-Item -Force -LiteralPath $pathFull
-    while ($null -ne $current -and
-        -not [StringComparer]::OrdinalIgnoreCase.Equals($current.FullName.TrimEnd('\'), $rootFull)) {
+    $currentPath = $pathFull
+    while ($true) {
+        $current = Get-Item -Force -LiteralPath $currentPath
         if (($current.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
             throw "$Label traversed a reparse point."
         }
-        $current = $current.Parent
+        if ([StringComparer]::OrdinalIgnoreCase.Equals(
+                $current.FullName.TrimEnd('\'), $rootFull)) {
+            break
+        }
+        $parent = [IO.Path]::GetDirectoryName($currentPath)
+        if ([string]::IsNullOrWhiteSpace($parent) -or
+            [StringComparer]::OrdinalIgnoreCase.Equals($parent, $currentPath)) {
+            throw "$Label did not reach its authority root."
+        }
+        $currentPath = $parent
     }
-    if ($null -eq $current) { throw "$Label did not reach its authority root." }
 }
 
 function Assert-ChaosDependencyAuthority {

@@ -51,6 +51,7 @@ $ast = [Management.Automation.Language.Parser]::ParseFile(
 if ($parseErrors.Count -ne 0) { throw 'Physical runner did not parse for snapshot safety test.' }
 $requiredFunctions = @(
     'Get-Sha256', 'Get-TextSha256', 'Read-ExactPinnedBytes',
+    'Assert-AuthorityPathAncestors',
     'Set-ProtectedRunItem', 'Set-ProtectedRunTree',
     'New-ChaosDependencySnapshot', 'Close-ChaosDependencySnapshot')
 foreach ($name in $requiredFunctions) {
@@ -75,6 +76,7 @@ try {
     [IO.File]::WriteAllText($launcher, "'reviewed-launcher'`n", [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($helper, "'reviewed-helper'`n", [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($manifest, '{"reviewed":true}', [Text.UTF8Encoding]::new($false))
+    Assert-AuthorityPathAncestors $sourceRoot $launcher 'Regular source file'
     $script:chaosManifestSha256 = Get-Sha256 $manifest
     $authority = [pscustomobject]@{
         DevOpsRoot = $sourceRoot
