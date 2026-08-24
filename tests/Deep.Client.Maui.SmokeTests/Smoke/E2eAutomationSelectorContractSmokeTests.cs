@@ -206,15 +206,11 @@ public sealed class E2eAutomationSelectorContractSmokeTests
                 "android.WaitForText(options.App(\"Chat.MessageBody\"), marker, TimeSpan.FromSeconds(60));",
                 StringComparison.Ordinal));
         Assert.Contains(
-            "windowsConversationTitle = AddWindowsContact(windows, androidIdentity);",
+            "restartedWindows.WaitForAutomationIdWithDescendantName(",
             physical,
             StringComparison.Ordinal);
         Assert.Contains(
-            "restartedWindows.WaitForAutomationIdWithName(",
-            physical,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "\"DesktopWorkspace.ConversationRow\",\n                    windowsConversationTitle,",
+            "\"DesktopWorkspace.ConversationRow\",\n                    marker,",
             physical,
             StringComparison.Ordinal);
 
@@ -238,6 +234,10 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains(
             "Windows launch produced more than one new exact target process.",
+            windows,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "FindAutomationIdWithDescendantNameForRetry(",
             windows,
             StringComparison.Ordinal);
     }

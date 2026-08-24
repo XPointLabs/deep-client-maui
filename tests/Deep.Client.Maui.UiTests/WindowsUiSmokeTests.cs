@@ -357,6 +357,21 @@ public sealed class WindowsUiSmokeTests
             return result.Result;
         }
 
+        internal AutomationElement? WaitForAutomationIdWithDescendantName(
+            string automationId,
+            string descendantName,
+            TimeSpan timeout)
+        {
+            var result = Retry.WhileNull(
+                () => FindAutomationIdWithDescendantNameForRetry(
+                    automationId,
+                    descendantName),
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            return result.Result;
+        }
+
         private AutomationElement? FindAutomationIdWithNameForRetry(
             string automationId,
             string name)
@@ -369,6 +384,27 @@ public sealed class WindowsUiSmokeTests
                         candidate.Properties.Name.ValueOrDefault,
                         name,
                         StringComparison.Ordinal));
+            }
+            catch (COMException) when (!application.HasExited)
+            {
+                return null;
+            }
+        }
+
+        private AutomationElement? FindAutomationIdWithDescendantNameForRetry(
+            string automationId,
+            string descendantName)
+        {
+            try
+            {
+                return CurrentWindow()
+                    .FindAllDescendants(condition => condition.ByAutomationId(automationId))
+                    .SingleOrDefault(candidate => candidate
+                        .FindAllDescendants()
+                        .Any(descendant => string.Equals(
+                            descendant.Properties.Name.ValueOrDefault,
+                            descendantName,
+                            StringComparison.Ordinal)));
             }
             catch (COMException) when (!application.HasExited)
             {
