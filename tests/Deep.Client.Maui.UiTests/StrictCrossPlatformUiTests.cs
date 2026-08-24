@@ -216,10 +216,11 @@ public sealed class StrictCrossPlatformUiTests
         var androidIdentity = ReadAndroidIdentity(android, options);
         var marker = StrictCrossPlatformContracts.NewMarker("restart-resend");
         int firstWindowsPid;
+        string windowsConversationTitle;
         using (var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot))
         {
             firstWindowsPid = windows.ProcessId;
-            AddWindowsContact(windows, androidIdentity);
+            windowsConversationTitle = AddWindowsContact(windows, androidIdentity);
             SendWindowsMessage(windows, marker);
             android.Tap(options.App("Conversations.ConversationRow"));
             android.WaitForText(options.App("Chat.MessageBody"), marker, TimeSpan.FromSeconds(60));
@@ -235,6 +236,12 @@ public sealed class StrictCrossPlatformUiTests
         using (var restartedWindows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot))
         {
             StrictCrossPlatformContracts.AssertDistinctProcessIds(firstWindowsPid, restartedWindows.ProcessId);
+            restartedWindows.ActivateExact(Require(
+                restartedWindows.WaitForAutomationIdWithName(
+                    "DesktopWorkspace.ConversationRow",
+                    windowsConversationTitle,
+                    TimeSpan.FromSeconds(45)),
+                "DesktopWorkspace.ConversationRow"));
             Require(restartedWindows.WaitForAutomationId("DesktopWorkspace.DirectDraft", TimeSpan.FromSeconds(45)), "DesktopWorkspace.DirectDraft");
             WaitForWindowsText(restartedWindows, "DesktopWorkspace.DirectMessageBody", marker);
         }
@@ -421,14 +428,16 @@ public sealed class StrictCrossPlatformUiTests
         android.WaitForResource(options.App("NewConversation.SessionId"), TimeSpan.FromSeconds(15));
     }
 
-    private static void AddWindowsContact(WindowsUiSmokeTests.WindowsUiTestSession windows, string androidIdentity)
+    private static string AddWindowsContact(WindowsUiSmokeTests.WindowsUiTestSession windows, string androidIdentity)
     {
+        var displayName = StrictCrossPlatformContracts.NewMarker("android-contact");
         windows.ActivateExact(Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(20)), "Conversations.NewConversation"));
         windows.ActivateExact(Require(windows.WaitForAutomationId("StartConversation.NewMessage", TimeSpan.FromSeconds(15)), "StartConversation.NewMessage"));
         Require(windows.WaitForAutomationId("NewConversation.SessionId", TimeSpan.FromSeconds(15)), "NewConversation.SessionId").AsTextBox().Text = androidIdentity;
-        Require(windows.WaitForAutomationId("NewConversation.DisplayName", TimeSpan.FromSeconds(10)), "NewConversation.DisplayName").AsTextBox().Text = StrictCrossPlatformContracts.NewMarker("android-contact");
+        Require(windows.WaitForAutomationId("NewConversation.DisplayName", TimeSpan.FromSeconds(10)), "NewConversation.DisplayName").AsTextBox().Text = displayName;
         windows.ActivateExact(Require(windows.WaitForAutomationId("NewConversation.Start", TimeSpan.FromSeconds(10)), "NewConversation.Start"));
-        windows.WaitForAutomationId("DesktopWorkspace.DirectDraft", TimeSpan.FromSeconds(30));
+        Require(windows.WaitForAutomationId("DesktopWorkspace.DirectDraft", TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectDraft");
+        return displayName;
     }
 
     private static void SendWindowsMessage(WindowsUiSmokeTests.WindowsUiTestSession windows, string message)

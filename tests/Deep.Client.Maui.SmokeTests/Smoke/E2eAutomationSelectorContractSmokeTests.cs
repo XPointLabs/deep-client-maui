@@ -205,6 +205,18 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             physical.IndexOf(
                 "android.WaitForText(options.App(\"Chat.MessageBody\"), marker, TimeSpan.FromSeconds(60));",
                 StringComparison.Ordinal));
+        Assert.Contains(
+            "windowsConversationTitle = AddWindowsContact(windows, androidIdentity);",
+            physical,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "restartedWindows.WaitForAutomationIdWithName(",
+            physical,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "\"DesktopWorkspace.ConversationRow\",\n                    windowsConversationTitle,",
+            physical,
+            StringComparison.Ordinal);
     }
 
     [Fact]
