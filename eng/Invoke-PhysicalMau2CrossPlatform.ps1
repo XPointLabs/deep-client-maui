@@ -1046,10 +1046,9 @@ $chaosDependencyTreeSha256 = $null
 $chaosExecutionSnapshotSha256 = $null
 $chaosOrigin = $null
 $chaosSecretDirectory = $null
-$sourceChaosAuthority = $null
+$sourceChaosAuthority = Assert-ChaosDependencyAuthority
+$chaosDependencyTreeSha256 = $sourceChaosAuthority.DependencyTreeSha256
 if ($chaosPhase) {
-    $sourceChaosAuthority = Assert-ChaosDependencyAuthority
-    $chaosDependencyTreeSha256 = $sourceChaosAuthority.DependencyTreeSha256
     $originMatches = [regex]::Matches(
         $runtimeEnvironmentText,
         '(?m)^XNODE_URLS=[0-9a-f]{64}\|(?<origin>https://(?<host>[0-9]{1,3}(?:\.[0-9]{1,3}){3}):41801);')
@@ -1111,19 +1110,18 @@ Initialize-ProtectedRunsRoot $e2eRunsRoot
 $runRoot = Join-Path $e2eRunsRoot $runId
 [IO.Directory]::CreateDirectory($runRoot) | Out-Null
 Set-ProtectedRunTree $runRoot
-$script:chaosExecutionAuthority = $null
+$script:chaosExecutionAuthority = New-ChaosDependencySnapshot `
+    $sourceChaosAuthority (Join-Path $runRoot 'chaos-authority')
+$chaosLauncher = $script:chaosExecutionAuthority.Launcher
+$chaosManifestPath = $script:chaosExecutionAuthority.Manifest
+$chaosExecutionSnapshotSha256 = $script:chaosExecutionAuthority.SnapshotSha256
+$env:DEEP_PHYSICAL_E2E_DOCKER_PATH = $script:chaosExecutionAuthority.Docker
+$env:DEEP_PHYSICAL_E2E_DOCKER_SHA256 = $script:chaosExecutionAuthority.DockerSha256
+$env:DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_PATH = $script:chaosExecutionAuthority.DockerCompose
+$env:DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_SHA256 = $script:chaosExecutionAuthority.DockerComposeSha256
+$env:DEEP_PHYSICAL_E2E_DEVOPS_RUNTIME_ROOT = $sourceChaosAuthority.DevOpsRoot
 if ($chaosPhase) {
-    $script:chaosExecutionAuthority = New-ChaosDependencySnapshot `
-        $sourceChaosAuthority (Join-Path $runRoot 'chaos-authority')
-    $chaosLauncher = $script:chaosExecutionAuthority.Launcher
-    $chaosManifestPath = $script:chaosExecutionAuthority.Manifest
     $devOpsRoot = $script:chaosExecutionAuthority.DevOpsRoot
-    $chaosExecutionSnapshotSha256 = $script:chaosExecutionAuthority.SnapshotSha256
-    $env:DEEP_PHYSICAL_E2E_DOCKER_PATH = $script:chaosExecutionAuthority.Docker
-    $env:DEEP_PHYSICAL_E2E_DOCKER_SHA256 = $script:chaosExecutionAuthority.DockerSha256
-    $env:DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_PATH = $script:chaosExecutionAuthority.DockerCompose
-    $env:DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_SHA256 = $script:chaosExecutionAuthority.DockerComposeSha256
-    $env:DEEP_PHYSICAL_E2E_DEVOPS_RUNTIME_ROOT = $sourceChaosAuthority.DevOpsRoot
     Assert-ChaosOffBaseline (Invoke-ChaosCommand @('-Action', 'ChaosStatus') `
         'deep-survival-resend-chaos-status.v2')
 }
@@ -1163,9 +1161,9 @@ try {
         sourceCommit = $sourceCommit
         policySha256 = Get-Sha256 $policy
         runtimeEnvironmentSha256 = Get-Sha256 $runtimeEnvironment
-        chaosDependencyManifestSha256 = $(if ($chaosPhase) { $chaosManifestSha256 } else { $null })
-        chaosDependencyTreeSha256 = $(if ($chaosPhase) { $chaosDependencyTreeSha256 } else { $null })
-        chaosExecutionSnapshotSha256 = $(if ($chaosPhase) { $chaosExecutionSnapshotSha256 } else { $null })
+        chaosDependencyManifestSha256 = $chaosManifestSha256
+        chaosDependencyTreeSha256 = $chaosDependencyTreeSha256
+        chaosExecutionSnapshotSha256 = $chaosExecutionSnapshotSha256
         transportProtocol = 'authenticated-mau2'
         transportOwnership = 'user-managed'
         androidRuntimeTreeSha256 = (Get-Sha256 (Join-Path $androidRuntime 'activation.v1.json'))

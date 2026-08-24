@@ -64,6 +64,17 @@ public sealed class PhysicalChaosRunnerContractSmokeTests
         Assert.DoesNotContain("DEEP_E2E_CHAOS_SCRIPT =", runner, StringComparison.Ordinal);
         Assert.DoesNotContain("& dotnet test", runner, StringComparison.Ordinal);
         Assert.DoesNotMatch(new Regex(@"git\s+-C\s+\$devOpsRoot", RegexOptions.CultureInvariant), runner);
+
+        var snapshotIndex = runner.IndexOf(
+            "$script:chaosExecutionAuthority = New-ChaosDependencySnapshot",
+            StringComparison.Ordinal);
+        var chaosOnlyIndex = runner.IndexOf("if ($chaosPhase) {", snapshotIndex,
+            StringComparison.Ordinal);
+        var dockerHealthIndex = runner.IndexOf("Assert-DockerHealthy", chaosOnlyIndex,
+            StringComparison.Ordinal);
+        Assert.True(snapshotIndex >= 0 && chaosOnlyIndex > snapshotIndex
+            && dockerHealthIndex > chaosOnlyIndex,
+            "Every physical phase must initialize the pinned execution snapshot before Docker health validation; only mutation remains chaos-only.");
     }
 
     private static string FindRepositoryRoot()
