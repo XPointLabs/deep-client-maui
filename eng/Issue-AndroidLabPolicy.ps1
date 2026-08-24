@@ -279,9 +279,10 @@ try {
         Get-RelativeRepositoryPath $windowsExe
     $policy.crossPlatform.windowsExecutableSha256 = Get-Sha256 $windowsExe
     $windowsOutputDirectory = [IO.Path]::GetFullPath((Split-Path -Parent $windowsExe))
-    $policy.crossPlatform.windowsOutputDirectoryRelativePath =
-        Get-RelativeRepositoryPath $windowsOutputDirectory
-    $policy.crossPlatform.windowsOutputTreeSha256 = Get-TreeDigest $windowsOutputDirectory
+    $policy.crossPlatform | Add-Member -Force -NotePropertyName windowsOutputDirectoryRelativePath `
+        -NotePropertyValue (Get-RelativeRepositoryPath $windowsOutputDirectory)
+    $policy.crossPlatform | Add-Member -Force -NotePropertyName windowsOutputTreeSha256 `
+        -NotePropertyValue (Get-TreeDigest $windowsOutputDirectory)
     foreach ($role in @('runner','adb','aapt','apksigner')) {
         $relative = ([string]$policy.tools.$role.relativePath).Substring(
             '.secrets/android-lab/'.Length).Replace('/', '\')
