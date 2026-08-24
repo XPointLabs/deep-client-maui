@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using Deep.Client.Shared.Persistence;
+using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Core.Navigation;
@@ -49,13 +49,30 @@ public sealed class AuthNavigationState(ClientRuntime runtime) : INotifyProperty
             return;
         }
 
+        var recoveryPhrase = await runtime.Accounts
+            .GetRecoveryPhraseAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(recoveryPhrase))
+        {
+            throw new ProtectedIdentityResetRequiredException(
+                ProtectedIdentityResetRequiredReason.Missing,
+                "The active account does not have protected identity material. Reset local data before retrying.");
+        }
+
+        if (!SessionAccountService.IsCanonicalRecoveryPhrase(recoveryPhrase))
+        {
+            throw new ProtectedIdentityResetRequiredException(
+                ProtectedIdentityResetRequiredReason.Incompatible,
+                "The protected identity material is not compatible with the current account format. Reset local data before retrying.");
+        }
+
         if (!await runtime.Accounts
                 .HasUsableActiveIdentityAsync(cancellationToken)
                 .ConfigureAwait(false))
         {
-            throw new LocalStateResetRequiredException(
-                LocalStateResetRequiredReason.InvalidCurrentSchema,
-                "The active account does not have a usable protected identity credential. Reset local data before retrying.");
+            throw new ProtectedIdentityResetRequiredException(
+                ProtectedIdentityResetRequiredReason.AccountMismatch,
+                "The protected identity material does not match the active account. Reset local data before retrying.");
         }
 
         IsAuthenticated = true;

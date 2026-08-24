@@ -1,5 +1,4 @@
 using Deep.Client.Maui.Core.Navigation;
-using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
 
@@ -40,10 +39,10 @@ public sealed class AuthNavigationStateTests
         await runtime.Store.DeleteAsync(SessionAccountService.ActiveRecoveryPhraseKey);
         var navigation = new AuthNavigationState(runtime);
 
-        var exception = await Assert.ThrowsAsync<LocalStateResetRequiredException>(
+        var exception = await Assert.ThrowsAsync<ProtectedIdentityResetRequiredException>(
             () => navigation.InitializeAsync());
 
-        Assert.Equal(LocalStateResetRequiredReason.InvalidCurrentSchema, exception.Reason);
+        Assert.Equal(ProtectedIdentityResetRequiredReason.Missing, exception.Reason);
         Assert.False(navigation.IsInitialized);
     }
 
@@ -57,10 +56,10 @@ public sealed class AuthNavigationStateTests
             "amber anchor april arrow atom aurora autumn badge bamboo beacon berry blade");
         var navigation = new AuthNavigationState(runtime);
 
-        var exception = await Assert.ThrowsAsync<LocalStateResetRequiredException>(
+        var exception = await Assert.ThrowsAsync<ProtectedIdentityResetRequiredException>(
             () => navigation.InitializeAsync());
 
-        Assert.Equal(LocalStateResetRequiredReason.InvalidCurrentSchema, exception.Reason);
+        Assert.Equal(ProtectedIdentityResetRequiredReason.Incompatible, exception.Reason);
         Assert.False(navigation.IsInitialized);
     }
 
@@ -77,10 +76,10 @@ public sealed class AuthNavigationStateTests
             otherPhrase);
         var navigation = new AuthNavigationState(runtime);
 
-        var exception = await Assert.ThrowsAsync<LocalStateResetRequiredException>(
+        var exception = await Assert.ThrowsAsync<ProtectedIdentityResetRequiredException>(
             () => navigation.InitializeAsync());
 
-        Assert.Equal(LocalStateResetRequiredReason.InvalidCurrentSchema, exception.Reason);
+        Assert.Equal(ProtectedIdentityResetRequiredReason.AccountMismatch, exception.Reason);
         Assert.False(navigation.IsInitialized);
     }
 }

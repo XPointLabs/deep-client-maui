@@ -415,13 +415,19 @@ public sealed class ClientSecurityContractSmokeTests
     }
 
     [Fact]
-    public void StartupOffersDestructiveResetOnlyForTypedLocalStateFailures()
+    public void StartupOffersDestructiveResetOnlyForTypedLocalStateOrIdentityFailures()
     {
         var app = ReadWorkspaceFile("src", "Deep.Client.Maui", "App.xaml.cs");
         var policy = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "Services", "StartupLocalStateReset.cs");
+        var navigation = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui.Core", "Navigation", "AuthNavigationState.cs");
+        var identityFailure = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui.Core", "Navigation",
+            "ProtectedIdentityResetRequiredException.cs");
 
         Assert.Contains("catch (LocalStateResetRequiredException", app, StringComparison.Ordinal);
+        Assert.Contains("catch (ProtectedIdentityResetRequiredException", app, StringComparison.Ordinal);
         Assert.Contains("StartupResetLocalStateButton", app, StringComparison.Ordinal);
         Assert.Contains("AutomationId = \"Startup.Status\"", app, StringComparison.Ordinal);
         Assert.Contains("AutomationId = \"Startup.Error\"", app, StringComparison.Ordinal);
@@ -437,7 +443,20 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("Сбросить локальные данные", app, StringComparison.Ordinal);
         Assert.Contains("localStateResetContext.TryRequestConfirmedReset()", app, StringComparison.Ordinal);
         Assert.Contains("exception.GetType() == typeof(LocalStateResetRequiredException)", policy, StringComparison.Ordinal);
+        Assert.Contains("exception.GetType() == typeof(ProtectedIdentityResetRequiredException)", policy, StringComparison.Ordinal);
         Assert.Contains("Preferences.Default.Set(WipeLocalDataOnNextLaunchKey, true)", policy, StringComparison.Ordinal);
+        Assert.Contains("local-state-incompatible-version", policy, StringComparison.Ordinal);
+        Assert.Contains("local-state-damaged", policy, StringComparison.Ordinal);
+        Assert.Contains("local-state-unreadable", policy, StringComparison.Ordinal);
+        Assert.Contains("protected-identity-missing", policy, StringComparison.Ordinal);
+        Assert.Contains("protected-identity-incompatible", policy, StringComparison.Ordinal);
+        Assert.Contains("protected-identity-account-mismatch", policy, StringComparison.Ordinal);
+        Assert.Contains("ProtectedIdentityResetRequiredReason.Missing", navigation, StringComparison.Ordinal);
+        Assert.Contains("ProtectedIdentityResetRequiredReason.Incompatible", navigation, StringComparison.Ordinal);
+        Assert.Contains("ProtectedIdentityResetRequiredReason.AccountMismatch", navigation, StringComparison.Ordinal);
+        Assert.DoesNotContain("LocalStateResetRequiredReason", navigation, StringComparison.Ordinal);
+        Assert.Contains("public sealed class ProtectedIdentityResetRequiredException", identityFailure,
+            StringComparison.Ordinal);
     }
 
     [Fact]

@@ -154,17 +154,11 @@ public partial class App : Application
         }
         catch (LocalStateResetRequiredException exception)
         {
-            localStateResetContext.Capture(exception);
-            await UpdateStartupPageAsync(
-                startupPage,
-                "Требуется сброс локальных данных",
-                "Сброс локальных данных удалит локальные сообщения и состояние. Deep создаст новое защищённое хранилище.",
-                retryEnabled: false,
-                resetEnabled: true,
-                activityRunning: false).ConfigureAwait(false);
-            CrashDiagnostics.LogInfo(
-                "App.InitializeWindow",
-                "Local state reset is required before startup can continue.");
+            await PresentResetRequiredAsync(startupPage, exception).ConfigureAwait(false);
+        }
+        catch (ProtectedIdentityResetRequiredException exception)
+        {
+            await PresentResetRequiredAsync(startupPage, exception).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -204,6 +198,18 @@ public partial class App : Application
                 return;
             }
 
+            if (!localStateResetContext.TryGetPresentation(out var resetPresentation))
+            {
+                await UpdateStartupPageAsync(
+                    startupPage,
+                    "Не удалось подтвердить сброс",
+                    "Повторите запуск и запросите сброс локальных данных снова.",
+                    retryEnabled: true,
+                    resetEnabled: false,
+                    activityRunning: false).ConfigureAwait(false);
+                return;
+            }
+
             await UpdateStartupPageAsync(
                 startupPage,
                 "Подтвердите сброс локальных данных",
@@ -222,11 +228,14 @@ public partial class App : Application
             {
                 await UpdateStartupPageAsync(
                     startupPage,
-                    "Требуется сброс локальных данных",
-                    "Сброс локальных данных удалит локальные сообщения и состояние. Deep создаст новое защищённое хранилище.",
+                    resetPresentation.Status,
+                    resetPresentation.Guidance,
                     retryEnabled: false,
                     resetEnabled: true,
                     activityRunning: false).ConfigureAwait(false);
+                await MainThread.InvokeOnMainThreadAsync(
+                    () => startupPage.RuntimeFailureCode.Text = resetPresentation.Code)
+                    .ConfigureAwait(false);
                 return;
             }
 
@@ -248,6 +257,40 @@ public partial class App : Application
         {
             startupGate.Release();
         }
+    }
+
+    private async Task PresentResetRequiredAsync(
+        StartupPage startupPage,
+        Exception exception)
+    {
+        switch (exception)
+        {
+            case LocalStateResetRequiredException localStateFailure:
+                localStateResetContext.Capture(localStateFailure);
+                break;
+            case ProtectedIdentityResetRequiredException identityFailure:
+                localStateResetContext.Capture(identityFailure);
+                break;
+            default:
+                throw new ArgumentException(
+                    "The failure is not an exact typed reset-required exception.",
+                    nameof(exception));
+        }
+
+        var presentation = StartupLocalStateReset.ToUserPresentation(exception);
+        await UpdateStartupPageAsync(
+            startupPage,
+            presentation.Status,
+            presentation.Guidance,
+            retryEnabled: false,
+            resetEnabled: true,
+            activityRunning: false).ConfigureAwait(false);
+        await MainThread.InvokeOnMainThreadAsync(
+            () => startupPage.RuntimeFailureCode.Text = presentation.Code)
+            .ConfigureAwait(false);
+        CrashDiagnostics.LogInfo(
+            "App.InitializeWindow",
+            $"Explicit local reset required code={presentation.Code}.");
     }
 
     private static async Task UpdateStartupPageAsync(
