@@ -6,7 +6,6 @@ param(
     [string]$AndroidSerial = '192.168.1.45:43337',
     [string]$MailboxBootstrapRoot = 'C:\Work\DeepSession\secrets\mailbox-bootstrap',
     [string]$MrXPublicKeySha256 = $env:DEEP_MR_X_PUBLIC_KEY_SHA256,
-    [string]$AndroidPickerDownloadsId = 'com.google.android.documentsui:id/item_root',
     [string]$AndroidPickerFileId = 'android:id/title',
     [string]$AndroidPickerConfirmId,
     [string]$SupportedChaosEvidence = $env:DEEP_MAU2_SUPPORTED_CHAOS_EVIDENCE,
@@ -403,7 +402,6 @@ try {
         $env:DEEP_MR_X_PUBLIC_KEY_SHA256 = $MrXPublicKeySha256
         $env:DEEP_E2E_ARTIFACTS = $artifacts
         $env:DEEP_E2E_ANDROID_SELECTORS_JSON = New-CanonicalAndroidSelectorsJson
-        $env:DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID = $AndroidPickerDownloadsId
         $env:DEEP_E2E_ANDROID_PICKER_FILE_ID = $AndroidPickerFileId
         $env:DEEP_E2E_ANDROID_PICKER_CONFIRM_ID = $AndroidPickerConfirmId
         $env:DEEP_MAUI_EXE = $approvedWindowsExe

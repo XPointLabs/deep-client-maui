@@ -157,6 +157,24 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
+    public void PhysicalAttachmentPickerUsesExactFilenameInsteadOfAmbiguousItemRoot()
+    {
+        var physical = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+        var runner = File.ReadAllText(WorkspacePath(
+            "eng", "Invoke-PhysicalMau2CrossPlatform.ps1"));
+
+        Assert.Contains(
+            "android.TapExactResourceIdWithExactText(options.PickerFileResourceId, marker);",
+            physical,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("PickerDownloadsResourceId", physical, StringComparison.Ordinal);
+        Assert.DoesNotContain("AndroidPickerDownloadsId", runner, StringComparison.Ordinal);
+        Assert.DoesNotContain("com.google.android.documentsui:id/item_root", runner,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void E2eAutomationIdsAreLiteralPrivacySafeRolesAndPageSelectorsAreUnique()
     {
         var pages = new[]

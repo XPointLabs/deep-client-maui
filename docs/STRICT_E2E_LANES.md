@@ -329,11 +329,13 @@ fingerprint, model, product, hardware, SDK, and build characteristics. The suppl
 must be the installed `network.xpoint.deep.e2e` package at exact `aapt` package,
 versionCode/versionName, SHA-256, and signing-certificate digest. It also requires
 `DEEP_E2E_ANDROID_SELECTORS_JSON`, a role-to-exact-resource-id map for every
-app control used by the test; and exact system-picker resource IDs in
-`DEEP_E2E_ANDROID_PICKER_DOWNLOADS_ID` and
-`DEEP_E2E_ANDROID_PICKER_FILE_ID`.
-The runner derives the canonical application selector map itself. Picker IDs remain explicit
-runner parameters because DocumentsUI resource IDs vary by OEM/version.
+app control used by the test; and the exact system-picker file-title resource
+ID in `DEEP_E2E_ANDROID_PICKER_FILE_ID`.
+The runner derives the canonical application selector map itself. The file-title
+ID remains an explicit runner parameter because DocumentsUI resource IDs vary
+by OEM/version. The freshly pushed fixture is selected from Recent by its exact
+resource-id plus randomized filename; the ambiguous `item_root` shared by every
+visible file card is never used as navigation evidence.
 `DEEP_E2E_ANDROID_PICKER_CONFIRM_ID` is optional. Set it only for a
 DocumentsUI implementation that requires a separate confirmation action after
 selecting the exact filename; single-selection pickers that immediately return
