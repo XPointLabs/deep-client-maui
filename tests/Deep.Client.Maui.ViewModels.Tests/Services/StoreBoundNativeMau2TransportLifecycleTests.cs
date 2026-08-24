@@ -115,6 +115,21 @@ public sealed class StoreBoundNativeMau2TransportLifecycleTests
         }
     }
 
+    [Fact]
+    public void StoreBoundTransportPreservesDurableLogicalBatchCapability()
+    {
+        var fixture = CreateFixture();
+        try
+        {
+            Assert.IsAssignableFrom<IResumableMailboxIdentityAuthenticatedRawTransport>(
+                fixture.Transport);
+        }
+        finally
+        {
+            fixture.Dispose();
+        }
+    }
+
     private static Fixture CreateFixture()
     {
         var directory = Path.Combine(

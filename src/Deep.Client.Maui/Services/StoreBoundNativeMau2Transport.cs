@@ -71,6 +71,7 @@ internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
 /// </summary>
 internal sealed class StoreBoundNativeMau2Transport :
     IAuthenticatedOpaqueMailboxTransport,
+    IResumableMailboxIdentityAuthenticatedRawTransport,
     IAuthenticatedInboxTransport,
     IMetadataPrivateSessionMessageTransport,
     IMailboxDeliveryPolicy,
@@ -166,6 +167,56 @@ internal sealed class StoreBoundNativeMau2Transport :
             selector);
         decision.Validate();
         return decision;
+    }
+
+    public async Task<IReadOnlyList<IPreparedMailboxAuthenticatedSend>>
+        PrepareScopedMailboxLogicalBatchAsync(
+        IMailboxOperationSigner signer,
+        MailboxLogicalSendBatch logicalBatch,
+        IReadOnlyList<MailboxAuthenticatedSendTarget> targets,
+        CancellationToken cancellationToken = default)
+    {
+        using var operation = EnterOperation();
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(signer);
+        ArgumentNullException.ThrowIfNull(logicalBatch);
+        ArgumentNullException.ThrowIfNull(targets);
+        var publicKey = signer.GetEd25519PublicKey();
+        try
+        {
+            var runtime = await EnsureBoundAsync(
+                signer.SessionId, publicKey, cancellationToken).ConfigureAwait(false);
+            return await runtime.Transport.PrepareScopedMailboxLogicalBatchAsync(
+                signer, logicalBatch, targets, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(publicKey);
+        }
+    }
+
+    public async Task<IReadOnlyList<IPreparedMailboxAuthenticatedSend>?>
+        TryResumeScopedMailboxBatchAsync(
+        IMailboxOperationSigner signer,
+        MailboxLogicalSendBatch batch,
+        CancellationToken cancellationToken = default)
+    {
+        using var operation = EnterOperation();
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(signer);
+        ArgumentNullException.ThrowIfNull(batch);
+        var publicKey = signer.GetEd25519PublicKey();
+        try
+        {
+            var runtime = await EnsureBoundAsync(
+                signer.SessionId, publicKey, cancellationToken).ConfigureAwait(false);
+            return await runtime.Transport.TryResumeScopedMailboxBatchAsync(
+                signer, batch, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(publicKey);
+        }
     }
 
     public async Task<IReadOnlyList<IPreparedMailboxAuthenticatedSend>>
