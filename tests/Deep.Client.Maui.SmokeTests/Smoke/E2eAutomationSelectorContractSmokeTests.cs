@@ -226,6 +226,20 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             "The exact launched Windows process did not exit before session disposal.",
             windows,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "FindExactBinaryProcessIds(expectedPath, DateTime.MinValue).Count != 0",
+            windows,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "process.StartTime.ToUniversalTime() >= launchedAfterUtc",
+            windows,
+            StringComparison.Ordinal);
+        Assert.Contains("return Application.Attach(exactProcessId.Value);", windows,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Windows launch produced more than one new exact target process.",
+            windows,
+            StringComparison.Ordinal);
     }
 
     [Fact]

@@ -164,7 +164,7 @@ public sealed class WindowsUiSmokeTests
                 }
             }
 
-            var application = Application.Launch(startInfo);
+            var application = LaunchAndBindExactApplication(startInfo, appPath);
             var automation = new UIA3Automation();
             try
             {
@@ -188,6 +188,114 @@ public sealed class WindowsUiSmokeTests
                 automation.Dispose();
                 CloseApplication(application);
                 throw;
+            }
+        }
+
+        private static Application LaunchAndBindExactApplication(
+            ProcessStartInfo startInfo,
+            string expectedPath)
+        {
+            if (FindExactBinaryProcessIds(expectedPath, DateTime.MinValue).Count != 0)
+            {
+                throw new InvalidOperationException(
+                    "An existing target Windows process would make strict launch binding ambiguous.");
+            }
+
+            var launchedAfterUtc = DateTime.UtcNow;
+            var launcher = Application.Launch(startInfo);
+            if (IsExactBinary(launcher.ProcessId, expectedPath))
+            {
+                return launcher;
+            }
+
+            int? exactProcessId = null;
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+            while (DateTime.UtcNow < deadline)
+            {
+                var candidates = FindExactBinaryProcessIds(expectedPath, launchedAfterUtc);
+                if (candidates.Count > 1)
+                {
+                    launcher.Dispose();
+                    throw new InvalidOperationException(
+                        "Windows launch produced more than one new exact target process.");
+                }
+
+                if (candidates.Count == 1)
+                {
+                    exactProcessId = candidates[0];
+                    break;
+                }
+
+                Thread.Sleep(100);
+            }
+
+            // The transient launcher is never used as application authority. It
+            // may already have exited or handed off activation, so only release
+            // the wrapper; never risk killing a reused PID.
+            launcher.Dispose();
+            if (exactProcessId is null)
+            {
+                throw new InvalidOperationException(
+                    "Windows launch did not produce one new exact target process.");
+            }
+
+            return Application.Attach(exactProcessId.Value);
+        }
+
+        private static IReadOnlyList<int> FindExactBinaryProcessIds(
+            string expectedPath,
+            DateTime launchedAfterUtc)
+        {
+            var name = Path.GetFileNameWithoutExtension(expectedPath);
+            var matches = new List<int>();
+            foreach (var process in Process.GetProcessesByName(name))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (process.StartTime.ToUniversalTime() >= launchedAfterUtc &&
+                            string.Equals(
+                                Path.GetFullPath(process.MainModule?.FileName ?? string.Empty),
+                                Path.GetFullPath(expectedPath),
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            matches.Add(process.Id);
+                        }
+                    }
+                    catch (InvalidOperationException)
+                    {
+                    }
+                    catch (System.ComponentModel.Win32Exception)
+                    {
+                    }
+                }
+            }
+
+            return matches;
+        }
+
+        private static bool IsExactBinary(int processId, string expectedPath)
+        {
+            try
+            {
+                using var process = Process.GetProcessById(processId);
+                return string.Equals(
+                    Path.GetFullPath(process.MainModule?.FileName ?? string.Empty),
+                    Path.GetFullPath(expectedPath),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                return false;
             }
         }
 
