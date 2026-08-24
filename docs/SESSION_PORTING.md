@@ -73,7 +73,7 @@ These must not regress:
 ## Local-state policy
 
 MAUI consumes the shared runtime's single physical SQLite baseline (application
-ID `DEEP`, schema version 13). The client does not forward logical schema APIs
+ID `DEEP`, schema version 15). The client does not forward logical schema APIs
 and does not request migration, repair, backfill, or import. Existing
 unsupported, unreadable/wrong-key, corrupt, or tampered state is surfaced as
 the typed reset-required condition; busy, locked, I/O, full, read-only,
