@@ -254,8 +254,14 @@ function Set-ProtectedRunTree([string]$Path) {
 
 function Assert-SanitizedState([object]$State) {
     $json = $State | ConvertTo-Json -Depth 6 -Compress
+    # VoiceMessage is a closed phase identifier, not user/message material. Remove only that
+    # exact phase property from the broad content-leak heuristic; every other occurrence of
+    # "message" remains forbidden.
+    $inspectionJson = $json -creplace `
+        [regex]::Escape('"phase":"VoiceMessage"'), `
+        '"phase":"VoicePhase"'
     foreach ($forbidden in @('sessionId', 'holder', 'credential', 'capability', 'privateKey', 'seed', 'payload', 'message')) {
-        if ($json -match [regex]::Escape($forbidden)) { throw 'Run state attempted to contain secret or message material.' }
+        if ($inspectionJson -match [regex]::Escape($forbidden)) { throw 'Run state attempted to contain secret or message material.' }
     }
 }
 

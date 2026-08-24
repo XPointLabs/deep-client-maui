@@ -199,6 +199,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.True(runsRootGuard >= 0 && firstChildWrite > runsRootGuard,
             "The existing e2e-runs anchor must be rejected when it is a junction before any child write.");
         Assert.Contains("Assert-SanitizedState", runner, StringComparison.Ordinal);
+        Assert.Contains("[regex]::Escape('\"phase\":\"VoiceMessage\"')", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("'\"phase\":\"VoicePhase\"'", runner,
+            StringComparison.Ordinal);
         Assert.Contains("shared-dev-storage-non-replicated", runner, StringComparison.Ordinal);
         Assert.Contains("DEEP_TRANSPORT_PROTOCOL=authenticated-mau2", runner, StringComparison.Ordinal);
         Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=user-managed", runner, StringComparison.Ordinal);
