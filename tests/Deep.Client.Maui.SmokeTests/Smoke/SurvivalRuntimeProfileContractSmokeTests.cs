@@ -22,6 +22,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             item.Condition is not null &&
             item.Condition.Contains("'$(Configuration)' == 'Release'", StringComparison.Ordinal) &&
             item.Condition.Contains("'$(DeepPhysicalE2E)' != 'true'", StringComparison.Ordinal));
+        Assert.DoesNotContain(resources, item =>
+            item.Include == "deep.release.env" &&
+            item.Condition is not null &&
+            item.Condition.Contains("'$(DeepSurvivalRuntimeEnv)' == ''", StringComparison.Ordinal));
         Assert.Contains(resources, item =>
             item.Include == "$(DeepSurvivalRuntimeEnv)" &&
             item.Condition is not null &&
@@ -33,6 +37,12 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         var errors = validationTarget.Elements("Error").Select(error => (string?)error.Attribute("Condition") ?? string.Empty).ToArray();
         Assert.Contains(errors, condition => condition.Contains("'$(Configuration)' == 'Release'", StringComparison.Ordinal));
         Assert.Contains(errors, condition => condition.Contains("'$(DeepPhysicalE2E)' != 'true'", StringComparison.Ordinal));
+        Assert.Contains(errors, condition =>
+            condition.Contains("'$(DeepPhysicalE2E)' == 'true'", StringComparison.Ordinal) &&
+            condition.Contains("'$(DeepSurvivalRuntimeEnv)' == ''", StringComparison.Ordinal));
+        Assert.Contains(validationTarget.Elements("Error"), error =>
+            ((string?)error.Attribute("Text"))?.Contains(
+                "never fall back to the release runtime environment", StringComparison.Ordinal) == true);
     }
 
     [Fact]
