@@ -475,11 +475,11 @@ public sealed class StrictCrossPlatformUiTests
     private static void SaveOpenAndVerifyWindowsAttachment(WindowsUiSmokeTests.WindowsUiTestSession windows, string downloadsDirectory, ICollection<string> createdDownloads, string marker, string expectedSha256)
     {
         var attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(45)), "DesktopWorkspace.DirectAttachmentFilename");
-        windows.ActivateExact(attachment);
+        windows.RequestContextMenuOnAncestor(attachment, "DesktopWorkspace.DirectMessageBubble");
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.AttachmentOpen", TimeSpan.FromSeconds(15)), "DesktopWorkspace.AttachmentOpen"));
         // Open may replace the attachment menu.  Re-select the same exact correlated filename before Save.
         attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(15)), "DesktopWorkspace.DirectAttachmentFilename");
-        windows.ActivateExact(attachment);
+        windows.RequestContextMenuOnAncestor(attachment, "DesktopWorkspace.DirectMessageBubble");
         var before = StrictCrossPlatformContracts.SnapshotDownloads(downloadsDirectory);
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.AttachmentSave", TimeSpan.FromSeconds(15)), "DesktopWorkspace.AttachmentSave"));
         var saved = before.WaitForNewCorrelatedFile(marker, TimeSpan.FromSeconds(30), createdDownloads);
@@ -489,7 +489,7 @@ public sealed class StrictCrossPlatformUiTests
     private static void ReDownloadAndVerifyWindowsAttachment(WindowsUiSmokeTests.WindowsUiTestSession windows, string downloadsDirectory, ICollection<string> createdDownloads, string marker, string expectedSha256)
     {
         var attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectAttachmentFilename");
-        windows.ActivateExact(attachment);
+        windows.RequestContextMenuOnAncestor(attachment, "DesktopWorkspace.DirectMessageBubble");
         var before = StrictCrossPlatformContracts.SnapshotDownloads(downloadsDirectory);
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.AttachmentSave", TimeSpan.FromSeconds(15)), "DesktopWorkspace.AttachmentSave"));
         var saved = before.WaitForNewCorrelatedFile(marker, TimeSpan.FromSeconds(30), createdDownloads);

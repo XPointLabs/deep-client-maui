@@ -175,6 +175,23 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
+    public void PhysicalWindowsAttachmentActionsUseTheExactMessageContext()
+    {
+        var physical = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+        var windows = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "WindowsUiSmokeTests.cs"));
+
+        Assert.Contains(
+            "windows.RequestContextMenuOnAncestor(attachment, \"DesktopWorkspace.DirectMessageBubble\");",
+            physical,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("windows.ActivateExact(attachment);", physical, StringComparison.Ordinal);
+        Assert.Contains("current = current.Parent;", windows, StringComparison.Ordinal);
+        Assert.Contains("current.RightClick();", windows, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void E2eAutomationIdsAreLiteralPrivacySafeRolesAndPageSelectorsAreUnique()
     {
         var pages = new[]

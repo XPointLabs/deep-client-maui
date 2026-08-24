@@ -280,6 +280,32 @@ public sealed class WindowsUiSmokeTests
             FlaUI.Core.Input.Mouse.Click(element.GetClickablePoint());
         }
 
+        internal void RequestContextMenuOnAncestor(
+            AutomationElement exactDescendant,
+            string ancestorAutomationId)
+        {
+            ArgumentNullException.ThrowIfNull(exactDescendant);
+            ArgumentException.ThrowIfNullOrWhiteSpace(ancestorAutomationId);
+
+            AutomationElement? current = exactDescendant;
+            for (var depth = 0; current is not null && depth < 16; depth++)
+            {
+                if (string.Equals(
+                    current.Properties.AutomationId.ValueOrDefault,
+                    ancestorAutomationId,
+                    StringComparison.Ordinal))
+                {
+                    current.RightClick();
+                    return;
+                }
+
+                current = current.Parent;
+            }
+
+            throw new InvalidOperationException(
+                $"Exact descendant is not inside the required {ancestorAutomationId} ancestor.");
+        }
+
         public void FocusWindow() => CurrentWindow().Focus();
 
         internal void AssertStartupFailClosed(string expectedRuntimeFailureCode, TimeSpan timeout)
