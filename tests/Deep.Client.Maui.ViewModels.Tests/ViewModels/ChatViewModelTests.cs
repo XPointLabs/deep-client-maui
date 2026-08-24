@@ -543,6 +543,8 @@ public sealed class ChatViewModelTests
 
         Assert.True(chat.HasStagedAttachments);
         Assert.Equal("receipt.pdf", chat.StagedAttachmentSummary);
+        Assert.Equal("receipt.pdf; application/pdf; 1024; 0x0",
+            chat.StagedAttachmentMetadataDescription);
         Assert.True(chat.SendCommand.CanExecute(null));
 
         await chat.SendAsync();

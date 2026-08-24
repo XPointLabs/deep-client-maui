@@ -86,6 +86,7 @@ function New-CanonicalAndroidSelectorsJson {
         'NewConversation.Error', 'NewConversation.Back', 'Chat.Back', 'Chat.Draft',
         'Chat.Send', 'Chat.MessageBody', 'Chat.MessageBubble', 'Chat.DeliveryStatus',
         'Chat.Attach', 'Chat.PickFile', 'Chat.PickPhoto', 'Chat.StagedAttachmentFilename',
+        'Chat.StagedAttachmentMetadata',
         'Chat.AttachmentFilename', 'Chat.AttachmentMetadata', 'Chat.AttachmentOpen',
         'Chat.AttachmentSave', 'Chat.MessageAttachmentOpen', 'Chat.MessageAttachmentSave',
         'Chat.ImagePreview', 'Chat.ImageMetadata',

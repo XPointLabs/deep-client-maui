@@ -353,6 +353,46 @@ public sealed class WindowsUiSmokeTests
             .FindAllDescendants(condition => condition.ByAutomationId(automationId))
             .Length;
 
+        internal IReadOnlySet<string> SnapshotAutomationIdNames(string automationId)
+        {
+            var names = CurrentWindow()
+                .FindAllDescendants(condition => condition.ByAutomationId(automationId))
+                .Select(static candidate => candidate.Properties.Name.ValueOrDefault ?? string.Empty)
+                .ToArray();
+            if (names.Any(string.IsNullOrWhiteSpace)
+                || names.Distinct(StringComparer.Ordinal).Count() != names.Length)
+                throw new InvalidOperationException(
+                    "Windows correlated automation names must be non-empty and unique.");
+            return names.ToHashSet(StringComparer.Ordinal);
+        }
+
+        internal void WaitForExactAutomationIdNameSet(
+            string automationId,
+            IReadOnlySet<string> expected,
+            TimeSpan timeout)
+        {
+            var until = DateTime.UtcNow + timeout;
+            Exception? last = null;
+            while (DateTime.UtcNow < until)
+            {
+                try
+                {
+                    var actual = SnapshotAutomationIdNames(automationId);
+                    if (actual.Count > expected.Count)
+                        throw new InvalidOperationException(
+                            "Windows rendered unexpected correlated automation names.");
+                    if (actual.SetEquals(expected)) return;
+                }
+                catch (COMException exception) when (!application.HasExited)
+                {
+                    last = exception;
+                }
+                Thread.Sleep(200);
+            }
+            throw new InvalidOperationException(
+                "Windows did not preserve the exact correlated automation-name set.", last);
+        }
+
         internal void WaitForExactAutomationIdCount(
             string automationId, int expected, TimeSpan timeout)
         {

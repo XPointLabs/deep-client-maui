@@ -158,6 +158,7 @@ public sealed class StrictCrossPlatformUiTests
         var documentSha256 = StrictCrossPlatformContracts.Sha256File(options.DocumentFixturePath);
         var downloadsDirectory = options.ResolveProductionDownloadsDirectory();
         var createdDownloads = new List<string>();
+        VoiceMatrixSnapshot? voiceSnapshot = null;
 
         try
         {
@@ -171,9 +172,14 @@ public sealed class StrictCrossPlatformUiTests
                 // are deliberately never emitted into the run state or test evidence.
                 AddAndroidContact(android, options, windowsIdentity);
                 AddWindowsContact(windows, androidIdentity);
+                var androidVoiceBaseline = android.SnapshotAccessibleTextSet(
+                    options.App("Chat.VoicePlayButton"));
+                var windowsVoiceBaseline = windows.SnapshotAutomationIdNames(
+                    "DesktopWorkspace.DirectVoicePlay");
                 SendWindowsMessageAndAssertSent(windows, windowsToAndroid);
                 AssertWindowsXPointRouteObserved(windows);
-                android.WaitForText(options.App("Chat.MessageBody"), windowsToAndroid, TimeSpan.FromSeconds(60));
+                android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
+                    windowsToAndroid, 1, TimeSpan.FromSeconds(60));
                 SendAndroidMessageAndAssertSent(android, options, androidToWindows);
                 WaitForWindowsText(windows, "DesktopWorkspace.DirectMessageBody", androidToWindows);
 
@@ -188,22 +194,29 @@ public sealed class StrictCrossPlatformUiTests
                 ExchangeWindowsDocument(windows, android, options, options.DocumentFixturePath,
                     documentName, documentSha256, verifyOpen: true);
                 ExchangeInlineImagesBothDirections(android, windows, options, imageName);
-                ExchangeVoiceMessagesBothDirections(android, windows, options);
+                voiceSnapshot = ExchangeVoiceMessagesBothDirections(
+                    android, windows, options, androidVoiceBaseline,
+                    windowsVoiceBaseline);
             }
+
+            var persistedVoice = voiceSnapshot ?? throw new InvalidOperationException(
+                "Voice persistence markers were not captured.");
 
             android.ColdStart();
             android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
             android.Tap(options.App("Conversations.ConversationRow"));
-            android.WaitForExactResourceCount(options.App("Chat.VoicePlayButton"), 2,
-                TimeSpan.FromSeconds(45));
+            android.WaitForExactAccessibleTextSet(options.App("Chat.VoicePlayButton"),
+                persistedVoice.AndroidExpectedAfterPhase, TimeSpan.FromSeconds(45));
 
             using var restartedWindows = WindowsUiSmokeTests.WindowsUiTestSession
                 .CreateStrictWithAppData(options.WindowsAppDataRoot);
             restartedWindows.ActivateExact(Require(
                 restartedWindows.WaitForAutomationId("DesktopWorkspace.ConversationRow", TimeSpan.FromSeconds(45)),
                 "DesktopWorkspace.ConversationRow"));
-            restartedWindows.WaitForExactAutomationIdCount(
-                "DesktopWorkspace.DirectVoicePlay", 2, TimeSpan.FromSeconds(45));
+            restartedWindows.WaitForExactAutomationIdNameSet(
+                "DesktopWorkspace.DirectVoicePlay",
+                persistedVoice.WindowsExpectedAfterPhase,
+                TimeSpan.FromSeconds(45));
         }
         finally
         {
@@ -653,7 +666,9 @@ public sealed class StrictCrossPlatformUiTests
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectAttach"));
-        windows.ActivateExact(windows.WaitForExactButtonName("Файл", TimeSpan.FromSeconds(15)));
+        windows.ActivateExact(Require(windows.WaitForAutomationId(
+            "DesktopWorkspace.AttachmentPickFile", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.AttachmentPickFile"));
         windows.ChooseSingleFileFromOwnedPicker(fixturePath, TimeSpan.FromSeconds(20));
         Require(windows.WaitForAutomationIdWithName(
             "DesktopWorkspace.DirectStagedAttachmentFilename", fileName,
@@ -715,15 +730,18 @@ public sealed class StrictCrossPlatformUiTests
             android.Tap(options.PickerConfirmResourceId);
         android.WaitForText(options.App("Chat.StagedAttachmentFilename"),
             expectedSentName, TimeSpan.FromSeconds(30));
+        var androidStagedMetadata = android.WaitForResource(
+            options.App("Chat.StagedAttachmentMetadata"),
+            TimeSpan.FromSeconds(15)).AccessibleText;
+        AssertCanonicalImageMetadata(androidStagedMetadata, expectedSentName);
         android.Tap(options.App("Chat.Send"));
 
         var preview = Require(windows.WaitForOneNewAutomationId(
             "DesktopWorkspace.DirectImagePreview", previousWindowsImages,
             TimeSpan.FromSeconds(60)), "DesktopWorkspace.DirectImagePreview");
         var metadata = preview.Properties.Name.ValueOrDefault ?? string.Empty;
-        Assert.Contains(expectedSentName, metadata, StringComparison.Ordinal);
-        Assert.Contains("image/jpeg", metadata, StringComparison.Ordinal);
-        Assert.Contains("1x1", metadata, StringComparison.Ordinal);
+        AssertCanonicalImageMetadata(metadata, expectedSentName);
+        Assert.Equal(androidStagedMetadata, metadata);
 
         var previousAndroidImages = android.CountResourceId(options.App("Chat.ImagePreview"));
         var previousAndroidImageMetadata = android.CountResourceId(
@@ -731,13 +749,19 @@ public sealed class StrictCrossPlatformUiTests
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectAttach"));
-        windows.ActivateExact(windows.WaitForExactButtonName(
-            "Фото из галереи", TimeSpan.FromSeconds(15)));
+        windows.ActivateExact(Require(windows.WaitForAutomationId(
+            "DesktopWorkspace.AttachmentPickPhoto", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.AttachmentPickPhoto"));
         windows.ChooseSingleFileFromOwnedPicker(options.ImageFixturePath,
             TimeSpan.FromSeconds(20));
         Require(windows.WaitForAutomationIdWithName(
             "DesktopWorkspace.DirectStagedAttachmentFilename", expectedSentName,
             TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectStagedAttachmentFilename");
+        var windowsStagedMetadata = Require(windows.WaitForAutomationId(
+            "DesktopWorkspace.DirectStagedAttachmentMetadata", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.DirectStagedAttachmentMetadata")
+            .Properties.Name.ValueOrDefault ?? string.Empty;
+        AssertCanonicalImageMetadata(windowsStagedMetadata, expectedSentName);
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectSend", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectSend"));
@@ -747,9 +771,19 @@ public sealed class StrictCrossPlatformUiTests
         var androidMetadata = android.WaitForOneNewResourceId(
             options.App("Chat.ImageMetadata"), previousAndroidImageMetadata,
             TimeSpan.FromSeconds(15)).AccessibleText;
-        Assert.Contains(expectedSentName, androidMetadata, StringComparison.Ordinal);
-        Assert.Contains("image/jpeg", androidMetadata, StringComparison.Ordinal);
-        Assert.Contains("1x1", androidMetadata, StringComparison.Ordinal);
+        AssertCanonicalImageMetadata(androidMetadata, expectedSentName);
+        Assert.Equal(windowsStagedMetadata, androidMetadata);
+    }
+
+    private static void AssertCanonicalImageMetadata(string value, string expectedFileName)
+    {
+        var metadata = StrictCrossPlatformContracts.ParseCanonicalImageMetadata(value);
+        Assert.Equal(expectedFileName, metadata.FileName);
+        Assert.Equal("image/jpeg", metadata.MimeType);
+        Assert.True(metadata.SizeBytes > 0);
+        Assert.Equal(1, metadata.Width);
+        Assert.Equal(1, metadata.Height);
+        Assert.Equal(value, metadata.ToString());
     }
 
     private static string ExpectedAttachmentMetadata(string fixturePath)
@@ -765,35 +799,66 @@ public sealed class StrictCrossPlatformUiTests
         return $"{kind} · {formatted}";
     }
 
-    private static void ExchangeVoiceMessagesBothDirections(
+    private static VoiceMatrixSnapshot ExchangeVoiceMessagesBothDirections(
         AndroidUiautomatorClient android,
         WindowsUiSmokeTests.WindowsUiTestSession windows,
-        CrossPlatformOptions options)
+        CrossPlatformOptions options,
+        IReadOnlySet<string> androidBaseline,
+        IReadOnlySet<string> windowsBaseline)
     {
-        var windowsBefore = windows.CountAutomationId("DesktopWorkspace.DirectVoicePlay");
+        var androidExpectedAfterFirst = checked(androidBaseline.Count + 1);
+        var windowsExpectedAfterFirst = checked(windowsBaseline.Count + 1);
         android.Hold(options.App("Chat.Voice"), TimeSpan.FromSeconds(4));
+        android.WaitForExactResourceCount(options.App("Chat.VoicePlayButton"),
+            androidExpectedAfterFirst, TimeSpan.FromSeconds(30));
         var windowsReceived = Require(windows.WaitForOneNewAutomationId(
-            "DesktopWorkspace.DirectVoicePlay", windowsBefore, TimeSpan.FromSeconds(60)),
+            "DesktopWorkspace.DirectVoicePlay", windowsBaseline.Count,
+            TimeSpan.FromSeconds(60)),
             "DesktopWorkspace.DirectVoicePlay");
+        var firstVoiceId = windowsReceived.Properties.Name.ValueOrDefault ?? string.Empty;
+        Assert.False(string.IsNullOrWhiteSpace(firstVoiceId));
+        Assert.Contains(firstVoiceId, android.SnapshotAccessibleTextSet(
+            options.App("Chat.VoicePlayButton")));
         windows.ActivateExact(windowsReceived);
         Require(windows.WaitForAutomationIdWithName("PhysicalE2E.VoicePlaybackState",
             "playing", TimeSpan.FromSeconds(10)), "PhysicalE2E.VoicePlaybackState:playing");
         Require(windows.WaitForAutomationIdWithName("PhysicalE2E.VoicePlaybackState",
             "completed", TimeSpan.FromSeconds(20)), "PhysicalE2E.VoicePlaybackState:completed");
 
-        var androidBefore = android.CountResourceId(options.App("Chat.VoicePlayButton"));
         var voiceButton = Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectVoice", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectVoice");
         windows.HoldExact(voiceButton, TimeSpan.FromSeconds(4));
         var androidReceived = android.WaitForOneNewResourceId(
-            options.App("Chat.VoicePlayButton"), androidBefore, TimeSpan.FromSeconds(60));
+            options.App("Chat.VoicePlayButton"), androidExpectedAfterFirst,
+            TimeSpan.FromSeconds(60));
+        var secondVoiceId = androidReceived.AccessibleText;
+        Assert.False(string.IsNullOrWhiteSpace(secondVoiceId));
+        Assert.NotEqual(firstVoiceId, secondVoiceId);
+        windows.WaitForExactAutomationIdCount("DesktopWorkspace.DirectVoicePlay",
+            checked(windowsBaseline.Count + 2), TimeSpan.FromSeconds(30));
         android.Tap(androidReceived);
         android.WaitForText(options.App("PhysicalE2E.VoicePlaybackState"),
             "playing", TimeSpan.FromSeconds(10));
         android.WaitForText(options.App("PhysicalE2E.VoicePlaybackState"),
             "completed", TimeSpan.FromSeconds(20));
+
+        var androidExpected = androidBaseline.Append(firstVoiceId).Append(secondVoiceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var windowsExpected = windowsBaseline.Append(firstVoiceId).Append(secondVoiceId)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(checked(androidBaseline.Count + 2), androidExpected.Count);
+        Assert.Equal(checked(windowsBaseline.Count + 2), windowsExpected.Count);
+        android.WaitForExactAccessibleTextSet(options.App("Chat.VoicePlayButton"),
+            androidExpected, TimeSpan.FromSeconds(15));
+        windows.WaitForExactAutomationIdNameSet("DesktopWorkspace.DirectVoicePlay",
+            windowsExpected, TimeSpan.FromSeconds(15));
+        return new VoiceMatrixSnapshot(androidExpected, windowsExpected);
     }
+
+    private sealed record VoiceMatrixSnapshot(
+        IReadOnlySet<string> AndroidExpectedAfterPhase,
+        IReadOnlySet<string> WindowsExpectedAfterPhase);
 
     private static void StageAndSendAndroidAttachment(AndroidUiautomatorClient android, CrossPlatformOptions options, string marker)
     {
@@ -864,6 +929,7 @@ internal sealed class CrossPlatformOptions
         "StartConversation.NewMessage", "NewConversation.SessionId", "NewConversation.DisplayName", "NewConversation.Start",
         "NewConversation.Error", "NewConversation.Back", "Chat.Back", "Chat.Draft", "Chat.Send", "Chat.MessageBody", "Chat.MessageBubble",
         "Chat.Attach", "Chat.PickFile", "Chat.PickPhoto", "Chat.StagedAttachmentFilename",
+        "Chat.StagedAttachmentMetadata",
         "Chat.AttachmentFilename", "Chat.AttachmentMetadata", "Chat.AttachmentOpen",
         "Chat.AttachmentSave", "Chat.MessageAttachmentOpen", "Chat.MessageAttachmentSave",
         "Chat.ImagePreview", "Chat.ImageMetadata",
@@ -1289,6 +1355,60 @@ internal sealed class AndroidUiautomatorClient
     internal StrictCrossPlatformContracts.AndroidNode WaitForResource(string resourceId, TimeSpan timeout) => Wait(resourceId, null, timeout);
     internal int CountResourceId(string resourceId) =>
         StrictCrossPlatformContracts.FindAllResourceIds(Dump(), resourceId).Length;
+    internal IReadOnlySet<string> SnapshotAccessibleTextSet(string resourceId)
+    {
+        var values = StrictCrossPlatformContracts.FindAllResourceIds(Dump(), resourceId)
+            .Select(static node => node.AccessibleText)
+            .ToArray();
+        if (values.Any(string.IsNullOrWhiteSpace)
+            || values.Distinct(StringComparer.Ordinal).Count() != values.Length)
+            throw new InvalidOperationException(
+                "Android correlated resource markers must be non-empty and unique.");
+        return values.ToHashSet(StringComparer.Ordinal);
+    }
+    internal void WaitForExactAccessibleTextSet(
+        string resourceId,
+        IReadOnlySet<string> expected,
+        TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        Exception? last = null;
+        while (DateTime.UtcNow < until)
+        {
+            try
+            {
+                var actual = SnapshotAccessibleTextSet(resourceId);
+                if (actual.Count > expected.Count)
+                    throw new InvalidOperationException(
+                        "Android rendered unexpected correlated resource markers.");
+                if (actual.SetEquals(expected)) return;
+            }
+            catch (Exception exception) { last = exception; }
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException(
+            "Android did not preserve the exact correlated resource-marker set.", last);
+    }
+    internal void WaitForExactResourceTextCount(
+        string resourceId,
+        string exactText,
+        int expected,
+        TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var count = StrictCrossPlatformContracts.CountResourceIdsWithAccessibleText(
+                Dump(), resourceId, exactText);
+            if (count == expected) return;
+            if (count > expected)
+                throw new InvalidOperationException(
+                    "Android rendered duplicate exact-text resources.");
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException(
+            "Android did not render the exact expected text count.");
+    }
     internal void WaitForExactResourceCount(string resourceId, int expected, TimeSpan timeout)
     {
         var until = DateTime.UtcNow + timeout;

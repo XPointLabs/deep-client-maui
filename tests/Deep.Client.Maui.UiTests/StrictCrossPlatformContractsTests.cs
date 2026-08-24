@@ -76,6 +76,37 @@ public sealed class StrictCrossPlatformContractsTests
     }
 
     [Fact]
+    public void Exact_accessible_text_count_never_accepts_a_substring()
+    {
+        const string xml = "<hierarchy><node resource-id='pkg:id/body' text='exact' bounds='[0,0][1,1]' /><node resource-id='pkg:id/body' text='exact suffix' bounds='[1,1][2,2]' /></hierarchy>";
+
+        Assert.Equal(1, StrictCrossPlatformContracts.CountResourceIdsWithAccessibleText(
+            xml, "pkg:id/body", "exact"));
+        Assert.Equal(0, StrictCrossPlatformContracts.CountResourceIdsWithAccessibleText(
+            xml, "pkg:id/body", "suffix"));
+    }
+
+    [Fact]
+    public void Image_metadata_requires_and_round_trips_the_full_canonical_structure()
+    {
+        var parsed = StrictCrossPlatformContracts.ParseCanonicalImageMetadata(
+            "fixture.jpg; image/jpeg; 631; 1x1");
+
+        Assert.Equal("fixture.jpg", parsed.FileName);
+        Assert.Equal("image/jpeg", parsed.MimeType);
+        Assert.Equal(631, parsed.SizeBytes);
+        Assert.Equal(1, parsed.Width);
+        Assert.Equal(1, parsed.Height);
+        Assert.Equal("fixture.jpg; image/jpeg; 631; 1x1", parsed.ToString());
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.ParseCanonicalImageMetadata(
+                "fixture.jpg; image/jpeg; 0631; 1x1"));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.ParseCanonicalImageMetadata(
+                "fixture.jpg image/jpeg 631 1x1"));
+    }
+
+    [Fact]
     public void Last_item_descendant_correlation_survives_collection_virtualization()
     {
         const string bubble = "network.xpoint.deep.e2e:id/Chat.MessageBubble";

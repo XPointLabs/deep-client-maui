@@ -361,6 +361,11 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         AssertSelectorExists(pages, "Conversations.ConversationRow");
         AssertSelectorExists(pages, "DesktopWorkspace.ConversationRow");
         AssertSelectorExists(pages, "Chat.StagedAttachmentFilename");
+        AssertSelectorExists(pages, "Chat.StagedAttachmentMetadata");
+        AssertSelectorExists(pages, "DesktopWorkspace.AttachmentPickPhoto");
+        AssertSelectorExists(pages, "DesktopWorkspace.AttachmentPickVideo");
+        AssertSelectorExists(pages, "DesktopWorkspace.AttachmentPickFile");
+        AssertSelectorExists(pages, "DesktopWorkspace.DirectStagedAttachmentMetadata");
         AssertSelectorExists(pages, "Chat.MessageBubble");
         AssertSelectorExists(pages, "Chat.ImagePreview");
         AssertSelectorExists(pages, "Chat.ImageMetadata");

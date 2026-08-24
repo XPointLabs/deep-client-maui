@@ -72,6 +72,59 @@ internal static class StrictCrossPlatformContracts
             .ToArray();
     }
 
+    internal static int CountResourceIdsWithAccessibleText(
+        string xml,
+        string resourceId,
+        string exactText)
+    {
+        ValidateResourceId(resourceId, "resource-id");
+        ArgumentException.ThrowIfNullOrEmpty(exactText);
+        var document = XDocument.Parse(xml, LoadOptions.None);
+        return document.Descendants("node")
+            .Count(node => string.Equals(
+                    (string?)node.Attribute("resource-id"), resourceId,
+                    StringComparison.Ordinal)
+                && string.Equals(ReadAccessibleText(node), exactText,
+                    StringComparison.Ordinal));
+    }
+
+    internal static CanonicalImageMetadata ParseCanonicalImageMetadata(string value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(value);
+        var fields = value.Split("; ", StringSplitOptions.None);
+        if (fields.Length != 4
+            || string.IsNullOrWhiteSpace(fields[0])
+            || string.IsNullOrWhiteSpace(fields[1])
+            || !long.TryParse(fields[2], System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var sizeBytes)
+            || sizeBytes <= 0)
+        {
+            throw new InvalidOperationException(
+                "Image metadata is not the canonical filename/MIME/SizeBytes/dimensions structure.");
+        }
+
+        var dimensions = fields[3].Split('x', StringSplitOptions.None);
+        if (dimensions.Length != 2
+            || !int.TryParse(dimensions[0], System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var width)
+            || !int.TryParse(dimensions[1], System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var height)
+            || width <= 0
+            || height <= 0)
+        {
+            throw new InvalidOperationException(
+                "Image metadata dimensions are not canonical positive integers.");
+        }
+
+        var parsed = new CanonicalImageMetadata(
+            fields[0], fields[1], sizeBytes, width, height);
+        if (!string.Equals(value, parsed.ToString(), StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Image metadata is not canonically serialized.");
+        }
+        return parsed;
+    }
+
     internal static AndroidNode FindLastResourceIdContainingDescendant(
         string xml,
         string resourceId,
@@ -551,6 +604,17 @@ internal static class StrictCrossPlatformContracts
 
         internal void BeginAndroidPackageMutation() => AndroidPackageMutationAttempted = true;
         internal void BeginFixturePush() => FixturePushAttempted = true;
+    }
+
+    internal sealed record CanonicalImageMetadata(
+        string FileName,
+        string MimeType,
+        long SizeBytes,
+        int Width,
+        int Height)
+    {
+        public override string ToString() =>
+            $"{FileName}; {MimeType}; {SizeBytes}; {Width}x{Height}";
     }
 
     internal sealed record AndroidNode(

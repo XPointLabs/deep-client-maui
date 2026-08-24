@@ -29,7 +29,7 @@ data; repeated message/list templates deliberately reuse a role selector.
 | Surface | Selectors |
 | --- | --- |
 | Inbox | `Conversations.ProfileSettings`, `Conversations.ConversationRow`, `Conversations.Refresh`; desktop equivalents are `DesktopWorkspace.ProfileSettings`, `DesktopWorkspace.ConversationRow`, and `DesktopWorkspace.ConversationList` |
-| Direct chat | `Chat.MessageBubble`, `Chat.MessageBody`, `Chat.DeliveryStatus`, `Chat.AttachmentCard`, `Chat.AttachmentFilename`, `Chat.StagedAttachmentRow`, `Chat.StagedAttachmentFilename`, `Chat.RemoveStagedAttachment`, `Chat.AttachmentOpen`, `Chat.AttachmentSave`, `Chat.MessageAttachmentOpen`, `Chat.MessageAttachmentSave` |
+| Direct chat | `Chat.MessageBubble`, `Chat.MessageBody`, `Chat.DeliveryStatus`, `Chat.AttachmentCard`, `Chat.AttachmentFilename`, `Chat.StagedAttachmentRow`, `Chat.StagedAttachmentFilename`, `Chat.StagedAttachmentMetadata`, `Chat.RemoveStagedAttachment`, `Chat.AttachmentOpen`, `Chat.AttachmentSave`, `Chat.MessageAttachmentOpen`, `Chat.MessageAttachmentSave` |
 | Group chat | `GroupChat.MessageBubble`, `GroupChat.MessageBody`, `GroupChat.DeliveryStatus`, `GroupChat.AttachmentCard`, `GroupChat.AttachmentFilename`, `GroupChat.StagedAttachmentRow`, `GroupChat.StagedAttachmentFilename`, `GroupChat.RemoveStagedAttachment`, `GroupChat.AttachmentOpen`, `GroupChat.AttachmentSave`, `GroupChat.MessageAttachmentOpen`, `GroupChat.MessageAttachmentSave` |
 | Desktop detail | `DesktopWorkspace.DirectMessageBubble`, `DesktopWorkspace.DirectMessageBody`, `DesktopWorkspace.DirectDeliveryStatus`, `DesktopWorkspace.GroupMessageBubble`, `DesktopWorkspace.GroupMessageBody`, `DesktopWorkspace.GroupDeliveryStatus`, `DesktopWorkspace.AttachmentOpen`, `DesktopWorkspace.AttachmentSave` |
 

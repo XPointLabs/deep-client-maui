@@ -59,6 +59,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
     private Point voicePointerStart;
     private Task? voiceGestureStartTask;
     private DesktopConversationDetailKind voiceRecordingKind;
+    private DesktopConversationDetailKind attachmentPickerKind;
     private ChatViewModel? voiceDirectTarget;
     private GroupChatViewModel? voiceGroupTarget;
     private ConversationId? voiceRecordingConversationId;
@@ -947,6 +948,50 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         {
             await AttachmentOpenService.OpenAsync(this, message.Attachments, attachmentFiles);
         }
+    }
+
+    private void OnDirectAttachClicked(object? sender, EventArgs e) =>
+        OpenAttachmentPicker(DesktopConversationDetailKind.Direct);
+
+    private void OnGroupAttachClicked(object? sender, EventArgs e) =>
+        OpenAttachmentPicker(DesktopConversationDetailKind.Group);
+
+    private void OpenAttachmentPicker(DesktopConversationDetailKind kind)
+    {
+        attachmentPickerKind = kind;
+        DesktopAttachmentPickerOverlay.IsVisible = true;
+    }
+
+    private void OnCloseAttachmentPickerClicked(object? sender, EventArgs e) =>
+        CloseAttachmentPicker();
+
+    private async void OnAttachmentPickPhotoClicked(object? sender, EventArgs e) =>
+        await PickDesktopAttachmentAsync(AttachmentPickKind.Photo);
+
+    private async void OnAttachmentPickVideoClicked(object? sender, EventArgs e) =>
+        await PickDesktopAttachmentAsync(AttachmentPickKind.Video);
+
+    private async void OnAttachmentPickFileClicked(object? sender, EventArgs e) =>
+        await PickDesktopAttachmentAsync(AttachmentPickKind.File);
+
+    private async Task PickDesktopAttachmentAsync(AttachmentPickKind kind)
+    {
+        var target = attachmentPickerKind;
+        CloseAttachmentPicker();
+        if (target == DesktopConversationDetailKind.Direct && viewModel.DirectChat is { } direct)
+        {
+            await direct.PickAttachmentsAsync(kind);
+        }
+        else if (target == DesktopConversationDetailKind.Group && viewModel.GroupChat is { } group)
+        {
+            await group.PickAttachmentsAsync(kind);
+        }
+    }
+
+    private void CloseAttachmentPicker()
+    {
+        attachmentPickerKind = DesktopConversationDetailKind.None;
+        DesktopAttachmentPickerOverlay.IsVisible = false;
     }
 
     private async void OnGroupAttachmentTapped(object? sender, TappedEventArgs e)

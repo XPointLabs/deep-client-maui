@@ -223,7 +223,7 @@
                                             <Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" MaxLines="2" LineBreakMode="TailTruncation" />
                                         </Border>
                                         <Grid ColumnDefinitions="38,*" ColumnSpacing="9" MinimumWidthRequest="190" IsVisible="{Binding IsVoiceMessage}">
-                                            <Border AutomationId="DesktopWorkspace.DirectVoicePlay" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
+                                            <Border AutomationId="DesktopWorkspace.DirectVoicePlay" SemanticProperties.Description="{Binding VoiceAttachmentId}" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
                                                 <Grid WidthRequest="18" HeightRequest="18" HorizontalOptions="Center" VerticalOptions="Center">
                                                     <Path Data="M10,7 L23,18 L10,29 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoiceIdle}" />
                                                     <Path Data="M8,6 H11 V22 H8 Z M17,6 H20 V22 H17 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoicePlaying}" />
@@ -270,7 +270,10 @@
                             <Button Grid.Column="1" Text="×" Style="{StaticResource GhostButton}" WidthRequest="34" Padding="0" Command="{Binding DirectChat.CancelReplyCommand}" />
                         </Grid>
                         <Grid AutomationId="DesktopWorkspace.DirectStagedAttachmentRow" Padding="12,5" ColumnDefinitions="*,Auto" BackgroundColor="{StaticResource PanelBackgroundAlt}" IsVisible="{Binding DirectChat.HasStagedAttachments}">
-                            <Label AutomationId="DesktopWorkspace.DirectStagedAttachmentFilename" Text="{Binding DirectChat.StagedAttachmentSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <VerticalStackLayout Spacing="0" VerticalOptions="Center">
+                                <Label AutomationId="DesktopWorkspace.DirectStagedAttachmentFilename" Text="{Binding DirectChat.StagedAttachmentSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                                <Label AutomationId="DesktopWorkspace.DirectStagedAttachmentMetadata" Text="{Binding DirectChat.StagedAttachmentMetadataDescription}" FontSize="9" TextColor="{StaticResource TextTertiary}" />
+                            </VerticalStackLayout>
                             <Button Grid.Column="1" Text="×" Style="{StaticResource GhostButton}" WidthRequest="34" Padding="0" Command="{Binding DirectChat.ClearAttachmentsCommand}" />
                         </Grid>
                         <Border x:Name="DirectVoiceRecordingPanel" Style="{StaticResource VoiceRecordingPanel}" IsVisible="{Binding DirectChat.IsRecordingVoice}">
@@ -282,7 +285,7 @@
                             </Grid>
                         </Border>
                         <Grid Padding="8,7" ColumnDefinitions="42,*,42" ColumnSpacing="7">
-                            <Button AutomationId="DesktopWorkspace.DirectAttach" Text="+" Style="{StaticResource ToolbarIconButton}" FontSize="25" Command="{Binding DirectChat.PickAttachmentsCommand}" SemanticProperties.Description="Добавить вложение" />
+                            <Button AutomationId="DesktopWorkspace.DirectAttach" Text="+" Style="{StaticResource ToolbarIconButton}" FontSize="25" Clicked="OnDirectAttachClicked" SemanticProperties.Description="Добавить вложение" />
                             <Editor x:Name="DirectDraftEditor" Grid.Column="1" AutomationId="DesktopWorkspace.DirectDraft" Text="{Binding DirectChat.Draft}" Placeholder="Сообщение" AutoSize="TextChanges" MinimumHeightRequest="42" MaximumHeightRequest="116" BackgroundColor="{StaticResource SearchBackground}" />
                             <Button Grid.Column="2" AutomationId="DesktopWorkspace.DirectSend" Text="→" Style="{StaticResource ToolbarIconButton}" BackgroundColor="{StaticResource PrimaryColor}" TextColor="#03101A" Command="{Binding DirectChat.SendCommand}" SemanticProperties.Description="Отправить" IsVisible="{Binding DirectChat.ShowSendButton}" />
                             <Border x:Name="DirectVoiceButton" Grid.Column="2" AutomationId="DesktopWorkspace.DirectVoice" Style="{StaticResource ComposerPrimarySurface}" SemanticProperties.Description="Голосовое сообщение" IsVisible="{Binding DirectChat.ShowVoiceButton}">
@@ -318,7 +321,7 @@
                                         <Label Text="{Binding SenderLabel}" FontSize="11" FontAttributes="Bold" TextColor="{StaticResource PrimaryColor}" IsVisible="{Binding ShowSenderLabel}" />
                                         <Border Padding="8,5" Background="{StaticResource PanelBackgroundAlt}" StrokeThickness="0" StrokeShape="RoundRectangle 4" IsVisible="{Binding HasReply}"><Label Text="{Binding ReplyPreview}" FontSize="12" TextColor="{StaticResource TextSecondary}" MaxLines="2" LineBreakMode="TailTruncation" /></Border>
                                         <Grid ColumnDefinitions="38,*" ColumnSpacing="9" MinimumWidthRequest="190" IsVisible="{Binding IsVoiceMessage}">
-                                            <Border AutomationId="DesktopWorkspace.GroupVoicePlay" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
+                                            <Border AutomationId="DesktopWorkspace.GroupVoicePlay" SemanticProperties.Description="{Binding VoiceAttachmentId}" WidthRequest="36" HeightRequest="36" Background="{StaticResource PrimaryColor}" StrokeThickness="0" StrokeShape="RoundRectangle 18" VerticalOptions="Center">
                                                 <Grid WidthRequest="18" HeightRequest="18" HorizontalOptions="Center" VerticalOptions="Center">
                                                     <Path Data="M10,7 L23,18 L10,29 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoiceIdle}" />
                                                     <Path Data="M8,6 H11 V22 H8 Z M17,6 H20 V22 H17 Z" Fill="#020711" WidthRequest="18" HeightRequest="18" Aspect="Uniform" IsVisible="{Binding IsVoicePlaying}" />
@@ -364,7 +367,7 @@
                             </Grid>
                         </Border>
                         <Grid Padding="8,7" ColumnDefinitions="42,*,42" ColumnSpacing="7">
-                            <Button AutomationId="DesktopWorkspace.GroupAttach" Text="+" Style="{StaticResource ToolbarIconButton}" FontSize="25" Command="{Binding GroupChat.PickAttachmentsCommand}" SemanticProperties.Description="Добавить вложение" />
+                            <Button AutomationId="DesktopWorkspace.GroupAttach" Text="+" Style="{StaticResource ToolbarIconButton}" FontSize="25" Clicked="OnGroupAttachClicked" SemanticProperties.Description="Добавить вложение" />
                             <Editor x:Name="GroupDraftEditor" Grid.Column="1" AutomationId="DesktopWorkspace.GroupDraft" Text="{Binding GroupChat.Draft}" Placeholder="Сообщение" AutoSize="TextChanges" MinimumHeightRequest="42" MaximumHeightRequest="116" BackgroundColor="{StaticResource SearchBackground}" />
                             <Button Grid.Column="2" AutomationId="DesktopWorkspace.GroupSend" Text="→" Style="{StaticResource ToolbarIconButton}" BackgroundColor="{StaticResource PrimaryColor}" TextColor="#03101A" Command="{Binding GroupChat.SendCommand}" SemanticProperties.Description="Отправить" IsVisible="{Binding GroupChat.ShowSendButton}" />
                             <Border x:Name="GroupVoiceButton" Grid.Column="2" AutomationId="DesktopWorkspace.GroupVoice" Style="{StaticResource ComposerPrimarySurface}" SemanticProperties.Description="Голосовое сообщение" IsVisible="{Binding GroupChat.ShowVoiceButton}">
@@ -481,6 +484,36 @@
                     </VerticalStackLayout>
                 </Border>
             </Grid>
+        </Grid>
+
+        <Grid
+            x:Name="DesktopAttachmentPickerOverlay"
+            AutomationId="DesktopWorkspace.AttachmentPicker"
+            Grid.ColumnSpan="3"
+            IsVisible="False"
+            ZIndex="100">
+            <BoxView Color="#99000000">
+                <BoxView.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnCloseAttachmentPickerClicked" />
+                </BoxView.GestureRecognizers>
+            </BoxView>
+            <Border
+                WidthRequest="360"
+                Padding="12"
+                HorizontalOptions="Center"
+                VerticalOptions="Center"
+                Background="{StaticResource PanelBackgroundAlt}"
+                Stroke="{StaticResource DividerColor}"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 10">
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Добавить вложение" FontSize="16" FontAttributes="Bold" Margin="8,4" />
+                    <Button AutomationId="DesktopWorkspace.AttachmentPickPhoto" Text="Фото из галереи" Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnAttachmentPickPhotoClicked" />
+                    <Button AutomationId="DesktopWorkspace.AttachmentPickVideo" Text="Видео из галереи" Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnAttachmentPickVideoClicked" />
+                    <Button AutomationId="DesktopWorkspace.AttachmentPickFile" Text="Файл" Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnAttachmentPickFileClicked" />
+                    <Button AutomationId="DesktopWorkspace.AttachmentPickerCancel" Text="Отмена" Style="{StaticResource GhostButton}" HorizontalOptions="Fill" Clicked="OnCloseAttachmentPickerClicked" />
+                </VerticalStackLayout>
+            </Border>
         </Grid>
     </Grid>
 </ContentPage>

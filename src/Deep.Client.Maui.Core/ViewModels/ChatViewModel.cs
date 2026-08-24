@@ -430,6 +430,10 @@ public sealed class ChatViewModel : ViewModelBase
         _ => $"{StagedAttachments.Count} влож."
     };
 
+    public string StagedAttachmentMetadataDescription => StagedAttachments.Count == 1
+        ? CanonicalAttachmentMetadataDescription(StagedAttachments[0])
+        : string.Empty;
+
     public CallSessionState? ActiveCallState
     {
         get => activeCallState;
@@ -1689,6 +1693,7 @@ public sealed class ChatViewModel : ViewModelBase
     {
         RaisePropertyChanged(nameof(HasStagedAttachments));
         RaisePropertyChanged(nameof(StagedAttachmentSummary));
+        RaisePropertyChanged(nameof(StagedAttachmentMetadataDescription));
         RaiseComposerStateChanged();
         SendCommand.RaiseCanExecuteChanged();
         ClearAttachmentsCommand.RaiseCanExecuteChanged();
@@ -1701,6 +1706,9 @@ public sealed class ChatViewModel : ViewModelBase
         RaisePropertyChanged(nameof(ShowVoiceButton));
         RaisePropertyChanged(nameof(ShowSendButton));
     }
+
+    private static string CanonicalAttachmentMetadataDescription(AttachmentMetadata attachment) =>
+        $"{attachment.FileName}; {attachment.ContentType}; {attachment.SizeBytes}; {attachment.Width ?? 0}x{attachment.Height ?? 0}";
 
     private sealed class UnavailableCallService : ICallService
     {
