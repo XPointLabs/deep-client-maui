@@ -229,7 +229,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("$productionBefore -cne $productionAfter", runner,
             StringComparison.Ordinal);
-        Assert.Contains("-Action Status", runner, StringComparison.Ordinal);
+        Assert.Contains("'-Action', 'Status'", runner, StringComparison.Ordinal);
         Assert.Contains("function Test-AbsoluteWindowsPath", runner,
             StringComparison.Ordinal);
         Assert.DoesNotContain("[IO.Path]::IsPathFullyQualified", runner,
@@ -243,7 +243,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.DoesNotContain("docker compose", runner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Legacy_destructive_fixture", ui, StringComparison.Ordinal);
         Assert.DoesNotContain("DEEP_ALLOW_LEGACY", ui, StringComparison.Ordinal);
-        Assert.Contains("--logger 'trx;LogFileName=physical-phase.trx'", runner,
+        Assert.Contains("'--logger', 'trx;LogFileName=physical-phase.trx'", runner,
             StringComparison.Ordinal);
         Assert.Contains("Assert-ExactPhysicalTestResult $trxPath", runner,
             StringComparison.Ordinal);
@@ -277,9 +277,9 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("Uri.UriSchemeHttps", chaosController, StringComparison.Ordinal);
         Assert.Contains("origin.Port != 41801", chaosController, StringComparison.Ordinal);
         Assert.DoesNotContain("http://", chaosController, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("1bc829c7b43efa20968fa846f5c0e6239ca8419d", runner,
+        Assert.Contains("d24c733d70560715814618777ed0452112082760", runner,
             StringComparison.Ordinal);
-        Assert.Contains("1bc829c7b43efa20968fa846f5c0e6239ca8419d", chaosController,
+        Assert.Contains("d24c733d70560715814618777ed0452112082760", chaosController,
             StringComparison.Ordinal);
         Assert.Contains("survival-dev-mailbox-negative-runtime.ps1", runner,
             StringComparison.Ordinal);

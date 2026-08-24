@@ -69,6 +69,8 @@ public partial class ChatPage : ContentPage, IQueryAttributable
     private ChatMessageItem? imageViewerMessage;
 #if DEBUG && DEEP_PHYSICAL_E2E
     private Label? physicalVoicePlaybackState;
+    private IDispatcherTimer? physicalAckCorrelationTimer;
+    private bool refreshingPhysicalAckCorrelations;
 #endif
 #if ANDROID
     private AndroidView? voiceButtonPlatformView;
@@ -123,6 +125,9 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
         ConfigureMessageListPlatformView();
         Dispatcher.Dispatch(() => QueueVisibleImagePreviews());
+#if DEBUG && DEEP_PHYSICAL_E2E
+        StartPhysicalAckCorrelationTimer();
+#endif
         _ = ConfigureAutoReceiveAsync(pageActivityCancellation.Token);
     }
 
@@ -142,6 +147,9 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         keyboardBottomInset = 0;
         ApplyAndroidSafeAreaCompensation();
         autoReceiveTimer?.Stop();
+#if DEBUG && DEEP_PHYSICAL_E2E
+        physicalAckCorrelationTimer?.Stop();
+#endif
         imagePreviewDebounceTimer?.Stop();
         pageActivityCancellation?.Cancel();
         pageActivityCancellation?.Dispose();
@@ -172,6 +180,14 @@ public partial class ChatPage : ContentPage, IQueryAttributable
             autoReceiveTimer.Tick -= OnAutoReceiveTick;
             autoReceiveTimer = null;
         }
+#if DEBUG && DEEP_PHYSICAL_E2E
+        if (physicalAckCorrelationTimer is not null)
+        {
+            physicalAckCorrelationTimer.Stop();
+            physicalAckCorrelationTimer.Tick -= OnPhysicalAckCorrelationTick;
+            physicalAckCorrelationTimer = null;
+        }
+#endif
         if (imagePreviewDebounceTimer is not null)
         {
             imagePreviewDebounceTimer.Stop();
@@ -751,6 +767,9 @@ public partial class ChatPage : ContentPage, IQueryAttributable
         {
             RefreshMessageSearch(scrollToCurrent: false);
         }
+#if DEBUG && DEEP_PHYSICAL_E2E
+        _ = RefreshPhysicalAckCorrelationsAsync();
+#endif
 
         if (e.Action is NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Reset)
         {
@@ -827,6 +846,92 @@ public partial class ChatPage : ContentPage, IQueryAttributable
 
         ShowAttachmentActionSheet(item, item.Attachments);
     }
+
+#if DEBUG && DEEP_PHYSICAL_E2E
+    private void StartPhysicalAckCorrelationTimer()
+    {
+        if (physicalAckCorrelationTimer is null)
+        {
+            physicalAckCorrelationTimer = Dispatcher.CreateTimer();
+            physicalAckCorrelationTimer.Interval = TimeSpan.FromMilliseconds(250);
+            physicalAckCorrelationTimer.Tick += OnPhysicalAckCorrelationTick;
+        }
+        physicalAckCorrelationTimer.Start();
+        _ = RefreshPhysicalAckCorrelationsAsync();
+    }
+
+    private void OnPhysicalAckCorrelationTick(object? sender, EventArgs e) =>
+        _ = RefreshPhysicalAckCorrelationsAsync();
+
+    private async Task RefreshPhysicalAckCorrelationsAsync()
+    {
+        if (refreshingPhysicalAckCorrelations || !isPageActive) return;
+        refreshingPhysicalAckCorrelations = true;
+        try
+        {
+            var bubbles = MessagesCollection.GetVisualTreeDescendants()
+                .OfType<Border>()
+                .Where(static border => border.AutomationId == "Chat.MessageBubble")
+                .ToArray();
+            foreach (var bubble in bubbles)
+            {
+                if (bubble.Content is Grid existingGrid)
+                    RemovePhysicalAckCorrelationMarker(existingGrid);
+                if (bubble.BindingContext is not ChatMessageItem
+                    {
+                        Direction: MessageDirection.Incoming
+                    } item
+                    || bubble.Content is not Grid grid)
+                    continue;
+                var value = await PhysicalE2eAckCorrelationProvider.ReadCurrentAsync(
+                    item.Id,
+                    pageActivityCancellation?.Token ?? CancellationToken.None);
+                if (value is null) continue;
+                if (!ReferenceEquals(bubble.BindingContext, item)
+                    || !ReferenceEquals(bubble.Content, grid))
+                    continue;
+                var marker = new Label
+                {
+                    AutomationId = "PhysicalE2E.AckCorrelation",
+                    FontSize = 1,
+                    Opacity = 0.01,
+                    InputTransparent = true,
+                    ZIndex = 100
+                };
+                marker.Text = value;
+                SemanticProperties.SetDescription(marker, value);
+                grid.Children.Add(marker);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+            foreach (var grid in MessagesCollection.GetVisualTreeDescendants()
+                         .OfType<Border>()
+                         .Where(static border => border.AutomationId == "Chat.MessageBubble")
+                         .Select(static border => border.Content)
+                         .OfType<Grid>())
+                RemovePhysicalAckCorrelationMarker(grid);
+            System.Diagnostics.Debug.WriteLine(
+                "Physical ACK correlation evidence is unavailable.");
+        }
+        finally
+        {
+            refreshingPhysicalAckCorrelations = false;
+        }
+    }
+
+    private static void RemovePhysicalAckCorrelationMarker(Grid grid)
+    {
+        foreach (var marker in grid.Children.OfType<Label>()
+                     .Where(static label =>
+                         label.AutomationId == "PhysicalE2E.AckCorrelation")
+                     .ToArray())
+            grid.Children.Remove(marker);
+    }
+#endif
 
     private void QueueVisibleImagePreviews(int firstVisibleIndex = -1, int lastVisibleIndex = -1)
     {

@@ -247,6 +247,10 @@ public sealed class ClientRuntimeBootstrapper : IAsyncDisposable
     {
         try
         {
+#if DEBUG && DEEP_PHYSICAL_E2E
+            if (value is not null)
+                PhysicalE2eAckCorrelationProvider.Unbind(value);
+#endif
             value?.Dispose();
         }
         catch (Exception)

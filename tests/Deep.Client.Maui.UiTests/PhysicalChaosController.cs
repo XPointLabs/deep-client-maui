@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -7,17 +8,30 @@ namespace Deep.Client.Maui.UiTests;
 
 internal sealed class PhysicalChaosController
 {
-    internal const string DevOpsCommit = "1bc829c7b43efa20968fa846f5c0e6239ca8419d";
+    internal const string DevOpsCommit = "d24c733d70560715814618777ed0452112082760";
+    internal const string DependencyManifestSha256 =
+        "3f55806343b21104af421a25df593907804e626b78a304455aafc7cff838de15";
     internal const int TtlSeconds = 300;
+    private const int CleanupAttempts = 3;
     private readonly string launcher;
     private readonly string lanHost;
+    private readonly Action verifyAuthority;
+    private readonly Func<IReadOnlyList<string>, TimeSpan,
+        StrictCrossPlatformContracts.ProcessResult> invokeCommand;
     private bool began;
     private bool ended;
 
-    private PhysicalChaosController(string launcher, string lanHost)
+    private PhysicalChaosController(
+        string launcher,
+        string lanHost,
+        Action verifyAuthority,
+        Func<IReadOnlyList<string>, TimeSpan,
+            StrictCrossPlatformContracts.ProcessResult>? invokeCommand = null)
     {
         this.launcher = launcher;
         this.lanHost = lanHost;
+        this.verifyAuthority = verifyAuthority;
+        this.invokeCommand = invokeCommand ?? InvokePowerShell;
     }
 
     internal static PhysicalChaosController LoadRequired()
@@ -27,19 +41,10 @@ internal sealed class PhysicalChaosController
         var expectedDevOpsRoot = Path.GetFullPath(Path.Combine(repositoryRoot, "..", "deep-devops"));
         if (!string.Equals(devOpsRoot, expectedDevOpsRoot, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Physical chaos must use the sibling deep-devops checkout.");
-        StrictCrossPlatformContracts.RequireCurrentCommit(devOpsRoot, DevOpsCommit);
-        var clean = StrictCrossPlatformContracts.RunBounded(
-            "git", ["-c", $"safe.directory={devOpsRoot.Replace('\\', '/')}", "-C", devOpsRoot,
-                "status", "--porcelain=v1", "--untracked-files=all"], TimeSpan.FromSeconds(15));
-        if (clean.ExitCode != 0 || !string.IsNullOrWhiteSpace(clean.Output))
-            throw new InvalidOperationException("Physical chaos requires the exact clean deep-devops commit.");
-
-        var launcher = RequireFile("DEEP_E2E_CHAOS_SCRIPT");
-        var expectedLauncher = Path.Combine(devOpsRoot, "scripts", "survival-dev.ps1");
-        if (!string.Equals(launcher, Path.GetFullPath(expectedLauncher), StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Physical chaos launcher is not the supported DevOps entrypoint.");
-        var expectedSha = Environment.GetEnvironmentVariable("DEEP_E2E_CHAOS_SCRIPT_SHA256") ?? string.Empty;
-        StrictCrossPlatformContracts.RequirePinnedFile(launcher, expectedSha, "DevOps chaos launcher");
+        var manifest = Path.Combine(repositoryRoot, "eng", "physical-chaos-dependencies.v1.json");
+        var authority = new DependencyAuthority(
+            repositoryRoot, devOpsRoot, manifest, DependencyManifestSha256, DevOpsCommit);
+        authority.Verify();
 
         var originRaw = Environment.GetEnvironmentVariable("DEEP_E2E_CHAOS_HTTPS_ORIGIN");
         if (!Uri.TryCreate(originRaw, UriKind.Absolute, out var origin)
@@ -56,8 +61,14 @@ internal sealed class PhysicalChaosController
             throw new InvalidOperationException(
                 "Physical chaos requires the exact CA-trusted HTTPS IPv4 :41801 origin.");
         }
-        return new PhysicalChaosController(launcher, origin.Host);
+        return new PhysicalChaosController(authority.Launcher, origin.Host, authority.Verify);
     }
+
+    internal static PhysicalChaosController CreateForTests(
+        Func<IReadOnlyList<string>, TimeSpan,
+            StrictCrossPlatformContracts.ProcessResult> invokeCommand,
+        Action? verifyAuthority = null) =>
+        new("test-launcher", "127.0.0.1", verifyAuthority ?? (() => { }), invokeCommand);
 
     internal ChaosStatus Begin(string fault, string expectedOperation)
     {
@@ -137,36 +148,51 @@ internal sealed class PhysicalChaosController
     internal void EndAndAssertBaseline()
     {
         if (ended) return;
-        try
+        var failures = new List<Exception>();
+        for (var attempt = 1; attempt <= CleanupAttempts; attempt++)
         {
-            var end = Invoke(["-Action", "ChaosEnd"], TimeSpan.FromSeconds(180));
-            ChaosEnd.ParseExact(end.Output);
-            var baseline = ChaosStatus.ParseExact(
-                Invoke(["-Action", "ChaosStatus"], TimeSpan.FromSeconds(45)).Output);
-            baseline.AssertOffBaseline();
+            try
+            {
+                var end = Invoke(["-Action", "ChaosEnd"], TimeSpan.FromSeconds(180));
+                ChaosEnd.ParseExact(end.Output);
+                var baseline = ChaosStatus.ParseExact(
+                    Invoke(["-Action", "ChaosStatus"], TimeSpan.FromSeconds(45)).Output);
+                baseline.AssertOffBaseline();
+                ended = true;
+                return;
+            }
+            catch (Exception exception)
+            {
+                failures.Add(new InvalidOperationException(
+                    $"Physical chaos cleanup attempt {attempt} failed.", exception));
+            }
         }
-        finally
-        {
-            ended = true;
-        }
+        throw new AggregateException(
+            "Physical chaos cleanup did not restore the exact off baseline.", failures);
     }
 
     private StrictCrossPlatformContracts.ProcessResult Invoke(
         IReadOnlyList<string> arguments,
         TimeSpan timeout)
     {
-        var powershell = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-            "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+        verifyAuthority();
+        var result = invokeCommand(arguments, timeout);
+        if (result.ExitCode != 0)
+            throw new InvalidOperationException("Supported physical chaos command failed.");
+        return result;
+    }
+
+    private StrictCrossPlatformContracts.ProcessResult InvokePowerShell(
+        IReadOnlyList<string> arguments,
+        TimeSpan timeout)
+    {
+        var powershell = DependencyAuthority.PowerShellPath;
         var all = new List<string>
         {
             "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", launcher
         };
         all.AddRange(arguments);
-        var result = StrictCrossPlatformContracts.RunBounded(powershell, all, timeout);
-        if (result.ExitCode != 0)
-            throw new InvalidOperationException("Supported physical chaos command failed.");
-        return result;
+        return StrictCrossPlatformContracts.RunBounded(powershell, all, timeout);
     }
 
     private static string RequireDirectory(string key)
@@ -178,13 +204,355 @@ internal sealed class PhysicalChaosController
         return Path.GetFullPath(value);
     }
 
-    private static string RequireFile(string key)
+    internal sealed class DependencyAuthority
     {
-        var value = Environment.GetEnvironmentVariable(key);
-        if (string.IsNullOrWhiteSpace(value) || !Path.IsPathFullyQualified(value)
-            || !File.Exists(value))
-            throw new InvalidOperationException($"{key} must be an existing absolute file.");
-        return Path.GetFullPath(value);
+        internal const string PowerShellPath =
+            "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+        internal const string DotNetPath = "C:\\Program Files\\dotnet\\dotnet.exe";
+        private const string TreeDomain = "deep.physical-chaos.dependency-tree.v1\0";
+        private static readonly HashSet<string> ExactRootProperties = new(StringComparer.Ordinal)
+        {
+            "schema", "reviewedDevOpsCommit", "dependencyTreeSha256", "files",
+            "closedDirectories", "systemExecutables"
+        };
+        private static readonly HashSet<string> ExactFileProperties = new(StringComparer.Ordinal)
+        {
+            "path", "sha256"
+        };
+        private static readonly HashSet<string> ExactSystemProperties = new(StringComparer.Ordinal)
+        {
+            "name", "path", "sha256"
+        };
+        private static readonly IReadOnlyDictionary<string, string> RequiredSystemExecutables =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["dotnet"] = DotNetPath.Replace('\\', '/'),
+                ["powershell"] = PowerShellPath.Replace('\\', '/')
+            };
+
+        private readonly string repositoryRoot;
+        private readonly string devOpsRoot;
+        private readonly string manifestPath;
+        private readonly string expectedManifestSha256;
+        private readonly string expectedDevOpsCommit;
+
+        internal DependencyAuthority(
+            string repositoryRoot,
+            string devOpsRoot,
+            string manifestPath,
+            string expectedManifestSha256,
+            string expectedDevOpsCommit)
+        {
+            this.repositoryRoot = Path.GetFullPath(repositoryRoot);
+            this.devOpsRoot = Path.GetFullPath(devOpsRoot);
+            this.manifestPath = Path.GetFullPath(manifestPath);
+            this.expectedManifestSha256 = RequireHash(expectedManifestSha256, "manifest pin");
+            this.expectedDevOpsCommit = RequireCommit(expectedDevOpsCommit);
+            Launcher = Path.Combine(this.devOpsRoot, "scripts", "survival-dev.ps1");
+        }
+
+        internal string Launcher { get; }
+
+        internal void Verify()
+        {
+            RequireExactChild(repositoryRoot, manifestPath, "physical chaos dependency manifest");
+            RequireRegularFile(manifestPath, "physical chaos dependency manifest");
+            var manifestBytes = ReadBoundedExclusive(manifestPath, 64 * 1024,
+                "physical chaos dependency manifest");
+            try
+            {
+                if (!string.Equals(Sha256Bytes(manifestBytes), expectedManifestSha256,
+                        StringComparison.Ordinal))
+                    throw new InvalidOperationException("Physical chaos dependency manifest pin is invalid.");
+
+                using var document = JsonDocument.Parse(manifestBytes,
+                    new JsonDocumentOptions
+                    {
+                        AllowTrailingCommas = false,
+                        CommentHandling = JsonCommentHandling.Disallow
+                    });
+                var root = document.RootElement;
+                RequireExactProperties(root, ExactRootProperties, "dependency manifest");
+                if (root.GetProperty("schema").GetString() != "deep.physical-chaos-dependencies.v1"
+                    || root.GetProperty("reviewedDevOpsCommit").GetString() != expectedDevOpsCommit)
+                    throw new InvalidOperationException("Physical chaos dependency manifest identity is invalid.");
+                var expectedTreeHash = RequireHash(
+                    RequireString(root, "dependencyTreeSha256"), "dependency tree pin");
+
+                var lines = new List<string>();
+                var reviewedFiles = ReadFiles(root.GetProperty("files"), lines);
+                var closedDirectories = ReadClosedDirectories(
+                    root.GetProperty("closedDirectories"), lines);
+                ReadSystemExecutables(root.GetProperty("systemExecutables"), lines);
+                lines.Sort(StringComparer.Ordinal);
+                var treeMaterial = TreeDomain + string.Concat(lines.Select(static line => line + "\n"));
+                var actualTreeHash = Sha256Bytes(Encoding.UTF8.GetBytes(treeMaterial));
+                if (!string.Equals(actualTreeHash, expectedTreeHash, StringComparison.Ordinal))
+                    throw new InvalidOperationException("Physical chaos dependency tree pin is invalid.");
+
+                foreach (var reviewedFile in reviewedFiles)
+                {
+                    var fullPath = ResolveDevOpsPath(reviewedFile.Path, "reviewed dependency");
+                    RequireRegularFile(fullPath, "reviewed dependency");
+                    if (!string.Equals(Sha256File(fullPath), reviewedFile.Sha256, StringComparison.Ordinal))
+                        throw new InvalidOperationException("A reviewed physical chaos dependency changed.");
+                }
+                foreach (var closedDirectory in closedDirectories)
+                    VerifyClosedDirectory(closedDirectory, reviewedFiles);
+
+                if (!reviewedFiles.Any(file => file.Path == "scripts/survival-dev.ps1")
+                    || !string.Equals(Path.GetFullPath(Launcher),
+                        ResolveDevOpsPath("scripts/survival-dev.ps1", "launcher"),
+                        StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Reviewed physical chaos launcher is missing.");
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(manifestBytes);
+            }
+        }
+
+        private List<ReviewedFile> ReadFiles(JsonElement element, List<string> lines)
+        {
+            if (element.ValueKind != JsonValueKind.Array)
+                throw new InvalidOperationException("Dependency manifest files must be an array.");
+            var result = new List<ReviewedFile>();
+            foreach (var item in element.EnumerateArray())
+            {
+                RequireExactProperties(item, ExactFileProperties, "dependency file");
+                var path = RequireRelativePath(RequireString(item, "path"), "dependency file");
+                var hash = RequireHash(RequireString(item, "sha256"), "dependency file hash");
+                if (Path.GetExtension(path).Equals(".env", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Secrets files cannot be reviewed dependencies.");
+                result.Add(new ReviewedFile(path, hash));
+                lines.Add($"file:{path}={hash}");
+            }
+            RequireUniqueSorted(result.Select(static file => file.Path), "dependency files");
+            return result;
+        }
+
+        private static List<string> ReadClosedDirectories(JsonElement element, List<string> lines)
+        {
+            if (element.ValueKind != JsonValueKind.Array)
+                throw new InvalidOperationException("Closed directories must be an array.");
+            var result = element.EnumerateArray().Select(item =>
+            {
+                if (item.ValueKind != JsonValueKind.String)
+                    throw new InvalidOperationException("Closed directory path must be a string.");
+                return RequireRelativePath(item.GetString()!, "closed directory");
+            }).ToList();
+            RequireUniqueSorted(result, "closed directories");
+            lines.AddRange(result.Select(static path => $"directory:{path}"));
+            return result;
+        }
+
+        private void ReadSystemExecutables(JsonElement element, List<string> lines)
+        {
+            if (element.ValueKind != JsonValueKind.Array)
+                throw new InvalidOperationException("System executables must be an array.");
+            var found = new Dictionary<string, string>(StringComparer.Ordinal);
+            var orderedNames = new List<string>();
+            foreach (var item in element.EnumerateArray())
+            {
+                RequireExactProperties(item, ExactSystemProperties, "system executable");
+                var name = RequireString(item, "name");
+                var path = RequireString(item, "path");
+                var hash = RequireHash(RequireString(item, "sha256"), "system executable hash");
+                if (!RequiredSystemExecutables.TryGetValue(name, out var requiredPath)
+                    || !string.Equals(path, requiredPath, StringComparison.Ordinal)
+                    || !found.TryAdd(name, path))
+                    throw new InvalidOperationException("System executable authority is invalid.");
+                orderedNames.Add(name);
+                var nativePath = path.Replace('/', Path.DirectorySeparatorChar);
+                RequireRegularFile(nativePath, "system executable");
+                if (!string.Equals(Sha256File(nativePath), hash, StringComparison.Ordinal))
+                    throw new InvalidOperationException("A pinned system executable changed.");
+                lines.Add($"system:{name}|{path}={hash}");
+            }
+            RequireUniqueSorted(orderedNames, "system executables");
+            if (!found.Keys.ToHashSet(StringComparer.Ordinal)
+                    .SetEquals(RequiredSystemExecutables.Keys))
+                throw new InvalidOperationException("Required system executable authority is incomplete.");
+        }
+
+        private void VerifyClosedDirectory(
+            string relativeDirectory,
+            IReadOnlyCollection<ReviewedFile> reviewedFiles)
+        {
+            var fullDirectory = ResolveDevOpsPath(relativeDirectory, "closed directory");
+            RequireDirectoryWithoutReparse(fullDirectory, "closed directory");
+            var actual = new List<string>();
+            var actualDirectories = new List<string>();
+            var pending = new Stack<string>();
+            pending.Push(fullDirectory);
+            while (pending.Count != 0)
+            {
+                var directory = pending.Pop();
+                RequireDirectoryWithoutReparse(directory, "closed-directory dependency");
+                actualDirectories.Add(Path.GetRelativePath(devOpsRoot, directory).Replace('\\', '/'));
+                foreach (var childDirectory in Directory.EnumerateDirectories(
+                             directory, "*", SearchOption.TopDirectoryOnly))
+                {
+                    RequireDirectoryWithoutReparse(childDirectory, "closed-directory dependency");
+                    pending.Push(childDirectory);
+                }
+                foreach (var path in Directory.EnumerateFiles(
+                             directory, "*", SearchOption.TopDirectoryOnly))
+                {
+                    RequireRegularFile(path, "closed-directory dependency");
+                    actual.Add(Path.GetRelativePath(devOpsRoot, path).Replace('\\', '/'));
+                }
+            }
+            actual.Sort(StringComparer.Ordinal);
+            var prefix = relativeDirectory + "/";
+            var expected = reviewedFiles.Select(static file => file.Path)
+                .Where(path => path.StartsWith(prefix, StringComparison.Ordinal))
+                .Order(StringComparer.Ordinal).ToArray();
+            if (!actual.SequenceEqual(expected, StringComparer.Ordinal))
+                throw new InvalidOperationException("Closed physical chaos dependency directory changed.");
+            var expectedDirectories = expected.Select(path => path[..path.LastIndexOf('/')])
+                .SelectMany(path => ParentDirectories(relativeDirectory, path))
+                .Append(relativeDirectory).Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal).ToArray();
+            actualDirectories.Sort(StringComparer.Ordinal);
+            if (!actualDirectories.SequenceEqual(expectedDirectories, StringComparer.Ordinal))
+                throw new InvalidOperationException("Closed physical chaos dependency directory tree changed.");
+        }
+
+        private static IEnumerable<string> ParentDirectories(string root, string leaf)
+        {
+            var current = leaf;
+            while (current.Length >= root.Length
+                   && (current == root || current.StartsWith(root + "/", StringComparison.Ordinal)))
+            {
+                yield return current;
+                if (current == root) yield break;
+                current = current[..current.LastIndexOf('/')];
+            }
+        }
+
+        private string ResolveDevOpsPath(string relativePath, string label)
+        {
+            var fullPath = Path.GetFullPath(Path.Combine(
+                devOpsRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            RequireExactChild(devOpsRoot, fullPath, label);
+            return fullPath;
+        }
+
+        private static void RequireExactChild(string root, string path, string label)
+        {
+            var relative = Path.GetRelativePath(root, path);
+            if (relative == "." || relative == ".."
+                || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                || Path.IsPathFullyQualified(relative))
+                throw new InvalidOperationException($"{label} must be strictly inside its authority root.");
+        }
+
+        private static void RequireRegularFile(string path, string label)
+        {
+            if (!File.Exists(path))
+                throw new InvalidOperationException($"{label} must be an existing regular file.");
+            var info = new FileInfo(path);
+            if ((info.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+                throw new InvalidOperationException($"{label} must not be a directory or reparse point.");
+            RequireParentChainWithoutReparse(info.Directory);
+        }
+
+        private static void RequireDirectoryWithoutReparse(string path, string label)
+        {
+            if (!Directory.Exists(path))
+                throw new InvalidOperationException($"{label} must be an existing directory.");
+            var info = new DirectoryInfo(path);
+            if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException($"{label} must not be a reparse point.");
+            RequireParentChainWithoutReparse(info);
+        }
+
+        private static void RequireParentChainWithoutReparse(DirectoryInfo? directory)
+        {
+            while (directory is not null)
+            {
+                if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidOperationException("Dependency authority path crosses a reparse point.");
+                directory = directory.Parent;
+            }
+        }
+
+        private static void RequireExactProperties(
+            JsonElement element,
+            HashSet<string> expected,
+            string label)
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+                throw new InvalidOperationException($"{label} must be an object.");
+            var names = element.EnumerateObject().Select(static property => property.Name).ToArray();
+            if (names.Length != expected.Count || names.Distinct(StringComparer.Ordinal).Count() != names.Length
+                || !names.ToHashSet(StringComparer.Ordinal).SetEquals(expected))
+                throw new InvalidOperationException($"{label} has an invalid schema.");
+        }
+
+        private static string RequireString(JsonElement element, string property)
+        {
+            var value = element.GetProperty(property);
+            return value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString())
+                ? value.GetString()!
+                : throw new InvalidOperationException($"{property} must be a nonempty string.");
+        }
+
+        private static string RequireRelativePath(string path, string label)
+        {
+            if (!Regex.IsMatch(path, "^[a-z0-9._/-]+$", RegexOptions.CultureInvariant)
+                || path.Contains('\\') || path.StartsWith("/", StringComparison.Ordinal)
+                || path.EndsWith("/", StringComparison.Ordinal) || path.Contains("//", StringComparison.Ordinal)
+                || path.Split('/').Any(segment => segment is "" or "." or "..")
+                || path.Any(char.IsControl) || Path.IsPathFullyQualified(path))
+                throw new InvalidOperationException($"{label} path is not canonical and relative.");
+            return path;
+        }
+
+        private static string RequireHash(string value, string label) =>
+            Regex.IsMatch(value, "^[a-f0-9]{64}$", RegexOptions.CultureInvariant)
+                ? value
+                : throw new InvalidOperationException($"{label} must be canonical lower-case SHA-256.");
+
+        private static string RequireCommit(string value) =>
+            Regex.IsMatch(value, "^[a-f0-9]{40}$", RegexOptions.CultureInvariant)
+                ? value
+                : throw new InvalidOperationException(
+                    "reviewed DevOps commit must be a canonical full Git object ID.");
+
+        private static void RequireUniqueSorted(IEnumerable<string> values, string label)
+        {
+            var array = values.ToArray();
+            if (array.Distinct(StringComparer.Ordinal).Count() != array.Length
+                || !array.SequenceEqual(array.Order(StringComparer.Ordinal), StringComparer.Ordinal))
+                throw new InvalidOperationException($"{label} must be unique and ordinal-sorted.");
+        }
+
+        private static byte[] ReadBoundedExclusive(string path, int maximumBytes, string label)
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None,
+                bufferSize: 4096, FileOptions.SequentialScan);
+            if (stream.Length <= 0 || stream.Length > maximumBytes)
+                throw new InvalidOperationException($"{label} has an invalid size.");
+            var bytes = new byte[checked((int)stream.Length)];
+            stream.ReadExactly(bytes);
+            if (stream.ReadByte() != -1)
+                throw new InvalidOperationException($"{label} changed while it was read.");
+            return bytes;
+        }
+
+        private static string Sha256File(string path)
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None,
+                bufferSize: 64 * 1024, FileOptions.SequentialScan);
+            return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        }
+
+        private static string Sha256Bytes(byte[] bytes) =>
+            Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+        private sealed record ReviewedFile(string Path, string Sha256);
     }
 
     internal sealed record ChaosStatus(
@@ -371,8 +739,10 @@ internal sealed class PhysicalChaosController
             if (lines.Length != 1) throw new InvalidOperationException("ChaosEnd did not emit one exact result.");
             using var document = JsonDocument.Parse(lines[0]);
             var root = document.RootElement;
-            var names = root.EnumerateObject().Select(static property => property.Name).ToHashSet(StringComparer.Ordinal);
-            if (!names.SetEquals(["schema", "status", "running", "armed", "protectedTokenDeleted"])
+            var names = root.EnumerateObject().Select(static property => property.Name).ToArray();
+            if (names.Length != 5 || names.Distinct(StringComparer.Ordinal).Count() != names.Length
+                || !names.ToHashSet(StringComparer.Ordinal)
+                    .SetEquals(["schema", "status", "running", "armed", "protectedTokenDeleted"])
                 || root.GetProperty("schema").GetString() != "deep-survival-resend-chaos-end.v2"
                 || root.GetProperty("status").GetString() != "ok"
                 || root.GetProperty("running").GetBoolean()

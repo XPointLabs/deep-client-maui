@@ -327,6 +327,8 @@ public sealed class StrictCrossPlatformUiTests
                 options.ArtifactDirectory, options.Phase, final);
             evidence.AddHash("operationMarkerHash", marker);
             evidence.AddSafeValue("chaosStatusSha256", statusSha);
+            evidence.AddSafeValue("chaosDependencyManifestSha256",
+                PhysicalChaosController.DependencyManifestSha256);
             evidence.AddBoolean("senderFailedStatePersistedAcrossRestart", true);
             evidence.AddBoolean("manualRetryActionInvoked", true);
             evidence.AddBoolean("senderSentAfterExactRetry", true);
@@ -400,6 +402,8 @@ public sealed class StrictCrossPlatformUiTests
                 options.ArtifactDirectory, options.Phase, final);
             evidence.AddHash("operationMarkerHash", marker);
             evidence.AddSafeValue("chaosStatusSha256", statusSha);
+            evidence.AddSafeValue("chaosDependencyManifestSha256",
+                PhysicalChaosController.DependencyManifestSha256);
             evidence.AddBoolean("senderRestartedWithDistinctPid", true);
             evidence.AddBoolean("manualRetryActionInvoked", false);
             evidence.AddBoolean("automaticRetryReachedSent", true);
@@ -470,13 +474,22 @@ public sealed class StrictCrossPlatformUiTests
             SendWindowsMessageAndAssertSent(windows, marker);
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 1, TimeSpan.FromSeconds(60));
-
-            // The rendered row is backed by the local durable domain store. Kill
-            // immediately after it appears: the injected ACK response loss has
-            // already happened upstream, while the client never observed success.
-            android.ForceStop();
             controller.Status().AssertConsumed(fault, "mailbox-ack", attempts: 1,
                 dispatches: 1, successes: 1, postDrop: 0, preOutage: 0, ackDrop: 1);
+            var ambiguousNode = android.WaitForCorrelatedDescendant(
+                options.App("Chat.MessageBubble"),
+                options.App("Chat.MessageBody"), marker,
+                options.App("PhysicalE2E.AckCorrelation"), TimeSpan.FromSeconds(30));
+            var ambiguous = PhysicalAckCorrelationEvidence.ParseExact(
+                ambiguousNode.AccessibleText);
+            Assert.Equal(PhysicalAckCorrelationEvidence.MarkerHashFor(marker),
+                ambiguous.MarkerHash);
+            Assert.Equal("ambiguous-attempted", ambiguous.State);
+            Assert.Equal(1, ambiguous.AttemptCount);
+
+            // The exact rendered row now proves its SQLCipher ACK outbox is in the
+            // single outcome-unknown attempt state. Kill before any recovery attempt.
+            android.ForceStop();
 
             android.ColdStart();
             android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
@@ -485,6 +498,20 @@ public sealed class StrictCrossPlatformUiTests
                 TimeSpan.FromSeconds(45));
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 1, TimeSpan.FromSeconds(60));
+            var expectedRecovered = ambiguous with
+            {
+                State = "recovered-durable",
+                AttemptCount = 2
+            };
+            var recoveredNode = android.WaitForCorrelatedDescendant(
+                options.App("Chat.MessageBubble"),
+                options.App("Chat.MessageBody"), marker,
+                options.App("PhysicalE2E.AckCorrelation"), TimeSpan.FromSeconds(90),
+                expectedRecovered.CanonicalValue());
+            var recovered = PhysicalAckCorrelationEvidence.ParseExact(
+                recoveredNode.AccessibleText);
+            Assert.Equal(ambiguous.MarkerHash, recovered.MarkerHash);
+            Assert.Equal(ambiguous.CorrelationHash, recovered.CorrelationHash);
             controller.WaitForConsumed(fault, "mailbox-ack", attempts: 2,
                 dispatches: 2, successes: 2, postDrop: 0, preOutage: 0, ackDrop: 1,
                 timeout: TimeSpan.FromSeconds(90));
@@ -502,10 +529,15 @@ public sealed class StrictCrossPlatformUiTests
                 options.ArtifactDirectory, options.Phase, final);
             evidence.AddHash("operationMarkerHash", marker);
             evidence.AddSafeValue("chaosStatusSha256", statusSha);
+            evidence.AddSafeValue("chaosDependencyManifestSha256",
+                PhysicalChaosController.DependencyManifestSha256);
+            evidence.AddSafeValue("ackCorrelationEvidenceSha256",
+                recovered.SanitizedEvidenceHash());
             evidence.AddBoolean("recipientDurablyRenderedBeforeCrash", true);
             evidence.AddBoolean("recipientRestartedAfterUnknownAckOutcome", true);
             evidence.AddBoolean("recipientRenderedExactlyOnceAfterRestart", true);
             evidence.AddBoolean("sameDurableAckRetriedOnceAfterRestart", true);
+            evidence.AddBoolean("sameCanonicalAckCorrelationRecovered", true);
             evidence.AddBoolean("senderRemainedSent", true);
             evidence.AddBoolean("httpsAckFaultConsumedExactlyOnce", true);
         }
@@ -1208,7 +1240,7 @@ internal sealed class CrossPlatformOptions
         "Chat.AttachmentSave", "Chat.MessageAttachmentOpen", "Chat.MessageAttachmentSave",
         "Chat.ImagePreview", "Chat.ImageMetadata",
         "Chat.DeliveryStatus", "Chat.Retry", "Chat.Voice", "Chat.VoicePlayButton",
-        "PhysicalE2E.VoicePlaybackState", "Call.Root", "Call.Status",
+        "PhysicalE2E.VoicePlaybackState", "PhysicalE2E.AckCorrelation", "Call.Root", "Call.Status",
         "Call.MediaState", "Call.Microphone", "Call.MicrophoneState", "Call.Hangup"
     ];
     private readonly Dictionary<string, string> androidSelectors;

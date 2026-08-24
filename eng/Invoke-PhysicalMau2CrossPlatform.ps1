@@ -17,8 +17,316 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using Microsoft.Win32.SafeHandles;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Deep.PhysicalE2E
+{
+    public sealed class BoundedProcessResult
+    {
+        public int ExitCode { get; set; }
+        public string Output { get; set; }
+    }
+
+    public static class BoundedProcess
+    {
+        private const uint JobObjectExtendedLimitInformation = 9;
+        private const uint JobObjectLimitKillOnJobClose = 0x00002000;
+        private const uint CreateSuspended = 0x00000004;
+        private const uint CreateNoWindow = 0x08000000;
+        private const uint StartfUseStdHandles = 0x00000100;
+        private const uint HandleFlagInherit = 0x00000001;
+        private const uint WaitObject0 = 0;
+        private const uint WaitTimeout = 258;
+        private const int MaximumOutputBytes = 1024 * 1024;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IoCounters
+        {
+            public ulong ReadOperationCount, WriteOperationCount, OtherOperationCount;
+            public ulong ReadTransferCount, WriteTransferCount, OtherTransferCount;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BasicLimitInformation
+        {
+            public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
+            public uint LimitFlags;
+            public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
+            public uint ActiveProcessLimit;
+            public UIntPtr Affinity;
+            public uint PriorityClass, SchedulingClass;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ExtendedLimitInformation
+        {
+            public BasicLimitInformation BasicLimitInformation;
+            public IoCounters IoInfo;
+            public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemoryUsed, PeakJobMemoryUsed;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SecurityAttributes
+        {
+            public int Length;
+            public IntPtr SecurityDescriptor;
+            public int InheritHandle;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct StartupInfo
+        {
+            public int Cb;
+            public string Reserved;
+            public string Desktop;
+            public string Title;
+            public int X, Y, XSize, YSize, XCountChars, YCountChars, FillAttribute;
+            public uint Flags;
+            public short ShowWindow, Reserved2;
+            public IntPtr ReservedPointer, StandardInput, StandardOutput, StandardError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ProcessInformation
+        {
+            public IntPtr ProcessHandle, ThreadHandle;
+            public uint ProcessId, ThreadId;
+        }
+
+        private sealed class OutputBudget
+        {
+            private readonly IntPtr job;
+            private int total;
+
+            public OutputBudget(IntPtr job) { this.job = job; }
+
+            public void Add(int count)
+            {
+                if (Interlocked.Add(ref total, count) > MaximumOutputBytes)
+                {
+                    TerminateJobObject(job, 0xE0000003);
+                    throw new InvalidDataException("Bounded child exceeded the aggregate output limit.");
+                }
+            }
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateJobObject(IntPtr attributes, string name);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetInformationJobObject(IntPtr job, uint infoClass,
+            IntPtr information, uint informationLength);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool TerminateJobObject(IntPtr job, uint exitCode);
+        [DllImport("kernel32.dll")]
+        private static extern bool CloseHandle(IntPtr handle);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CreatePipe(out IntPtr read, out IntPtr write,
+            ref SecurityAttributes attributes, uint size);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool CreateProcessW(string applicationName, StringBuilder commandLine,
+            IntPtr processAttributes, IntPtr threadAttributes, bool inheritHandles,
+            uint creationFlags, IntPtr environment, string currentDirectory,
+            ref StartupInfo startupInfo, out ProcessInformation processInformation);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint ResumeThread(IntPtr thread);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
+
+        public static BoundedProcessResult Run(
+            string executable, string[] arguments, string workingDirectory, int timeoutMilliseconds)
+        {
+            if (timeoutMilliseconds < 1) throw new ArgumentOutOfRangeException("timeoutMilliseconds");
+            IntPtr job = CreateJobObject(IntPtr.Zero, null);
+            if (job == IntPtr.Zero) throw new Win32Exception();
+            IntPtr childInput = IntPtr.Zero, parentInput = IntPtr.Zero;
+            IntPtr parentOutput = IntPtr.Zero, childOutput = IntPtr.Zero;
+            IntPtr parentError = IntPtr.Zero, childError = IntPtr.Zero;
+            var information = new ProcessInformation();
+            try
+            {
+                var limits = new ExtendedLimitInformation();
+                limits.BasicLimitInformation.LimitFlags = JobObjectLimitKillOnJobClose;
+                int size = Marshal.SizeOf(typeof(ExtendedLimitInformation));
+                IntPtr memory = Marshal.AllocHGlobal(size);
+                try
+                {
+                    Marshal.StructureToPtr(limits, memory, false);
+                    if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, memory, (uint)size))
+                        throw new Win32Exception();
+                }
+                finally { Marshal.FreeHGlobal(memory); }
+
+                CreatePipePair(out childInput, out parentInput, false);
+                CreatePipePair(out childOutput, out parentOutput, true);
+                CreatePipePair(out childError, out parentError, true);
+                var startup = new StartupInfo
+                {
+                    Cb = Marshal.SizeOf(typeof(StartupInfo)),
+                    Flags = StartfUseStdHandles,
+                    StandardInput = childInput,
+                    StandardOutput = childOutput,
+                    StandardError = childError
+                };
+                var commandLine = new StringBuilder();
+                commandLine.Append(Quote(executable));
+                if (arguments.Length != 0) commandLine.Append(' ').Append(BuildCommandLine(arguments));
+                if (!CreateProcessW(executable, commandLine, IntPtr.Zero, IntPtr.Zero, true,
+                        CreateSuspended | CreateNoWindow, IntPtr.Zero, workingDirectory,
+                        ref startup, out information))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                Close(ref childInput);
+                Close(ref childOutput);
+                Close(ref childError);
+                Close(ref parentInput);
+                if (!AssignProcessToJobObject(job, information.ProcessHandle))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+
+                using (var output = new FileStream(new SafeFileHandle(parentOutput, true),
+                           FileAccess.Read, 4096, false))
+                using (var error = new FileStream(new SafeFileHandle(parentError, true),
+                           FileAccess.Read, 4096, false))
+                {
+                    parentOutput = IntPtr.Zero;
+                    parentError = IntPtr.Zero;
+                    var budget = new OutputBudget(job);
+                    var stdout = ReadCappedAsync(output, budget);
+                    var stderr = ReadCappedAsync(error, budget);
+                    if (ResumeThread(information.ThreadHandle) == UInt32.MaxValue)
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
+                    Close(ref information.ThreadHandle);
+                    var wait = WaitForSingleObject(information.ProcessHandle, (uint)timeoutMilliseconds);
+                    if (wait == WaitTimeout)
+                    {
+                        TerminateJobObject(job, 0xE0000002);
+                        WaitForSingleObject(information.ProcessHandle, 10000);
+                        throw new TimeoutException("Bounded child exceeded its deadline and its job was terminated.");
+                    }
+                    if (wait != WaitObject0) throw new Win32Exception(Marshal.GetLastWin32Error());
+                    if (!Task.WaitAll(new Task[] { stdout, stderr }, 10000))
+                        throw new TimeoutException("Bounded child output did not close after process exit.");
+                    uint exitCode;
+                    if (!GetExitCodeProcess(information.ProcessHandle, out exitCode))
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
+                    return new BoundedProcessResult {
+                        ExitCode = unchecked((int)exitCode),
+                        Output = Encoding.UTF8.GetString(stdout.Result)
+                            + Encoding.UTF8.GetString(stderr.Result)
+                    };
+                }
+            }
+            catch
+            {
+                TerminateJobObject(job, 0xE0000004);
+                if (information.ProcessHandle != IntPtr.Zero)
+                    WaitForSingleObject(information.ProcessHandle, 10000);
+                throw;
+            }
+            finally
+            {
+                Close(ref information.ThreadHandle);
+                Close(ref information.ProcessHandle);
+                Close(ref childInput); Close(ref parentInput);
+                Close(ref childOutput); Close(ref parentOutput);
+                Close(ref childError); Close(ref parentError);
+                CloseHandle(job);
+            }
+        }
+
+        private static async Task<byte[]> ReadCappedAsync(Stream stream, OutputBudget budget)
+        {
+            using (var memory = new MemoryStream())
+            {
+                var buffer = new byte[8192];
+                while (true)
+                {
+                    int read = await stream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+                    if (read == 0) return memory.ToArray();
+                    budget.Add(read);
+                    memory.Write(buffer, 0, read);
+                }
+            }
+        }
+
+        private static void CreatePipePair(out IntPtr child, out IntPtr parent, bool parentReads)
+        {
+            var attributes = new SecurityAttributes {
+                Length = Marshal.SizeOf(typeof(SecurityAttributes)), InheritHandle = 1
+            };
+            IntPtr read;
+            IntPtr write;
+            if (!CreatePipe(out read, out write, ref attributes, 0))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            child = parentReads ? write : read;
+            parent = parentReads ? read : write;
+            if (!SetHandleInformation(parent, HandleFlagInherit, 0))
+            {
+                Close(ref child); Close(ref parent);
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+        }
+
+        private static void Close(ref IntPtr handle)
+        {
+            if (handle == IntPtr.Zero) return;
+            CloseHandle(handle);
+            handle = IntPtr.Zero;
+        }
+
+        private static string BuildCommandLine(string[] arguments)
+        {
+            var result = new StringBuilder();
+            foreach (string argument in arguments)
+            {
+                if (result.Length != 0) result.Append(' ');
+                result.Append(Quote(argument ?? String.Empty));
+            }
+            return result.ToString();
+        }
+
+        private static string Quote(string value)
+        {
+            if (value.Length != 0 && value.IndexOfAny(new[] { ' ', '\t', '\n', '\v', '"' }) < 0)
+                return value;
+            var result = new StringBuilder("\"");
+            int slashes = 0;
+            foreach (char ch in value)
+            {
+                if (ch == '\\') { slashes++; continue; }
+                if (ch == '"')
+                {
+                    result.Append('\\', slashes * 2 + 1).Append('"');
+                    slashes = 0;
+                    continue;
+                }
+                result.Append('\\', slashes).Append(ch);
+                slashes = 0;
+            }
+            result.Append('\\', slashes * 2).Append('"');
+            return result.ToString();
+        }
+    }
+}
+'@
+
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $devOpsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot '..\deep-devops'))
+$chaosManifestPath = Join-Path $repoRoot 'eng\physical-chaos-dependencies.v1.json'
+$chaosManifestSha256 = '3f55806343b21104af421a25df593907804e626b78a304455aafc7cff838de15'
 $androidPackage = 'network.xpoint.deep.e2e'
 $productionPackage = 'network.xpoint.deep'
 $policyPath = Join-Path $repoRoot '.secrets\android-lab\approved-policy.json'
@@ -51,6 +359,201 @@ function Get-PackageSnapshot([string]$Package) {
 }
 
 function Get-Sha256([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
+
+function Get-TextSha256([string]$Value) {
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($Value))
+        return -join ($digest | ForEach-Object { $_.ToString('x2') })
+    } finally {
+        $algorithm.Dispose()
+    }
+}
+
+function Read-ExactPinnedUtf8([string]$Path, [string]$ExpectedSha256, [int]$MaximumBytes) {
+    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+    $bytes = $null
+    try {
+        if ($stream.Length -lt 1 -or $stream.Length -gt $MaximumBytes) {
+            throw 'Pinned UTF-8 file length is outside its closed bound.'
+        }
+        $bytes = [byte[]]::new([int]$stream.Length)
+        $offset = 0
+        while ($offset -lt $bytes.Length) {
+            $read = $stream.Read($bytes, $offset, $bytes.Length - $offset)
+            if ($read -eq 0) { throw 'Pinned UTF-8 file ended before its declared length.' }
+            $offset += $read
+        }
+        if ($stream.ReadByte() -ne -1) { throw 'Pinned UTF-8 file changed while being read.' }
+        $algorithm = [Security.Cryptography.SHA256]::Create()
+        try {
+            $digest = -join ($algorithm.ComputeHash($bytes) |
+                ForEach-Object { $_.ToString('x2') })
+        } finally {
+            $algorithm.Dispose()
+        }
+        if ($digest -cne $ExpectedSha256) {
+            throw 'Pinned UTF-8 file does not match the reviewed SHA-256.'
+        }
+        return [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
+    } finally {
+        if ($null -ne $bytes) { [Array]::Clear($bytes, 0, $bytes.Length) }
+        $stream.Dispose()
+    }
+}
+
+function Assert-RegularNonReparseFile([string]$Path, [string]$Label) {
+    $full = Assert-AbsoluteExisting $Path $Label
+    $item = Get-Item -Force -LiteralPath $full
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "$Label must be a regular non-reparse file."
+    }
+    return $full
+}
+
+function Assert-AuthorityPathAncestors([string]$Root, [string]$Path, [string]$Label) {
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    $pathFull = [IO.Path]::GetFullPath($Path)
+    if (-not $pathFull.StartsWith($rootFull + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "$Label escaped its authority root."
+    }
+    $current = Get-Item -Force -LiteralPath $pathFull
+    while ($null -ne $current -and
+        -not [StringComparer]::OrdinalIgnoreCase.Equals($current.FullName.TrimEnd('\'), $rootFull)) {
+        if (($current.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "$Label traversed a reparse point."
+        }
+        $current = $current.Parent
+    }
+    if ($null -eq $current) { throw "$Label did not reach its authority root." }
+}
+
+function Assert-ChaosDependencyAuthority {
+    $manifestFile = Assert-RegularNonReparseFile $script:chaosManifestPath 'Chaos dependency manifest'
+    $manifestText = Read-ExactPinnedUtf8 $manifestFile $script:chaosManifestSha256 65536
+    $manifest = $manifestText | ConvertFrom-Json
+    Assert-ExactJsonProperties $manifest @(
+        'schema', 'reviewedDevOpsCommit', 'dependencyTreeSha256',
+        'files', 'closedDirectories', 'systemExecutables') 'Chaos dependency manifest'
+    if ($manifest.schema -cne 'deep.physical-chaos-dependencies.v1' -or
+        $manifest.reviewedDevOpsCommit -cne 'd24c733d70560715814618777ed0452112082760' -or
+        $manifest.dependencyTreeSha256 -cnotmatch '^[a-f0-9]{64}$') {
+        throw 'Chaos dependency manifest identity is invalid.'
+    }
+    if (-not [StringComparer]::OrdinalIgnoreCase.Equals(
+        $script:devOpsRoot,
+        [IO.Path]::GetFullPath((Join-Path $script:repoRoot '..\deep-devops')))) {
+        throw 'Chaos authority must use the sibling deep-devops checkout.'
+    }
+
+    $lines = [Collections.Generic.List[string]]::new()
+    $declaredFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $previous = $null
+    foreach ($entry in @($manifest.files)) {
+        Assert-ExactJsonProperties $entry @('path', 'sha256') 'Chaos dependency file'
+        $relative = [string]$entry.path
+        $sha256 = [string]$entry.sha256
+        if ($relative -cnotmatch '^[a-z0-9][a-z0-9._/-]*$' -or $relative.Contains('\') -or
+            [IO.Path]::IsPathRooted($relative) -or $relative -match '(^|/)\.\.?(/|$)' -or
+            $relative.EndsWith('.env', [StringComparison]::OrdinalIgnoreCase) -or
+            $sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            ($null -ne $previous -and [StringComparer]::Ordinal.Compare($previous, $relative) -ge 0) -or
+            -not $declaredFiles.Add($relative)) {
+            throw 'Chaos dependency file list is not canonical, sorted, and unique.'
+        }
+        $previous = $relative
+        $full = [IO.Path]::GetFullPath((Join-Path $script:devOpsRoot ($relative.Replace('/', '\'))))
+        Assert-RegularNonReparseFile $full "Chaos dependency $relative" | Out-Null
+        Assert-AuthorityPathAncestors $script:devOpsRoot $full "Chaos dependency $relative"
+        if ((Get-Sha256 $full) -cne $sha256) { throw 'Chaos dependency SHA-256 mismatch.' }
+        $lines.Add("file:$relative=$sha256`n")
+    }
+
+    $previous = $null
+    foreach ($relativeValue in @($manifest.closedDirectories)) {
+        $relative = [string]$relativeValue
+        if ($relative -cnotmatch '^[a-z0-9][a-z0-9._/-]*$' -or $relative.Contains('\') -or
+            [IO.Path]::IsPathRooted($relative) -or $relative -match '(^|/)\.\.?(/|$)' -or
+            ($null -ne $previous -and [StringComparer]::Ordinal.Compare($previous, $relative) -ge 0)) {
+            throw 'Chaos closed directory list is not canonical, sorted, and unique.'
+        }
+        $previous = $relative
+        $full = [IO.Path]::GetFullPath((Join-Path $script:devOpsRoot ($relative.Replace('/', '\'))))
+        Assert-AbsoluteExisting $full "Chaos closed directory $relative" -Directory | Out-Null
+        Assert-AuthorityPathAncestors $script:devOpsRoot $full "Chaos closed directory $relative"
+        $actualFiles = @()
+        foreach ($item in Get-ChildItem -Force -Recurse -LiteralPath $full) {
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'Chaos closed directory contains a reparse point.'
+            }
+            if ($item.PSIsContainer) {
+                throw 'Chaos closed directory contains an undeclared directory.'
+            } else {
+                $actualFiles += $item.FullName.Substring(
+                    $script:devOpsRoot.TrimEnd('\').Length + 1).Replace('\', '/')
+            }
+        }
+        $expectedFiles = @($declaredFiles | Where-Object {
+            $_.StartsWith($relative + '/', [StringComparison]::Ordinal) })
+        if (@(Compare-Object -CaseSensitive -ReferenceObject @($expectedFiles | Sort-Object) `
+                -DifferenceObject @($actualFiles | Sort-Object)).Count -ne 0) {
+            throw 'Chaos closed directory file set does not match the reviewed manifest.'
+        }
+        $lines.Add("directory:$relative`n")
+    }
+
+    $expectedSystems = [ordered]@{
+        dotnet = 'C:/Program Files/dotnet/dotnet.exe'
+        powershell = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
+    }
+    $systemPaths = @{}
+    $previous = $null
+    foreach ($entry in @($manifest.systemExecutables)) {
+        Assert-ExactJsonProperties $entry @('name', 'path', 'sha256') 'Chaos system executable'
+        $name = [string]$entry.name
+        $canonicalPath = [string]$entry.path
+        $sha256 = [string]$entry.sha256
+        if (-not $expectedSystems.Contains($name) -or
+            $canonicalPath -cne $expectedSystems[$name] -or
+            ($null -ne $previous -and [StringComparer]::Ordinal.Compare($previous, $name) -ge 0) -or
+            $sha256 -cnotmatch '^[a-f0-9]{64}$') {
+            throw 'Chaos system executable set is invalid.'
+        }
+        $previous = $name
+        $nativePath = $canonicalPath.Replace('/', '\')
+        Assert-RegularNonReparseFile $nativePath "Chaos system executable $name" | Out-Null
+        Assert-AuthorityPathAncestors ([IO.Path]::GetPathRoot($nativePath)) `
+            $nativePath "Chaos system executable $name"
+        if ((Get-Sha256 $nativePath) -cne $sha256) { throw 'Chaos system executable SHA-256 mismatch.' }
+        $systemPaths[$name] = $nativePath
+        $lines.Add("system:$name|$canonicalPath=$sha256`n")
+    }
+    if ($systemPaths.Count -ne $expectedSystems.Count) {
+        throw 'Chaos system executable set is incomplete.'
+    }
+    $orderedLines = @($lines | Sort-Object -CaseSensitive)
+    $treeMaterial = 'deep.physical-chaos.dependency-tree.v1' + [char]0 + ($orderedLines -join '')
+    if ((Get-TextSha256 $treeMaterial) -cne $manifest.dependencyTreeSha256) {
+        throw 'Chaos dependency tree digest is invalid.'
+    }
+    return [pscustomobject]@{
+        Launcher = Join-Path $script:devOpsRoot 'scripts\survival-dev.ps1'
+        PowerShell = $systemPaths['powershell']
+        DotNet = $systemPaths['dotnet']
+        ManifestSha256 = $script:chaosManifestSha256
+        DependencyTreeSha256 = [string]$manifest.dependencyTreeSha256
+    }
+}
+
+function Invoke-BoundedProcess(
+    [string]$Executable,
+    [string[]]$Arguments,
+    [int]$TimeoutSeconds,
+    [string]$WorkingDirectory = $script:repoRoot) {
+    if ($TimeoutSeconds -lt 1) { throw 'Bounded process timeout must be positive.' }
+    return [Deep.PhysicalE2E.BoundedProcess]::Run(
+        $Executable, $Arguments, $WorkingDirectory, $TimeoutSeconds * 1000)
+}
 
 function Resolve-PolicyPinnedFile(
     [string]$RelativePath,
@@ -91,6 +594,7 @@ function New-CanonicalAndroidSelectorsJson {
         'Chat.AttachmentSave', 'Chat.MessageAttachmentOpen', 'Chat.MessageAttachmentSave',
         'Chat.ImagePreview', 'Chat.ImageMetadata',
         'Chat.Voice', 'Chat.VoicePlayButton', 'PhysicalE2E.VoicePlaybackState',
+        'PhysicalE2E.AckCorrelation',
         'Call.Root', 'Call.Status', 'Call.MediaState', 'Call.Microphone',
         'Call.MicrophoneState', 'Call.Hangup')
     $selectors = [ordered]@{}
@@ -265,11 +769,14 @@ function Assert-SanitizedState([object]$State) {
 }
 
 function Assert-DockerHealthy {
-    $script = Join-Path $devOpsRoot 'scripts\survival-dev.ps1'
-    Assert-AbsoluteExisting $script 'Supported survival dev status script' | Out-Null
+    $authority = Assert-ChaosDependencyAuthority
     # Status is the supported read-only operation; no raw compose lifecycle command is used here.
-    $status = @(& $script -Action Status 2>&1)
-    if ($LASTEXITCODE -ne 0 -or @($status | Where-Object { [string]$_ -match '(?i)unhealthy|exited|dead' }).Count -ne 0) {
+    $statusResult = Invoke-BoundedProcess $authority.PowerShell @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $authority.Launcher,
+        '-Action', 'Status') 180
+    $status = @($statusResult.Output -split "`r?`n")
+    if ($statusResult.ExitCode -ne 0 -or
+        @($status | Where-Object { [string]$_ -match '(?i)unhealthy|exited|dead' }).Count -ne 0) {
         throw 'Survival Docker environment is not healthy.'
     }
 }
@@ -285,10 +792,12 @@ function Get-ExactChaosJson([object[]]$Output, [string]$Schema) {
 }
 
 function Invoke-ChaosCommand([string[]]$Arguments, [string]$Schema) {
-    $output = @(& powershell -NoProfile -ExecutionPolicy Bypass `
-        -File $script:chaosLauncher @Arguments 2>&1)
-    if ($LASTEXITCODE -ne 0) { throw 'Supported HTTPS chaos command failed.' }
-    return Get-ExactChaosJson $output $Schema
+    $authority = Assert-ChaosDependencyAuthority
+    $allArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass',
+        '-File', $authority.Launcher) + $Arguments
+    $result = Invoke-BoundedProcess $authority.PowerShell $allArguments 180
+    if ($result.ExitCode -ne 0) { throw 'Supported HTTPS chaos command failed.' }
+    return Get-ExactChaosJson @($result.Output -split "`r?`n") $Schema
 }
 
 function Assert-ExactJsonProperties([object]$Value, [string[]]$Expected, [string]$Label) {
@@ -395,21 +904,13 @@ if ($runtimeEnvironmentText -cnotmatch '(?m)^DEEP_TRANSPORT_PROTOCOL=authenticat
 $chaosPhase = $Phase -cin @(
     'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow')
 $chaosLauncher = $null
-$chaosScriptSha256 = $null
+$chaosDependencyTreeSha256 = $null
 $chaosOrigin = $null
 $chaosSecretDirectory = $null
 if ($chaosPhase) {
-    $expectedDevOpsCommit = '1bc829c7b43efa20968fa846f5c0e6239ca8419d'
-    $actualDevOpsCommit = @(& git -C $devOpsRoot rev-parse HEAD)
-    $devOpsState = @(& git -C $devOpsRoot status --porcelain=v1 --untracked-files=all)
-    if ($LASTEXITCODE -ne 0 -or $actualDevOpsCommit.Count -ne 1 -or
-        $actualDevOpsCommit[0].Trim() -cne $expectedDevOpsCommit -or
-        $devOpsState.Count -ne 0) {
-        throw 'Physical HTTPS chaos requires the exact clean reviewed deep-devops commit.'
-    }
-    $chaosLauncher = Assert-AbsoluteExisting `
-        (Join-Path $devOpsRoot 'scripts\survival-dev.ps1') 'Supported HTTPS chaos launcher'
-    $chaosScriptSha256 = Get-Sha256 $chaosLauncher
+    $authority = Assert-ChaosDependencyAuthority
+    $chaosLauncher = $authority.Launcher
+    $chaosDependencyTreeSha256 = $authority.DependencyTreeSha256
     $originMatches = [regex]::Matches(
         $runtimeEnvironmentText,
         '(?m)^XNODE_URLS=[0-9a-f]{64}\|(?<origin>https://(?<host>[0-9]{1,3}(?:\.[0-9]{1,3}){3}):41801);')
@@ -491,6 +992,8 @@ $imageFixture = Join-Path $runRoot "payload-$runId-image.png"
 Set-ProtectedRunTree $runRoot
 
 $productionBefore = Get-PackageSnapshot $productionPackage
+$failures = [Collections.Generic.List[Exception]]::new()
+$chaosCleanupRequired = $false
 try {
     Invoke-AdbQuiet @('start-server') | Out-Null
     $devices = @(& $adb devices | Select-Object -Skip 1 | Where-Object { $_ -ceq "$AndroidSerial`tdevice" })
@@ -507,6 +1010,8 @@ try {
         sourceCommit = $sourceCommit
         policySha256 = Get-Sha256 $policy
         runtimeEnvironmentSha256 = Get-Sha256 $runtimeEnvironment
+        chaosDependencyManifestSha256 = $(if ($chaosPhase) { $chaosManifestSha256 } else { $null })
+        chaosDependencyTreeSha256 = $(if ($chaosPhase) { $chaosDependencyTreeSha256 } else { $null })
         transportProtocol = 'authenticated-mau2'
         transportOwnership = 'user-managed'
         androidRuntimeTreeSha256 = (Get-Sha256 (Join-Path $androidRuntime 'activation.v1.json'))
@@ -553,8 +1058,7 @@ try {
         $env:DEEP_STORAGE_URL = $null
         if ($chaosPhase) {
             $env:DEEP_E2E_CHAOS_DEVOPS_ROOT = $devOpsRoot
-            $env:DEEP_E2E_CHAOS_SCRIPT = $chaosLauncher
-            $env:DEEP_E2E_CHAOS_SCRIPT_SHA256 = $chaosScriptSha256
+            $env:DEEP_E2E_CHAOS_MANIFEST = $chaosManifestPath
             $env:DEEP_E2E_CHAOS_HTTPS_ORIGIN = $chaosOrigin
             $env:SURVIVAL_UAT_TLS_SECRET_DIR = $chaosSecretDirectory
         }
@@ -571,23 +1075,22 @@ try {
         # their paths, holders, sessions, message markers, or native/container logs.
         try {
             $trxPath = Join-Path $artifacts 'physical-phase.trx'
-            & dotnet test (Join-Path $repoRoot 'tests\Deep.Client.Maui.UiTests\Deep.Client.Maui.UiTests.csproj') `
-                --no-restore `
-                --results-directory $artifacts `
-                --logger 'trx;LogFileName=physical-phase.trx' `
-                --filter 'FullyQualifiedName=Deep.Client.Maui.UiTests.StrictCrossPlatformUiTests.Physical_android_and_windows_exchange_persist_and_decrypt_an_attachment'
-            if ($LASTEXITCODE -ne 0) { throw 'Physical MAU2 UI phase failed.' }
+            if ($chaosPhase) { $chaosCleanupRequired = $true }
+            $authority = Assert-ChaosDependencyAuthority
+            $testArguments = @(
+                'test',
+                (Join-Path $repoRoot 'tests\Deep.Client.Maui.UiTests\Deep.Client.Maui.UiTests.csproj'),
+                '--no-restore',
+                '--results-directory', $artifacts,
+                '--logger', 'trx;LogFileName=physical-phase.trx',
+                '--filter', 'FullyQualifiedName=Deep.Client.Maui.UiTests.StrictCrossPlatformUiTests.Physical_android_and_windows_exchange_persist_and_decrypt_an_attachment')
+            $testResult = Invoke-BoundedProcess $authority.DotNet $testArguments 1800 $repoRoot
+            if ($testResult.ExitCode -ne 0) { throw 'Physical MAU2 UI phase failed.' }
             Assert-ExactPhysicalTestResult $trxPath
             if ($chaosPhase) {
                 Assert-VerifiedChaosEvidence $artifacts $Phase
             }
         } finally {
-            if ($chaosPhase) {
-                Assert-ChaosEnd (Invoke-ChaosCommand @('-Action', 'ChaosEnd') `
-                    'deep-survival-resend-chaos-end.v2')
-                Assert-ChaosOffBaseline (Invoke-ChaosCommand @('-Action', 'ChaosStatus') `
-                    'deep-survival-resend-chaos-status.v2')
-            }
             if ($negativePrepared) {
                 & powershell -NoProfile -ExecutionPolicy Bypass -File $negativeGenerator `
                     -Action Cleanup -RunRoot $runRoot | Out-Null
@@ -595,12 +1098,52 @@ try {
             }
         }
     }
+} catch {
+    $failures.Add($_.Exception)
 } finally {
-    $productionAfter = Get-PackageSnapshot $productionPackage
-    if ($productionBefore -cne $productionAfter) { throw 'Production Android package changed during MAU2 E2E.' }
-    if ((Get-TreeSha256 $windowsLiveRuntime) -cne $windowsLiveRuntimeHashBefore) {
-        throw 'Canonical live Windows runtime changed during MAU2 E2E.'
+    if ($chaosCleanupRequired) {
+        $endComplete = $false
+        foreach ($attempt in 1..3) {
+            try {
+                Assert-ChaosEnd (Invoke-ChaosCommand @('-Action', 'ChaosEnd') `
+                    'deep-survival-resend-chaos-end.v2')
+                $endComplete = $true
+                break
+            } catch {
+                $failures.Add($_.Exception)
+            }
+        }
+        try {
+            Assert-ChaosOffBaseline (Invoke-ChaosCommand @('-Action', 'ChaosStatus') `
+                'deep-survival-resend-chaos-status.v2')
+        } catch {
+            $failures.Add($_.Exception)
+        }
+        if (-not $endComplete) {
+            $failures.Add([InvalidOperationException]::new(
+                'HTTPS chaos cleanup exhausted its bounded retries.'))
+        }
     }
+    try {
+        $productionAfter = Get-PackageSnapshot $productionPackage
+        if ($productionBefore -cne $productionAfter) {
+            throw 'Production Android package changed during MAU2 E2E.'
+        }
+    } catch {
+        $failures.Add($_.Exception)
+    }
+    try {
+        if ((Get-TreeSha256 $windowsLiveRuntime) -cne $windowsLiveRuntimeHashBefore) {
+            throw 'Canonical live Windows runtime changed during MAU2 E2E.'
+        }
+    } catch {
+        $failures.Add($_.Exception)
+    }
+}
+
+if ($failures.Count -ne 0) {
+    throw [AggregateException]::new(
+        'Physical MAU2 phase failed with audited cleanup results.', $failures)
 }
 
 Write-Output "Physical MAU2 phase '$Phase' completed without skipped tests. Sanitized protected run state: $runId"

@@ -73,6 +73,7 @@ internal sealed class StoreBoundNativeMau2Transport :
     IAuthenticatedOpaqueMailboxTransport,
     IResumableMailboxIdentityAuthenticatedRawTransport,
     IAuthenticatedInboxTransport,
+    IMailboxAckCorrelationProjectionSource,
     IMetadataPrivateSessionMessageTransport,
     IMailboxDeliveryPolicy,
     IAccountGenerationLifecycle,
@@ -357,6 +358,20 @@ internal sealed class StoreBoundNativeMau2Transport :
         var runtime = RequireBound();
         await runtime.Transport.AcknowledgeOpaqueMailboxInboxAsync(
             signer, opaqueItemHandle, cancellationToken).ConfigureAwait(false);
+    }
+
+    async Task<MailboxAckCorrelationProjection?>
+        IMailboxAckCorrelationProjectionSource.ProjectMailboxAckCorrelationAsync(
+            SessionId account,
+            string serverHash,
+            CancellationToken cancellationToken)
+    {
+        using var operation = EnterOperation();
+        var runtime = RequireBound();
+        RequireSession(runtime, account);
+        return await ((IMailboxAckCorrelationProjectionSource)runtime.Transport)
+            .ProjectMailboxAckCorrelationAsync(account, serverHash, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public void Dispose()

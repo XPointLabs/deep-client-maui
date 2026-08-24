@@ -62,6 +62,9 @@ internal static class PersistentClientRuntimeComposer
 #endif
             if (membershipRouteCatalogProvider is not null)
                 membershipRouteCatalogProvider.Bind(secureStore);
+#if DEBUG && DEEP_PHYSICAL_E2E
+            PhysicalE2eAckCorrelationProvider.Bind(runtime);
+#endif
             return runtime;
         }
         catch
