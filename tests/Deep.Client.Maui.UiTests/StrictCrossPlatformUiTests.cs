@@ -516,7 +516,7 @@ internal sealed class CrossPlatformOptions
 {
     private static readonly string[] RequiredAppRoles =
     [
-        "Startup.Status", "Welcome.DisplayName", "Welcome.Create", "Conversations.Root", "Conversations.ProfileSettings",
+        "Startup.Status", "Welcome.DisplayName", "Welcome.Create", "Conversations.Root", "PhysicalE2E.RuntimeReadyMarker", "Conversations.ProfileSettings",
         "Conversations.NewConversationTop", "Conversations.ConversationRow", "Settings.SessionId", "Settings.Back",
         "StartConversation.NewMessage", "NewConversation.SessionId", "NewConversation.DisplayName", "NewConversation.Start",
         "NewConversation.Error", "NewConversation.Back", "Chat.Draft", "Chat.Send", "Chat.MessageBody",

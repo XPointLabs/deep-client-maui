@@ -138,6 +138,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             "src", "Deep.Client.Maui", "Pages", "DesktopWorkspacePage.xaml.cs"));
         var physical = File.ReadAllText(WorkspacePath(
             "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+        var runner = File.ReadAllText(WorkspacePath(
+            "eng", "Invoke-PhysicalMau2CrossPlatform.ps1"));
 
         Assert.Contains("AutomationId = \"PhysicalE2E.RuntimeReadyMarker\"", conversations,
             StringComparison.Ordinal);
@@ -151,6 +153,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("windows.WaitForAutomationId(\"PhysicalE2E.RuntimeReadyMarker\"",
             physical, StringComparison.Ordinal);
+        Assert.Contains("'PhysicalE2E.RuntimeReadyMarker'", runner, StringComparison.Ordinal);
     }
 
     [Fact]
