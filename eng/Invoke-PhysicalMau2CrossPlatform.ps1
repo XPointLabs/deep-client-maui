@@ -245,6 +245,10 @@ $windowsRuntime = Assert-AbsoluteExisting (Join-Path $bootstrap 'runtime\windows
 $windowsAppData = Assert-AbsoluteExisting (Join-Path $bootstrap 'windows') 'Windows app data root' -Directory
 $windowsLiveRuntime = Assert-AbsoluteExisting (Join-Path $windowsAppData 'mailbox-runtime-v1') 'Live Windows runtime' -Directory
 $windowsLiveRuntimeHashBefore = Get-TreeSha256 $windowsLiveRuntime
+$windowsIssuedRuntimeHash = Get-TreeSha256 $windowsRuntime
+if ($windowsLiveRuntimeHashBefore -cne $windowsIssuedRuntimeHash) {
+    throw 'Live Windows mailbox runtime does not match the currently issued runtime. Publish it before physical E2E.'
+}
 $policy = Assert-AbsoluteExisting $policyPath 'Approved Android policy'
 if ($MrXPublicKeySha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Mr. X public key hash must be exactly lowercase SHA-256.' }
 $runtimeEnvironment = Assert-AbsoluteExisting (Join-Path $repoRoot 'eng\survival.dev.env') 'MAU2 runtime environment'
