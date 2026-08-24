@@ -210,6 +210,20 @@ public sealed class WindowsUiSmokeTests
         public AutomationElement? FindAutomationId(string automationId) =>
             CurrentWindow().FindFirstDescendant(condition => condition.ByAutomationId(automationId));
 
+        internal IReadOnlySet<string> FindPresentAutomationIds(
+            IReadOnlyCollection<string> automationIds)
+        {
+            ArgumentNullException.ThrowIfNull(automationIds);
+            var expected = automationIds.ToHashSet(StringComparer.Ordinal);
+            return CurrentWindow()
+                .FindAllDescendants()
+                .Select(static candidate =>
+                    candidate.Properties.AutomationId.ValueOrDefault)
+                .Where(value => value is not null && expected.Contains(value))
+                .Select(static value => value!)
+                .ToHashSet(StringComparer.Ordinal);
+        }
+
         internal AutomationElement? WaitForAutomationIdWithName(string automationId, string name, TimeSpan timeout)
         {
             var result = Retry.WhileNull(

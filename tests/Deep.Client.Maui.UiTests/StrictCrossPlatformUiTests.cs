@@ -94,8 +94,11 @@ public sealed class StrictCrossPlatformUiTests
         var until = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < until)
         {
-            var present = automationIds
-                .Where(automationId => windows.FindAutomationId(automationId) is not null)
+            // One bounded tree snapshot is required here. WinUI can spend the
+            // entire COM timeout proving that the first mutually exclusive id
+            // is absent, preventing the existing surface from ever being read.
+            var present = windows.FindPresentAutomationIds(automationIds)
+                .Order(StringComparer.Ordinal)
                 .ToArray();
             if (present.Length == 1) return present[0];
             if (present.Length > 1)
