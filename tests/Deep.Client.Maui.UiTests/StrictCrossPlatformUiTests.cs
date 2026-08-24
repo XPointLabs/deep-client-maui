@@ -127,10 +127,12 @@ public sealed class StrictCrossPlatformUiTests
         android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
         android.ColdStart();
         android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+        android.WaitForResource(options.App("PhysicalE2E.RuntimeReadyMarker"), TimeSpan.FromSeconds(45));
         var androidIdentity = ReadAndroidIdentity(android, options);
 
         using var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot);
         Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(45)), "Conversations.NewConversation");
+        Require(windows.WaitForAutomationId("PhysicalE2E.RuntimeReadyMarker", TimeSpan.FromSeconds(45)), "PhysicalE2E.RuntimeReadyMarker");
         var windowsIdentity = ReadWindowsIdentity(windows);
         Assert.NotEqual(androidIdentity, windowsIdentity);
 

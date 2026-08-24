@@ -28,6 +28,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
 #if DEBUG && DEEP_PHYSICAL_E2E
     private readonly PhysicalMailboxRouteUsageTracker physicalRouteUsageTracker;
     private Label? physicalRouteNodeMarker;
+    private Label? physicalRuntimeReadyMarker;
 #endif
     private IncomingCallPollingBackoff incomingCallPolling = new();
     private readonly VoiceMessagePlaybackService voicePlayback = new();
@@ -92,6 +93,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             PhysicalMailboxRouteUsageTracker ?? throw new InvalidOperationException(
                 "Physical E2E requires its mailbox route usage tracker.");
         CreatePhysicalRouteNodeMarker();
+        CreatePhysicalRuntimeReadyMarker();
 #endif
         BindingContext = viewModel;
     }
@@ -300,6 +302,32 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             ZIndex = 100
         };
         DetailContent.Children.Add(physicalRouteNodeMarker);
+    }
+
+    private void CreatePhysicalRuntimeReadyMarker()
+    {
+        physicalRuntimeReadyMarker = new Label
+        {
+            AutomationId = "PhysicalE2E.RuntimeReadyMarker",
+            Text = "ready",
+            IsVisible = false,
+            FontSize = 1,
+            Opacity = 0.01,
+            InputTransparent = true,
+            ZIndex = 101
+        };
+        DetailContent.Children.Add(physicalRuntimeReadyMarker);
+    }
+
+    private void SetPhysicalRuntimeReady(bool ready)
+    {
+        if (physicalRuntimeReadyMarker is null)
+            return;
+        void Apply() => physicalRuntimeReadyMarker.IsVisible = ready;
+        if (MainThread.IsMainThread)
+            Apply();
+        else
+            MainThread.BeginInvokeOnMainThread(Apply);
     }
 
     private void UpdatePhysicalRouteNodeMarker()
@@ -1540,9 +1568,15 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
                 var synchronized = await viewModel.RefreshAsync(activity.Token);
                 if (!synchronized)
                 {
+#if DEBUG && DEEP_PHYSICAL_E2E
+                    SetPhysicalRuntimeReady(false);
+#endif
                     return;
                 }
 
+#if DEBUG && DEEP_PHYSICAL_E2E
+                SetPhysicalRuntimeReady(true);
+#endif
                 if (viewModel.IsDirectDetail)
                 {
                     await viewModel.DirectChat.ReceiveAsync(activity.Token);
@@ -1560,6 +1594,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         }
         catch (Exception ex)
         {
+#if DEBUG && DEEP_PHYSICAL_E2E
+            SetPhysicalRuntimeReady(false);
+#endif
             CrashDiagnostics.LogException("DesktopWorkspacePage.Sync", ex);
         }
         finally

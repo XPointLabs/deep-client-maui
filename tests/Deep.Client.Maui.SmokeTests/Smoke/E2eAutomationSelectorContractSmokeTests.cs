@@ -130,6 +130,30 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
+    public void PhysicalRuntimeReadyMarkerRequiresSuccessfulAuthenticatedSync()
+    {
+        var conversations = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Pages", "ConversationsPage.xaml.cs"));
+        var desktop = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Pages", "DesktopWorkspacePage.xaml.cs"));
+        var physical = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+
+        Assert.Contains("AutomationId = \"PhysicalE2E.RuntimeReadyMarker\"", conversations,
+            StringComparison.Ordinal);
+        Assert.Contains("SetPhysicalRuntimeReady(true);", conversations, StringComparison.Ordinal);
+        Assert.Contains("SetPhysicalRuntimeReady(false);", conversations, StringComparison.Ordinal);
+        Assert.Contains("AutomationId = \"PhysicalE2E.RuntimeReadyMarker\"", desktop,
+            StringComparison.Ordinal);
+        Assert.Contains("SetPhysicalRuntimeReady(true);", desktop, StringComparison.Ordinal);
+        Assert.Contains("SetPhysicalRuntimeReady(false);", desktop, StringComparison.Ordinal);
+        Assert.Contains("options.App(\"PhysicalE2E.RuntimeReadyMarker\")", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("windows.WaitForAutomationId(\"PhysicalE2E.RuntimeReadyMarker\"",
+            physical, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void E2eAutomationIdsAreLiteralPrivacySafeRolesAndPageSelectorsAreUnique()
     {
         var pages = new[]

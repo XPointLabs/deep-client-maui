@@ -34,6 +34,9 @@ public partial class ConversationsPage : ContentPage
     private int syncRequested;
     private CancellationTokenSource? pageActivityCancellation;
     private CancellationTokenSource? chatOpenPreloadCancellation;
+#if DEBUG && DEEP_PHYSICAL_E2E
+    private Label? physicalRuntimeReadyMarker;
+#endif
 
     public ConversationsPage(
         ConversationsViewModel viewModel,
@@ -46,6 +49,9 @@ public partial class ConversationsPage : ContentPage
         BackgroundSyncSchedulingCoordinator backgroundSyncScheduling)
     {
         InitializeComponent();
+#if DEBUG && DEEP_PHYSICAL_E2E
+        CreatePhysicalRuntimeReadyMarker();
+#endif
         this.viewModel = viewModel;
         this.runtime = runtime;
         this.openCache = openCache;
@@ -60,6 +66,9 @@ public partial class ConversationsPage : ContentPage
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+#if DEBUG && DEEP_PHYSICAL_E2E
+        SetPhysicalRuntimeReady(false);
+#endif
         pageActivityCancellation?.Cancel();
         pageActivityCancellation?.Dispose();
         var activityCancellation = new CancellationTokenSource();
@@ -207,10 +216,16 @@ public partial class ConversationsPage : ContentPage
                     var synchronized = await viewModel.SyncAsync(cancellationToken);
                     if (!synchronized)
                     {
+#if DEBUG && DEEP_PHYSICAL_E2E
+                        SetPhysicalRuntimeReady(false);
+#endif
                         CrashDiagnostics.LogInfo("Sync", "Foreground synchronization failed; pending work remains queued.");
                         return;
                     }
 
+#if DEBUG && DEEP_PHYSICAL_E2E
+                    SetPhysicalRuntimeReady(true);
+#endif
                     BackgroundSyncBridge.MarkHandled();
                     CrashDiagnostics.LogInfo(
                         "Perf.Conversations",
@@ -222,6 +237,9 @@ public partial class ConversationsPage : ContentPage
                 }
                 catch (Exception ex)
                 {
+#if DEBUG && DEEP_PHYSICAL_E2E
+                    SetPhysicalRuntimeReady(false);
+#endif
                     CrashDiagnostics.LogException("ConversationsPage.BackgroundSync", ex);
                     return;
                 }
@@ -329,6 +347,35 @@ public partial class ConversationsPage : ContentPage
 
         return Shell.Current.GoToAsync(route, animate: false);
     }
+
+#if DEBUG && DEEP_PHYSICAL_E2E
+    private void CreatePhysicalRuntimeReadyMarker()
+    {
+        physicalRuntimeReadyMarker = new Label
+        {
+            AutomationId = "PhysicalE2E.RuntimeReadyMarker",
+            Text = "ready",
+            IsVisible = false,
+            FontSize = 1,
+            Opacity = 0.01,
+            InputTransparent = true,
+            ZIndex = 100
+        };
+        RootLayout.Children.Add(physicalRuntimeReadyMarker);
+        Grid.SetRow(physicalRuntimeReadyMarker, 3);
+    }
+
+    private void SetPhysicalRuntimeReady(bool ready)
+    {
+        if (physicalRuntimeReadyMarker is null)
+            return;
+        void Apply() => physicalRuntimeReadyMarker.IsVisible = ready;
+        if (MainThread.IsMainThread)
+            Apply();
+        else
+            MainThread.BeginInvokeOnMainThread(Apply);
+    }
+#endif
 
     private void OnNetworkStatusChanged(object? sender, EventArgs e)
     {
