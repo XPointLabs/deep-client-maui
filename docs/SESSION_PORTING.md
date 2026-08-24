@@ -49,7 +49,7 @@ For every Session-derived behavior:
 - Debug builds may use deterministic stub transport for local UI work; release builds must require real transport configuration.
 - Incoming call presentation currently uses a MAUI system prompt instead of Session's dedicated full-screen ringing activity. Audio/video media, mute, camera enablement, camera switching, hangup, encrypted signaling, push wake-up, STUN, and TURN relay are implemented.
 - Desktop-style split inbox/detail layout is allowed on wide screens, while mobile should route directly into the chat.
-- Attachment upload metadata can be staged through shared attachment models before final backend storage cutover is complete.
+- Attachment upload metadata can be staged through shared attachment models before final backend storage cutover is complete. Voice messages use the explicit shared `AttachmentKind.VoiceMessage`; audio MIME alone is rendered as a generic attachment and malformed voice metadata fails closed.
 
 ## Non-Negotiable Parity
 

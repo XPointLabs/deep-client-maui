@@ -38,6 +38,98 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task ReceiveClassifiesPersistedExplicitVoiceAttachmentWithoutMimeHeuristics()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-07-13T00:00:00Z")));
+        var account = await runtime.Accounts.RegisterAsync("Owner");
+        var remote = SessionId.CreateNew();
+        var conversation = await runtime.Conversations.GetOrCreateOneToOneAsync(remote, "Remote");
+        var voice = new AttachmentMetadata(
+            "voice-1",
+            "voice.wav",
+            "audio/wav",
+            4_096,
+            Duration: TimeSpan.FromSeconds(4),
+            Kind: AttachmentKind.VoiceMessage);
+        await ((IMessageRepository)runtime.Store).AppendAsync(new Message(
+            MessageId.NewId(),
+            conversation.Id,
+            remote,
+            account.SessionId,
+            MessageAttachmentPresentation.VoiceAttachmentPlaceholder,
+            MessageDirection.Incoming,
+            MessageDeliveryState.Delivered,
+            runtime.Clock.UtcNow,
+            [voice]));
+        var chat = new ChatViewModel(runtime);
+        await chat.OpenOneToOneAsync(account, remote, "Remote");
+
+        await chat.ReceiveAsync();
+
+        var visible = Assert.Single(chat.Messages);
+        Assert.True(visible.IsVoiceMessage);
+        Assert.False(visible.HasGenericAttachments);
+        Assert.Equal("00:04", visible.VoiceDurationLabel);
+    }
+
+    [Fact]
+    public void SingleAudioFileRemainsGenericAttachmentUnlessExplicitlyVoice()
+    {
+        var attachment = new AttachmentMetadata(
+            "audio-file-1",
+            "music.wav",
+            "audio/wav",
+            4_096,
+            Duration: TimeSpan.FromSeconds(4));
+
+        var item = new ChatMessageItem(
+            MessageId.NewId(),
+            MessageAttachmentPresentation.GenericAttachmentPlaceholder,
+            MessageDirection.Incoming,
+            MessageDeliveryState.Delivered,
+            DateTimeOffset.Parse("2026-07-13T00:00:00Z"),
+            [attachment],
+            null,
+            []);
+
+        Assert.False(item.IsVoiceMessage);
+        Assert.True(item.HasGenericAttachments);
+        Assert.Equal("music.wav", item.AttachmentTitle);
+    }
+
+    [Theory]
+    [InlineData("application/pdf", 4, false)]
+    [InlineData("audio/wav", 0, false)]
+    [InlineData("audio/wav", 4, true)]
+    public void MalformedExplicitVoiceAttachmentFailsClosedAsGeneric(
+        string contentType,
+        int durationSeconds,
+        bool isDocument)
+    {
+        var attachment = new AttachmentMetadata(
+            "malformed-voice-1",
+            "voice.wav",
+            contentType,
+            4_096,
+            Duration: TimeSpan.FromSeconds(durationSeconds),
+            IsDocument: isDocument,
+            Kind: AttachmentKind.VoiceMessage);
+
+        var item = new ChatMessageItem(
+            MessageId.NewId(),
+            MessageAttachmentPresentation.GenericAttachmentPlaceholder,
+            MessageDirection.Incoming,
+            MessageDeliveryState.Delivered,
+            DateTimeOffset.Parse("2026-07-13T00:00:00Z"),
+            [attachment],
+            null,
+            []);
+
+        Assert.False(item.IsVoiceMessage);
+        Assert.True(item.HasGenericAttachments);
+    }
+
+    [Fact]
     public async Task ReceiveKeepsOlderPersistedMessagesReachableAfterEmptyOpen()
     {
         var start = DateTimeOffset.Parse("2026-07-13T00:00:00Z");
@@ -497,7 +589,8 @@ public sealed class ChatViewModelTests
             "voice-delayed.m4a",
             "audio/mp4",
             4096,
-            Duration: TimeSpan.FromSeconds(2)));
+            Duration: TimeSpan.FromSeconds(2),
+            Kind: AttachmentKind.VoiceMessage));
 
         var chat = new ChatViewModel(runtime, attachmentPicker: null, voiceRecorder: recorder);
         await chat.OpenOneToOneAsync(account, remote, "Bob");
@@ -969,7 +1062,8 @@ public sealed class ChatViewModelTests
                 "voice.m4a",
                 "audio/mp4",
                 4096,
-                Duration: TimeSpan.FromSeconds(2)));
+                Duration: TimeSpan.FromSeconds(2),
+                Kind: AttachmentKind.VoiceMessage));
         }
 
         public Task CancelAsync(CancellationToken cancellationToken = default)

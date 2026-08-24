@@ -375,7 +375,8 @@ public sealed class GroupChatViewModelTests
                 "group-voice.m4a",
                 "audio/mp4",
                 6144,
-                Duration: TimeSpan.FromSeconds(3)));
+                Duration: TimeSpan.FromSeconds(3),
+                Kind: AttachmentKind.VoiceMessage));
         }
 
         public Task CancelAsync(CancellationToken cancellationToken = default)

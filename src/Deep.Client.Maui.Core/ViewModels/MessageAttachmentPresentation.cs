@@ -21,7 +21,11 @@ internal static class MessageAttachmentPresentation
 
     public static bool IsVoiceMessage(IReadOnlyList<AttachmentMetadata> attachments) =>
         attachments.Count == 1
-        && attachments[0].ContentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase);
+        && attachments[0].Kind == AttachmentKind.VoiceMessage
+        && attachments[0].ContentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+        && attachments[0].Duration is { } duration
+        && duration > TimeSpan.Zero
+        && !attachments[0].IsDocument;
 
     public static bool IsInlineImage(IReadOnlyList<AttachmentMetadata> attachments) =>
         attachments.Count > 0 && attachments.All(IsInlineImage);

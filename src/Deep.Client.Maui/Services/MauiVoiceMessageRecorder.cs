@@ -205,7 +205,12 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
             if (attachmentFiles.IsEnabled)
             {
                 return await attachmentFiles.UploadAsync(
-                    new AttachmentFileUpload(fileName, "audio/wav", upload, Duration: duration),
+                    new AttachmentFileUpload(
+                        fileName,
+                        "audio/wav",
+                        upload,
+                        Duration: duration,
+                        Kind: AttachmentKind.VoiceMessage),
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -214,7 +219,8 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
                 fileName,
                 "audio/wav",
                 fileInfo.Length,
-                Duration: duration);
+                Duration: duration,
+                Kind: AttachmentKind.VoiceMessage);
         }
         finally
         {
@@ -264,7 +270,12 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
             if (attachmentFiles.IsEnabled)
             {
                 return await attachmentFiles.UploadAsync(
-                    new AttachmentFileUpload(fileName, "audio/wav", upload, Duration: duration),
+                    new AttachmentFileUpload(
+                        fileName,
+                        "audio/wav",
+                        upload,
+                        Duration: duration,
+                        Kind: AttachmentKind.VoiceMessage),
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -273,7 +284,8 @@ public sealed class MauiVoiceMessageRecorder : IVoiceMessageRecorder
                 fileName,
                 "audio/wav",
                 fileInfo.Length,
-                Duration: duration);
+                Duration: duration,
+                Kind: AttachmentKind.VoiceMessage);
         }
         finally
         {
