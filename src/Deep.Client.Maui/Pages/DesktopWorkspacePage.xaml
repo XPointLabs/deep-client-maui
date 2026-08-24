@@ -203,7 +203,8 @@
                         AutomationId="DesktopWorkspace.DirectMessages"
                         ItemsSource="{Binding DirectChat.Messages}"
                         SelectionMode="None"
-                        ItemsUpdatingScrollMode="KeepLastItemInView">
+                        ItemsUpdatingScrollMode="KeepLastItemInView"
+                        Scrolled="OnDirectMessagesScrolled">
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="vm:ChatMessageItem">
                                 <Border AutomationId="DesktopWorkspace.DirectMessageBubble" SemanticProperties.Description="Входящее сообщение" Margin="12,3" Padding="10,7" MaximumWidthRequest="620" HorizontalOptions="Start" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8">
@@ -297,7 +298,8 @@
                         AutomationId="DesktopWorkspace.GroupMessages"
                         ItemsSource="{Binding GroupChat.Messages}"
                         SelectionMode="None"
-                        ItemsUpdatingScrollMode="KeepLastItemInView">
+                        ItemsUpdatingScrollMode="KeepLastItemInView"
+                        Scrolled="OnGroupMessagesScrolled">
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="vm:GroupChatMessageItem">
                                 <Border AutomationId="DesktopWorkspace.GroupMessageBubble" SemanticProperties.Description="Входящее сообщение" Margin="12,3" Padding="10,7" MaximumWidthRequest="620" HorizontalOptions="Start" Background="{StaticResource IncomingBubbleColor}" StrokeThickness="0" StrokeShape="RoundRectangle 8">

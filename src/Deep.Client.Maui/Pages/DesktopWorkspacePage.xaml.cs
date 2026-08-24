@@ -52,6 +52,8 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
     private int syncRequested;
     private bool checkingCalls;
     private bool isPageActive;
+    private bool directMessagesStickToEnd = true;
+    private bool groupMessagesStickToEnd = true;
     private int messageSearchIndex = -1;
     private DateTimeOffset voiceRecordingStartedAt;
     private Point voicePointerStart;
@@ -1304,6 +1306,11 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         {
             _ = QueueImagePreviewsAsync(e.NewItems.OfType<ChatMessageItem>(), pageActivityCancellation?.Token ?? CancellationToken.None);
         }
+
+        if (ShouldScrollDirectMessagesToEnd(e))
+        {
+            ScrollActiveMessagesToEnd();
+        }
     }
 
     private void OnGroupMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -1312,7 +1319,40 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         {
             _ = QueueImagePreviewsAsync(e.NewItems.OfType<GroupChatMessageItem>(), pageActivityCancellation?.Token ?? CancellationToken.None);
         }
+
+        if (ShouldScrollGroupMessagesToEnd(e))
+        {
+            ScrollActiveMessagesToEnd();
+        }
     }
+
+    private bool ShouldScrollDirectMessagesToEnd(NotifyCollectionChangedEventArgs e) =>
+        e.Action == NotifyCollectionChangedAction.Reset
+            ? directMessagesStickToEnd
+            : e.Action == NotifyCollectionChangedAction.Add
+              && e.NewItems is not null
+              && e.NewStartingIndex + e.NewItems.Count == viewModel.DirectChat.Messages.Count
+              && (directMessagesStickToEnd
+                  || e.NewItems.OfType<ChatMessageItem>()
+                      .Any(static message => message.Direction == MessageDirection.Outgoing));
+
+    private bool ShouldScrollGroupMessagesToEnd(NotifyCollectionChangedEventArgs e) =>
+        e.Action == NotifyCollectionChangedAction.Reset
+            ? groupMessagesStickToEnd
+            : e.Action == NotifyCollectionChangedAction.Add
+              && e.NewItems is not null
+              && e.NewStartingIndex + e.NewItems.Count == viewModel.GroupChat.Messages.Count
+              && (groupMessagesStickToEnd
+                  || e.NewItems.OfType<GroupChatMessageItem>()
+                      .Any(static message => message.Direction == MessageDirection.Outgoing));
+
+    private void OnDirectMessagesScrolled(object? sender, ItemsViewScrolledEventArgs e) =>
+        directMessagesStickToEnd = viewModel.DirectChat.Messages.Count == 0
+            || e.LastVisibleItemIndex >= viewModel.DirectChat.Messages.Count - 2;
+
+    private void OnGroupMessagesScrolled(object? sender, ItemsViewScrolledEventArgs e) =>
+        groupMessagesStickToEnd = viewModel.GroupChat.Messages.Count == 0
+            || e.LastVisibleItemIndex >= viewModel.GroupChat.Messages.Count - 2;
 
     private async Task QueueActiveImagePreviewsAsync(CancellationToken cancellationToken)
     {
@@ -1651,10 +1691,12 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             if (viewModel.IsDirectDetail && viewModel.DirectChat.Messages.Count > 0)
             {
                 DirectMessagesCollection.ScrollTo(viewModel.DirectChat.Messages[^1], ScrollToPosition.End, animate: false);
+                directMessagesStickToEnd = true;
             }
             else if (viewModel.IsGroupDetail && viewModel.GroupChat.Messages.Count > 0)
             {
                 GroupMessagesCollection.ScrollTo(viewModel.GroupChat.Messages[^1], ScrollToPosition.End, animate: false);
+                groupMessagesStickToEnd = true;
             }
         });
     }

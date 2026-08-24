@@ -13,6 +13,8 @@ public sealed class DesktopWorkspaceContractSmokeTests
         Assert.Contains("AutomationId=\"DesktopWorkspace.DetailPane\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationId=\"DesktopWorkspace.DirectMessages\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationId=\"DesktopWorkspace.GroupMessages\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Scrolled=\"OnDirectMessagesScrolled\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Scrolled=\"OnGroupMessagesScrolled\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationId=\"DesktopWorkspace.DirectDraft\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationId=\"DesktopWorkspace.GroupDraft\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationId=\"DesktopWorkspace.DirectVoicePlay\"", xaml, StringComparison.Ordinal);
@@ -35,6 +37,10 @@ public sealed class DesktopWorkspaceContractSmokeTests
         Assert.Contains("CheckIncomingCallsAsync", codeBehind, StringComparison.Ordinal);
         Assert.Contains("ShellRouteCatalog.Settings", codeBehind, StringComparison.Ordinal);
         Assert.Contains("ResetMessageSearchUi", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ShouldScrollDirectMessagesToEnd", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ShouldScrollGroupMessagesToEnd", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("LastVisibleItemIndex >= viewModel.DirectChat.Messages.Count - 2", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("LastVisibleItemIndex >= viewModel.GroupChat.Messages.Count - 2", codeBehind, StringComparison.Ordinal);
         Assert.Contains("OnGroupMembersClicked", codeBehind, StringComparison.Ordinal);
         Assert.DoesNotContain("Opacity=\"0.6\"", xaml, StringComparison.Ordinal);
 
