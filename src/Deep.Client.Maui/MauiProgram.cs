@@ -345,13 +345,9 @@ public static class MauiProgram
         var survivalDevelopment = IsSurvivalDevelopmentProfile();
         var transportMode = ResolveRuntimeTransportMode();
         var directP2p = transportMode.Protocol == RuntimeTransportProtocol.DirectP2p;
-        var routedEndpointPolicy = survivalDevelopment && IsDebugBuild()
-            ? RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment
-            : RoutedRuntimeEndpointPolicy.Production;
+        var routedEndpointPolicy = RoutedRuntimeEndpointPolicy.Production;
         var transportFactory = new HttpServiceTransportFactory(
-            survivalDevelopment && IsDebugBuild()
-                ? HttpServiceEndpointPolicy.PhysicalE2eDevelopment
-                : HttpServiceEndpointPolicy.Production);
+            HttpServiceEndpointPolicy.Production);
         var featureFlags = BuildFeatureFlags(survivalDevelopment, transportMode);
         var realityBinding = directP2p
             ? new RealityTransportBinding(new UnsupportedRealityTransportRuntime(), [])
@@ -673,7 +669,6 @@ public static class MauiProgram
     {
         var value = ResolveRuntimeSetting(key);
         if (string.IsNullOrWhiteSpace(value) ||
-            !endpointPolicy.AllowsDevLocalIpv4Http ||
             !IsRuntimeUrlKey(key))
         {
             return value;

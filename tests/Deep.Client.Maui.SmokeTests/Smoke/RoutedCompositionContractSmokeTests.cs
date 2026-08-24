@@ -60,7 +60,7 @@ public sealed class RoutedCompositionContractSmokeTests
     }
 
     [Fact]
-    public async Task StrictLivePreflight_DefaultRejectsLanHttpAndExactPhysicalE2eOptInAcceptsIt()
+    public async Task StrictLivePreflight_AlwaysRejectsLanHttp()
     {
         var lanRouters = string.Join(';',
             $"{RouterOne}|http://192.168.1.44:41801/",
@@ -85,28 +85,16 @@ public sealed class RoutedCompositionContractSmokeTests
         AssertMachineReadableContract(defaultResult, "failed", blockedChecks);
         Assert.Equal(
             "XNODE_URLS must contain between three and sixteen distinct <64-lowerhex-routerId>|<url> entries; " +
-            "required and must use HTTPS or explicit loopback HTTP; canonical development-local IPv4 HTTP requires DEEP_STRICT_LIVE_PHYSICAL_E2E=1",
+            "required and must use HTTPS or explicit loopback HTTP",
             GetPreflightCheckDetail(defaultResult, "routed-message-endpoint"));
         Assert.Equal(
-            "required and must use HTTPS or explicit loopback HTTP; canonical development-local IPv4 HTTP requires DEEP_STRICT_LIVE_PHYSICAL_E2E=1",
+            "required and must use HTTPS or explicit loopback HTTP",
             GetPreflightCheckDetail(defaultResult, "DEEP_FILE_URL"));
 
         lanConfiguration["DEEP_STRICT_LIVE_PHYSICAL_E2E"] = "1";
         var physicalResult = await RunPreflightAsync(lanConfiguration);
-        Assert.Equal(0, physicalResult.ExitCode);
-        AssertMachineReadableContract(physicalResult, "ready", PassedChecks());
-        Assert.Equal(
-            "between three and sixteen distinct pinned router identities and URLs; configured with HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP (physical E2E opt-in)",
-            GetPreflightCheckDetail(physicalResult, "routed-message-endpoint"));
-        Assert.Equal(
-            "configured with HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP (physical E2E opt-in)",
-            GetPreflightCheckDetail(physicalResult, "DEEP_FILE_URL"));
-        Assert.Equal(
-            "configured with HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP (physical E2E opt-in)",
-            GetPreflightCheckDetail(physicalResult, "DEEP_PUSH_URL"));
-        Assert.Equal(
-            "configured with HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP (physical E2E opt-in)",
-            GetPreflightCheckDetail(physicalResult, "DEEP_CALL_SIGNALING_BASE_URL"));
+        Assert.Equal(2, physicalResult.ExitCode);
+        AssertMachineReadableContract(physicalResult, "failed", blockedChecks);
     }
 
     [Fact]

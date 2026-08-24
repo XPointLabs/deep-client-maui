@@ -86,37 +86,32 @@ public sealed class RoutedRuntimeConfigurationTests
     }
 
     [Fact]
-    public void PhysicalE2eDevelopmentPolicy_AcceptsCanonicalLocalIpv4RoutersOnlyExplicitly()
+    public void ProductionPolicy_RejectsLanHttpRoutersAndAcceptsLanHttps()
     {
-        var value = string.Join(';',
+        var cleartext = string.Join(';',
             $"{RouterOne}|http://192.168.50.10:29281/",
             $"{RouterTwo}|http://10.20.30.40:29282/",
             $"{RouterThree}|http://169.254.10.20:29283/");
+        var tls = cleartext.Replace("http://", "https://", StringComparison.Ordinal);
 
-        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(
-            value,
-            RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment);
+        Assert.Throws<InvalidOperationException>(() =>
+            RoutedRuntimeConfiguration.ParseAtLeastThree(cleartext));
+        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(tls);
 
         Assert.Equal(3, endpoints.Count);
-        Assert.Equal("http://192.168.50.10:29281/", endpoints[0].BaseUrl);
-        Assert.Equal("http://10.20.30.40:29282/", endpoints[1].BaseUrl);
-        Assert.Equal("http://169.254.10.20:29283/", endpoints[2].BaseUrl);
-        Assert.Throws<InvalidOperationException>(() =>
-            RoutedRuntimeConfiguration.ParseAtLeastThree(value));
+        Assert.All(endpoints, endpoint => Assert.StartsWith("https://", endpoint.BaseUrl));
     }
 
     [Theory]
-    [InlineData("http://127.0.0.1:18100/api")]
-    [InlineData("http://10.20.30.40:18100/api")]
-    [InlineData("http://172.20.30.40:18100/api")]
-    [InlineData("http://192.168.50.10:18100/api")]
-    [InlineData("http://169.254.10.20:18100/api")]
-    public void PhysicalE2eDevelopmentPolicy_AcceptsLocalIpv4ServiceUrls(string value)
+    [InlineData("https://10.20.30.40:18100/api")]
+    [InlineData("https://172.20.30.40:18100/api")]
+    [InlineData("https://192.168.50.10:18100/api")]
+    [InlineData("https://169.254.10.20:18100/api")]
+    public void ProductionPolicy_AcceptsLanHttpsServiceUrls(string value)
     {
         var uri = RoutedRuntimeConfiguration.RequireLiveServiceUrl(
             "TEST_URL",
-            value,
-            RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment);
+            value);
 
         Assert.Equal(value, uri.AbsoluteUri.TrimEnd('/'));
     }
@@ -129,14 +124,13 @@ public sealed class RoutedRuntimeConfigurationTests
     [InlineData("http://192.168.050.010:18100/api")]
     [InlineData("http://user@192.168.50.10:18100/api")]
     [InlineData("http://192.168.50.10:18100/api?bypass=true")]
-    public void PhysicalE2eDevelopmentPolicy_RejectsHostnamePublicUnspecifiedAndNoncanonicalUrls(
+    public void ProductionPolicy_RejectsCleartextRemoteUrls(
         string value)
     {
         Assert.Throws<InvalidOperationException>(() =>
             RoutedRuntimeConfiguration.RequireLiveServiceUrl(
                 "TEST_URL",
-                value,
-                RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment));
+                value));
     }
 
     public static TheoryData<string> InvalidRouterSets => new()
@@ -292,7 +286,7 @@ public sealed class RoutedRuntimeConfigurationTests
     }
 
     [Fact]
-    public void PhysicalE2eFactoryPolicy_AllowsLanRoutersWithoutRelaxingDefaultFactory()
+    public void ProductionFactory_RejectsLanHttpRouters()
     {
         var endpoints = new[]
         {
@@ -310,16 +304,6 @@ public sealed class RoutedRuntimeConfigurationTests
                     MetadataMode: SessionStorageMetadataMode.OpaqueP03),
                 OpaqueStorageTestDependencies.Create()));
 
-        using var composition = RoutedProductionCompositionFactory.Create(
-            endpoints,
-            directStorageUrl: null,
-            new HttpClient(),
-            new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
-            OpaqueStorageTestDependencies.Create(),
-            endpointPolicy: RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment);
-
-        Assert.Equal(endpoints, composition.PinnedRouters);
     }
 
     [Fact]

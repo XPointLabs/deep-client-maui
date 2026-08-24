@@ -10,19 +10,15 @@ public sealed class StrictLiveEndpointPolicyTests
     private const string RouterTwo = "2222222222222222222222222222222222222222222222222222222222222222";
     private const string RouterThree = "3333333333333333333333333333333333333333333333333333333333333333";
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("0")]
-    [InlineData("true")]
-    [InlineData("1 ")]
-    public void Resolve_DefaultAndNonExactOptInsKeepProductionPolicy(string? value)
+    [Fact]
+    public void Resolve_AlwaysUsesProductionPolicy()
     {
-        Assert.Same(RoutedRuntimeEndpointPolicy.Production, StrictLiveEndpointPolicy.Resolve(value));
+        Assert.Same(RoutedRuntimeEndpointPolicy.Production, StrictLiveEndpointPolicy.Resolve());
+        Assert.Same(HttpServiceEndpointPolicy.Production, StrictLiveEndpointPolicy.ResolveHttpServicePolicy());
     }
 
     [Fact]
-    public void Resolve_ExactPhysicalE2eOptInAllowsLanHttpAcrossLiveHarnessEndpoints()
+    public void LanHttpCannotBeEnabledAcrossLiveHarnessEndpoints()
     {
         var routers = string.Join(';',
             $"{RouterOne}|http://192.168.1.44:41801/",
@@ -30,65 +26,47 @@ public sealed class StrictLiveEndpointPolicyTests
             $"{RouterThree}|http://192.168.1.44:41803/");
         const string serviceUrl = "http://192.168.1.44:41810/api";
 
-        var defaultPolicy = StrictLiveEndpointPolicy.Resolve(null);
+        var defaultPolicy = StrictLiveEndpointPolicy.Resolve();
         Assert.Throws<InvalidOperationException>(() =>
             RoutedRuntimeConfiguration.ParseAtLeastThree(routers, defaultPolicy));
         Assert.Throws<InvalidOperationException>(() =>
             RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_FILE_URL", serviceUrl, defaultPolicy));
 
-        var physicalPolicy = StrictLiveEndpointPolicy.Resolve("1");
-        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(routers, physicalPolicy);
-        Assert.Equal(3, endpoints.Count);
-        Assert.True(RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_FILE_URL", serviceUrl, physicalPolicy).IsAbsoluteUri);
-        Assert.True(RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_PUSH_URL", serviceUrl, physicalPolicy).IsAbsoluteUri);
-        Assert.True(RoutedRuntimeConfiguration.RequireLiveServiceUrl("DEEP_CALL_SIGNALING_BASE_URL", serviceUrl, physicalPolicy).IsAbsoluteUri);
-
-        using var composition = RoutedProductionCompositionFactory.Create(
-            endpoints,
-            directStorageUrl: null,
-            new HttpClient(),
-            new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
-            OpaqueStorageTestDependencies.Create(),
-            endpointPolicy: physicalPolicy);
-
-        Assert.Equal(endpoints, composition.PinnedRouters);
+        Assert.Throws<InvalidOperationException>(() =>
+            RoutedRuntimeConfiguration.ParseAtLeastThree(routers, StrictLiveEndpointPolicy.Resolve()));
     }
 
     [Fact]
-    public void ResolveHttpServicePolicy_ControlsEveryLiveHttpTransportConstructor()
+    public void HttpServicePolicy_RejectsLanHttpAndAcceptsLanHttps()
     {
         const string lanService = "http://192.168.1.44:41821/";
-        var routedPolicy = StrictLiveEndpointPolicy.Resolve("1");
-        var servicePolicy = StrictLiveEndpointPolicy.ResolveHttpServicePolicy(routedPolicy);
+        const string tlsService = "https://192.168.1.44:41821/";
+        var servicePolicy = StrictLiveEndpointPolicy.ResolveHttpServicePolicy();
 
         using var attachment = new HttpAttachmentFileTransport(
             new HttpClient(),
-            new HttpAttachmentFileTransportOptions(lanService),
+            new HttpAttachmentFileTransportOptions(tlsService),
             servicePolicy);
         using var push = new HttpPushSubscriptionTransport(
             new HttpClient(),
-            new HttpPushSubscriptionTransportOptions(lanService),
+            new HttpPushSubscriptionTransportOptions(tlsService),
             servicePolicy);
         using var calls = new HttpCallSignalingTransport(
             new HttpClient(),
-            new HttpCallSignalingTransportOptions(lanService),
+            new HttpCallSignalingTransportOptions(tlsService),
             endpointPolicy: servicePolicy);
 
-        var productionServicePolicy = StrictLiveEndpointPolicy.ResolveHttpServicePolicy(
-            StrictLiveEndpointPolicy.Resolve(null));
-        Assert.Same(HttpServiceEndpointPolicy.Production, productionServicePolicy);
         Assert.Throws<ArgumentException>(() => new HttpAttachmentFileTransport(
             new HttpClient(),
             new HttpAttachmentFileTransportOptions(lanService),
-            productionServicePolicy));
+            servicePolicy));
         Assert.Throws<ArgumentException>(() => new HttpPushSubscriptionTransport(
             new HttpClient(),
             new HttpPushSubscriptionTransportOptions(lanService),
-            productionServicePolicy));
+            servicePolicy));
         Assert.Throws<ArgumentException>(() => new HttpCallSignalingTransport(
             new HttpClient(),
             new HttpCallSignalingTransportOptions(lanService),
-            endpointPolicy: productionServicePolicy));
+            endpointPolicy: servicePolicy));
     }
 }

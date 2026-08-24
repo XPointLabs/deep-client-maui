@@ -21,9 +21,8 @@ public sealed class ClientLiveAcceptanceTests
         var fileUrl = Environment.GetEnvironmentVariable("DEEP_FILE_URL");
         var pushUrl = Environment.GetEnvironmentVariable("DEEP_PUSH_URL");
         var callUrl = Environment.GetEnvironmentVariable("DEEP_CALL_SIGNALING_BASE_URL");
-        var endpointPolicy = StrictLiveEndpointPolicy.Resolve(
-            Environment.GetEnvironmentVariable(StrictLiveEndpointPolicy.PhysicalE2eEnvironmentVariable));
-        var serviceEndpointPolicy = StrictLiveEndpointPolicy.ResolveHttpServicePolicy(endpointPolicy);
+        var endpointPolicy = StrictLiveEndpointPolicy.Resolve();
+        var serviceEndpointPolicy = StrictLiveEndpointPolicy.ResolveHttpServicePolicy();
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(routerUrls))
         {

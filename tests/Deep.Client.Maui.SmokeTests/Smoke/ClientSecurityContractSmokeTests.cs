@@ -512,17 +512,22 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("MembershipRouteEndpointPolicy.DevLocalHttps", composition, StringComparison.Ordinal);
         Assert.Contains("new SodiumEd25519MembershipSignatureVerifier()", composition, StringComparison.Ordinal);
         Assert.Contains(
-            "survivalDevelopment && IsDebugBuild()",
+            "explicitDevelopmentProfile: survivalDevelopment",
             program,
             StringComparison.Ordinal);
         Assert.Contains(
-            "RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment",
+            "productionBuild: !IsDebugBuild()",
             program,
             StringComparison.Ordinal);
         Assert.Contains(
-            "HttpServiceEndpointPolicy.PhysicalE2eDevelopment",
+            "var routedEndpointPolicy = RoutedRuntimeEndpointPolicy.Production",
             program,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "HttpServiceEndpointPolicy.Production",
+            program,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("PhysicalE2eDevelopment", program, StringComparison.Ordinal);
         Assert.Contains(
             "httpTransportFactories.ServiceTransportFactory",
             program,

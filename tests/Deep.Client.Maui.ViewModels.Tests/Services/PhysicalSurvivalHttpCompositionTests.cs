@@ -14,7 +14,7 @@ namespace Deep.Client.Maui.ViewModels.Tests.Services;
 public sealed class PhysicalSurvivalHttpCompositionTests
 {
     [Fact]
-    public async Task PhysicalLanShape_ExercisesEveryMauiComposedTransportThroughOwnedNetworkHooks()
+    public async Task PhysicalLanHttpsShape_ExercisesEveryMauiComposedTransportThroughOwnedNetworkHooks()
     {
         var fileDestinations = new ConcurrentQueue<DnsEndPoint>();
         var serviceDestinations = new ConcurrentQueue<DnsEndPoint>();
@@ -22,12 +22,12 @@ public sealed class PhysicalSurvivalHttpCompositionTests
             Timeout: TimeSpan.FromSeconds(2));
         var factories = ApplicationHttpTransportComposition.CreateBoundNetwork(
             new HttpServiceTransportFactory(
-                HttpServiceEndpointPolicy.PhysicalE2eDevelopment),
+                HttpServiceEndpointPolicy.Production),
             CreateProbeHooks(fileDestinations),
             CreateProbeHooks(serviceDestinations),
-            "http://192.168.1.44:41821/",
-            "http://192.168.1.44:41822/",
-            "http://192.168.1.44:41823/",
+            "https://192.168.1.44:41821/",
+            "https://192.168.1.44:41822/",
+            "https://192.168.1.44:41823/",
             clientOptions,
             clientOptions);
         var runtime = new ClientRuntime(
@@ -76,13 +76,17 @@ public sealed class PhysicalSurvivalHttpCompositionTests
             () => calls.ReceiveAsync(sessionId));
 
         var envelope = CreateEnvelope(sessionId, SessionId.CreateNew());
-        using (var sessionProvider = BuildDirectSessionBranch(factories))
+        using (var sessionProvider = BuildDirectSessionBranch(
+                   factories,
+                   "https://192.168.1.44:41820/"))
         {
             var session = sessionProvider.GetRequiredService<HttpSessionTransport>();
             await Assert.ThrowsAsync<HttpRequestException>(
                 () => session.SendAsync(envelope));
         }
-        using (var storageProvider = BuildDirectStorageBranch(factories))
+        using (var storageProvider = BuildDirectStorageBranch(
+                   factories,
+                   "https://192.168.1.44:41820/"))
         {
             var storage = storageProvider
                 .GetRequiredService<SessionStorageMessageTransport>();
@@ -134,8 +138,12 @@ public sealed class PhysicalSurvivalHttpCompositionTests
             provider.GetRequiredService<IPushSubscriptionTransport>);
         Assert.Throws<ArgumentException>(
             provider.GetRequiredService<ICallSignalingTransport>);
-        using var sessionProvider = BuildDirectSessionBranch(factories);
-        using var storageProvider = BuildDirectStorageBranch(factories);
+        using var sessionProvider = BuildDirectSessionBranch(
+            factories,
+            "http://192.168.1.44:41820/");
+        using var storageProvider = BuildDirectStorageBranch(
+            factories,
+            "http://192.168.1.44:41820/");
         Assert.Throws<ArgumentException>(
             sessionProvider.GetRequiredService<HttpSessionTransport>);
         Assert.Throws<ArgumentException>(
@@ -143,23 +151,25 @@ public sealed class PhysicalSurvivalHttpCompositionTests
     }
 
     private static ServiceProvider BuildDirectSessionBranch(
-        ApplicationHttpTransportFactories factories)
+        ApplicationHttpTransportFactories factories,
+        string serviceUrl)
     {
         var services = new ServiceCollection();
         services.AddSingleton(_ => factories.ServiceTransportFactory.CreateSession(
-            new HttpSessionTransportOptions("http://192.168.1.44:41820/"),
+            new HttpSessionTransportOptions(serviceUrl),
             factories.ServiceClientOptions));
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true });
     }
 
     private static ServiceProvider BuildDirectStorageBranch(
-        ApplicationHttpTransportFactories factories)
+        ApplicationHttpTransportFactories factories,
+        string serviceUrl)
     {
         var services = new ServiceCollection();
         services.AddSingleton(_ => factories.ServiceTransportFactory.CreateStorage(
             new SessionStorageMessageTransportOptions(
-                "http://192.168.1.44:41820/",
+                serviceUrl,
                 MetadataMode: SessionStorageMetadataMode.OpaqueP03),
             opaque: OpaqueStorageTestDependencies.Create(),
             clientOptions: factories.ServiceClientOptions));

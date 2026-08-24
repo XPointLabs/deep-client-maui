@@ -5,16 +5,11 @@ namespace Deep.Client.Maui.Core.Services;
 
 public sealed class RoutedRuntimeEndpointPolicy
 {
-    private RoutedRuntimeEndpointPolicy(bool allowDevLocalIpv4Http)
+    private RoutedRuntimeEndpointPolicy()
     {
-        AllowsDevLocalIpv4Http = allowDevLocalIpv4Http;
     }
 
-    public bool AllowsDevLocalIpv4Http { get; }
-
-    public static RoutedRuntimeEndpointPolicy Production { get; } = new(false);
-
-    public static RoutedRuntimeEndpointPolicy PhysicalE2eDevelopment { get; } = new(true);
+    public static RoutedRuntimeEndpointPolicy Production { get; } = new();
 }
 
 public static class RoutedRuntimeConfiguration
@@ -96,9 +91,7 @@ public static class RoutedRuntimeConfiguration
             !IsAllowedLiveUri(uri, policy))
         {
             throw new InvalidOperationException(
-                policy.AllowsDevLocalIpv4Http
-                    ? $"{settingName} must be HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP."
-                    : $"{settingName} must be HTTPS or explicit loopback HTTP.");
+                $"{settingName} must be HTTPS or explicit loopback HTTP.");
         }
 
         return uri;
@@ -172,22 +165,10 @@ public static class RoutedRuntimeConfiguration
         }
         if (IPAddress.IsLoopback(address))
         {
-            return !endpointPolicy.AllowsDevLocalIpv4Http ||
-                   address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
+            return address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
                    HasCanonicalIpv4Host(uri, address);
         }
-        if (!endpointPolicy.AllowsDevLocalIpv4Http ||
-            address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
-            !HasCanonicalIpv4Host(uri, address))
-        {
-            return false;
-        }
-
-        var bytes = address.GetAddressBytes();
-        return bytes[0] == 10 ||
-               bytes[0] == 169 && bytes[1] == 254 ||
-               bytes[0] == 172 && bytes[1] is >= 16 and <= 31 ||
-               bytes[0] == 192 && bytes[1] == 168;
+        return false;
     }
 
     private static bool HasCanonicalIpv4Host(Uri uri, IPAddress address)

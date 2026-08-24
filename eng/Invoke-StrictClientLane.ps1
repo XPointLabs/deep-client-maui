@@ -62,29 +62,10 @@ function Has-Value {
     return -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name))
 }
 
-function Test-PhysicalE2eLocalIpv4 {
-    param([Parameter(Mandatory)] [Uri]$Uri)
-
-    $address = $null
-    if (-not [Net.IPAddress]::TryParse($Uri.DnsSafeHost, [ref]$address) -or
-        $address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or
-        $Uri.DnsSafeHost -cne $address.ToString()) {
-        return $false
-    }
-
-    $octets = $address.GetAddressBytes()
-    return [Net.IPAddress]::IsLoopback($address) -or
-        $octets[0] -eq 10 -or
-        ($octets[0] -eq 172 -and $octets[1] -ge 16 -and $octets[1] -le 31) -or
-        ($octets[0] -eq 192 -and $octets[1] -eq 168) -or
-        ($octets[0] -eq 169 -and $octets[1] -eq 254)
-}
-
 function Test-StrictLiveUrl {
     param(
         [string]$Value,
-        [switch]$RequireRootPath,
-        [switch]$AllowPhysicalE2eLocalIpv4
+        [switch]$RequireRootPath
     )
     $uri = $null
     if ([string]::IsNullOrWhiteSpace($Value) -or
@@ -104,23 +85,12 @@ function Test-StrictLiveUrl {
     $literalAddress = $null
     return $uri.Scheme -ceq 'http' -and
         [Net.IPAddress]::TryParse($uri.DnsSafeHost, [ref]$literalAddress) -and
-        ([Net.IPAddress]::IsLoopback($literalAddress) -or
-            ($AllowPhysicalE2eLocalIpv4 -and (Test-PhysicalE2eLocalIpv4 -Uri $uri)))
+        [Net.IPAddress]::IsLoopback($literalAddress)
 }
 
 function Test-LiveConfiguration {
-    $allowPhysicalE2eLocalIpv4 =
-        [Environment]::GetEnvironmentVariable('DEEP_STRICT_LIVE_PHYSICAL_E2E') -ceq '1'
-    $acceptedEndpointDetail = $(if ($allowPhysicalE2eLocalIpv4) {
-        'configured with HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP (physical E2E opt-in)'
-    } else {
-        'configured with HTTPS or explicit loopback HTTP'
-    })
-    $requiredEndpointDetail = $(if ($allowPhysicalE2eLocalIpv4) {
-        'required and must use HTTPS, explicit loopback HTTP, or canonical development-local IPv4 HTTP (physical E2E opt-in)'
-    } else {
-        'required and must use HTTPS or explicit loopback HTTP; canonical development-local IPv4 HTTP requires DEEP_STRICT_LIVE_PHYSICAL_E2E=1'
-    })
+    $acceptedEndpointDetail = 'configured with HTTPS or explicit loopback HTTP'
+    $requiredEndpointDetail = 'required and must use HTTPS or explicit loopback HTTP'
     $rawRouters = [Environment]::GetEnvironmentVariable('XNODE_URLS')
     $routerEntries = @(if ([string]::IsNullOrWhiteSpace($rawRouters)) {
         @()
@@ -143,7 +113,7 @@ function Test-LiveConfiguration {
         }
         $uri = $null
         if (-not [Uri]::TryCreate($routerUrl, [UriKind]::Absolute, [ref]$uri) -or
-            -not (Test-StrictLiveUrl -Value $routerUrl -RequireRootPath -AllowPhysicalE2eLocalIpv4:$allowPhysicalE2eLocalIpv4)) {
+            -not (Test-StrictLiveUrl -Value $routerUrl -RequireRootPath)) {
             return $null
         }
         [pscustomobject]@{ routerId = $routerId; url = $uri.AbsoluteUri }
@@ -166,7 +136,7 @@ function Test-LiveConfiguration {
         'DEEP_STORAGE_URL is forbidden in routed live evidence'
     })
     foreach ($name in @('DEEP_FILE_URL', 'DEEP_PUSH_URL', 'DEEP_CALL_SIGNALING_BASE_URL')) {
-        $valid = Test-StrictLiveUrl -Value ([Environment]::GetEnvironmentVariable($name)) -AllowPhysicalE2eLocalIpv4:$allowPhysicalE2eLocalIpv4
+        $valid = Test-StrictLiveUrl -Value ([Environment]::GetEnvironmentVariable($name))
         Add-Check $name $valid $(if ($valid) {
             $acceptedEndpointDetail
         } else {
