@@ -131,10 +131,13 @@ function Get-TreeSha256([string]$Root) {
     }).Count -ne 0) {
         throw 'Tree digest input must not contain reparse points.'
     }
-    $lines = foreach ($file in Get-ChildItem -LiteralPath $canonical -File -Recurse -Force |
-        Sort-Object FullName) {
-        $relative = $file.FullName.Substring($canonical.Length + 1).Replace('\', '/')
-        "$relative`t$($file.Length)`t$((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
+    $paths = [string[]]@(Get-ChildItem -LiteralPath $canonical -File -Recurse -Force |
+        ForEach-Object FullName)
+    [Array]::Sort($paths, [StringComparer]::Ordinal)
+    $lines = foreach ($path in $paths) {
+        $file = Get-Item -Force -LiteralPath $path
+        $relative = $path.Substring($canonical.Length + 1).Replace('\', '/')
+        "$relative`t$($file.Length)`t$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant())"
     }
     $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($lines -join "`n") + "`n")
     $hasher = [Security.Cryptography.SHA256]::Create()

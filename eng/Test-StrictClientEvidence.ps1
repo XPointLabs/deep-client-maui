@@ -88,10 +88,13 @@ function Get-CanonicalTreeSha256Lower {
     }).Count -ne 0) {
         throw 'Windows output tree contains a reparse point.'
     }
-    $lines = foreach ($file in $entries | Where-Object { -not $_.PSIsContainer } |
-        Sort-Object FullName) {
-        $relative = $file.FullName.Substring($canonical.Length + 1).Replace('\', '/')
-        "$relative`t$($file.Length)`t$(Get-Sha256Lower -Path $file.FullName)"
+    $paths = [string[]]@($entries | Where-Object { -not $_.PSIsContainer } |
+        ForEach-Object FullName)
+    [Array]::Sort($paths, [StringComparer]::Ordinal)
+    $lines = foreach ($path in $paths) {
+        $file = Get-Item -Force -LiteralPath $path
+        $relative = $path.Substring($canonical.Length + 1).Replace('\', '/')
+        "$relative`t$($file.Length)`t$(Get-Sha256Lower -Path $path)"
     }
     $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($lines -join "`n") + "`n")
     try {

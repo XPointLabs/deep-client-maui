@@ -118,7 +118,13 @@ public sealed class StrictCrossPlatformContractsTests
             File.WriteAllText(Path.Combine(root, "Deep.Client.Maui.exe"), "apphost");
             File.WriteAllText(Path.Combine(root, "Deep.Client.Shared.dll"), "shared-v1");
             var pinned = StrictCrossPlatformContracts.Sha256Tree(root);
+            var expectedTranscript = string.Join('\n',
+                $"Deep.Client.Maui.exe\t7\t{StrictCrossPlatformContracts.Sha256File(Path.Combine(root, "Deep.Client.Maui.exe"))}",
+                $"Deep.Client.Shared.dll\t9\t{StrictCrossPlatformContracts.Sha256File(Path.Combine(root, "Deep.Client.Shared.dll"))}") + "\n";
+            var expected = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(expectedTranscript)));
 
+            Assert.Equal(expected, pinned);
             StrictCrossPlatformContracts.RequirePinnedTree(root, pinned, "Windows output tree");
             File.WriteAllText(Path.Combine(root, "Deep.Client.Shared.dll"), "shared-v2");
 

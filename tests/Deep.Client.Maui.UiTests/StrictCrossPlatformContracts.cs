@@ -191,7 +191,7 @@ internal static class StrictCrossPlatformContracts
 
         var canonical = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var lines = entries.Where(File.Exists)
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.Ordinal)
             .Select(path =>
             {
                 var relative = Path.GetFullPath(path)[(canonical.Length + 1)..].Replace('\\', '/');
