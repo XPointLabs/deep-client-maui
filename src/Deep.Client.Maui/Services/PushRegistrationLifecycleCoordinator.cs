@@ -72,6 +72,16 @@ public sealed class PushRegistrationLifecycleCoordinator(
 
             return await pushRegistration.RegisterAsync(CancellationToken.None).ConfigureAwait(false);
         }
+        catch (Exception exception)
+        {
+            // Push is an optional accelerator. A provider/configuration failure must
+            // leave foreground/background polling available instead of aborting the
+            // page's complete realtime initialization path.
+            CrashDiagnostics.LogInfo(
+                "Push",
+                $"Push registration is unavailable ({exception.GetType().Name}); polling remains enabled.");
+            return null;
+        }
         finally
         {
             pollingPolicy.Reset(sessionId);

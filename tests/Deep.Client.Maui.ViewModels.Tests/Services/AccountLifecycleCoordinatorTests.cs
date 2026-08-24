@@ -54,6 +54,25 @@ public sealed class AccountLifecycleCoordinatorTests
     }
 
     [Fact]
+    public async Task PushRegistration_ProviderFailureFallsBackAndRemainsRetryable()
+    {
+        var runtime = ClientRuntime.CreateStubbed();
+        await runtime.Accounts.RegisterAsync("Alice");
+        var remote = new FailingRegistrationCoordinator();
+        var lifecycle = new PushRegistrationLifecycleCoordinator(
+            runtime,
+            remote,
+            new SyncPollingPolicy(
+                new NullPushNotificationService(
+                    new PushRegistration("token", "fcm", DateTimeOffset.UtcNow)),
+                runtime));
+
+        Assert.Null(await lifecycle.EnsureRegisteredAsync());
+        Assert.Null(await lifecycle.EnsureRegisteredAsync());
+        Assert.Equal(2, remote.RegisterCalls);
+    }
+
+    [Fact]
     public async Task BackgroundRetrySchedule_IsIdempotentPerAccountAndResetsOnLogout()
     {
         var runtime = ClientRuntime.CreateStubbed();
@@ -145,6 +164,20 @@ public sealed class AccountLifecycleCoordinatorTests
         {
             RegisterCalls++;
             return Task.FromResult<PushRegistration?>(registration);
+        }
+
+        public Task UnregisterAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FailingRegistrationCoordinator : IPushRegistrationCoordinator
+    {
+        public int RegisterCalls { get; private set; }
+
+        public Task<PushRegistration?> RegisterAsync(CancellationToken cancellationToken = default)
+        {
+            RegisterCalls++;
+            return Task.FromException<PushRegistration?>(
+                new InvalidOperationException("Push provider is unavailable."));
         }
 
         public Task UnregisterAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
