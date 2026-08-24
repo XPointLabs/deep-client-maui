@@ -496,7 +496,15 @@ public sealed class ClientSecurityContractSmokeTests
             productionPolicy,
             StringComparison.Ordinal);
         Assert.Contains(
-            "<base-config cleartextTrafficPermitted=\"true\"",
+            "<base-config cleartextTrafficPermitted=\"false\"",
+            physicalPolicy,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<certificates src=\"@raw/deep_physical_uat_ca\"",
+            physicalPolicy,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "<certificates src=\"user\"",
             physicalPolicy,
             StringComparison.Ordinal);
         Assert.Contains("productionBuild", composition, StringComparison.Ordinal);

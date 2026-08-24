@@ -599,6 +599,13 @@ public static class MauiProgram
 
     internal static string? ResolveRuntimeSetting(string key)
     {
+#if DEBUG && DEEP_PHYSICAL_E2E
+        // Physical UAT is production-like: its signed build output is the authority.
+        // Process variables and adjacent files must not redirect transport after signing.
+        return ValidateRuntimeSetting(
+            key,
+            ResolveEmbeddedRuntimeSetting(ReleaseRuntimeEnvFile, key));
+#else
 #if DEBUG
         var value = Environment.GetEnvironmentVariable(key);
         if (!string.IsNullOrWhiteSpace(value))
@@ -626,6 +633,7 @@ public static class MauiProgram
 #endif
 
         return ValidateRuntimeSetting(key, ResolveEmbeddedRuntimeSetting(ReleaseRuntimeEnvFile, key));
+#endif
     }
 
     private static string? ResolveEmbeddedRuntimeSetting(string resourceName, string key)

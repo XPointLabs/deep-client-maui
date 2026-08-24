@@ -51,17 +51,18 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         var environment = File.ReadAllText(WorkspacePath("eng", "survival.dev.env"));
 
         Assert.Contains(
-            "XNODE_URLS=4cb5abf6ad79fbf5abbccafcc269d85cd2651ed4b885b5869f241aedf0a5ba29|http://192.168.1.43:41801;" +
-            "7422b9887598068e32c4448a949adb290d0f4e35b9e01b0ee5f1a1e600fe2674|http://192.168.1.43:41802;" +
-            "f381626e41e7027ea431bfe3009e94bdd25a746beec468948d6c3c7c5dc9a54b|http://192.168.1.43:41803;" +
-            "fd50b8e3b144ea244fbf7737f550bc8dd0c2650bbc1aada833ca17ff8dbf329b|http://192.168.1.43:41804;" +
-            "fde4fba030ad002f7c2f7d4c331f49d13fb0ec747eceebec634f1ff4cbca9def|http://192.168.1.43:41805;" +
-            "b4c92afb3ba57f3ab959ffe6d319c98484a2155a0f4c65b2c37011ffd197b075|http://192.168.1.43:41806",
+            "XNODE_URLS=4cb5abf6ad79fbf5abbccafcc269d85cd2651ed4b885b5869f241aedf0a5ba29|https://192.168.1.43:41801;" +
+            "7422b9887598068e32c4448a949adb290d0f4e35b9e01b0ee5f1a1e600fe2674|https://192.168.1.43:41802;" +
+            "f381626e41e7027ea431bfe3009e94bdd25a746beec468948d6c3c7c5dc9a54b|https://192.168.1.43:41803;" +
+            "fd50b8e3b144ea244fbf7737f550bc8dd0c2650bbc1aada833ca17ff8dbf329b|https://192.168.1.43:41804;" +
+            "fde4fba030ad002f7c2f7d4c331f49d13fb0ec747eceebec634f1ff4cbca9def|https://192.168.1.43:41805;" +
+            "b4c92afb3ba57f3ab959ffe6d319c98484a2155a0f4c65b2c37011ffd197b075|https://192.168.1.43:41806",
             environment,
             StringComparison.Ordinal);
-        Assert.Contains("DEEP_FILE_URL=http://192.168.1.43:41821", environment, StringComparison.Ordinal);
-        Assert.Contains("DEEP_PUSH_URL=http://192.168.1.43:41822", environment, StringComparison.Ordinal);
-        Assert.Contains("DEEP_CALL_SIGNALING_BASE_URL=http://192.168.1.43:41823", environment, StringComparison.Ordinal);
+        Assert.Contains("DEEP_FILE_URL=https://192.168.1.43:41821", environment, StringComparison.Ordinal);
+        Assert.Contains("DEEP_PUSH_URL=https://192.168.1.43:41822", environment, StringComparison.Ordinal);
+        Assert.Contains("DEEP_CALL_SIGNALING_BASE_URL=https://192.168.1.43:41823", environment, StringComparison.Ordinal);
+        Assert.DoesNotContain("http://192.168.1.43", environment, StringComparison.Ordinal);
         Assert.Contains("SURVIVAL_ENV=Development", environment, StringComparison.Ordinal);
         Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=user-managed", environment, StringComparison.Ordinal);
         Assert.DoesNotContain("DEEP_STORAGE_URL", environment, StringComparison.Ordinal);
