@@ -347,6 +347,47 @@ public sealed class WindowsUiSmokeTests
                 .ToHashSet(StringComparer.Ordinal);
         }
 
+        internal int CountAutomationId(string automationId) => CurrentWindow()
+            .FindAllDescendants(condition => condition.ByAutomationId(automationId))
+            .Length;
+
+        internal AutomationElement? WaitForOneNewAutomationId(
+            string automationId,
+            int previousCount,
+            TimeSpan timeout)
+        {
+            var result = Retry.WhileNull(
+                () => FindOneNewAutomationIdForRetry(automationId, previousCount),
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            return result.Result;
+        }
+
+        private AutomationElement? FindOneNewAutomationIdForRetry(
+            string automationId,
+            int previousCount)
+        {
+            try
+            {
+                var candidates = CurrentWindow()
+                    .FindAllDescendants(condition => condition.ByAutomationId(automationId));
+                if (candidates.Length > previousCount + 1)
+                {
+                    throw new InvalidOperationException(
+                        "More than one new exact Windows automation element appeared.");
+                }
+
+                return candidates.Length == previousCount + 1
+                    ? candidates[^1]
+                    : null;
+            }
+            catch (COMException) when (!application.HasExited)
+            {
+                return null;
+            }
+        }
+
         internal AutomationElement? WaitForAutomationIdWithName(string automationId, string name, TimeSpan timeout)
         {
             var result = Retry.WhileNull(

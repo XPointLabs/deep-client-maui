@@ -243,6 +243,25 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
+    public void PhysicalVoiceLaneUsesNativeCaptureAndVerifiedPlayback()
+    {
+        var physical = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+        var desktop = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Pages", "DesktopWorkspacePage.xaml.cs"));
+
+        Assert.Contains("android.Hold(options.App(\"Chat.Voice\")", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("windows.WaitForOneNewAutomationId(", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("PhysicalE2E.VoicePlaybackMarker", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("snapshot.IsPlaying", desktop, StringComparison.Ordinal);
+        Assert.Contains("PhysicalE2E.VoicePlaybackMarker", desktop,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void E2eAutomationIdsAreLiteralPrivacySafeRolesAndPageSelectorsAreUnique()
     {
         var pages = new[]

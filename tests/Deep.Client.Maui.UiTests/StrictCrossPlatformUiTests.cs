@@ -30,6 +30,9 @@ public sealed class StrictCrossPlatformUiTests
             case Mau2PhysicalPhase.HappyPath:
                 ExchangeOnExistingProvisionedClients(options);
                 return;
+            case Mau2PhysicalPhase.VoiceMessage:
+                ExchangeVoiceMessageOnExistingProvisionedClients(options);
+                return;
             case Mau2PhysicalPhase.RestartDurability:
                 RestartAndAssertDeduplicatedReceive(options);
                 return;
@@ -252,6 +255,50 @@ public sealed class StrictCrossPlatformUiTests
         // This is deliberately a restart-durability result, not a resend result.
         // Product resend controls are covered separately; their physical phases
         // require reviewed DevOps chaos evidence and cannot be inferred here.
+        evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
+        CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void ExchangeVoiceMessageOnExistingProvisionedClients(
+        CrossPlatformOptions options)
+    {
+        var evidence = CreatePhaseEvidence(options);
+        var android = new AndroidUiautomatorClient(options);
+        android.AssertPhysicalConnectedDevice();
+        android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
+        android.ColdStart();
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+        var androidIdentity = ReadAndroidIdentity(android, options);
+
+        using var windows = WindowsUiSmokeTests.WindowsUiTestSession
+            .CreateStrictWithAppData(options.WindowsAppDataRoot);
+        var windowsIdentity = ReadWindowsIdentity(windows);
+        AddAndroidContact(android, options, windowsIdentity);
+        AddWindowsContact(windows, androidIdentity);
+
+        var previousVoiceCount = windows.CountAutomationId(
+            "DesktopWorkspace.DirectVoicePlay");
+        android.Hold(options.App("Chat.Voice"), TimeSpan.FromSeconds(4));
+        android.WaitForResource(
+            options.App("Chat.VoicePlayButton"),
+            TimeSpan.FromSeconds(60));
+
+        var receivedVoice = Require(
+            windows.WaitForOneNewAutomationId(
+                "DesktopWorkspace.DirectVoicePlay",
+                previousVoiceCount,
+                TimeSpan.FromSeconds(60)),
+            "DesktopWorkspace.DirectVoicePlay");
+        windows.ActivateExact(receivedVoice);
+        Require(
+            windows.WaitForAutomationId(
+                "PhysicalE2E.VoicePlaybackMarker",
+                TimeSpan.FromSeconds(15)),
+            "PhysicalE2E.VoicePlaybackMarker");
+
+        evidence.AddBoolean("voiceRecordedFromPhysicalMicrophone", true);
+        evidence.AddBoolean("voiceEncryptedAttachmentDelivered", true);
+        evidence.AddBoolean("voicePlaybackStartedAfterDecrypt", true);
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
         CompletePhaseEvidence(options, evidence);
     }
@@ -528,7 +575,8 @@ internal sealed class CrossPlatformOptions
         "Conversations.NewConversationTop", "Conversations.ConversationRow", "Settings.SessionId", "Settings.Back",
         "StartConversation.NewMessage", "NewConversation.SessionId", "NewConversation.DisplayName", "NewConversation.Start",
         "NewConversation.Error", "NewConversation.Back", "Chat.Draft", "Chat.Send", "Chat.MessageBody",
-        "Chat.Attach", "Chat.PickFile", "Chat.StagedAttachmentFilename"
+        "Chat.Attach", "Chat.PickFile", "Chat.StagedAttachmentFilename",
+        "Chat.Voice", "Chat.VoicePlayButton"
     ];
     private readonly Dictionary<string, string> androidSelectors;
     private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string fixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256)
@@ -975,6 +1023,7 @@ internal sealed class AndroidUiautomatorClient
             "Android did not expose one closed identity-provisioning surface.", last);
     }
     internal void Tap(string resourceId) { var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
+    internal void Hold(string resourceId, TimeSpan duration) { if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10)) throw new ArgumentOutOfRangeException(nameof(duration)); var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "swipe", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), ((int)duration.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void TapExactResourceIdWithExactText(string resourceId, string text) { var node = WaitByText(resourceId, text, TimeSpan.FromSeconds(15)); Assert.Equal(text, node.Text); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void Type(string resourceId, string value) { Tap(resourceId); RequireSuccess(Adb("shell", "input", "text", value)); }
     internal void DismissKeyboard() { RequireSuccess(Adb("shell", "input", "keyevent", "KEYCODE_BACK")); }

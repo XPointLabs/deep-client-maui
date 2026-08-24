@@ -29,6 +29,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
     private readonly PhysicalMailboxRouteUsageTracker physicalRouteUsageTracker;
     private Label? physicalRouteNodeMarker;
     private Label? physicalRuntimeReadyMarker;
+    private Label? physicalVoicePlaybackMarker;
 #endif
     private IncomingCallPollingBackoff incomingCallPolling = new();
     private readonly VoiceMessagePlaybackService voicePlayback = new();
@@ -94,6 +95,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
                 "Physical E2E requires its mailbox route usage tracker.");
         CreatePhysicalRouteNodeMarker();
         CreatePhysicalRuntimeReadyMarker();
+        CreatePhysicalVoicePlaybackMarker();
 #endif
         BindingContext = viewModel;
     }
@@ -317,6 +319,29 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             ZIndex = 101
         };
         DetailContent.Children.Add(physicalRuntimeReadyMarker);
+    }
+
+    private void CreatePhysicalVoicePlaybackMarker()
+    {
+        physicalVoicePlaybackMarker = new Label
+        {
+            AutomationId = "PhysicalE2E.VoicePlaybackMarker",
+            Text = "playing",
+            IsVisible = false,
+            FontSize = 1,
+            Opacity = 0.01,
+            InputTransparent = true,
+            ZIndex = 102
+        };
+        DetailContent.Children.Add(physicalVoicePlaybackMarker);
+    }
+
+    private void UpdatePhysicalVoicePlaybackMarker(VoicePlaybackSnapshot snapshot)
+    {
+        if (physicalVoicePlaybackMarker is not null)
+        {
+            physicalVoicePlaybackMarker.IsVisible = snapshot.IsPlaying;
+        }
     }
 
     private void SetPhysicalRuntimeReady(bool ready)
@@ -996,6 +1021,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
 
     private void ApplyVoicePlaybackSnapshot(VoicePlaybackSnapshot snapshot)
     {
+#if DEBUG && DEEP_PHYSICAL_E2E
+        UpdatePhysicalVoicePlaybackMarker(snapshot);
+#endif
         if (!string.Equals(activeVoiceAttachmentId, snapshot.AttachmentId, StringComparison.Ordinal))
         {
             ClearVoicePlayback(activeVoiceAttachmentId);

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')]
+    [ValidateSet('ProvisionIdentity', 'Attach', 'HappyPath', 'VoiceMessage', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'NegativeRuntime')]
     [string]$Phase,
     [string]$AndroidSerial = '192.168.1.45:43337',
     [string]$MailboxBootstrapRoot = 'C:\Work\DeepSession\secrets\mailbox-bootstrap',
@@ -93,7 +93,7 @@ function New-CanonicalAndroidSelectorsJson {
         'NewConversation.DisplayName', 'NewConversation.Start',
         'NewConversation.Error', 'NewConversation.Back', 'Chat.Draft',
         'Chat.Send', 'Chat.MessageBody', 'Chat.Attach', 'Chat.PickFile',
-        'Chat.StagedAttachmentFilename')
+        'Chat.StagedAttachmentFilename', 'Chat.Voice', 'Chat.VoicePlayButton')
     $selectors = [ordered]@{}
     foreach ($role in $roles) {
         $selectors[$role] = "$androidPackage`:id/$role"
