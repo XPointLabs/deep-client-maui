@@ -192,6 +192,22 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
+    public void PhysicalRestartDurabilityOpensTheConversationBeforeInspectingMessages()
+    {
+        var physical = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+        const string openConversation =
+            "android.Tap(options.App(\"Conversations.ConversationRow\"));";
+
+        Assert.Equal(2, physical.Split(openConversation, StringSplitOptions.None).Length - 1);
+        Assert.True(
+            physical.IndexOf(openConversation, StringComparison.Ordinal) <
+            physical.IndexOf(
+                "android.WaitForText(options.App(\"Chat.MessageBody\"), marker, TimeSpan.FromSeconds(60));",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void E2eAutomationIdsAreLiteralPrivacySafeRolesAndPageSelectorsAreUnique()
     {
         var pages = new[]

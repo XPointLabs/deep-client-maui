@@ -221,6 +221,7 @@ public sealed class StrictCrossPlatformUiTests
             firstWindowsPid = windows.ProcessId;
             AddWindowsContact(windows, androidIdentity);
             SendWindowsMessage(windows, marker);
+            android.Tap(options.App("Conversations.ConversationRow"));
             android.WaitForText(options.App("Chat.MessageBody"), marker, TimeSpan.FromSeconds(60));
         }
 
