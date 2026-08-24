@@ -2,6 +2,7 @@ using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
 using Deep.Client.Maui.Services;
 using Microsoft.Maui.Storage;
+using System.Security.Cryptography;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
 
@@ -37,7 +38,7 @@ public sealed class AttachmentOpenServiceTests
         }
         finally
         {
-            TryDelete(AttachmentOpenService.TryGetCachedFile(attachment)?.Path);
+            await AttachmentOpenService.PurgeCacheAsync();
         }
     }
 
@@ -71,26 +72,29 @@ public sealed class AttachmentOpenServiceTests
         }
         finally
         {
-            TryDelete(AttachmentOpenService.TryGetCachedFile(attachment)?.Path);
+            await AttachmentOpenService.PurgeCacheAsync();
         }
     }
 
     [Fact]
     public async Task PurgeCache_RemovesExistingFilesAndPreventsInFlightWritesAfterLogout()
     {
-        var cachedAttachment = CreateAttachment();
+        var cachedPayload = "old account attachment"u8.ToArray();
+        var cachedAttachment = CreateLocalAuthenticatedAttachment(cachedPayload);
         var sourcePath = Path.GetTempFileName();
         var inFlightAttachment = CreateAttachment();
         var transport = new BlockingAttachmentTransport();
         try
         {
-            await File.WriteAllTextAsync(sourcePath, "old account attachment");
+            await File.WriteAllBytesAsync(sourcePath, cachedPayload);
             await AttachmentOpenService.CacheLocalCopyAsync(cachedAttachment, sourcePath);
-            Assert.NotNull(AttachmentOpenService.TryGetCachedFile(cachedAttachment));
+            Assert.NotNull(await AttachmentOpenService.TryGetValidatedCachedFileAsync(
+                cachedAttachment));
 
             await AttachmentOpenService.PurgeCacheAsync();
 
-            Assert.Null(AttachmentOpenService.TryGetCachedFile(cachedAttachment));
+            Assert.Null(await AttachmentOpenService.TryGetValidatedCachedFileAsync(
+                cachedAttachment));
             var temporaryFilesBeforeDownload = GetTemporaryFiles();
             var inFlight = AttachmentOpenService.DownloadToCacheAsync(inFlightAttachment, transport);
             await transport.DownloadStarted.Task;
@@ -160,19 +164,23 @@ public sealed class AttachmentOpenServiceTests
     [Fact]
     public async Task CacheIsScopedToTheActiveAccount()
     {
-        var attachment = CreateAttachment();
+        var payload = "account-a"u8.ToArray();
+        var attachment = CreateLocalAuthenticatedAttachment(payload);
         var sourcePath = Path.GetTempFileName();
         try
         {
-            await File.WriteAllTextAsync(sourcePath, "account-a");
+            await File.WriteAllBytesAsync(sourcePath, payload);
             AttachmentOpenService.SetAccountScope("account-a");
             var first = await AttachmentOpenService.CacheLocalCopyAsync(attachment, sourcePath);
 
             AttachmentOpenService.SetAccountScope("account-b");
-            Assert.Null(AttachmentOpenService.TryGetCachedFile(attachment));
+            Assert.Null(await AttachmentOpenService.TryGetValidatedCachedFileAsync(
+                attachment));
 
             AttachmentOpenService.SetAccountScope("account-a");
-            Assert.Equal(first.Path, AttachmentOpenService.TryGetCachedFile(attachment)?.Path);
+            Assert.Equal(
+                first.Path,
+                (await AttachmentOpenService.TryGetValidatedCachedFileAsync(attachment))?.Path);
         }
         finally
         {
@@ -238,6 +246,135 @@ public sealed class AttachmentOpenServiceTests
             await AttachmentOpenService.PurgeCacheAsync();
         }
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ValidatedCache_RemovesTamperAndDownloadsAuthenticatedPlaintextAgain(
+        bool truncate)
+    {
+        var payload = "authenticated attachment payload"u8.ToArray();
+        var attachment = CreateAuthenticatedAttachment(payload);
+        var transport = new CountingAttachmentTransport(payload);
+        try
+        {
+            var first = await AttachmentOpenService.DownloadToCacheAsync(
+                attachment,
+                transport);
+            Assert.Equal(1, transport.DownloadCalls);
+
+            var tampered = truncate
+                ? payload[..^1]
+                : payload.Select(static value => (byte)(value ^ 0x5a)).ToArray();
+            await File.WriteAllBytesAsync(first.Path, tampered);
+
+            var recovered = await AttachmentOpenService.DownloadToCacheAsync(
+                attachment,
+                transport);
+
+            Assert.Equal(2, transport.DownloadCalls);
+            Assert.Equal(payload, await File.ReadAllBytesAsync(recovered.Path));
+            Assert.NotNull(await AttachmentOpenService.TryGetValidatedCachedFileAsync(
+                attachment));
+        }
+        finally
+        {
+            await AttachmentOpenService.PurgeCacheAsync();
+        }
+    }
+
+    [Fact]
+    public async Task CacheLocalCopy_RejectsPlaintextThatDoesNotMatchAuthenticatedMetadata()
+    {
+        var expected = "expected local plaintext"u8.ToArray();
+        var attachment = CreateAuthenticatedAttachment(expected);
+        var sourcePath = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllBytesAsync(sourcePath, "different local bytes"u8.ToArray());
+
+            await Assert.ThrowsAsync<CryptographicException>(() =>
+                AttachmentOpenService.CacheLocalCopyAsync(attachment, sourcePath));
+            Assert.Null(await AttachmentOpenService.TryGetValidatedCachedFileAsync(
+                attachment));
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+            await AttachmentOpenService.PurgeCacheAsync();
+        }
+    }
+
+    [Fact]
+    public async Task CacheLocalCopy_RejectsLocalMetadataWithoutPlaintextDigest()
+    {
+        var payload = "local plaintext without authentication"u8.ToArray();
+        var attachment = new AttachmentMetadata(
+            $"attachment-local-{Guid.NewGuid():N}",
+            "payload.bin",
+            "application/octet-stream",
+            payload.LongLength,
+            null,
+            null,
+            null);
+        var sourcePath = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllBytesAsync(sourcePath, payload);
+
+            await Assert.ThrowsAsync<CryptographicException>(() =>
+                AttachmentOpenService.CacheLocalCopyAsync(attachment, sourcePath));
+            Assert.Null(await AttachmentOpenService.TryGetValidatedCachedFileAsync(
+                attachment));
+        }
+        finally
+        {
+            TryDelete(sourcePath);
+            await AttachmentOpenService.PurgeCacheAsync();
+        }
+    }
+
+    [Fact]
+    public async Task OpenPreparedFileAsync_ThrowsTypedFailureWhenOperatingSystemRejectsRequest()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var file = new PreparedAttachmentFile(
+                "attachment.bin",
+                "application/octet-stream",
+                path);
+
+            await Assert.ThrowsAsync<AttachmentOpenRejectedException>(() =>
+                AttachmentOpenService.OpenPreparedFileAsync(
+                    file,
+                    static _ => Task.FromResult(false)));
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    private static AttachmentMetadata CreateAuthenticatedAttachment(byte[] payload) =>
+        new(
+            $"attachment-authenticated-{Guid.NewGuid():N}",
+            "payload.bin",
+            "application/octet-stream",
+            payload.LongLength,
+            new Uri("https://attachments.invalid/file"),
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+            Convert.ToBase64String(SHA256.HashData(payload)));
+
+    private static AttachmentMetadata CreateLocalAuthenticatedAttachment(byte[] payload) =>
+        new(
+            $"attachment-local-authenticated-{Guid.NewGuid():N}",
+            "payload.bin",
+            "application/octet-stream",
+            payload.LongLength,
+            null,
+            null,
+            Convert.ToBase64String(SHA256.HashData(payload)));
 
     private static AttachmentMetadata CreateAttachment(
         string? id = null,
@@ -320,6 +457,33 @@ public sealed class AttachmentOpenServiceTests
             CancellationToken cancellationToken = default)
         {
             await destination.WriteAsync(System.Text.Encoding.UTF8.GetBytes(payload), cancellationToken);
+            return new AttachmentFileDownloadInfo(metadata.FileName, metadata.ContentType);
+        }
+    }
+
+    private sealed class CountingAttachmentTransport(byte[] payload) : IAttachmentFileTransport
+    {
+        public int DownloadCalls { get; private set; }
+
+        public bool IsEnabled => true;
+
+        public Task<AttachmentMetadata> UploadAsync(
+            AttachmentFileUpload upload,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<AttachmentFileDownload> DownloadAsync(
+            AttachmentMetadata metadata,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async Task<AttachmentFileDownloadInfo> DownloadToAsync(
+            AttachmentMetadata metadata,
+            Stream destination,
+            CancellationToken cancellationToken = default)
+        {
+            DownloadCalls++;
+            await destination.WriteAsync(payload, cancellationToken);
             return new AttachmentFileDownloadInfo(metadata.FileName, metadata.ContentType);
         }
     }

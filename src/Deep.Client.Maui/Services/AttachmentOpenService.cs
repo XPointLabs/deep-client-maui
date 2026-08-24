@@ -20,6 +20,14 @@ namespace Deep.Client.Maui.Services;
 
 public sealed record PreparedAttachmentFile(string FileName, string ContentType, string Path);
 
+public sealed class AttachmentOpenRejectedException : IOException
+{
+    public AttachmentOpenRejectedException()
+        : base("The operating system rejected the attachment open request.")
+    {
+    }
+}
+
 public static class AttachmentOpenService
 {
     internal const long AttachmentCacheByteQuota = 256L * 1024 * 1024;
@@ -52,8 +60,7 @@ public static class AttachmentOpenService
 
         var attachment = attachments[0];
 
-        var cached = TryGetCachedFile(attachment);
-        if (cached is null && (!attachmentFiles.IsEnabled || attachment.RemoteUri is null))
+        if (!attachmentFiles.IsEnabled || attachment.RemoteUri is null)
         {
             await page.DisplayAlertAsync(
                 "Вложение недоступно",
@@ -64,11 +71,12 @@ public static class AttachmentOpenService
 
         try
         {
-            var file = cached
-                ?? await DownloadToCacheAsync(attachment, attachmentFiles, cancellationToken).ConfigureAwait(false);
-            await Launcher.Default.OpenAsync(new OpenFileRequest(
-                file.FileName,
-                new ReadOnlyFile(file.Path, file.ContentType)));
+            var file = await DownloadToCacheAsync(attachment, attachmentFiles, cancellationToken)
+                .ConfigureAwait(false);
+            await OpenPreparedFileAsync(
+                    file,
+                    static request => Launcher.Default.OpenAsync(request))
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -103,7 +111,8 @@ public static class AttachmentOpenService
         IAttachmentFileTransport attachmentFiles,
         CancellationToken cancellationToken = default)
     {
-        if (TryGetCachedFile(attachment) is { } cached)
+        if (await TryGetValidatedCachedFileAsync(attachment, cancellationToken)
+                .ConfigureAwait(false) is { } cached)
         {
             return cached;
         }
@@ -149,6 +158,16 @@ public static class AttachmentOpenService
 
     public static PreparedAttachmentFile? TryGetCachedFile(AttachmentMetadata attachment)
     {
+        ArgumentNullException.ThrowIfNull(attachment);
+        // A synchronous filesystem probe cannot safely hash a potentially large
+        // plaintext attachment on the UI thread. Uploaded/E2EE attachments must
+        // always use the asynchronous validated cache path above.
+        if (attachment.RemoteUri is not null ||
+            !string.IsNullOrWhiteSpace(attachment.DigestBase64))
+        {
+            return null;
+        }
+
         var cachePath = CachePathFor(attachment);
         if (!File.Exists(cachePath))
         {
@@ -157,7 +176,9 @@ public static class AttachmentOpenService
 
         try
         {
-            if (new FileInfo(cachePath).Length > AttachmentCacheByteQuota)
+            if (new FileInfo(cachePath).Length != attachment.SizeBytes ||
+                attachment.SizeBytes < 0 ||
+                attachment.SizeBytes > AttachmentCacheByteQuota)
             {
                 TryDelete(cachePath);
                 return null;
@@ -175,6 +196,67 @@ public static class AttachmentOpenService
             : null;
     }
 
+    internal static async Task<PreparedAttachmentFile?> TryGetValidatedCachedFileAsync(
+        AttachmentMetadata attachment,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(attachment);
+        var cachePath = CachePathFor(attachment);
+        if (!File.Exists(cachePath))
+        {
+            return null;
+        }
+
+        byte[]? expectedDigest = null;
+        try
+        {
+            expectedDigest = ReadPlaintextDigest(
+                attachment,
+                required: attachment.RemoteUri is not null ||
+                          !string.IsNullOrWhiteSpace(attachment.EncryptionKeyBase64));
+            if (!await HasExpectedPlaintextIntegrityAsync(
+                    cachePath,
+                    attachment.SizeBytes,
+                    expectedDigest,
+                    cancellationToken)
+                .ConfigureAwait(false))
+            {
+                TryDelete(cachePath);
+                return null;
+            }
+
+            QueueCacheCleanup();
+            TouchCacheFile(cachePath);
+            return File.Exists(cachePath)
+                ? new PreparedAttachmentFile(
+                    attachment.FileName,
+                    attachment.ContentType,
+                    cachePath)
+                : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (CryptographicException)
+        {
+            TryDelete(cachePath);
+            throw;
+        }
+        catch (IOException)
+        {
+            TryDelete(cachePath);
+            return null;
+        }
+        finally
+        {
+            if (expectedDigest is not null)
+            {
+                CryptographicOperations.ZeroMemory(expectedDigest);
+            }
+        }
+    }
+
     public static async Task<PreparedAttachmentFile> CacheLocalCopyAsync(
         AttachmentMetadata attachment,
         string sourcePath,
@@ -185,58 +267,107 @@ public static class AttachmentOpenService
             throw new FileNotFoundException("Attachment source file was not found.", sourcePath);
         }
 
-        if (new FileInfo(sourcePath).Length > AttachmentCacheByteQuota)
+        byte[]? expectedDigest = null;
+        try
         {
-            throw new IOException("Attachment exceeds the preview cache byte quota.");
-        }
-
-        QueueCacheCleanup();
-        var cachePath = CachePathFor(attachment);
-        var (expectedCacheEpoch, _) = GetCacheEpoch();
-        if (!string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(cachePath), StringComparison.OrdinalIgnoreCase))
-        {
-            await AcquireAttachmentIoAsync(cancellationToken).ConfigureAwait(false);
-            string? temporaryPath = null;
-            try
+            // Local copies become durable plaintext cache entries, so clean-break
+            // metadata must authenticate them even before a remote URI exists.
+            expectedDigest = ReadPlaintextDigest(attachment, required: true);
+            if (!await HasExpectedPlaintextIntegrityAsync(
+                    sourcePath,
+                    attachment.SizeBytes,
+                    expectedDigest,
+                    cancellationToken)
+                .ConfigureAwait(false))
             {
-                temporaryPath = CreateTemporaryCachePath();
-                await using (var source = File.OpenRead(sourcePath))
-                await using (var destination = new FileStream(
-                    temporaryPath,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None,
-                    bufferSize: 64 * 1024,
-                    options: FileOptions.Asynchronous | FileOptions.SequentialScan))
-                {
-                    var quotaDestination = new CacheQuotaWriteStream(destination, AttachmentCacheByteQuota);
-                    await source.CopyToAsync(quotaDestination, cancellationToken).ConfigureAwait(false);
-                    await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
-                }
-
-                await CommitTemporaryCacheFileAsync(
-                    temporaryPath,
-                    cachePath,
-                    expectedCacheEpoch,
-                    cancellationToken).ConfigureAwait(false);
+                throw new CryptographicException(
+                    "The local attachment does not match its authenticated metadata.");
             }
-            finally
+
+            QueueCacheCleanup();
+            var cachePath = CachePathFor(attachment);
+            var (expectedCacheEpoch, _) = GetCacheEpoch();
+            if (!string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(cachePath), StringComparison.OrdinalIgnoreCase))
             {
-                if (temporaryPath is not null)
+                await AcquireAttachmentIoAsync(cancellationToken).ConfigureAwait(false);
+                string? temporaryPath = null;
+                try
                 {
-                    TryDelete(temporaryPath);
-                    ActiveTemporaryFiles.TryRemove(temporaryPath, out _);
-                }
+                    temporaryPath = CreateTemporaryCachePath();
+                    await using (var source = File.OpenRead(sourcePath))
+                    await using (var destination = new FileStream(
+                        temporaryPath,
+                        FileMode.CreateNew,
+                        FileAccess.Write,
+                        FileShare.None,
+                        bufferSize: 64 * 1024,
+                        options: FileOptions.Asynchronous | FileOptions.SequentialScan))
+                    {
+                        var quotaDestination = new CacheQuotaWriteStream(destination, AttachmentCacheByteQuota);
+                        await source.CopyToAsync(quotaDestination, cancellationToken).ConfigureAwait(false);
+                        await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+                    }
 
-                AttachmentIoConcurrency.Release();
+                    // Revalidate the bytes that will actually be committed. The source
+                    // can change after its initial check and before/during the copy.
+                    if (!await HasExpectedPlaintextIntegrityAsync(
+                            temporaryPath,
+                            attachment.SizeBytes,
+                            expectedDigest,
+                            cancellationToken)
+                        .ConfigureAwait(false))
+                    {
+                        throw new CryptographicException(
+                            "The copied attachment does not match its authenticated metadata.");
+                    }
+
+                    await CommitTemporaryCacheFileAsync(
+                        temporaryPath,
+                        cachePath,
+                        expectedCacheEpoch,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (temporaryPath is not null)
+                    {
+                        TryDelete(temporaryPath);
+                        ActiveTemporaryFiles.TryRemove(temporaryPath, out _);
+                    }
+
+                    AttachmentIoConcurrency.Release();
+                }
+            }
+            else
+            {
+                TouchCacheFile(cachePath);
+            }
+
+            return new PreparedAttachmentFile(attachment.FileName, attachment.ContentType, cachePath);
+        }
+        finally
+        {
+            if (expectedDigest is not null)
+            {
+                CryptographicOperations.ZeroMemory(expectedDigest);
             }
         }
-        else
-        {
-            TouchCacheFile(cachePath);
-        }
+    }
 
-        return new PreparedAttachmentFile(attachment.FileName, attachment.ContentType, cachePath);
+    internal static async Task OpenPreparedFileAsync(
+        PreparedAttachmentFile file,
+        Func<OpenFileRequest, Task<bool>> openAsync)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        ArgumentNullException.ThrowIfNull(openAsync);
+        var opened = await openAsync(new OpenFileRequest(
+                file.FileName,
+                new ReadOnlyFile(file.Path, file.ContentType)))
+            .ConfigureAwait(false);
+        if (!opened)
+        {
+            throw new AttachmentOpenRejectedException();
+        }
     }
 
     public static void SetAccountScope(string sessionId)
@@ -713,6 +844,94 @@ public static class AttachmentOpenService
         await CopyFileAsync(file.Path, destination, cancellationToken).ConfigureAwait(false);
         return destination;
 #endif
+    }
+
+    private static byte[]? ReadPlaintextDigest(
+        AttachmentMetadata attachment,
+        bool required)
+    {
+        if (string.IsNullOrWhiteSpace(attachment.DigestBase64))
+        {
+            if (!required)
+            {
+                return null;
+            }
+
+            throw new CryptographicException(
+                "Attachment plaintext digest metadata is required for cached content.");
+        }
+
+        try
+        {
+            var digest = Convert.FromBase64String(attachment.DigestBase64);
+            if (digest.Length == SHA256.HashSizeInBytes)
+            {
+                return digest;
+            }
+
+            CryptographicOperations.ZeroMemory(digest);
+        }
+        catch (FormatException)
+        {
+        }
+
+        throw new CryptographicException(
+            "Attachment plaintext digest metadata is invalid.");
+    }
+
+    private static async Task<bool> HasExpectedPlaintextIntegrityAsync(
+        string path,
+        long expectedSize,
+        byte[]? expectedDigest,
+        CancellationToken cancellationToken)
+    {
+        if (expectedSize < 0 || expectedSize > AttachmentCacheByteQuota)
+        {
+            return false;
+        }
+
+        FileInfo info;
+        try
+        {
+            info = new FileInfo(path);
+            if (!info.Exists || info.Length != expectedSize)
+            {
+                return false;
+            }
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+
+        if (expectedDigest is null)
+        {
+            return true;
+        }
+
+        byte[] actualDigest;
+        await using (var stream = new FileStream(
+                         path,
+                         FileMode.Open,
+                         FileAccess.Read,
+                         FileShare.Read,
+                         bufferSize: 64 * 1024,
+                         options: FileOptions.Asynchronous | FileOptions.SequentialScan))
+        {
+            actualDigest = await SHA256.HashDataAsync(stream, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        try
+        {
+            return CryptographicOperations.FixedTimeEquals(
+                expectedDigest,
+                actualDigest);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(actualDigest);
+        }
     }
 
 #if WINDOWS
