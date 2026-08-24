@@ -10,7 +10,6 @@ using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
 using Microsoft.Maui.Storage;
-using System.Security.Cryptography.X509Certificates;
 
 #if ANDROID
 using Android.Content.Res;
@@ -59,13 +58,11 @@ public static class MauiProgram
     internal const string CallSignalingBaseUrlEnv = "DEEP_CALL_SIGNALING_BASE_URL";
     internal const string FileBaseUrlEnv = "DEEP_FILE_URL";
     internal const string FileConnectIpsEnv = "DEEP_FILE_CONNECT_IPS";
-    internal const string FileTlsPublicKeyPinsEnv = "DEEP_FILE_TLS_PUBLIC_KEY_PINS";
     internal const string PushBaseUrlEnv = "DEEP_PUSH_URL";
     internal const string WindowsPushRemoteIdEnv = "DEEP_WINDOWS_PUSH_REMOTE_ID";
     internal const string RegistryBaseUrlEnv = "DEEP_REGISTRY_URL";
     internal const string StakingBackendBaseUrlEnv = "DEEP_STAKING_BACKEND_URL";
     internal const string StakingPortalBaseUrlEnv = "DEEP_STAKING_PORTAL_URL";
-    internal const string TlsPublicKeyPinsEnv = "DEEP_TLS_PUBLIC_KEY_PINS";
     internal const string E2eBootstrapEnv = "DEEP_E2E_BOOTSTRAP";
     internal const string E2eAppDataRootEnv = "DEEP_E2E_APPDATA_ROOT";
     internal const string E2eStrictWindowsEnv = "DEEP_STRICT_WINDOWS_UI";
@@ -898,7 +895,8 @@ public static class MauiProgram
             PooledConnectionIdleTimeout = TimeSpan.FromSeconds(15),
             PooledConnectionLifetime = TimeSpan.FromMinutes(2)
         };
-        ConfigureCertificatePinning(handler);
+        handler.SslOptions.CertificateRevocationCheckMode =
+            System.Security.Cryptography.X509Certificates.X509RevocationMode.Online;
         return handler;
     }
 
@@ -910,10 +908,7 @@ public static class MauiProgram
         };
     }
 
-    private static HttpServiceNetworkHooks CreateServiceTransportNetworkHooks() =>
-        new(
-            ServerCertificateValidationCallback:
-                CreateCertificatePinningValidationCallback());
+    private static HttpServiceNetworkHooks CreateServiceTransportNetworkHooks() => new();
 
     private static HttpServiceNetworkHooks CreateFileTransportNetworkHooks(
         IReadOnlyList<System.Net.IPAddress> preferredConnectIps)
@@ -927,9 +922,7 @@ public static class MauiProgram
                 ConnectFileSocketAsync(context, preferredConnectIps, cancellationToken);
         }
 #endif
-        return new HttpServiceNetworkHooks(
-            connectCallback,
-            CreateCertificatePinningValidationCallback(FileTlsPublicKeyPinsEnv));
+        return new HttpServiceNetworkHooks(connectCallback);
     }
 
     private static HttpServiceClientOptions CreateServiceTransportClientOptions() =>
@@ -946,109 +939,6 @@ public static class MauiProgram
             PooledConnectionIdleTimeout: TimeSpan.FromSeconds(30),
             PooledConnectionLifetime: TimeSpan.FromMinutes(5),
             UserAgent: $"Deep/{AppInfo.Current.VersionString}");
-
-    private static void ConfigureCertificatePinning(
-        SocketsHttpHandler handler,
-        string pinSettingName = TlsPublicKeyPinsEnv) =>
-        handler.SslOptions.RemoteCertificateValidationCallback =
-            CreateCertificatePinningValidationCallback(pinSettingName);
-
-    private static System.Net.Security.RemoteCertificateValidationCallback?
-        CreateCertificatePinningValidationCallback(
-            string pinSettingName = TlsPublicKeyPinsEnv)
-    {
-        var rawPins = ResolveRuntimeSetting(pinSettingName);
-        if (string.IsNullOrWhiteSpace(rawPins) &&
-            !string.Equals(pinSettingName, TlsPublicKeyPinsEnv, StringComparison.Ordinal))
-        {
-            rawPins = ResolveRuntimeSetting(TlsPublicKeyPinsEnv);
-        }
-
-        var pins = ParsePublicKeyPins(rawPins, pinSettingName);
-#if !DEBUG
-        if (pins.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"{pinSettingName} must contain at least one production certificate public-key pin.");
-        }
-#endif
-        if (pins.Count == 0)
-        {
-            return null;
-        }
-
-        return (_, certificate, _, policyErrors) =>
-        {
-            if (policyErrors != System.Net.Security.SslPolicyErrors.None || certificate is null)
-            {
-                return false;
-            }
-
-            using var x509 = new System.Security.Cryptography.X509Certificates.X509Certificate2(certificate);
-            var digest = System.Security.Cryptography.SHA256.HashData(ExportSubjectPublicKeyInfo(x509));
-            return pins.Any(pin =>
-                System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(pin, digest));
-        };
-    }
-
-    private static byte[] ExportSubjectPublicKeyInfo(
-        System.Security.Cryptography.X509Certificates.X509Certificate2 certificate)
-    {
-        using var rsa = certificate.GetRSAPublicKey();
-        if (rsa is not null)
-        {
-            return rsa.ExportSubjectPublicKeyInfo();
-        }
-
-        using var ecdsa = certificate.GetECDsaPublicKey();
-        if (ecdsa is not null)
-        {
-            return ecdsa.ExportSubjectPublicKeyInfo();
-        }
-
-        using var dsa = certificate.GetDSAPublicKey();
-        if (dsa is not null)
-        {
-            return dsa.ExportSubjectPublicKeyInfo();
-        }
-
-        throw new System.Security.Cryptography.CryptographicException(
-            "The TLS certificate uses an unsupported public-key algorithm.");
-    }
-
-    private static IReadOnlyList<byte[]> ParsePublicKeyPins(string? raw, string settingName)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return [];
-        }
-
-        var pins = new List<byte[]>();
-        foreach (var value in raw.Split([',', ';', '\n', '\r', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var encoded = value.StartsWith("sha256/", StringComparison.OrdinalIgnoreCase)
-                ? value["sha256/".Length..]
-                : value;
-            byte[] digest;
-            try
-            {
-                digest = Convert.FromBase64String(encoded);
-            }
-            catch (FormatException exception)
-            {
-                throw new InvalidOperationException($"{settingName} contains an invalid Base64 pin.", exception);
-            }
-
-            if (digest.Length != 32)
-            {
-                throw new InvalidOperationException($"{settingName} pins must be SHA-256 digests.");
-            }
-
-            pins.Add(digest);
-        }
-
-        return pins;
-    }
 
 #if ANDROID || WINDOWS
     private static readonly TimeSpan FileConnectFallbackDelay = TimeSpan.FromMilliseconds(250);

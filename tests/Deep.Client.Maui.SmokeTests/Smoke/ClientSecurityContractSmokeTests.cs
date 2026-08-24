@@ -281,21 +281,18 @@ public sealed class ClientSecurityContractSmokeTests
     }
 
     [Fact]
-    public void ProductionFileTransportPinsBothDirectOriginAndCloudflareFallback()
+    public void ProductionPublicHttpTransportsUseOnlySystemTlsValidation()
     {
         var program = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
         var releaseEnvironment = ReadWorkspaceFile("src", "Deep.Client.Maui", "deep.release.env");
 
         Assert.Contains("DEEP_FILE_CONNECT_IPS=111.235.151.150", releaseEnvironment, StringComparison.Ordinal);
-        Assert.Contains("DEEP_FILE_TLS_PUBLIC_KEY_PINS=", releaseEnvironment, StringComparison.Ordinal);
-        Assert.Contains("sha256/wgviOsKm6Q2dzxS5lvwSsa+/b3wvm6lyRdOg9zj5CUs=", releaseEnvironment, StringComparison.Ordinal);
-        Assert.Contains("sha256/nM7gwVgoneQys6mWu2C/Bo3RGY6NSshlPBbkqlZVzOE=", releaseEnvironment, StringComparison.Ordinal);
-        Assert.Contains(
-            "CreateCertificatePinningValidationCallback(FileTlsPublicKeyPinsEnv)",
-            program,
-            StringComparison.Ordinal);
-        Assert.Contains("policyErrors != System.Net.Security.SslPolicyErrors.None", program, StringComparison.Ordinal);
-        Assert.DoesNotContain("allowPinnedChainErrors", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("TLS_PUBLIC_KEY_PINS", releaseEnvironment, StringComparison.Ordinal);
+        Assert.DoesNotContain("sha256/", releaseEnvironment, StringComparison.Ordinal);
+        Assert.DoesNotContain("RemoteCertificateValidationCallback", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateCertificatePinningValidationCallback", program, StringComparison.Ordinal);
+        Assert.Contains("CertificateRevocationCheckMode", program, StringComparison.Ordinal);
+        Assert.Contains("X509RevocationMode.Online", program, StringComparison.Ordinal);
         Assert.Contains("connectCallback = (context, cancellationToken) =>", program, StringComparison.Ordinal);
         Assert.Contains("address.AddressFamily", program, StringComparison.Ordinal);
         Assert.Contains("FileConnectFallbackDelay", program, StringComparison.Ordinal);
@@ -371,8 +368,12 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("PersistentTransportOutboxEnabled = false", stubBlock, StringComparison.Ordinal);
         Assert.Contains("TransportRequired = false", stubBlock, StringComparison.Ordinal);
         Assert.Contains("MetadataPrivateTransportRequired = false", stubBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "RemoteCertificateValidationCallback",
+            program,
+            StringComparison.Ordinal);
         Assert.Contains(
-            "#if !DEBUG\r\n        if (pins.Count == 0)",
+            "X509RevocationMode.Online",
             program,
             StringComparison.Ordinal);
         Assert.Contains(
