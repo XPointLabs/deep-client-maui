@@ -46,7 +46,7 @@ public sealed record DevLocalMembershipRouteConfiguration(
                 "Development membership routing requires a lowercase SHA-256 pin.");
         }
         if (!Uri.TryCreate(catalogUrl, UriKind.Absolute, out var parsed) ||
-            parsed.Scheme != Uri.UriSchemeHttp ||
+            parsed.Scheme != Uri.UriSchemeHttps ||
             !string.IsNullOrEmpty(parsed.UserInfo) ||
             !string.IsNullOrEmpty(parsed.Query) ||
             !string.IsNullOrEmpty(parsed.Fragment) ||
@@ -59,7 +59,7 @@ public sealed record DevLocalMembershipRouteConfiguration(
             !IsLocalIpv4(address))
         {
             throw new InvalidOperationException(
-                "Development membership routing requires an exact local-IPv4 HTTP catalog URL.");
+                "Development membership routing requires an exact local-IPv4 HTTPS catalog URL.");
         }
 
         return new DevLocalMembershipRouteConfiguration(
@@ -131,7 +131,7 @@ public sealed class DeferredVerifiedMembershipRouteCatalogProvider :
                     "The verified membership provider is already bound.");
             }
 
-            var endpointPolicy = MembershipRouteEndpointPolicy.DevLocalHttp;
+            var endpointPolicy = MembershipRouteEndpointPolicy.DevLocalHttps;
             var source = HttpMembershipRouteArtifactSource.FromCatalogUrls(
                 httpClient,
                 [configuration.CatalogUrl],

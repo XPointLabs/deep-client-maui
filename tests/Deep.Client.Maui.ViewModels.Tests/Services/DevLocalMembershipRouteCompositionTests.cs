@@ -11,7 +11,7 @@ public sealed class DevLocalMembershipRouteCompositionTests
     private const string Pin =
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private static readonly Uri CatalogUrl = new(
-        "http://192.168.50.10:18120/api/network/membership-route-catalog");
+        "https://192.168.50.10:18120/api/network/membership-route-catalog");
 
     [Fact]
     public void Resolve_PairEnablesOnlyExplicitNonProductionPhysicalDevelopment()
@@ -38,7 +38,7 @@ public sealed class DevLocalMembershipRouteCompositionTests
     }
 
     [Theory]
-    [InlineData("http://192.168.50.10:18120/api/network/membership-route-catalog", null)]
+    [InlineData("https://192.168.50.10:18120/api/network/membership-route-catalog", null)]
     [InlineData(null, Pin)]
     public void Resolve_OneSettingFailsStartupClosed(string? url, string? pin)
     {
@@ -53,6 +53,7 @@ public sealed class DevLocalMembershipRouteCompositionTests
     }
 
     [Theory]
+    [InlineData("http://192.168.50.10:18120/api/network/membership-route-catalog")]
     [InlineData("https://membership.example/api/network/membership-route-catalog")]
     [InlineData("http://8.8.8.8/api/network/membership-route-catalog")]
     [InlineData("http://localhost/api/network/membership-route-catalog")]

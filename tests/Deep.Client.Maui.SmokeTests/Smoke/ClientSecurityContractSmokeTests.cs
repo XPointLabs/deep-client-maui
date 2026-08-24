@@ -509,7 +509,7 @@ public sealed class ClientSecurityContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("productionBuild", composition, StringComparison.Ordinal);
         Assert.Contains("explicitDevelopmentProfile", composition, StringComparison.Ordinal);
-        Assert.Contains("MembershipRouteEndpointPolicy.DevLocalHttp", composition, StringComparison.Ordinal);
+        Assert.Contains("MembershipRouteEndpointPolicy.DevLocalHttps", composition, StringComparison.Ordinal);
         Assert.Contains("new SodiumEd25519MembershipSignatureVerifier()", composition, StringComparison.Ordinal);
         Assert.Contains(
             "survivalDevelopment && IsDebugBuild()",
