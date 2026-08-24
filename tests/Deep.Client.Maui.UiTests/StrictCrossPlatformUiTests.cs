@@ -315,7 +315,7 @@ public sealed class StrictCrossPlatformUiTests
     private static string ReadWindowsIdentity(WindowsUiSmokeTests.WindowsUiTestSession windows)
     {
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.ProfileSettings", TimeSpan.FromSeconds(20)), "DesktopWorkspace.ProfileSettings"));
-        var identity = StrictCrossPlatformContracts.RequireSessionId(Require(windows.WaitForAutomationId("Settings.SessionId", TimeSpan.FromSeconds(20)), "Settings.SessionId").Properties.Name.ValueOrDefault ?? string.Empty, "Windows settings");
+        var identity = WaitForWindowsSessionId(windows);
         CloseWindowsSettings(windows);
         return identity;
     }
@@ -340,9 +340,34 @@ public sealed class StrictCrossPlatformUiTests
         windows.ActivateExact(Require(windows.WaitForAutomationId("Welcome.Create", TimeSpan.FromSeconds(10)), "Welcome.Create"));
         windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(30));
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.ProfileSettings", TimeSpan.FromSeconds(20)), "DesktopWorkspace.ProfileSettings"));
-        var identity = StrictCrossPlatformContracts.RequireSessionId(Require(windows.WaitForAutomationId("Settings.SessionId", TimeSpan.FromSeconds(20)), "Settings.SessionId").Properties.Name.ValueOrDefault ?? string.Empty, "Windows settings");
+        var identity = WaitForWindowsSessionId(windows);
         CloseWindowsSettings(windows);
         return identity;
+    }
+
+    private static string WaitForWindowsSessionId(
+        WindowsUiSmokeTests.WindowsUiTestSession windows)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+        while (DateTime.UtcNow < deadline)
+        {
+            var candidate = windows
+                .WaitForAutomationId("Settings.SessionId", TimeSpan.FromSeconds(1))?
+                .Properties.Name.ValueOrDefault;
+            if (candidate is not null &&
+                System.Text.RegularExpressions.Regex.IsMatch(
+                    candidate, "^(05|15|25)[0-9a-f]{64}$",
+                    System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+            {
+                return StrictCrossPlatformContracts.RequireSessionId(
+                    candidate, "Windows settings");
+            }
+
+            Thread.Sleep(100);
+        }
+
+        throw new InvalidOperationException(
+            "Windows settings did not publish its loaded Session identity before the deadline.");
     }
 
     private static void CloseWindowsSettings(WindowsUiSmokeTests.WindowsUiTestSession windows)
