@@ -33,13 +33,13 @@ public sealed class Mau2PhysicalPhaseTests
     [InlineData(Mau2PhysicalPhase.ManualResendAfterRestart)]
     [InlineData(Mau2PhysicalPhase.AutomaticRetryAfterRestart)]
     [InlineData(Mau2PhysicalPhase.AckCrashWindow)]
-    public void Retry_and_ack_phases_fail_closed_without_https_ingress_chaos(
+    public void Retry_and_ack_phases_are_the_only_https_chaos_phases(
         Mau2PhysicalPhase phase)
     {
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            Mau2PhysicalPhaseContract.RequireHttpsChaosSupport(phase));
-        Assert.Contains("CA-trusted HTTPS ingress", exception.Message,
-            StringComparison.Ordinal);
+        Mau2PhysicalPhaseContract.RequireChaosPhase(phase);
+        Assert.Throws<InvalidOperationException>(() =>
+            Mau2PhysicalPhaseContract.RequireChaosPhase(
+                Mau2PhysicalPhase.PayloadMatrix));
     }
 
     [Theory]

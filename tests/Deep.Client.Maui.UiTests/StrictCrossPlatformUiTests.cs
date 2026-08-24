@@ -37,9 +37,13 @@ public sealed class StrictCrossPlatformUiTests
                 RestartAndAssertDeduplicatedReceive(options);
                 return;
             case Mau2PhysicalPhase.ManualResendAfterRestart:
+                ExerciseManualResendAfterRestart(options);
+                return;
             case Mau2PhysicalPhase.AutomaticRetryAfterRestart:
+                ExerciseAutomaticRetryAfterRestart(options);
+                return;
             case Mau2PhysicalPhase.AckCrashWindow:
-                Mau2PhysicalPhaseContract.RequireHttpsChaosSupport(options.Phase);
+                ExerciseAckCrashWindow(options);
                 return;
             case Mau2PhysicalPhase.NegativeRuntime:
                 AssertInvalidWindowsRuntimesFailClosed(options);
@@ -249,6 +253,267 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddBoolean("selfCopyUiSupported", false);
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
         CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void ExerciseManualResendAfterRestart(CrossPlatformOptions options)
+    {
+        const string fault = "post-durable-response-drop";
+        var evidence = CreatePhaseEvidence(options);
+        var android = PrepareChaosAndroid(options, out var androidIdentity);
+        var marker = StrictCrossPlatformContracts.NewMarker("manual-resend");
+        var androidContact = StrictCrossPlatformContracts.NewMarker("manual-windows");
+        var windowsContact = StrictCrossPlatformContracts.NewMarker("manual-android");
+        var firstWindowsPid = 0;
+        var controller = PhysicalChaosController.LoadRequired();
+        Exception? operationFailure = null;
+        try
+        {
+            using (var windows = WindowsUiSmokeTests.WindowsUiTestSession
+                .CreateStrictWithAppData(options.WindowsAppDataRoot))
+            {
+                firstWindowsPid = windows.ProcessId;
+                var windowsIdentity = ReadWindowsIdentity(windows);
+                AddAndroidContact(android, options, windowsIdentity, androidContact);
+                AddWindowsContact(windows, androidIdentity, windowsContact);
+                android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
+                    marker, 0, TimeSpan.FromSeconds(2));
+                controller.Begin(fault, "mailbox-store");
+                SendWindowsMessage(windows, marker);
+                var failed = Require(windows.WaitForCorrelatedDescendant(
+                    "DesktopWorkspace.DirectMessageBubble",
+                    "DesktopWorkspace.DirectMessageBody", marker,
+                    "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(45),
+                    "Не удалось отправить"),
+                    "DesktopWorkspace.DirectDeliveryStatus:failed");
+                Assert.Equal("Не удалось отправить", failed.Properties.Name.ValueOrDefault);
+                Require(windows.WaitForCorrelatedDescendant(
+                    "DesktopWorkspace.DirectMessageBubble",
+                    "DesktopWorkspace.DirectMessageBody", marker,
+                    "DesktopWorkspace.DirectRetry", TimeSpan.FromSeconds(15)),
+                    "DesktopWorkspace.DirectRetry");
+                controller.Status().AssertConsumed(
+                    fault, "mailbox-store", attempts: 1, dispatches: 1,
+                    successes: 1, postDrop: 1, preOutage: 0, ackDrop: 0);
+            }
+
+            using (var restarted = WindowsUiSmokeTests.WindowsUiTestSession
+                .CreateStrictWithAppData(options.WindowsAppDataRoot))
+            {
+                StrictCrossPlatformContracts.AssertDistinctProcessIds(
+                    firstWindowsPid, restarted.ProcessId);
+                restarted.ActivateExact(Require(restarted.WaitForAutomationIdWithName(
+                    "DesktopWorkspace.ConversationRow", windowsContact,
+                    TimeSpan.FromSeconds(45)), "DesktopWorkspace.ConversationRow"));
+                var retry = Require(restarted.WaitForCorrelatedDescendant(
+                    "DesktopWorkspace.DirectMessageBubble",
+                    "DesktopWorkspace.DirectMessageBody", marker,
+                    "DesktopWorkspace.DirectRetry", TimeSpan.FromSeconds(45)),
+                    "DesktopWorkspace.DirectRetry");
+                restarted.ActivateExact(retry);
+                var sent = Require(restarted.WaitForCorrelatedDescendant(
+                    "DesktopWorkspace.DirectMessageBubble",
+                    "DesktopWorkspace.DirectMessageBody", marker,
+                    "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(60),
+                    "Отправлено"), "DesktopWorkspace.DirectDeliveryStatus:sent");
+                Assert.Equal("Отправлено", sent.Properties.Name.ValueOrDefault);
+            }
+
+            android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
+                marker, 1, TimeSpan.FromSeconds(60));
+            var final = controller.Status();
+            final.AssertConsumed(fault, "mailbox-store", attempts: 2,
+                dispatches: 2, successes: 2, postDrop: 1, preOutage: 0, ackDrop: 0);
+            var statusSha = controller.WriteVerifiedStatusEvidence(
+                options.ArtifactDirectory, options.Phase, final);
+            evidence.AddHash("operationMarkerHash", marker);
+            evidence.AddSafeValue("chaosStatusSha256", statusSha);
+            evidence.AddBoolean("senderFailedStatePersistedAcrossRestart", true);
+            evidence.AddBoolean("manualRetryActionInvoked", true);
+            evidence.AddBoolean("senderSentAfterExactRetry", true);
+            evidence.AddBoolean("recipientRenderedExactlyOnce", true);
+            evidence.AddBoolean("httpsStoreFaultConsumedExactlyOnce", true);
+        }
+        catch (Exception exception)
+        {
+            operationFailure = exception;
+        }
+        CompleteChaosPhase(options, evidence, controller, operationFailure);
+    }
+
+    private static void ExerciseAutomaticRetryAfterRestart(CrossPlatformOptions options)
+    {
+        const string fault = "pre-dispatch-outage";
+        var evidence = CreatePhaseEvidence(options);
+        var android = PrepareChaosAndroid(options, out var androidIdentity);
+        var marker = StrictCrossPlatformContracts.NewMarker("automatic-retry");
+        var androidContact = StrictCrossPlatformContracts.NewMarker("automatic-windows");
+        var windowsContact = StrictCrossPlatformContracts.NewMarker("automatic-android");
+        var firstWindowsPid = 0;
+        var controller = PhysicalChaosController.LoadRequired();
+        Exception? operationFailure = null;
+        try
+        {
+            using (var windows = WindowsUiSmokeTests.WindowsUiTestSession
+                .CreateStrictWithAppData(options.WindowsAppDataRoot))
+            {
+                firstWindowsPid = windows.ProcessId;
+                var windowsIdentity = ReadWindowsIdentity(windows);
+                AddAndroidContact(android, options, windowsIdentity, androidContact);
+                AddWindowsContact(windows, androidIdentity, windowsContact);
+                android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
+                    marker, 0, TimeSpan.FromSeconds(2));
+                controller.Begin(fault, "mailbox-store");
+                SendWindowsMessage(windows, marker);
+                Require(windows.WaitForCorrelatedDescendant(
+                    "DesktopWorkspace.DirectMessageBubble",
+                    "DesktopWorkspace.DirectMessageBody", marker,
+                    "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(45),
+                    "Не удалось отправить"),
+                    "DesktopWorkspace.DirectDeliveryStatus:failed");
+                controller.Status().AssertConsumed(
+                    fault, "mailbox-store", attempts: 1, dispatches: 0,
+                    successes: 0, postDrop: 0, preOutage: 1, ackDrop: 0);
+            }
+
+            using (var restarted = WindowsUiSmokeTests.WindowsUiTestSession
+                .CreateStrictWithAppData(options.WindowsAppDataRoot))
+            {
+                StrictCrossPlatformContracts.AssertDistinctProcessIds(
+                    firstWindowsPid, restarted.ProcessId);
+                restarted.ActivateExact(Require(restarted.WaitForAutomationIdWithName(
+                    "DesktopWorkspace.ConversationRow", windowsContact,
+                    TimeSpan.FromSeconds(45)), "DesktopWorkspace.ConversationRow"));
+                var sent = Require(restarted.WaitForCorrelatedDescendant(
+                    "DesktopWorkspace.DirectMessageBubble",
+                    "DesktopWorkspace.DirectMessageBody", marker,
+                    "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(90),
+                    "Отправлено"), "DesktopWorkspace.DirectDeliveryStatus:sent");
+                Assert.Equal("Отправлено", sent.Properties.Name.ValueOrDefault);
+            }
+
+            android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
+                marker, 1, TimeSpan.FromSeconds(60));
+            var final = controller.Status();
+            final.AssertConsumed(fault, "mailbox-store", attempts: 2,
+                dispatches: 1, successes: 1, postDrop: 0, preOutage: 1, ackDrop: 0);
+            var statusSha = controller.WriteVerifiedStatusEvidence(
+                options.ArtifactDirectory, options.Phase, final);
+            evidence.AddHash("operationMarkerHash", marker);
+            evidence.AddSafeValue("chaosStatusSha256", statusSha);
+            evidence.AddBoolean("senderRestartedWithDistinctPid", true);
+            evidence.AddBoolean("manualRetryActionInvoked", false);
+            evidence.AddBoolean("automaticRetryReachedSent", true);
+            evidence.AddBoolean("recipientRenderedExactlyOnce", true);
+            evidence.AddBoolean("httpsStoreFaultConsumedExactlyOnce", true);
+        }
+        catch (Exception exception)
+        {
+            operationFailure = exception;
+        }
+        CompleteChaosPhase(options, evidence, controller, operationFailure);
+    }
+
+    private static AndroidUiautomatorClient PrepareChaosAndroid(
+        CrossPlatformOptions options,
+        out string identity)
+    {
+        Mau2PhysicalPhaseContract.RequireChaosPhase(options.Phase);
+        var android = new AndroidUiautomatorClient(options);
+        android.AssertPhysicalConnectedDevice();
+        android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
+        android.ColdStart();
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+        identity = ReadAndroidIdentity(android, options);
+        return android;
+    }
+
+    private static void CompleteChaosPhase(
+        CrossPlatformOptions options,
+        StrictCrossPlatformContracts.SanitizedEvidence evidence,
+        PhysicalChaosController controller,
+        Exception? operationFailure)
+    {
+        Exception? cleanupFailure = null;
+        try { controller.EndAndAssertBaseline(); }
+        catch (Exception exception) { cleanupFailure = exception; }
+        if (operationFailure is not null && cleanupFailure is not null)
+            throw new AggregateException(
+                "Physical chaos operation and baseline cleanup both failed.",
+                operationFailure, cleanupFailure);
+        if (operationFailure is not null) throw operationFailure;
+        if (cleanupFailure is not null) throw cleanupFailure;
+        evidence.AddBoolean("chaosEndRestoredExactBaseline", true);
+        evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
+        CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void ExerciseAckCrashWindow(CrossPlatformOptions options)
+    {
+        const string fault = "post-durable-ack-response-drop";
+        var evidence = CreatePhaseEvidence(options);
+        var android = PrepareChaosAndroid(options, out var androidIdentity);
+        var marker = StrictCrossPlatformContracts.NewMarker("ack-crash-window");
+        var androidContact = StrictCrossPlatformContracts.NewMarker("ack-windows");
+        var windowsContact = StrictCrossPlatformContracts.NewMarker("ack-android");
+        var controller = PhysicalChaosController.LoadRequired();
+        Exception? operationFailure = null;
+        try
+        {
+            using var windows = WindowsUiSmokeTests.WindowsUiTestSession
+                .CreateStrictWithAppData(options.WindowsAppDataRoot);
+            var windowsIdentity = ReadWindowsIdentity(windows);
+            AddAndroidContact(android, options, windowsIdentity, androidContact);
+            AddWindowsContact(windows, androidIdentity, windowsContact);
+            android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
+                marker, 0, TimeSpan.FromSeconds(2));
+            controller.Begin(fault, "mailbox-ack");
+            SendWindowsMessageAndAssertSent(windows, marker);
+            android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
+                marker, 1, TimeSpan.FromSeconds(60));
+
+            // The rendered row is backed by the local durable domain store. Kill
+            // immediately after it appears: the injected ACK response loss has
+            // already happened upstream, while the client never observed success.
+            android.ForceStop();
+            controller.Status().AssertConsumed(fault, "mailbox-ack", attempts: 1,
+                dispatches: 1, successes: 1, postDrop: 0, preOutage: 0, ackDrop: 1);
+
+            android.ColdStart();
+            android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+            android.TapExactResourceIdWithAccessibleText(
+                options.App("Conversations.ConversationRow"), androidContact,
+                TimeSpan.FromSeconds(45));
+            android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
+                marker, 1, TimeSpan.FromSeconds(60));
+            controller.WaitForConsumed(fault, "mailbox-ack", attempts: 2,
+                dispatches: 2, successes: 2, postDrop: 0, preOutage: 0, ackDrop: 1,
+                timeout: TimeSpan.FromSeconds(90));
+            var senderStatus = Require(windows.WaitForCorrelatedDescendant(
+                "DesktopWorkspace.DirectMessageBubble",
+                "DesktopWorkspace.DirectMessageBody", marker,
+                "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(30),
+                "Отправлено"), "DesktopWorkspace.DirectDeliveryStatus:sent");
+            Assert.Equal("Отправлено", senderStatus.Properties.Name.ValueOrDefault);
+
+            var final = controller.Status();
+            final.AssertConsumed(fault, "mailbox-ack", attempts: 2,
+                dispatches: 2, successes: 2, postDrop: 0, preOutage: 0, ackDrop: 1);
+            var statusSha = controller.WriteVerifiedStatusEvidence(
+                options.ArtifactDirectory, options.Phase, final);
+            evidence.AddHash("operationMarkerHash", marker);
+            evidence.AddSafeValue("chaosStatusSha256", statusSha);
+            evidence.AddBoolean("recipientDurablyRenderedBeforeCrash", true);
+            evidence.AddBoolean("recipientRestartedAfterUnknownAckOutcome", true);
+            evidence.AddBoolean("recipientRenderedExactlyOnceAfterRestart", true);
+            evidence.AddBoolean("sameDurableAckRetriedOnceAfterRestart", true);
+            evidence.AddBoolean("senderRemainedSent", true);
+            evidence.AddBoolean("httpsAckFaultConsumedExactlyOnce", true);
+        }
+        catch (Exception exception)
+        {
+            operationFailure = exception;
+        }
+        CompleteChaosPhase(options, evidence, controller, operationFailure);
     }
 
     private static void RestartAndAssertDeduplicatedReceive(CrossPlatformOptions options)
@@ -545,11 +810,16 @@ public sealed class StrictCrossPlatformUiTests
         Assert.Null(android.FindOptional(options.App("Conversations.ConversationRow")));
     }
 
-    private static void AddAndroidContact(AndroidUiautomatorClient android, CrossPlatformOptions options, string windowsIdentity)
+    private static void AddAndroidContact(
+        AndroidUiautomatorClient android,
+        CrossPlatformOptions options,
+        string windowsIdentity,
+        string? displayName = null)
     {
         OpenAndroidNewConversation(android, options);
         android.Type(options.App("NewConversation.SessionId"), windowsIdentity);
-        android.Type(options.App("NewConversation.DisplayName"), StrictCrossPlatformContracts.NewMarker("windows-contact"));
+        android.Type(options.App("NewConversation.DisplayName"),
+            displayName ?? StrictCrossPlatformContracts.NewMarker("windows-contact"));
         android.Tap(options.App("NewConversation.Start"));
         android.WaitForResource(options.App("Chat.Draft"), TimeSpan.FromSeconds(30));
     }
@@ -561,12 +831,16 @@ public sealed class StrictCrossPlatformUiTests
         android.WaitForResource(options.App("NewConversation.SessionId"), TimeSpan.FromSeconds(15));
     }
 
-    private static void AddWindowsContact(WindowsUiSmokeTests.WindowsUiTestSession windows, string androidIdentity)
+    private static void AddWindowsContact(
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        string androidIdentity,
+        string? displayName = null)
     {
         windows.ActivateExact(Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(20)), "Conversations.NewConversation"));
         windows.ActivateExact(Require(windows.WaitForAutomationId("StartConversation.NewMessage", TimeSpan.FromSeconds(15)), "StartConversation.NewMessage"));
         Require(windows.WaitForAutomationId("NewConversation.SessionId", TimeSpan.FromSeconds(15)), "NewConversation.SessionId").AsTextBox().Text = androidIdentity;
-        Require(windows.WaitForAutomationId("NewConversation.DisplayName", TimeSpan.FromSeconds(10)), "NewConversation.DisplayName").AsTextBox().Text = StrictCrossPlatformContracts.NewMarker("android-contact");
+        Require(windows.WaitForAutomationId("NewConversation.DisplayName", TimeSpan.FromSeconds(10)), "NewConversation.DisplayName").AsTextBox().Text =
+            displayName ?? StrictCrossPlatformContracts.NewMarker("android-contact");
         windows.ActivateExact(Require(windows.WaitForAutomationId("NewConversation.Start", TimeSpan.FromSeconds(10)), "NewConversation.Start"));
         Require(windows.WaitForAutomationId("DesktopWorkspace.DirectDraft", TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectDraft");
     }
@@ -933,7 +1207,7 @@ internal sealed class CrossPlatformOptions
         "Chat.AttachmentFilename", "Chat.AttachmentMetadata", "Chat.AttachmentOpen",
         "Chat.AttachmentSave", "Chat.MessageAttachmentOpen", "Chat.MessageAttachmentSave",
         "Chat.ImagePreview", "Chat.ImageMetadata",
-        "Chat.DeliveryStatus", "Chat.Voice", "Chat.VoicePlayButton",
+        "Chat.DeliveryStatus", "Chat.Retry", "Chat.Voice", "Chat.VoicePlayButton",
         "PhysicalE2E.VoicePlaybackState", "Call.Root", "Call.Status",
         "Call.MediaState", "Call.Microphone", "Call.MicrophoneState", "Call.Hangup"
     ];
@@ -1547,6 +1821,40 @@ internal sealed class AndroidUiautomatorClient
     internal void Hold(string resourceId, TimeSpan duration) { if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10)) throw new ArgumentOutOfRangeException(nameof(duration)); var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "swipe", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), ((int)duration.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void Hold(StrictCrossPlatformContracts.AndroidNode node, TimeSpan duration) { if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10)) throw new ArgumentOutOfRangeException(nameof(duration)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "swipe", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), ((int)duration.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void TapExactResourceIdWithExactText(string resourceId, string text) { var node = WaitByText(resourceId, text, TimeSpan.FromSeconds(15)); Assert.Equal(text, node.Text); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
+    internal void TapExactResourceIdWithAccessibleText(
+        string resourceId,
+        string exactText,
+        TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        Exception? last = null;
+        while (DateTime.UtcNow < until)
+        {
+            try
+            {
+                var matches = StrictCrossPlatformContracts.FindAllResourceIds(
+                        Dump(), resourceId)
+                    .Where(node => string.Equals(
+                        node.AccessibleText, exactText, StringComparison.Ordinal))
+                    .ToArray();
+                if (matches.Length > 1)
+                    throw new InvalidOperationException(
+                        "Android resource-id/accessible-text pair was ambiguous.");
+                if (matches.Length == 1)
+                {
+                    var point = matches[0].Bounds.Center;
+                    RequireSuccess(Adb("shell", "input", "tap",
+                        point.X.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                    return;
+                }
+            }
+            catch (Exception exception) { last = exception; }
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException(
+            "Android exact resource-id/accessible-text pair was not observed.", last);
+    }
     internal bool AllowMicrophonePermissionIfRequested(TimeSpan timeout)
     {
         string[] permissionButtons =

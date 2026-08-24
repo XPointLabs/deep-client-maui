@@ -48,7 +48,7 @@ internal static partial class Mau2PhysicalPhaseContract
     internal static string GetResultFileName(Mau2PhysicalPhase phase) =>
         $"mau2-{phase.ToString().ToLowerInvariant()}-result.json";
 
-    internal static void RequireHttpsChaosSupport(Mau2PhysicalPhase phase)
+    internal static void RequireChaosPhase(Mau2PhysicalPhase phase)
     {
         if (phase is not (Mau2PhysicalPhase.ManualResendAfterRestart
             or Mau2PhysicalPhase.AutomaticRetryAfterRestart
@@ -56,8 +56,6 @@ internal static partial class Mau2PhysicalPhaseContract
         {
             throw new InvalidOperationException("This MAU2 phase does not use transport chaos.");
         }
-        throw new InvalidOperationException(
-            "Physical retry/ACK evidence is blocked until Deep DevOps provides a bounded post-durable response-drop and ACK crash seam behind the CA-trusted HTTPS ingress; the HTTP publisher replacement is not transport-equivalent.");
     }
 
     internal static string RequireSanitizedRunStatePath()

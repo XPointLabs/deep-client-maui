@@ -280,7 +280,7 @@ are never written to policy output and are zeroed by the issuer process.
 
 The non-destructive physical runner `eng/Invoke-PhysicalMau2CrossPlatform.ps1`
 requires one explicit phase: `ProvisionIdentity`, `Attach`, `PayloadMatrix`, `Call`, `RestartDurability`,
-`ManualResendAfterRestart`, `AutomaticRetryAfterRestart`, or `NegativeRuntime`.
+`ManualResendAfterRestart`, `AutomaticRetryAfterRestart`, `AckCrashWindow`, or `NegativeRuntime`.
 `ProvisionIdentity` creates a missing Android or Windows identity only through
 the rendered production controls, otherwise reads and preserves the existing
 identity. It never approves or performs a local-state reset; a reset-required
@@ -295,14 +295,24 @@ start and natural completion, and both voice rows must remain exactly present
 after both processes restart. Open action evidence and Save/decrypt/hash evidence
 are separate booleans; invoking Open never implies that plaintext Save succeeded.
 
-The two resend-after-restart contracts remain fail closed. The available
-`deep-devops-survival-chaos-v1` seam replaces the old HTTP `:41801` publisher,
-while physical clients now require the CA-trusted HTTPS ingress on that port.
-It therefore cannot currently inject an app-visible post-durable response drop
-without destroying the transport being tested. An HTTPS-ingress-aware, bounded
-one-shot control must be added in Deep DevOps before manual retry, automatic retry,
-or ACK crash-window evidence can pass; static evidence from the HTTP integration
-test is not substituted. `RestartDurability` remains the existing delivered-message
+The retry/ACK phases use only the reviewed `deep-devops` chaos v2 CLI while the
+client remains on the unchanged CA-trusted `https://<LAN-IP>:41801` ingress. The
+runner pins the exact clean DevOps commit and launcher SHA-256, derives the origin
+from the same checked HTTPS profile, and requires a clean off baseline before the
+test. `ManualResendAfterRestart` consumes one post-durable Store response drop,
+persists the exact failed row across a distinct Windows process, invokes its
+correlated Retry control, and requires exact Store counters, sender `Sent`, and one
+recipient row. `AutomaticRetryAfterRestart` consumes one pre-dispatch Store outage,
+restarts without invoking Retry, and requires the durable background retry to reach
+the same exact UI and counter outcome. `AckCrashWindow` consumes one
+post-durable ACK response drop only on the exact acknowledge route, kills Android
+after the correlated row is durably rendered, then requires the same row exactly
+once after restart and the same durable ACK operation to be retried exactly once,
+advancing its attempt/dispatch/success counters from one to two. Each phase writes
+the exact safe v2 status plus a separately verified SHA-256, calls idempotent `ChaosEnd` in the test
+and runner `finally` paths, and requires the all-zero/off baseline. HTTP, raw Compose,
+tokens, socket access, absolute request-count claims, and Store evidence relabelled
+as ACK evidence are rejected. `RestartDurability` remains the existing delivered-message
 durability claim. `NegativeRuntime` does not clear or reinstall either Android
 package and does not mutate Android app data. It materializes three disposable,
 exact-DACL Windows app-data roots below the protected

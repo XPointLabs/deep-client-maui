@@ -84,7 +84,7 @@ function New-CanonicalAndroidSelectorsJson {
         'StartConversation.NewMessage', 'NewConversation.SessionId',
         'NewConversation.DisplayName', 'NewConversation.Start',
         'NewConversation.Error', 'NewConversation.Back', 'Chat.Back', 'Chat.Draft',
-        'Chat.Send', 'Chat.MessageBody', 'Chat.MessageBubble', 'Chat.DeliveryStatus',
+        'Chat.Send', 'Chat.MessageBody', 'Chat.MessageBubble', 'Chat.DeliveryStatus', 'Chat.Retry',
         'Chat.Attach', 'Chat.PickFile', 'Chat.PickPhoto', 'Chat.StagedAttachmentFilename',
         'Chat.StagedAttachmentMetadata',
         'Chat.AttachmentFilename', 'Chat.AttachmentMetadata', 'Chat.AttachmentOpen',
@@ -274,6 +274,101 @@ function Assert-DockerHealthy {
     }
 }
 
+function Get-ExactChaosJson([object[]]$Output, [string]$Schema) {
+    $prefix = '{"schema":"' + $Schema + '"'
+    $matches = @($Output | ForEach-Object { [string]$_ } |
+        Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) })
+    if ($matches.Count -ne 1) {
+        throw "Supported chaos command did not emit one exact $Schema result."
+    }
+    return ($matches[0] | ConvertFrom-Json)
+}
+
+function Invoke-ChaosCommand([string[]]$Arguments, [string]$Schema) {
+    $output = @(& powershell -NoProfile -ExecutionPolicy Bypass `
+        -File $script:chaosLauncher @Arguments 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw 'Supported HTTPS chaos command failed.' }
+    return Get-ExactChaosJson $output $Schema
+}
+
+function Assert-ExactJsonProperties([object]$Value, [string[]]$Expected, [string]$Label) {
+    $actual = @($Value.PSObject.Properties.Name)
+    if ($actual.Count -ne $Expected.Count -or
+        @(Compare-Object -ReferenceObject $Expected -DifferenceObject $actual).Count -ne 0) {
+        throw "$Label did not contain the exact closed property set."
+    }
+}
+
+function Assert-ChaosOffBaseline([object]$Status) {
+    Assert-ExactJsonProperties $Status @(
+        'schema', 'mode', 'running', 'operation', 'fault', 'armed', 'consumed',
+        'requestCount', 'operationAttemptCount', 'operationUpstreamDispatchCount',
+        'operationUpstreamSuccessCount', 'injectedFaultCount',
+        'postDurableResponseDropCount', 'postDurableAckResponseDropCount',
+        'preDispatchOutageCount', 'faultWindowStartedUnixMilliseconds',
+        'faultWindowDeadlineUnixMilliseconds', 'expiresInSeconds',
+        'identifiersIncluded', 'payloadInspected') 'HTTPS chaos status'
+    if ($Status.schema -cne 'deep-survival-resend-chaos-status.v2' -or
+        $Status.mode -cne 'development-only' -or $Status.running -ne $false -or
+        $Status.armed -ne $false -or $Status.consumed -ne $false -or
+        $null -ne $Status.operation -or $null -ne $Status.fault -or
+        $Status.requestCount -ne 0 -or
+        $Status.operationAttemptCount -ne 0 -or
+        $Status.operationUpstreamDispatchCount -ne 0 -or
+        $Status.operationUpstreamSuccessCount -ne 0 -or
+        $Status.injectedFaultCount -ne 0 -or
+        $Status.postDurableResponseDropCount -ne 0 -or
+        $Status.preDispatchOutageCount -ne 0 -or
+        $Status.postDurableAckResponseDropCount -ne 0 -or
+        $Status.faultWindowStartedUnixMilliseconds -ne 0 -or
+        $Status.faultWindowDeadlineUnixMilliseconds -ne 0 -or
+        $Status.expiresInSeconds -ne 0 -or
+        $Status.identifiersIncluded -ne $false -or
+        $Status.payloadInspected -ne $false) {
+        throw 'HTTPS chaos did not return to the exact safe off baseline.'
+    }
+}
+
+function Assert-ChaosEnd([object]$Result) {
+    Assert-ExactJsonProperties $Result @(
+        'schema', 'status', 'running', 'armed', 'protectedTokenDeleted') 'HTTPS chaos end'
+    if ($Result.schema -cne 'deep-survival-resend-chaos-end.v2' -or
+        $Result.status -cne 'ok' -or $Result.running -ne $false -or
+        $Result.armed -ne $false -or $Result.protectedTokenDeleted -ne $true) {
+        throw 'HTTPS chaos cleanup result is invalid.'
+    }
+}
+
+function Assert-VerifiedChaosEvidence([string]$Artifacts, [string]$CurrentPhase) {
+    $stem = "chaos-$($CurrentPhase.ToLowerInvariant())-status.v2.json"
+    $path = Join-Path $Artifacts $stem
+    $digestPath = "$path.sha256"
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $digestPath -PathType Leaf)) {
+        throw 'Physical chaos did not produce its status and SHA-256 evidence pair.'
+    }
+    $digest = (Get-Content -Raw -LiteralPath $digestPath).Trim()
+    if ($digest -cnotmatch '^[a-f0-9]{64}$' -or
+        (Get-Sha256 $path) -cne $digest) {
+        throw 'Physical chaos status evidence SHA-256 verification failed.'
+    }
+    $status = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+    Assert-ExactJsonProperties $status @(
+        'schema', 'mode', 'running', 'operation', 'fault', 'armed', 'consumed',
+        'requestCount', 'operationAttemptCount', 'operationUpstreamDispatchCount',
+        'operationUpstreamSuccessCount', 'injectedFaultCount',
+        'postDurableResponseDropCount', 'postDurableAckResponseDropCount',
+        'preDispatchOutageCount', 'faultWindowStartedUnixMilliseconds',
+        'faultWindowDeadlineUnixMilliseconds', 'expiresInSeconds',
+        'identifiersIncluded', 'payloadInspected') 'Physical chaos status evidence'
+    if ($status.schema -cne 'deep-survival-resend-chaos-status.v2' -or
+        $status.running -ne $true -or $status.armed -ne $false -or
+        $status.consumed -ne $true -or $status.injectedFaultCount -ne 1 -or
+        $status.identifiersIncluded -ne $false -or $status.payloadInspected -ne $false) {
+        throw 'Physical chaos status evidence is not one exact consumed safe v2 fault.'
+    }
+}
+
 $bootstrap = Assert-AbsoluteExisting $MailboxBootstrapRoot 'Mailbox bootstrap root' -Directory
 if ($Phase -ceq 'NegativeRuntime' -and
     $bootstrap -cne [IO.Path]::GetFullPath(
@@ -296,6 +391,42 @@ $runtimeEnvironmentText = Get-Content -Raw -LiteralPath $runtimeEnvironment
 if ($runtimeEnvironmentText -cnotmatch '(?m)^DEEP_TRANSPORT_PROTOCOL=authenticated-mau2$' -or
     $runtimeEnvironmentText -cnotmatch '(?m)^DEEP_TRANSPORT_OWNERSHIP=user-managed$') {
     throw 'The physical lane requires the checked-in authenticated MAU2 user-managed runtime profile.'
+}
+$chaosPhase = $Phase -cin @(
+    'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow')
+$chaosLauncher = $null
+$chaosScriptSha256 = $null
+$chaosOrigin = $null
+$chaosSecretDirectory = $null
+if ($chaosPhase) {
+    $expectedDevOpsCommit = '1bc829c7b43efa20968fa846f5c0e6239ca8419d'
+    $actualDevOpsCommit = @(& git -C $devOpsRoot rev-parse HEAD)
+    $devOpsState = @(& git -C $devOpsRoot status --porcelain=v1 --untracked-files=all)
+    if ($LASTEXITCODE -ne 0 -or $actualDevOpsCommit.Count -ne 1 -or
+        $actualDevOpsCommit[0].Trim() -cne $expectedDevOpsCommit -or
+        $devOpsState.Count -ne 0) {
+        throw 'Physical HTTPS chaos requires the exact clean reviewed deep-devops commit.'
+    }
+    $chaosLauncher = Assert-AbsoluteExisting `
+        (Join-Path $devOpsRoot 'scripts\survival-dev.ps1') 'Supported HTTPS chaos launcher'
+    $chaosScriptSha256 = Get-Sha256 $chaosLauncher
+    $originMatches = [regex]::Matches(
+        $runtimeEnvironmentText,
+        '(?m)^XNODE_URLS=[0-9a-f]{64}\|(?<origin>https://(?<host>[0-9]{1,3}(?:\.[0-9]{1,3}){3}):41801);')
+    $address = $null
+    if ($originMatches.Count -ne 1 -or
+        -not [Net.IPAddress]::TryParse(
+            $originMatches[0].Groups['host'].Value, [ref]$address) -or
+        $address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or
+        $address.Equals([Net.IPAddress]::Any)) {
+        throw 'Physical HTTPS chaos could not bind the exact :41801 profile origin.'
+    }
+    $chaosOrigin = $originMatches[0].Groups['origin'].Value
+    $chaosSecretDirectory = Assert-AbsoluteExisting `
+        'C:\Work\DeepSession\secrets\survival-uat-tls' 'UAT TLS secret directory' -Directory
+    $env:SURVIVAL_UAT_TLS_SECRET_DIR = $chaosSecretDirectory
+    Assert-ChaosOffBaseline (Invoke-ChaosCommand @('-Action', 'ChaosStatus') `
+        'deep-survival-resend-chaos-status.v2')
 }
 $sourceCommit = @(& git -C $repoRoot rev-parse HEAD)
 if ($LASTEXITCODE -ne 0 -or $sourceCommit.Count -ne 1 -or $sourceCommit[0].Trim() -cnotmatch '^[0-9a-f]{40}$') {
@@ -420,6 +551,13 @@ try {
         $env:DEEP_TRANSPORT_PROTOCOL = 'authenticated-mau2'
         $env:DEEP_TRANSPORT_OWNERSHIP = 'user-managed'
         $env:DEEP_STORAGE_URL = $null
+        if ($chaosPhase) {
+            $env:DEEP_E2E_CHAOS_DEVOPS_ROOT = $devOpsRoot
+            $env:DEEP_E2E_CHAOS_SCRIPT = $chaosLauncher
+            $env:DEEP_E2E_CHAOS_SCRIPT_SHA256 = $chaosScriptSha256
+            $env:DEEP_E2E_CHAOS_HTTPS_ORIGIN = $chaosOrigin
+            $env:SURVIVAL_UAT_TLS_SECRET_DIR = $chaosSecretDirectory
+        }
         $negativeGenerator = Join-Path $devOpsRoot 'scripts\survival-dev-mailbox-negative-runtime.ps1'
         $negativePrepared = $false
         if ($Phase -ceq 'NegativeRuntime') {
@@ -440,7 +578,16 @@ try {
                 --filter 'FullyQualifiedName=Deep.Client.Maui.UiTests.StrictCrossPlatformUiTests.Physical_android_and_windows_exchange_persist_and_decrypt_an_attachment'
             if ($LASTEXITCODE -ne 0) { throw 'Physical MAU2 UI phase failed.' }
             Assert-ExactPhysicalTestResult $trxPath
+            if ($chaosPhase) {
+                Assert-VerifiedChaosEvidence $artifacts $Phase
+            }
         } finally {
+            if ($chaosPhase) {
+                Assert-ChaosEnd (Invoke-ChaosCommand @('-Action', 'ChaosEnd') `
+                    'deep-survival-resend-chaos-end.v2')
+                Assert-ChaosOffBaseline (Invoke-ChaosCommand @('-Action', 'ChaosStatus') `
+                    'deep-survival-resend-chaos-status.v2')
+            }
             if ($negativePrepared) {
                 & powershell -NoProfile -ExecutionPolicy Bypass -File $negativeGenerator `
                     -Action Cleanup -RunRoot $runRoot | Out-Null

@@ -169,6 +169,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             "eng", "Invoke-PhysicalMau2CrossPlatform.ps1"));
         var ui = File.ReadAllText(WorkspacePath(
             "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+        var chaosController = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "PhysicalChaosController.cs"));
         var windowsUi = File.ReadAllText(WorkspacePath(
             "tests", "Deep.Client.Maui.UiTests", "WindowsUiSmokeTests.cs"));
         var attachmentOpen = File.ReadAllText(WorkspacePath(
@@ -264,7 +266,21 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("internal void ColdStart()", ui, StringComparison.Ordinal);
         Assert.Contains("ForceStop();", ui, StringComparison.Ordinal);
         Assert.Contains("already-running task", ui, StringComparison.Ordinal);
-        Assert.Contains("RequireHttpsChaosSupport", ui, StringComparison.Ordinal);
+        Assert.Contains("RequireChaosPhase", ui, StringComparison.Ordinal);
+        Assert.Contains("PhysicalChaosController.LoadRequired", ui, StringComparison.Ordinal);
+        Assert.Contains("post-durable-response-drop", ui, StringComparison.Ordinal);
+        Assert.Contains("pre-dispatch-outage", ui, StringComparison.Ordinal);
+        Assert.Contains("post-durable-ack-response-drop", ui, StringComparison.Ordinal);
+        Assert.Contains("Assert-VerifiedChaosEvidence", runner, StringComparison.Ordinal);
+        Assert.Contains("Assert-ChaosOffBaseline", runner, StringComparison.Ordinal);
+        Assert.Contains("DEEP_E2E_CHAOS_HTTPS_ORIGIN", runner, StringComparison.Ordinal);
+        Assert.Contains("Uri.UriSchemeHttps", chaosController, StringComparison.Ordinal);
+        Assert.Contains("origin.Port != 41801", chaosController, StringComparison.Ordinal);
+        Assert.DoesNotContain("http://", chaosController, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("1bc829c7b43efa20968fa846f5c0e6239ca8419d", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("1bc829c7b43efa20968fa846f5c0e6239ca8419d", chaosController,
+            StringComparison.Ordinal);
         Assert.Contains("survival-dev-mailbox-negative-runtime.ps1", runner,
             StringComparison.Ordinal);
         Assert.Contains("Canonical live Windows runtime changed", runner,
