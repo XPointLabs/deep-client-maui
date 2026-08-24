@@ -176,6 +176,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             "startInfo.Environment[StrictLaneEnvironment.WindowsUiEnabledKey] = \"1\";",
             windowsUi,
             StringComparison.Ordinal);
+        Assert.Contains("application.GetMainWindow(", windowsUi, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetAllTopLevelWindows", windowsUi, StringComparison.Ordinal);
+        Assert.Contains("private Window CurrentWindow() => window;", windowsUi,
+            StringComparison.Ordinal);
         Assert.Contains("'Startup.Status'", runner, StringComparison.Ordinal);
         Assert.Contains("e2e-runs", runner, StringComparison.Ordinal);
         Assert.Contains("Initialize-ProtectedRunsRoot $e2eRunsRoot", runner,

@@ -170,11 +170,7 @@ public sealed class WindowsUiSmokeTests
             {
                 AssertLaunchedBinaryBinding(application, appPath);
                 var result = Retry.WhileNull(
-                    () => application
-                        .GetAllTopLevelWindows(automation)
-                        .FirstOrDefault(candidate =>
-                            candidate.Properties.ProcessId.ValueOrDefault == application.ProcessId
-                            && candidate.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero),
+                    () => GetPidBoundMainWindow(application, automation),
                     timeout: TimeSpan.FromSeconds(30),
                     interval: TimeSpan.FromMilliseconds(250),
                     throwOnTimeout: false);
@@ -345,13 +341,30 @@ public sealed class WindowsUiSmokeTests
             }
         }
 
-        private Window CurrentWindow() =>
-            application
-                .GetAllTopLevelWindows(automation)
-                .FirstOrDefault(candidate =>
-                    candidate.Properties.ProcessId.ValueOrDefault == application.ProcessId
-                    && candidate.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero)
-            ?? window;
+        private Window CurrentWindow() => window;
+
+        private static Window? GetPidBoundMainWindow(
+            Application application,
+            UIA3Automation automation)
+        {
+            try
+            {
+                var candidate = application.GetMainWindow(
+                    automation,
+                    TimeSpan.FromMilliseconds(200));
+                return candidate is not null
+                    && candidate.Properties.ProcessId.ValueOrDefault == application.ProcessId
+                    && candidate.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero
+                        ? candidate
+                        : null;
+            }
+            catch (COMException)
+            {
+                // A transient UIA provider timeout must not make this exact-PID
+                // lane enumerate every unrelated top-level desktop window.
+                return null;
+            }
+        }
 
         private static string BuildSanitizedTree(AutomationElement root)
         {
