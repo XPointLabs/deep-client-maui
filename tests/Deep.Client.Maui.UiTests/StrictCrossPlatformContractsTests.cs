@@ -5,15 +5,30 @@ public sealed class StrictCrossPlatformContractsTests
     [Fact]
     public void Correlated_message_descendant_requires_one_exact_ancestor_and_target()
     {
-        const string xml = "<hierarchy><node resource-id='pkg:id/bubble' bounds='[0,0][20,20]'><node resource-id='pkg:id/body' text='exact' bounds='[1,1][5,5]'/><node resource-id='pkg:id/status' content-desc='Sent' bounds='[6,6][9,9]'/></node><node resource-id='pkg:id/bubble' bounds='[20,0][40,20]'><node resource-id='pkg:id/body' text='other' bounds='[21,1][25,5]'/></node></hierarchy>";
+        const string xml = "<hierarchy><node resource-id='pkg:id/bubble' bounds='[0,0][20,20]'><node resource-id='pkg:id/body' text='exact' bounds='[1,1][5,5]'/><node resource-id='pkg:id/status' text='✓' content-desc='Отправлено' bounds='[6,6][9,9]'/></node><node resource-id='pkg:id/bubble' bounds='[20,0][40,20]'><node resource-id='pkg:id/body' text='other' bounds='[21,1][25,5]'/></node></hierarchy>";
 
         var target = StrictCrossPlatformContracts.FindExactlyOneCorrelatedDescendant(
             xml, "pkg:id/bubble", "pkg:id/body", "exact", "pkg:id/status");
 
-        Assert.Equal("Sent", target.AccessibleText);
+        Assert.Equal("✓", target.AccessibleText);
+        Assert.True(target.HasExactPresentation("✓", "Отправлено"));
         Assert.Equal("pkg:id/bubble",
             StrictCrossPlatformContracts.FindExactlyOneResourceIdContainingDescendantText(
                 xml, "pkg:id/bubble", "pkg:id/body", "exact").ResourceId);
+    }
+
+    [Theory]
+    [InlineData("…", "Отправка")]
+    [InlineData("!", "Ошибка отправки")]
+    [InlineData("✓", "Прочитано")]
+    public void Android_delivery_status_rejects_non_sent_presentations(
+        string glyph, string description)
+    {
+        var node = new StrictCrossPlatformContracts.AndroidNode(
+            "pkg:id/status", glyph, description,
+            new StrictCrossPlatformContracts.AndroidBounds(0, 0, 1, 1));
+
+        Assert.False(node.HasExactPresentation("✓", "Отправлено"));
     }
     [Fact]
     public void Ui_dump_accepts_one_exact_hierarchy_and_only_the_platform_banner()

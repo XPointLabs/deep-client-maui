@@ -963,8 +963,8 @@ public sealed class StrictCrossPlatformUiTests
         var status = android.WaitForCorrelatedDescendant(
             options.App("Chat.MessageBubble"), options.App("Chat.MessageBody"), message,
             options.App("Chat.DeliveryStatus"), TimeSpan.FromSeconds(30),
-            "Отправлено");
-        Assert.Equal("Отправлено", status.AccessibleText);
+            targetText: "✓", targetContentDescription: "Отправлено");
+        Assert.True(status.HasExactPresentation("✓", "Отправлено"));
     }
 
     private static void ExchangeAndroidDocument(
@@ -983,8 +983,8 @@ public sealed class StrictCrossPlatformUiTests
         var androidStatus = android.WaitForCorrelatedDescendant(
             options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
             fileName, options.App("Chat.DeliveryStatus"), TimeSpan.FromSeconds(30),
-            "Отправлено");
-        Assert.Equal("Отправлено", androidStatus.AccessibleText);
+            targetText: "✓", targetContentDescription: "Отправлено");
+        Assert.True(androidStatus.HasExactPresentation("✓", "Отправлено"));
         var attachment = Require(windows.WaitForAutomationIdWithName(
             "DesktopWorkspace.DirectAttachmentFilename", fileName,
             TimeSpan.FromSeconds(60)), "DesktopWorkspace.DirectAttachmentFilename");
@@ -1815,8 +1815,12 @@ internal sealed class AndroidUiautomatorClient
     internal void WaitForText(string resourceId, string text, TimeSpan timeout) { var node = WaitByMarker(resourceId, text, timeout); Assert.Contains(text, node.Text, StringComparison.Ordinal); }
     internal StrictCrossPlatformContracts.AndroidNode WaitForCorrelatedDescendant(
         string ancestorResourceId, string correlationResourceId, string correlationText,
-        string targetResourceId, TimeSpan timeout, string? targetAccessibleText = null)
+        string targetResourceId, TimeSpan timeout, string? targetAccessibleText = null,
+        string? targetText = null, string? targetContentDescription = null)
     {
+        if ((targetText is null) != (targetContentDescription is null))
+            throw new ArgumentException(
+                "Exact Android presentation requires both text and content description.");
         var until = DateTime.UtcNow + timeout;
         Exception? last = null;
         while (DateTime.UtcNow < until)
@@ -1830,6 +1834,10 @@ internal sealed class AndroidUiautomatorClient
                         target.AccessibleText, targetAccessibleText, StringComparison.Ordinal))
                     throw new InvalidOperationException(
                         "Correlated Android message target has not reached its exact state.");
+                if (targetText is not null && targetContentDescription is not null
+                    && !target.HasExactPresentation(targetText, targetContentDescription))
+                    throw new InvalidOperationException(
+                        "Correlated Android message target has not reached its exact presentation.");
                 return target;
             }
             catch (Exception exception) { last = exception; }

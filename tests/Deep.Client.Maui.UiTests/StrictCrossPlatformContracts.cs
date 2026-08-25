@@ -627,6 +627,10 @@ internal static class StrictCrossPlatformContracts
             ? ContentDescription
             : Text;
 
+        internal bool HasExactPresentation(string text, string contentDescription) =>
+            string.Equals(Text, text, StringComparison.Ordinal)
+            && string.Equals(ContentDescription, contentDescription, StringComparison.Ordinal);
+
         internal static AndroidNode From(XElement node)
         {
             var resourceId = (string?)node.Attribute("resource-id") ?? throw new InvalidOperationException("uiautomator node has no resource-id.");
