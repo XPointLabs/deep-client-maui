@@ -1436,11 +1436,7 @@ public sealed class StrictCrossPlatformUiTests
         ICollection<string> createdDownloads,
         string fileName)
     {
-        windows.RequestContextMenuOnAncestor(
-            preview, "DesktopWorkspace.DirectMessageBubble");
-        windows.ActivateExact(Require(windows.WaitForAutomationId(
-            "DesktopWorkspace.AttachmentOpen", TimeSpan.FromSeconds(15)),
-            "DesktopWorkspace.AttachmentOpen"));
+        windows.ActivateExact(preview);
         windows.RequestContextMenuOnAncestor(
             preview, "DesktopWorkspace.DirectMessageBubble");
         var before = StrictCrossPlatformContracts.SnapshotDownloads(downloadsDirectory);
@@ -1492,9 +1488,8 @@ public sealed class StrictCrossPlatformUiTests
         var attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(45)), "DesktopWorkspace.DirectAttachmentFilename");
         if (verifyOpen)
         {
-            windows.RequestContextMenuOnAncestor(attachment, "DesktopWorkspace.DirectMessageBubble");
-            windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.AttachmentOpen", TimeSpan.FromSeconds(15)), "DesktopWorkspace.AttachmentOpen"));
-            // Open may replace the attachment menu. Re-select the same exact correlated filename before Save.
+            windows.ActivateExact(attachment);
+            // Open may change window focus. Re-select the same exact correlated filename before Save.
             attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(15)), "DesktopWorkspace.DirectAttachmentFilename");
         }
         windows.RequestContextMenuOnAncestor(attachment, "DesktopWorkspace.DirectMessageBubble");

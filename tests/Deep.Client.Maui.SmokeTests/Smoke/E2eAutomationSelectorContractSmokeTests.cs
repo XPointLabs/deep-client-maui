@@ -211,7 +211,12 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             "windows.RequestContextMenuOnAncestor(attachment, \"DesktopWorkspace.DirectMessageBubble\");",
             physical,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("windows.ActivateExact(attachment);", physical, StringComparison.Ordinal);
+        Assert.Contains("windows.ActivateExact(attachment);", physical, StringComparison.Ordinal);
+        Assert.Contains("windows.ActivateExact(preview);", physical, StringComparison.Ordinal);
+        Assert.Contains(
+            "WaitForAutomationIdWithName(\"DesktopWorkspace.DirectAttachmentFilename\", marker",
+            physical,
+            StringComparison.Ordinal);
         Assert.Contains("current = current.Parent;", windows, StringComparison.Ordinal);
         Assert.Contains("current.RightClick();", windows, StringComparison.Ordinal);
     }
