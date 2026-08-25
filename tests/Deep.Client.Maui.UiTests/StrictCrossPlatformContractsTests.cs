@@ -55,6 +55,8 @@ public sealed class StrictCrossPlatformContractsTests
 
         Assert.Equal(xml, StrictCrossPlatformContracts.ExtractExactUiHierarchy(
             xml + "UI hierchary dumped to: /dev/tty\r\n"));
+        Assert.Equal(xml, StrictCrossPlatformContracts.ExtractExactUiHierarchy(
+            "\r\n" + xml + "UI hierarchy dumped to: /dev/tty\r\n"));
         Assert.Throws<InvalidOperationException>(() =>
             StrictCrossPlatformContracts.ExtractExactUiHierarchy("noise" + xml));
         Assert.Throws<InvalidOperationException>(() =>

@@ -34,7 +34,8 @@ internal static class StrictCrossPlatformContracts
         const string closing = "</hierarchy>";
         var start = output.IndexOf(opening, StringComparison.Ordinal);
         var end = output.IndexOf(closing, StringComparison.Ordinal);
-        if (start != 0 || end < 0 ||
+        if (start < 0 || end < 0 ||
+            !string.IsNullOrWhiteSpace(output[..start]) ||
             output.IndexOf(opening, opening.Length, StringComparison.Ordinal) >= 0 ||
             output.IndexOf(closing, end + closing.Length, StringComparison.Ordinal) >= 0)
         {
@@ -46,7 +47,7 @@ internal static class StrictCrossPlatformContracts
         {
             throw new InvalidOperationException("uiautomator emitted unexpected trailing output.");
         }
-        return output[..(end + closing.Length)];
+        return output[start..(end + closing.Length)];
     }
 
     internal static AndroidNode FindExactlyOneResourceId(string xml, string resourceId)
