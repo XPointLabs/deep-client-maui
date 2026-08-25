@@ -32,7 +32,7 @@ public sealed class TransportSettingsUiContractSmokeTests
     }
 
     [Fact]
-    public void TransportPageTreatsXPointAsOneProviderAndDirectP2pFailsClosed()
+    public void TransportPageTreatsXPointAsOneProviderAndDirectP2pStaysHidden()
     {
         var detail = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "Pages", "SettingsDetailPage.xaml.cs");
@@ -40,12 +40,8 @@ public sealed class TransportSettingsUiContractSmokeTests
         Assert.Contains("TitleLabel.Text = \"Транспорты\"", detail, StringComparison.Ordinal);
         Assert.Contains("Deep может использовать несколько транспортов", detail, StringComparison.Ordinal);
         Assert.Contains("\"XPoint Network\"", detail, StringComparison.Ordinal);
-        Assert.Contains("\"Direct P2P\"", detail, StringComparison.Ordinal);
-        Assert.Contains("\"Не включён\"", detail, StringComparison.Ordinal);
-        Assert.Contains("Wi-Fi и Bluetooth пока не активированы в production-пути", detail,
-            StringComparison.Ordinal);
-        Assert.Contains("только после полной проверки радио, криптографии и физического E2E", detail,
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Direct P2P\"", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("Wi-Fi и Bluetooth", detail, StringComparison.Ordinal);
         Assert.DoesNotContain("case \"donate\"", detail, StringComparison.Ordinal);
         Assert.DoesNotContain("case \"network\"", detail, StringComparison.Ordinal);
         Assert.DoesNotContain("BuildDonateSection", detail, StringComparison.Ordinal);

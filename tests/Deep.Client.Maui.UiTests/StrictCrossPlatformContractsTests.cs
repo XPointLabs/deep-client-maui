@@ -210,6 +210,17 @@ public sealed class StrictCrossPlatformContractsTests
     }
 
     [Fact]
+    public void Physical_inventory_requires_android_9_or_newer()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.RequirePhysicalDeviceInventory(
+                "vendor/device/release", "Physical Device", "physical", "hardware", "nosdcard", 27));
+
+        StrictCrossPlatformContracts.RequirePhysicalDeviceInventory(
+            "vendor/device/release", "Physical Device", "physical", "hardware", "nosdcard", 28);
+    }
+
+    [Fact]
     public void Windows_output_tree_pin_covers_adjacent_runtime_files()
     {
         var root = Path.Combine(Path.GetTempPath(), "deep-output-tree-" + Guid.NewGuid().ToString("N"));
@@ -341,5 +352,31 @@ public sealed class StrictCrossPlatformContractsTests
         cleanup.RunAll();
         Assert.Equal(1, packageCleanup);
         Assert.Equal(faultStage == "push" ? 1 : 0, fixtureCleanup);
+    }
+
+    [Fact]
+    public void Privacy_route_proof_requires_exact_three_disjoint_hops_and_selected_entry()
+    {
+        var ids = Enumerable.Range(1, 6)
+            .Select(value => value.ToString("x2") + new string('a', 62))
+            .ToArray();
+        var canonical = $"v1|path=/api/ingress/v1/frame" +
+            $"|primary={string.Join(',', ids[..3])}" +
+            $"|fallback={string.Join(',', ids[3..])}" +
+            $"|selected=fallback|entry={ids[3]}";
+
+        var proof = StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(canonical);
+
+        Assert.Equal("fallback", proof.Selected);
+        Assert.Equal(ids[3], proof.Entry);
+        Assert.Equal(3, proof.Primary.Count);
+        Assert.Equal(3, proof.Fallback.Count);
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
+                canonical.Replace(ids[5], ids[0], StringComparison.Ordinal)));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
+                canonical.Replace($"entry={ids[3]}", $"entry={ids[4]}",
+                    StringComparison.Ordinal)));
     }
 }

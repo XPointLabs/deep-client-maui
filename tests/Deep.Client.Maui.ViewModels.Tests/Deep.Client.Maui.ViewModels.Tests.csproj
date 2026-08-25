@@ -38,6 +38,7 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\StoreBoundNativeMau2Transport.cs" Link="Services\StoreBoundNativeMau2Transport.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PhysicalMailboxRouteUsageTracker.cs" Link="Services\PhysicalMailboxRouteUsageTracker.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PrelaunchPlaintextStateArtifactPurger.cs" Link="Services\PrelaunchPlaintextStateArtifactPurger.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\LocalStateDatabaseKeySlot.cs" Link="Services\LocalStateDatabaseKeySlot.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\StartupLocalStateReset.cs" Link="Services\StartupLocalStateReset.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ClientSettingKeys.cs" Link="Services\ClientSettingKeys.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\SyncPollingPolicy.cs" Link="Services\SyncPollingPolicy.cs" />

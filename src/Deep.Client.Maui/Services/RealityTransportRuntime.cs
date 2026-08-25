@@ -63,6 +63,7 @@ internal sealed class AndroidRealityTransportRuntime : IRealityTransportRuntime
         }
     }
 
+    public IReadOnlyList<RealityRouterEndpoint> RouterEndpoints => routerEndpoints;
 
     public RealityTransportEndpointSource EndpointSource => RealityTransportEndpointSource.Embedded;
 

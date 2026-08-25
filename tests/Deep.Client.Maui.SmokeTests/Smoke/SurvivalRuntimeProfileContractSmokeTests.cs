@@ -183,7 +183,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         var startConversation = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Pages", "StartConversationPage.xaml"));
 
-        Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'PayloadMatrix', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')", runner,
+        Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'PayloadMatrix', 'PrivacyFallback', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
         Assert.Contains("[switch]$ResetWindowsUatLocalState", runner,
@@ -292,12 +292,14 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("Assert-VerifiedChaosEvidence", runner, StringComparison.Ordinal);
         Assert.Contains("Assert-ChaosOffBaseline", runner, StringComparison.Ordinal);
         Assert.Contains("DEEP_E2E_CHAOS_HTTPS_ORIGIN", runner, StringComparison.Ordinal);
+        Assert.Contains("DEEP_E2E_UAT_CA_CERTIFICATE", runner, StringComparison.Ordinal);
+        Assert.Contains("primary-ingress-rejected-before-forward", ui, StringComparison.Ordinal);
         Assert.Contains("Uri.UriSchemeHttps", chaosController, StringComparison.Ordinal);
         Assert.Contains("origin.Port != 41801", chaosController, StringComparison.Ordinal);
         Assert.DoesNotContain("http://", chaosController, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("91c7cf45984e93153dab80816e3f78e931edb779", runner,
+        Assert.Contains("2a41656323cdb7a34b7570214940767f33743ef4", runner,
             StringComparison.Ordinal);
-        Assert.Contains("91c7cf45984e93153dab80816e3f78e931edb779", chaosController,
+        Assert.Contains("2a41656323cdb7a34b7570214940767f33743ef4", chaosController,
             StringComparison.Ordinal);
         Assert.Contains("survival-dev-mailbox-negative-runtime.ps1", runner,
             StringComparison.Ordinal);
@@ -390,6 +392,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
     public void PhysicalLabPolicyIssuerIsCommitBoundAtomicAndZeroizesPrivateMaterial()
     {
         var script = File.ReadAllText(WorkspacePath("eng", "Issue-AndroidLabPolicy.ps1"));
+        var validator = File.ReadAllText(WorkspacePath("eng", "Invoke-StrictClientLane.ps1"));
         var issuer = File.ReadAllText(WorkspacePath(
             "eng", "Deep.AndroidLab.PolicyIssuer", "Program.cs"));
 
@@ -406,6 +409,14 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("foreach ($role in @('adb','aapt','apksigner'))", script,
             StringComparison.Ordinal);
         Assert.Contains("$process.WaitForExit(15000)", script, StringComparison.Ordinal);
+        Assert.Contains("[int]$props['ro.build.version.sdk'] -lt 28", script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("[int]$props['ro.build.version.sdk'] -lt 26", script,
+            StringComparison.Ordinal);
+        Assert.Contains("[int]$policy.device.sdk -lt 28", validator,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("[int]$policy.device.sdk -lt 26", validator,
+            StringComparison.Ordinal);
         Assert.Contains("PublicKeyAuth.SignDetached", issuer, StringComparison.Ordinal);
         Assert.Contains("PublicKeyAuth.VerifyDetached", issuer, StringComparison.Ordinal);
         Assert.Contains("CryptographicOperations.ZeroMemory(privateKey)", issuer,

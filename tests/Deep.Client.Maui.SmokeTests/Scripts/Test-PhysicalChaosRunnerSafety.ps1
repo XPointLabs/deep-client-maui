@@ -18,12 +18,14 @@ try {
             $powershell,
             @('-NoProfile', '-Command', $spawnImmediately),
             (Split-Path -Parent $runner),
-            1500) | Out-Null
+            5000) | Out-Null
         throw 'The hung process unexpectedly completed.'
     } catch {
         if ($_.Exception.ToString() -notmatch 'exceeded its deadline') { throw }
     }
-    Start-Sleep -Milliseconds 500
+    if (-not (Test-Path -LiteralPath $pidFile -PathType Leaf)) {
+        throw 'The bounded child did not publish its immediate descendant PID before the deadline.'
+    }
     $childPid = [int](Get-Content -LiteralPath $pidFile)
     if (Get-Process -Id $childPid -ErrorAction SilentlyContinue) {
         throw 'An immediate descendant escaped the suspended job assignment.'
@@ -66,15 +68,19 @@ foreach ($name in $requiredFunctions) {
 $snapshotWork = Join-Path $env:TEMP ('deep-physical-snapshot-' + [guid]::NewGuid().ToString('N'))
 $sourceRoot = Join-Path $snapshotWork 'source'
 $sourceScripts = Join-Path $sourceRoot 'scripts'
+$sourceConfig = Join-Path $sourceRoot 'config\survival-uat-tls'
 $snapshotRoot = Join-Path $snapshotWork 'snapshot'
 $manifest = Join-Path $snapshotWork 'manifest.json'
 $launcher = Join-Path $sourceScripts 'survival-dev.ps1'
 $helper = Join-Path $sourceScripts 'helper.ps1'
+$haproxyConfig = Join-Path $sourceConfig 'haproxy.cfg'
 $lease = $null
 try {
     [void][IO.Directory]::CreateDirectory($sourceScripts)
+    [void][IO.Directory]::CreateDirectory($sourceConfig)
     [IO.File]::WriteAllText($launcher, "'reviewed-launcher'`n", [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($helper, "'reviewed-helper'`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($haproxyConfig, "global`n", [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($manifest, '{"reviewed":true}', [Text.UTF8Encoding]::new($false))
     Assert-AuthorityPathAncestors $sourceRoot $launcher 'Regular source file'
     $script:chaosManifestSha256 = Get-Sha256 $manifest
@@ -82,6 +88,7 @@ try {
         DevOpsRoot = $sourceRoot
         Manifest = $manifest
         Files = @(
+            [pscustomobject]@{ path = 'config/survival-uat-tls/haproxy.cfg'; sha256 = (Get-Sha256 $haproxyConfig) },
             [pscustomobject]@{ path = 'scripts/helper.ps1'; sha256 = (Get-Sha256 $helper) },
             [pscustomobject]@{ path = 'scripts/survival-dev.ps1'; sha256 = (Get-Sha256 $launcher) })
         Docker = 'docker'; DockerSha256 = '0' * 64
@@ -94,9 +101,13 @@ try {
 
     [IO.File]::WriteAllText($launcher, "'malicious-launcher'`n", [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($helper, "'malicious-helper'`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($haproxyConfig, "malicious`n", [Text.UTF8Encoding]::new($false))
     $snapshotLauncher = Join-Path $lease.DevOpsRoot 'scripts\survival-dev.ps1'
     if ((Get-Content -Raw -LiteralPath $snapshotLauncher) -cne "'reviewed-launcher'`n") {
         throw 'Snapshot did not retain the exact reviewed source bytes.'
+    }
+    if ((Get-Content -Raw -LiteralPath $lease.HAProxyConfig) -cne "global`n") {
+        throw 'Snapshot did not retain the exact reviewed HAProxy configuration.'
     }
     [IO.File]::SetAttributes(
         $snapshotLauncher,
@@ -106,6 +117,16 @@ try {
         [IO.File]::WriteAllText($snapshotLauncher, 'replacement')
     } catch [IO.IOException] { $mutationRejected = $true }
     if (-not $mutationRejected) { throw 'Snapshot lease allowed write/replace during execution.' }
+    $haproxyMutationRejected = $false
+    try {
+        [IO.File]::SetAttributes(
+            $lease.HAProxyConfig,
+            [IO.File]::GetAttributes($lease.HAProxyConfig) -band (-bnot [IO.FileAttributes]::ReadOnly))
+        [IO.File]::WriteAllText($lease.HAProxyConfig, 'replacement')
+    } catch [IO.IOException] { $haproxyMutationRejected = $true }
+    if (-not $haproxyMutationRejected) {
+        throw 'Snapshot lease allowed HAProxy configuration replacement during execution.'
+    }
 
     Close-ChaosDependencySnapshot $lease
     $lease = $null

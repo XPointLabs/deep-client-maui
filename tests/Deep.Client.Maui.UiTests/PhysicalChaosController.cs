@@ -8,9 +8,9 @@ namespace Deep.Client.Maui.UiTests;
 
 internal sealed class PhysicalChaosController
 {
-    internal const string DevOpsCommit = "91c7cf45984e93153dab80816e3f78e931edb779";
+    internal const string DevOpsCommit = "2a41656323cdb7a34b7570214940767f33743ef4";
     internal const string DependencyManifestSha256 =
-        "2d839beea7b7789bcc49ba3572b431f7432e9eb97756c17cb0c08a57ab843529";
+        "7ef641655b4529300e0cf8a228a6ded2e2b9f6be1ea7d742c3453450fdf4e9f6";
     internal const int TtlSeconds = 300;
     private const int CleanupAttempts = 3;
     private readonly string launcher;
@@ -61,6 +61,8 @@ internal sealed class PhysicalChaosController
             DependencyAuthority.DockerPath);
         RequireExactEnvironmentPath("DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_PATH",
             DependencyAuthority.DockerComposePath);
+        RequireExactEnvironmentPath("DEEP_PHYSICAL_E2E_HAPROXY_CONFIG_PATH",
+            authority.HAProxyConfig);
         RequireExactEnvironmentHash("DEEP_PHYSICAL_E2E_DOCKER_SHA256",
             authority.DockerSha256);
         RequireExactEnvironmentHash("DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_SHA256",
@@ -318,9 +320,12 @@ internal sealed class PhysicalChaosController
             this.expectedManifestSha256 = RequireHash(expectedManifestSha256, "manifest pin");
             this.expectedDevOpsCommit = RequireCommit(expectedDevOpsCommit);
             Launcher = Path.Combine(this.devOpsRoot, "scripts", "survival-dev.ps1");
+            HAProxyConfig = Path.Combine(this.devOpsRoot,
+                "config", "survival-uat-tls", "haproxy.cfg");
         }
 
         internal string Launcher { get; }
+        internal string HAProxyConfig { get; }
         internal string ExecutionSnapshotSha256 { get; private set; } = string.Empty;
         internal string DockerSha256 { get; private set; } = string.Empty;
         internal string DockerComposeSha256 { get; private set; } = string.Empty;
@@ -373,10 +378,16 @@ internal sealed class PhysicalChaosController
                     VerifyClosedDirectory(closedDirectory, reviewedFiles);
 
                 if (!reviewedFiles.Any(file => file.Path == "scripts/survival-dev.ps1")
+                    || !reviewedFiles.Any(file =>
+                        file.Path == "config/survival-uat-tls/haproxy.cfg")
                     || !string.Equals(Path.GetFullPath(Launcher),
                         ResolveDevOpsPath("scripts/survival-dev.ps1", "launcher"),
+                        StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(Path.GetFullPath(HAProxyConfig),
+                        ResolveDevOpsPath("config/survival-uat-tls/haproxy.cfg", "HAProxy configuration"),
                         StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("Reviewed physical chaos launcher is missing.");
+                    throw new InvalidOperationException(
+                        "Reviewed physical chaos launcher or HAProxy configuration is missing.");
                 using var snapshot = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
                 snapshot.AppendData("deep.physical-chaos.execution-snapshot.v1\0"u8);
                 snapshot.AppendData(Encoding.ASCII.GetBytes(expectedManifestSha256));
@@ -443,7 +454,8 @@ internal sealed class PhysicalChaosController
                 orderedNames.Add(name);
                 var nativePath = path.Replace('/', Path.DirectorySeparatorChar);
                 RequireRegularFile(nativePath, "system executable");
-                if (!string.Equals(Sha256File(nativePath), hash, StringComparison.Ordinal))
+                if (!string.Equals(Sha256ImmutableExecutable(nativePath), hash,
+                        StringComparison.Ordinal))
                     throw new InvalidOperationException("A pinned system executable changed.");
                 if (name == "docker") DockerSha256 = hash;
                 if (name == "dockerCompose") DockerComposeSha256 = hash;
@@ -626,6 +638,17 @@ internal sealed class PhysicalChaosController
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None,
                 bufferSize: 64 * 1024, FileOptions.SequentialScan);
+            return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        }
+
+        private static string Sha256ImmutableExecutable(string path)
+        {
+            // A running Windows image keeps a loader handle open. Sharing reads and
+            // delete is required to inspect that pinned image; omitting Write still
+            // prevents mutation during the complete hash operation.
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+                FileShare.Read | FileShare.Delete, bufferSize: 64 * 1024,
+                FileOptions.SequentialScan);
             return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
         }
 

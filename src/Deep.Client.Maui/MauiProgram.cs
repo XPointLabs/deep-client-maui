@@ -71,7 +71,6 @@ public static class MauiProgram
     private const string ExternalOutboxWorkerFileName = "Deep.Client.Maui.OutboxWorker.exe";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
     private const string WindowsReleaseRuntimeEnvFile = "deep.windows.release.env";
-    private const string LocalStateDatabaseKey = "client-state.sqlcipher-key.v1";
 
     public static MauiApp CreateMauiApp()
     {
@@ -477,32 +476,6 @@ public static class MauiProgram
         }
     }
 
-    private static async Task<string> ResolveLocalStateDatabaseKeyAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var existing = await SecureStorage.GetAsync(LocalStateDatabaseKey).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(existing))
-            {
-                return existing;
-            }
-
-            var key = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-            await SecureStorage.SetAsync(LocalStateDatabaseKey, key).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            return key;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException("Secure local database key storage is unavailable.", ex);
-        }
-    }
-
     internal static string? ResolveRuntimeSetting(string key)
     {
 #if DEBUG && DEEP_PHYSICAL_E2E
@@ -621,7 +594,8 @@ public static class MauiProgram
 #endif
         var appDataDirectory = ResolveAppDataDirectory();
         var stateDbPath = Path.Combine(appDataDirectory, "client-state.db");
-        var stateDbKey = await ResolveLocalStateDatabaseKeyAsync(cancellationToken).ConfigureAwait(false);
+        var stateDbKeySlot = LocalStateDatabaseKeySlot.Active;
+        var stateDbKey = await stateDbKeySlot.ResolveAsync(cancellationToken).ConfigureAwait(false);
 
         if (Preferences.Default.Get(StartupLocalStateReset.WipeLocalDataOnNextLaunchKey, false))
         {
@@ -631,8 +605,7 @@ public static class MauiProgram
             DeleteFileForWipe(stateDbPath + "-wal");
             DeleteFileForWipe(stateDbPath + "-shm");
             DeleteFileForWipe(stateDbPath);
-            SecureStorage.Remove(LocalStateDatabaseKey);
-            stateDbKey = await ResolveLocalStateDatabaseKeyAsync(cancellationToken).ConfigureAwait(false);
+            stateDbKey = await stateDbKeySlot.ResetAsync(cancellationToken).ConfigureAwait(false);
             Preferences.Default.Remove(StartupLocalStateReset.WipeLocalDataOnNextLaunchKey);
         }
 

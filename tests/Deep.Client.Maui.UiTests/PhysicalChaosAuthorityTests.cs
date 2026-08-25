@@ -105,17 +105,22 @@ public sealed class PhysicalChaosAuthorityTests
             var devOps = Path.Combine(root, "deep-devops");
             var eng = Path.Combine(repository, "eng");
             var scripts = Path.Combine(devOps, "scripts");
+            var haproxyDirectory = Path.Combine(devOps, "config", "survival-uat-tls");
             var closedDirectory = Path.Combine(devOps, "tools", "survival-resend-chaos");
             Directory.CreateDirectory(eng);
             Directory.CreateDirectory(scripts);
+            Directory.CreateDirectory(haproxyDirectory);
             Directory.CreateDirectory(closedDirectory);
 
             var launcher = Path.Combine(scripts, "survival-dev.ps1");
+            var haproxy = Path.Combine(haproxyDirectory, "haproxy.cfg");
             var controlClient = Path.Combine(closedDirectory, "control-client.mjs");
             File.WriteAllText(launcher, "param()", new UTF8Encoding(false));
+            File.WriteAllText(haproxy, "global\n", new UTF8Encoding(false));
             File.WriteAllText(controlClient, "export {};", new UTF8Encoding(false));
 
             var launcherHash = Sha256File(launcher);
+            var haproxyHash = Sha256File(haproxy);
             var controlHash = Sha256File(controlClient);
             var powershellHash = Sha256File(
                 PhysicalChaosController.DependencyAuthority.PowerShellPath);
@@ -129,6 +134,7 @@ public sealed class PhysicalChaosAuthorityTests
                 PhysicalChaosController.DependencyAuthority.TaskKillPath);
             var lines = new[]
             {
+                $"file:config/survival-uat-tls/haproxy.cfg={haproxyHash}",
                 $"file:scripts/survival-dev.ps1={launcherHash}",
                 $"file:tools/survival-resend-chaos/control-client.mjs={controlHash}",
                 "directory:tools/survival-resend-chaos",
@@ -148,6 +154,7 @@ public sealed class PhysicalChaosAuthorityTests
                 dependencyTreeSha256 = treeHash,
                 files = new[]
                 {
+                    new { path = "config/survival-uat-tls/haproxy.cfg", sha256 = haproxyHash },
                     new { path = "scripts/survival-dev.ps1", sha256 = launcherHash },
                     new { path = "tools/survival-resend-chaos/control-client.mjs", sha256 = controlHash }
                 },

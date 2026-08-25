@@ -7,6 +7,7 @@ using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
+using Deep.Protocol.DeepExtension.ManagedIngress;
 using Microsoft.Maui.Storage;
 
 namespace Deep.Client.Maui.Pages;
@@ -27,7 +28,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
     private readonly BackgroundSyncSchedulingCoordinator backgroundSyncScheduling;
 #if DEBUG && DEEP_PHYSICAL_E2E
     private readonly PhysicalMailboxRouteUsageTracker physicalRouteUsageTracker;
+    private readonly PrivacyMailboxRouteDiagnostics physicalRouteDiagnostics;
     private Label? physicalRouteNodeMarker;
+    private Label? physicalRouteProofMarker;
     private Label? physicalRuntimeReadyMarker;
     private Label? physicalVoicePlaybackState;
 #endif
@@ -80,6 +83,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         BackgroundSyncSchedulingCoordinator backgroundSyncScheduling
 #if DEBUG && DEEP_PHYSICAL_E2E
         , IMailboxDispatchRouteUsageObserver physicalRouteUsageObserver
+        , PrivacyMailboxRouteDiagnostics physicalRouteDiagnostics
 #endif
         )
     {
@@ -96,7 +100,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         physicalRouteUsageTracker = physicalRouteUsageObserver as
             PhysicalMailboxRouteUsageTracker ?? throw new InvalidOperationException(
                 "Physical E2E requires its mailbox route usage tracker.");
+        this.physicalRouteDiagnostics = physicalRouteDiagnostics;
         CreatePhysicalRouteNodeMarker();
+        CreatePhysicalRouteProofMarker();
         CreatePhysicalRuntimeReadyMarker();
         CreatePhysicalVoicePlaybackState();
 #endif
@@ -309,6 +315,20 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         DetailContent.Children.Add(physicalRouteNodeMarker);
     }
 
+    private void CreatePhysicalRouteProofMarker()
+    {
+        physicalRouteProofMarker = new Label
+        {
+            AutomationId = "PhysicalE2E.RouteProofMarker",
+            IsVisible = false,
+            FontSize = 1,
+            Opacity = 0.01,
+            InputTransparent = true,
+            ZIndex = 100
+        };
+        DetailContent.Children.Add(physicalRouteProofMarker);
+    }
+
     private void CreatePhysicalRuntimeReadyMarker()
     {
         physicalRuntimeReadyMarker = new Label
@@ -374,6 +394,23 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         physicalRouteNodeMarker.Text = routerId ?? string.Empty;
         physicalRouteNodeMarker.IsVisible = viewModel.IsDirectDetail &&
             !string.IsNullOrWhiteSpace(routerId);
+
+        if (physicalRouteProofMarker is null) return;
+        var routes = physicalRouteDiagnostics.Current;
+        var selectedRoute = routes is null || string.IsNullOrWhiteSpace(routerId)
+            ? null
+            : string.Equals(routes.Primary[0].RouterId, routerId, StringComparison.Ordinal)
+                ? "primary"
+                : string.Equals(routes.Fallback[0].RouterId, routerId, StringComparison.Ordinal)
+                    ? "fallback"
+                    : null;
+        physicalRouteProofMarker.Text = selectedRoute is null || routes is null
+            ? string.Empty
+            : $"v1|path={ManagedIngressH2Contract.FramePath}" +
+              $"|primary={string.Join(',', routes.Primary.Select(static hop => hop.RouterId))}" +
+              $"|fallback={string.Join(',', routes.Fallback.Select(static hop => hop.RouterId))}" +
+              $"|selected={selectedRoute}|entry={routerId}";
+        physicalRouteProofMarker.IsVisible = viewModel.IsDirectDetail && selectedRoute is not null;
     }
 
     private void OnPhysicalRouteUsageChanged(

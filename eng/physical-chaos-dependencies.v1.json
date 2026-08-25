@@ -1,18 +1,18 @@
 {
   "schema": "deep.physical-chaos-dependencies.v1",
-  "reviewedDevOpsCommit": "91c7cf45984e93153dab80816e3f78e931edb779",
-  "dependencyTreeSha256": "a861fd5a5a18e71edc156d7609482a346cd367f3dd1cae08535222ee6576a520",
+  "reviewedDevOpsCommit": "2a41656323cdb7a34b7570214940767f33743ef4",
+  "dependencyTreeSha256": "c9d073cb4661298177a716d1d624c89914fc911e0e5ca233a6f2128ea907ae1f",
   "files": [
-    { "path": "config/survival-uat-tls/haproxy.cfg", "sha256": "43d2bc25d11e08825627061fac0f249761e75d3970f3392d082ebf34bca86fc0" },
-    { "path": "docker-compose.survival-resend-chaos.dev.yml", "sha256": "f5486da045e061d21d293bc2f84c793662e82724281e3519415acc78477f6470" },
-    { "path": "docker-compose.survival-uat-tls.dev.yml", "sha256": "a574640fc7bd2c725f761e5f28c63a2a9f9ff90b1e94780a80629ce490939946" },
-    { "path": "docker-compose.survival.dev.yml", "sha256": "9bc2a67cc2c88bf76baf3aff0c11a7559a79064b41a418f879292ca726b6f0ff" },
+    { "path": "config/survival-uat-tls/haproxy.cfg", "sha256": "812c37b8cf7d5dfb925459e32bf0992800e71fa8c7a377aad3eaf0f0312d02b9" },
+    { "path": "docker-compose.survival-resend-chaos.dev.yml", "sha256": "c0c2daeb778174636f2ce4926f1696292cf11f1dbb0fd03b1627272b344fc1ec" },
+    { "path": "docker-compose.survival-uat-tls.dev.yml", "sha256": "02b42259ff1a85793ef016eefa8715e3d0143e895a11ab806cc87955fed7026f" },
+    { "path": "docker-compose.survival.dev.yml", "sha256": "abb4a0babd2bfce1f8bcdecba5adfeadc9e5c811383009ebf85da315dee29468" },
     { "path": "scripts/survival-dev-mailbox-build-inputs.ps1", "sha256": "c5e0f08e0816296734195a27b2c8a47a207b0f1ade88f0186caffe02334f1456" },
     { "path": "scripts/survival-dev-private-secrets.ps1", "sha256": "c2db46d258501aa54b263ca8731817c1e2020e4a88e7c0e66e5558dd991c380e" },
-    { "path": "scripts/survival-dev.ps1", "sha256": "13bf57cb06d3254c892843cdf3be16514d839ab7cbe31bf39a3ffde3d8846196" },
-    { "path": "tools/survival-resend-chaos/control-client.mjs", "sha256": "d759f85f9f97113c719467d7136b7cdbb93e92b0f92c7b051bb0e93721f93b96" },
-    { "path": "tools/survival-resend-chaos/resend-chaos-proxy.mjs", "sha256": "c4dcdf0657c3888eabf029be77048237c8ac50753c6a38349f6a02959a079986" },
-    { "path": "tools/survival-resend-chaos/resend-chaos-proxy.test.mjs", "sha256": "904d5900499677125c33aa92735931643ea4bf81c88aaa72cbf1e4e5cb774e04" }
+    { "path": "scripts/survival-dev.ps1", "sha256": "67823a5e4ff73c4845e7c49ed5613918f20eff2ca00596d1ebaabbf20fdf120a" },
+    { "path": "tools/survival-resend-chaos/control-client.mjs", "sha256": "59ab1782fbf63bf44aaa1980f98ab1574d794125ea63c549df322ab54294404f" },
+    { "path": "tools/survival-resend-chaos/resend-chaos-proxy.mjs", "sha256": "4c94789b95352d97932154e8ffa1ca3e0b838c862fb76beb042da8a867078744" },
+    { "path": "tools/survival-resend-chaos/resend-chaos-proxy.test.mjs", "sha256": "8dd17afb9f0a922ed57ed84d8a8e7d01b698e783b798fd2605911e6ea75b29e6" }
   ],
   "closedDirectories": [
     "tools/survival-resend-chaos"

@@ -434,7 +434,7 @@ function Read-AndroidLabPolicy {
             [string]::IsNullOrWhiteSpace([string]$policy.device.hardware) -or
             [string]::IsNullOrWhiteSpace([string]$policy.device.model) -or
             [string]$policy.device.kernelQemu -cne $(if ($synthetic) { '1' } else { '0' }) -or
-            [int]$policy.device.sdk -lt 26 -or [int]$policy.device.sdk -gt 100 -or
+            [int]$policy.device.sdk -lt 28 -or [int]$policy.device.sdk -gt 100 -or
             [string]$policy.device.class -cne $requiredDeviceClass -or
             $policy.device.dedicated -ne $true -or
             [string]$policy.device.inventoryState -cne $requiredInventoryState -or

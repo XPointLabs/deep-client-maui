@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Net;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Runtime.InteropServices;
 using System.Text;
 using FlaUI.Core.AutomationElements;
@@ -34,6 +36,9 @@ public sealed class StrictCrossPlatformUiTests
                 return;
             case Mau2PhysicalPhase.PayloadMatrix:
                 ExercisePayloadMatrixOnExistingProvisionedClients(options);
+                return;
+            case Mau2PhysicalPhase.PrivacyFallback:
+                ExercisePrivacyFallbackOnExistingProvisionedClients(options);
                 return;
             case Mau2PhysicalPhase.Call:
                 ExchangeAudioCallOnExistingProvisionedClients(options);
@@ -210,6 +215,7 @@ public sealed class StrictCrossPlatformUiTests
         var downloadsDirectory = options.ResolveProductionDownloadsDirectory();
         var createdDownloads = new List<string>();
         VoiceMatrixSnapshot? voiceSnapshot = null;
+        PayloadPersistenceSnapshot? payloadSnapshot = null;
 
         try
         {
@@ -228,7 +234,9 @@ public sealed class StrictCrossPlatformUiTests
                 var windowsVoiceBaseline = windows.SnapshotAutomationIdNames(
                     "DesktopWorkspace.DirectVoicePlay");
                 SendWindowsMessageAndAssertSent(windows, windowsToAndroid);
-                AssertWindowsXPointRouteObserved(windows);
+                var primaryRouteProof = AssertWindowsXPointRouteObserved(
+                    windows, expectedSelection: "primary");
+                Assert.Equal(primaryRouteProof.Primary[0], primaryRouteProof.Entry);
                 android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                     windowsToAndroid, 1, TimeSpan.FromSeconds(60));
                 SendAndroidMessageAndAssertSent(android, options, androidToWindows);
@@ -236,28 +244,44 @@ public sealed class StrictCrossPlatformUiTests
 
                 ExchangeAndroidDocument(android, windows, options, options.GenericFixturePath,
                     genericName, genericSha256, downloadsDirectory, createdDownloads,
-                    verifyOpen: false);
+                    verifyOpen: true);
                 ExchangeAndroidDocument(android, windows, options, options.DocumentFixturePath,
                     documentName, documentSha256, downloadsDirectory, createdDownloads,
                     verifyOpen: true);
                 ExchangeWindowsDocument(windows, android, options, options.GenericFixturePath,
-                    genericName, genericSha256, verifyOpen: false);
+                    genericName, genericSha256, verifyOpen: true);
                 ExchangeWindowsDocument(windows, android, options, options.DocumentFixturePath,
                     documentName, documentSha256, verifyOpen: true);
-                ExchangeInlineImagesBothDirections(android, windows, options, imageName);
+                ExchangeInlineImagesBothDirections(android, windows, options, imageName,
+                    downloadsDirectory, createdDownloads);
                 voiceSnapshot = ExchangeVoiceMessagesBothDirections(
                     android, windows, options, androidVoiceBaseline,
                     windowsVoiceBaseline);
+                payloadSnapshot = new PayloadPersistenceSnapshot(
+                    android.SnapshotAccessibleTexts(options.App("Chat.MessageBody")),
+                    windows.SnapshotAutomationIdNameMultiset("DesktopWorkspace.DirectMessageBody"),
+                    android.SnapshotAccessibleTexts(options.App("Chat.AttachmentFilename")),
+                    windows.SnapshotAutomationIdNameMultiset("DesktopWorkspace.DirectAttachmentFilename"),
+                    android.SnapshotAccessibleTexts(options.App("Chat.ImageMetadata")),
+                    windows.SnapshotAutomationIdNameMultiset("DesktopWorkspace.DirectImagePreview"));
             }
 
             var persistedVoice = voiceSnapshot ?? throw new InvalidOperationException(
                 "Voice persistence markers were not captured.");
+            var persistedPayloads = payloadSnapshot ?? throw new InvalidOperationException(
+                "Payload persistence markers were not captured.");
 
             android.ColdStart();
             android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
             android.Tap(options.App("Conversations.ConversationRow"));
             android.WaitForExactAccessibleTextSet(options.App("Chat.VoicePlayButton"),
                 persistedVoice.AndroidExpectedAfterPhase, TimeSpan.FromSeconds(45));
+            android.WaitForExactAccessibleTexts(options.App("Chat.MessageBody"),
+                persistedPayloads.AndroidMessageBodies, TimeSpan.FromSeconds(45));
+            android.WaitForExactAccessibleTexts(options.App("Chat.AttachmentFilename"),
+                persistedPayloads.AndroidAttachmentNames, TimeSpan.FromSeconds(45));
+            android.WaitForExactAccessibleTexts(options.App("Chat.ImageMetadata"),
+                persistedPayloads.AndroidImageMetadata, TimeSpan.FromSeconds(45));
 
             using var restartedWindows = WindowsUiSmokeTests.WindowsUiTestSession
                 .CreateStrictWithAppData(options.WindowsAppDataRoot);
@@ -267,6 +291,18 @@ public sealed class StrictCrossPlatformUiTests
             restartedWindows.WaitForExactAutomationIdNameSet(
                 "DesktopWorkspace.DirectVoicePlay",
                 persistedVoice.WindowsExpectedAfterPhase,
+                TimeSpan.FromSeconds(45));
+            restartedWindows.WaitForExactAutomationIdNameMultiset(
+                "DesktopWorkspace.DirectMessageBody",
+                persistedPayloads.WindowsMessageBodies,
+                TimeSpan.FromSeconds(45));
+            restartedWindows.WaitForExactAutomationIdNameMultiset(
+                "DesktopWorkspace.DirectAttachmentFilename",
+                persistedPayloads.WindowsAttachmentNames,
+                TimeSpan.FromSeconds(45));
+            restartedWindows.WaitForExactAutomationIdNameMultiset(
+                "DesktopWorkspace.DirectImagePreview",
+                persistedPayloads.WindowsImageMetadata,
                 TimeSpan.FromSeconds(45));
         }
         finally
@@ -285,21 +321,113 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddBoolean("windowsToAndroidReceived", true);
         evidence.AddBoolean("androidToWindowsReceived", true);
         evidence.AddBoolean("windowsXpointRouteObserved", true);
+        evidence.AddBoolean("privacyIngressFramePathObserved", true);
+        evidence.AddBoolean("primaryRouteExactThreeObserved", true);
+        evidence.AddBoolean("fallbackRouteExactThreeAndDisjointObserved", true);
         evidence.AddBoolean("senderDeliveryStatusObserved", true);
         evidence.AddSafeValue("genericPlaintextSha256", genericSha256);
         evidence.AddSafeValue("documentPlaintextSha256", documentSha256);
         evidence.AddBoolean("genericAndDocumentMetadataVerifiedBothDirections", true);
         evidence.AddBoolean("attachmentOpenActionInvoked", true);
         evidence.AddBoolean("attachmentSavePlaintextSha256VerifiedBothDirections", true);
-        evidence.AddBoolean("inlineImagePreviewAndMetadataVerified", true);
+        evidence.AddBoolean("inlineImagePreviewMetadataOpenSaveHashVerifiedBothDirections", true);
         evidence.AddBoolean("voiceDeliveredExactlyOnceBothDirections", true);
         evidence.AddBoolean("voicePlaybackStartedAndCompletedBothDirections", true);
         evidence.AddBoolean("voiceMessagesPersistedAcrossRestart", true);
+        evidence.AddBoolean("textDocumentGenericImageExactSetsPersistedAcrossRestart", true);
         // There is no self-copy AutomationId/action in the product contract. A test
         // must not synthesize one or make a false pass claim.
         evidence.AddBoolean("selfCopyUiSupported", false);
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
         CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void ExercisePrivacyFallbackOnExistingProvisionedClients(
+        CrossPlatformOptions options)
+    {
+        const string fault = "primary-ingress-rejected-before-forward";
+        var evidence = CreatePhaseEvidence(options);
+        var android = PrepareChaosAndroid(options, out var androidIdentity);
+        var marker = StrictCrossPlatformContracts.NewMarker("privacy-fallback");
+        var androidContact = StrictCrossPlatformContracts.NewMarker("fallback-windows");
+        var windowsContact = StrictCrossPlatformContracts.NewMarker("fallback-android");
+        var controller = PhysicalChaosController.LoadRequired();
+        Exception? operationFailure = null;
+        try
+        {
+            AssertDirectClientMailboxEndpointAbsent(options);
+            using var windows = WindowsUiSmokeTests.WindowsUiTestSession
+                .CreateStrictWithAppData(options.WindowsAppDataRoot);
+            var windowsIdentity = ReadWindowsIdentity(windows);
+            AddAndroidContact(android, options, windowsIdentity, androidContact);
+            AddWindowsContact(windows, androidIdentity, windowsContact);
+            android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
+                marker, 0, TimeSpan.FromSeconds(2));
+
+            controller.Begin(fault, "mailbox-store");
+            SendWindowsMessageAndAssertSent(windows, marker);
+            android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
+                marker, 1, TimeSpan.FromSeconds(60));
+            var routeProof = AssertWindowsXPointRouteObserved(windows, "fallback");
+            var status = controller.Status();
+            status.AssertConsumed(fault, "mailbox-store", attempts: 1,
+                dispatches: 0, successes: 0, postDrop: 0, preOutage: 1, ackDrop: 0);
+            var statusSha = controller.WriteVerifiedStatusEvidence(
+                options.ArtifactDirectory, options.Phase, status);
+
+            evidence.AddHash("operationMarkerHash", marker);
+            evidence.AddSafeValue("chaosStatusSha256", statusSha);
+            evidence.AddSafeValue("chaosDependencyManifestSha256",
+                PhysicalChaosController.DependencyManifestSha256);
+            evidence.AddSafeValue("chaosExecutionSnapshotSha256",
+                controller.ExecutionSnapshotSha256);
+            evidence.AddHash("fallbackEntryRouterHash", routeProof.Entry);
+            evidence.AddBoolean("managedIngressFramePathObserved", true);
+            evidence.AddBoolean("primaryRouteContainsExactlyThreeHops", true);
+            evidence.AddBoolean("fallbackRouteContainsExactlyThreeDisjointHops", true);
+            evidence.AddBoolean("primaryRejectedCanonicallyBeforeForward", true);
+            evidence.AddBoolean("fallbackRouteSelectedAndDelivered", true);
+            evidence.AddBoolean("recipientRenderedExactlyOnce", true);
+            evidence.AddBoolean("directClientMailboxEndpointAbsent", true);
+        }
+        catch (Exception exception)
+        {
+            operationFailure = exception;
+        }
+        CompleteChaosPhase(options, evidence, controller, operationFailure);
+    }
+
+    private static void AssertDirectClientMailboxEndpointAbsent(CrossPlatformOptions options)
+    {
+        using var root = X509CertificateLoader.LoadCertificateFromFile(
+            options.UatCaCertificatePath);
+        using var handler = new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            AutomaticDecompression = DecompressionMethods.None,
+            ConnectTimeout = TimeSpan.FromSeconds(10)
+        };
+        handler.SslOptions.CertificateChainPolicy = new X509ChainPolicy
+        {
+            TrustMode = X509ChainTrustMode.CustomRootTrust,
+            RevocationMode = X509RevocationMode.NoCheck,
+            VerificationFlags = X509VerificationFlags.NoFlag
+        };
+        handler.SslOptions.CertificateChainPolicy.CustomTrustStore.Add(root);
+        using var client = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(15)
+        };
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri(options.ChaosHttpsOrigin, "/api/client/mailbox/v2/store"))
+        {
+            Version = HttpVersion.Version20,
+            VersionPolicy = HttpVersionPolicy.RequestVersionExact,
+            Content = new ByteArrayContent([])
+        };
+        using var response = client.Send(request);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     private static void ExerciseManualResendAfterRestart(CrossPlatformOptions options)
@@ -949,8 +1077,10 @@ public sealed class StrictCrossPlatformUiTests
         Assert.Equal("Отправлено", status.Properties.Name.ValueOrDefault);
     }
 
-    private static void AssertWindowsXPointRouteObserved(
-        WindowsUiSmokeTests.WindowsUiTestSession windows)
+    private static StrictCrossPlatformContracts.PrivacyRouteProof
+        AssertWindowsXPointRouteObserved(
+            WindowsUiSmokeTests.WindowsUiTestSession windows,
+            string expectedSelection)
     {
         var marker = Require(
             windows.WaitForAutomationId(
@@ -961,6 +1091,16 @@ public sealed class StrictCrossPlatformUiTests
         Assert.Equal(64, routerId.Length);
         Assert.All(routerId, static value =>
             Assert.True(value is >= '0' and <= '9' or >= 'a' and <= 'f'));
+        var proofMarker = Require(
+            windows.WaitForAutomationId(
+                "PhysicalE2E.RouteProofMarker",
+                TimeSpan.FromSeconds(30)),
+            "PhysicalE2E.RouteProofMarker");
+        var proof = StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
+            proofMarker.Properties.Name.ValueOrDefault ?? string.Empty);
+        Assert.Equal(expectedSelection, proof.Selected);
+        Assert.Equal(routerId, proof.Entry);
+        return proof;
     }
 
     private static void SendAndroidMessage(AndroidUiautomatorClient android, CrossPlatformOptions options, string message)
@@ -1076,7 +1216,9 @@ public sealed class StrictCrossPlatformUiTests
         AndroidUiautomatorClient android,
         WindowsUiSmokeTests.WindowsUiTestSession windows,
         CrossPlatformOptions options,
-        string imageName)
+        string imageName,
+        string downloadsDirectory,
+        ICollection<string> createdDownloads)
     {
         var expectedSentName = Path.ChangeExtension(imageName, ".jpg");
         var previousWindowsImages = windows.CountAutomationId(
@@ -1101,6 +1243,12 @@ public sealed class StrictCrossPlatformUiTests
         var metadata = preview.Properties.Name.ValueOrDefault ?? string.Empty;
         AssertCanonicalImageMetadata(metadata, expectedSentName);
         Assert.Equal(androidStagedMetadata, metadata);
+        var androidOriginSha256 = SaveOpenAndHashWindowsImage(
+            windows, preview, downloadsDirectory, createdDownloads, expectedSentName);
+        SaveOpenAndVerifyAndroidImage(
+            android, options,
+            android.WaitForResource(options.App("Chat.ImagePreview"), TimeSpan.FromSeconds(15)),
+            expectedSentName, androidOriginSha256);
 
         var previousAndroidImages = android.CountResourceId(options.App("Chat.ImagePreview"));
         var previousAndroidImageMetadata = android.CountResourceId(
@@ -1125,13 +1273,21 @@ public sealed class StrictCrossPlatformUiTests
             "DesktopWorkspace.DirectSend", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectSend"));
 
-        _ = android.WaitForOneNewResourceId(options.App("Chat.ImagePreview"),
+        var androidReceivedPreview = android.WaitForOneNewResourceId(options.App("Chat.ImagePreview"),
             previousAndroidImages, TimeSpan.FromSeconds(60));
         var androidMetadata = android.WaitForOneNewResourceId(
             options.App("Chat.ImageMetadata"), previousAndroidImageMetadata,
             TimeSpan.FromSeconds(15)).AccessibleText;
         AssertCanonicalImageMetadata(androidMetadata, expectedSentName);
         Assert.Equal(windowsStagedMetadata, androidMetadata);
+        var windowsReceivedPreview = Require(windows.WaitForOneNewAutomationId(
+            "DesktopWorkspace.DirectImagePreview", checked(previousWindowsImages + 1),
+            TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectImagePreview");
+        var windowsOriginSha256 = SaveOpenAndHashWindowsImage(
+            windows, windowsReceivedPreview, downloadsDirectory, createdDownloads,
+            expectedSentName);
+        SaveOpenAndVerifyAndroidImage(
+            android, options, androidReceivedPreview, expectedSentName, windowsOriginSha256);
     }
 
     private static void AssertCanonicalImageMetadata(string value, string expectedFileName)
@@ -1219,6 +1375,56 @@ public sealed class StrictCrossPlatformUiTests
         IReadOnlySet<string> AndroidExpectedAfterPhase,
         IReadOnlySet<string> WindowsExpectedAfterPhase);
 
+    private sealed record PayloadPersistenceSnapshot(
+        IReadOnlyList<string> AndroidMessageBodies,
+        IReadOnlyList<string> WindowsMessageBodies,
+        IReadOnlyList<string> AndroidAttachmentNames,
+        IReadOnlyList<string> WindowsAttachmentNames,
+        IReadOnlyList<string> AndroidImageMetadata,
+        IReadOnlyList<string> WindowsImageMetadata);
+
+    private static string SaveOpenAndHashWindowsImage(
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        AutomationElement preview,
+        string downloadsDirectory,
+        ICollection<string> createdDownloads,
+        string fileName)
+    {
+        windows.RequestContextMenuOnAncestor(
+            preview, "DesktopWorkspace.DirectMessageBubble");
+        windows.ActivateExact(Require(windows.WaitForAutomationId(
+            "DesktopWorkspace.AttachmentOpen", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.AttachmentOpen"));
+        windows.RequestContextMenuOnAncestor(
+            preview, "DesktopWorkspace.DirectMessageBubble");
+        var before = StrictCrossPlatformContracts.SnapshotDownloads(downloadsDirectory);
+        windows.ActivateExact(Require(windows.WaitForAutomationId(
+            "DesktopWorkspace.AttachmentSave", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.AttachmentSave"));
+        var saved = before.WaitForNewCorrelatedFile(
+            fileName, TimeSpan.FromSeconds(30), createdDownloads);
+        return StrictCrossPlatformContracts.Sha256File(saved);
+    }
+
+    private static void SaveOpenAndVerifyAndroidImage(
+        AndroidUiautomatorClient android,
+        CrossPlatformOptions options,
+        StrictCrossPlatformContracts.AndroidNode preview,
+        string fileName,
+        string expectedSha256)
+    {
+        android.Tap(preview);
+        android.Tap(options.App("Chat.MessageAttachmentOpen"));
+        android.WaitForExternalActivity(TimeSpan.FromSeconds(15));
+        android.PressBack();
+        android.WaitForResource(options.App("Chat.Draft"), TimeSpan.FromSeconds(20));
+        var before = android.SnapshotDownloadPaths();
+        android.Tap(preview);
+        android.Tap(options.App("Chat.MessageAttachmentSave"));
+        android.WaitForSavedPlaintext(before, fileName, expectedSha256,
+            options.ArtifactDirectory, TimeSpan.FromSeconds(30));
+    }
+
     private static void StageAndSendAndroidAttachment(AndroidUiautomatorClient android, CrossPlatformOptions options, string marker)
     {
         android.Tap(options.App("Chat.Attach"));
@@ -1297,7 +1503,9 @@ internal sealed class CrossPlatformOptions
         "Call.MediaState", "Call.Microphone", "Call.MicrophoneState", "Call.Hangup"
     ];
     private readonly Dictionary<string, string> androidSelectors;
-    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string genericFixturePath, string documentFixturePath, string imageFixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256, bool allowWindowsUatLocalReset)
+    private readonly Uri? chaosHttpsOrigin;
+    private readonly string? uatCaCertificatePath;
+    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string genericFixturePath, string documentFixturePath, string imageFixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256, bool allowWindowsUatLocalReset, Uri? chaosHttpsOrigin, string? uatCaCertificatePath)
     {
         AndroidSerial = serial; AdbPath = adbPath; ApkPath = apkPath; AaptPath = aaptPath; ApksignerPath = apksignerPath; GenericFixturePath = genericFixturePath; DocumentFixturePath = documentFixturePath; ImageFixturePath = imageFixturePath; ArtifactDirectory = artifactDirectory;
         androidSelectors = selectors; PickerFileResourceId = pickerFile; PickerConfirmResourceId = pickerConfirm;
@@ -1306,6 +1514,8 @@ internal sealed class CrossPlatformOptions
         ReleaseInvocationId = releaseInvocationId;
         PolicySha256 = policySha256;
         AllowWindowsUatLocalReset = allowWindowsUatLocalReset;
+        this.chaosHttpsOrigin = chaosHttpsOrigin;
+        this.uatCaCertificatePath = uatCaCertificatePath;
     }
     internal string AndroidSerial { get; }
     internal Mau2PhysicalPhase Phase { get; }
@@ -1330,6 +1540,10 @@ internal sealed class CrossPlatformOptions
     internal string ReleaseInvocationId { get; }
     internal string PolicySha256 { get; }
     internal bool AllowWindowsUatLocalReset { get; }
+    internal Uri ChaosHttpsOrigin => chaosHttpsOrigin ?? throw new InvalidOperationException(
+        "This physical phase does not have an HTTPS chaos origin.");
+    internal string UatCaCertificatePath => uatCaCertificatePath ?? throw new InvalidOperationException(
+        "This physical phase does not have a UAT CA certificate.");
     internal string App(string role) => androidSelectors.TryGetValue(role, out var id) ? id : throw new InvalidOperationException($"Missing Android selector for {role}.");
 
     internal static string? NotRunReason()
@@ -1390,7 +1604,21 @@ internal sealed class CrossPlatformOptions
         var allowWindowsUatLocalReset =
             Mau2PhysicalPhaseContract.LoadWindowsUatResetAuthorization(
                 phase, policy.PolicySha256, releaseInvocation);
-        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, genericFixture, documentFixture, imageFixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256, allowWindowsUatLocalReset);
+        Uri? chaosHttpsOrigin = null;
+        string? uatCaCertificatePath = null;
+        if (phase == Mau2PhysicalPhase.PrivacyFallback)
+        {
+            var originValue = Environment.GetEnvironmentVariable("DEEP_E2E_CHAOS_HTTPS_ORIGIN");
+            if (!Uri.TryCreate(originValue, UriKind.Absolute, out chaosHttpsOrigin)
+                || chaosHttpsOrigin.Scheme != Uri.UriSchemeHttps
+                || chaosHttpsOrigin.AbsolutePath != "/"
+                || !string.IsNullOrEmpty(chaosHttpsOrigin.Query)
+                || !string.IsNullOrEmpty(chaosHttpsOrigin.Fragment))
+                throw new InvalidOperationException(
+                    "PrivacyFallback requires one exact HTTPS chaos origin.");
+            uatCaCertificatePath = RequireAbsoluteFile("DEEP_E2E_UAT_CA_CERTIFICATE");
+        }
+        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, genericFixture, documentFixture, imageFixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256, allowWindowsUatLocalReset, chaosHttpsOrigin, uatCaCertificatePath);
     }
     internal StrictCrossPlatformContracts.ApkMetadata ReadAndValidateApkMetadata()
     {
@@ -1615,7 +1843,7 @@ internal sealed class ApprovedCrossPlatformPolicy
         {
             throw new InvalidOperationException("Approved tool paths do not match their fixed roles.");
         }
-        if (!Path.IsPathFullyQualified(Apk.Path) || Apk.SizeBytes <= 0 || string.IsNullOrWhiteSpace(Apk.VersionCode) || string.IsNullOrWhiteSpace(Apk.VersionName) || Device.Sdk is < 26 or > 100) throw new InvalidOperationException("Approved APK/device definition is malformed.");
+        if (!Path.IsPathFullyQualified(Apk.Path) || Apk.SizeBytes <= 0 || string.IsNullOrWhiteSpace(Apk.VersionCode) || string.IsNullOrWhiteSpace(Apk.VersionName) || Device.Sdk is < 28 or > 100) throw new InvalidOperationException("Approved APK/device definition is malformed.");
         StrictCrossPlatformContracts.RequirePhysicalDeviceInventory(Device.Fingerprint, Device.Model, Device.Product, Device.Hardware, Device.Characteristics, Device.Sdk);
     }
 
@@ -1729,6 +1957,38 @@ internal sealed class AndroidUiautomatorClient
             throw new InvalidOperationException(
                 "Android correlated resource markers must be non-empty and unique.");
         return values.ToHashSet(StringComparer.Ordinal);
+    }
+
+    internal IReadOnlyList<string> SnapshotAccessibleTexts(string resourceId)
+    {
+        var values = StrictCrossPlatformContracts.FindAllResourceIds(Dump(), resourceId)
+            .Select(static node => node.AccessibleText)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (values.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidOperationException(
+                "Android correlated resource markers must be non-empty.");
+        return values;
+    }
+
+    internal void WaitForExactAccessibleTexts(
+        string resourceId,
+        IReadOnlyList<string> expected,
+        TimeSpan timeout)
+    {
+        var orderedExpected = expected.Order(StringComparer.Ordinal).ToArray();
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var actual = SnapshotAccessibleTexts(resourceId);
+            if (actual.Count > orderedExpected.Length)
+                throw new InvalidOperationException(
+                    "Android rendered unexpected duplicate correlated resource markers.");
+            if (actual.SequenceEqual(orderedExpected, StringComparer.Ordinal)) return;
+            Thread.Sleep(200);
+        }
+        throw new TimeoutException(
+            "Android did not preserve the exact correlated resource multiset.");
     }
     internal void WaitForExactAccessibleTextSet(
         string resourceId,

@@ -98,7 +98,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
-    public void PhysicalRouteMarkerIsDebugPhysicalOnlyAndPublishesRawRouterId()
+    public void PhysicalRouteMarkersAreDebugPhysicalOnlyAndPublishExactRouteProof()
     {
         var source = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Pages", "DesktopWorkspacePage.xaml.cs"));
@@ -108,6 +108,16 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.Contains("#if DEBUG && DEEP_PHYSICAL_E2E", source,
             StringComparison.Ordinal);
         Assert.Contains("AutomationId = \"PhysicalE2E.RouteNodeMarker\"", source,
+            StringComparison.Ordinal);
+        Assert.Contains("AutomationId = \"PhysicalE2E.RouteProofMarker\"", source,
+            StringComparison.Ordinal);
+        Assert.Contains("ManagedIngressH2Contract.FramePath", source,
+            StringComparison.Ordinal);
+        Assert.Contains("string.Join(',', routes.Primary.Select", source,
+            StringComparison.Ordinal);
+        Assert.Contains("string.Join(',', routes.Fallback.Select", source,
+            StringComparison.Ordinal);
+        Assert.Contains("|selected={selectedRoute}|entry={routerId}", source,
             StringComparison.Ordinal);
         Assert.Contains("physicalRouteUsageTracker.GetCurrentRouterId(selected.Id)", source,
             StringComparison.Ordinal);

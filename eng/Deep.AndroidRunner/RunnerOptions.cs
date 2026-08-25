@@ -101,7 +101,7 @@ internal sealed record RunnerOptions(
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
                 out var sdk) ||
-            sdk is < 26 or > 100 ||
+            sdk is < 28 or > 100 ||
             !string.Equals(values["--device-kernel-qemu"], "0", StringComparison.Ordinal) ||
             !string.Equals(
                 values["--device-class"],

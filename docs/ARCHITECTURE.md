@@ -36,6 +36,13 @@ Secure storage is the sole recovery-phrase source after account activation.
 An absent secure phrase is a normal clean-break state and is never populated
 from SQLite or another wrapped store.
 
+The SQLCipher key uses a compile-time lane namespace. Ordinary packages retain
+the existing `client-state.sqlcipher-key.v1` SecureStorage slot, while
+`DeepPhysicalE2E=true` packages use the distinct stable
+`client-state.sqlcipher-key.physical-e2e.v1` slot. A confirmed local-state reset
+removes and recreates only the active lane slot; it never deletes the shared
+SecureStorage backing file, probes the other lane, or falls back to another key.
+
 Reality sidecars are exposed as one application-scoped
 `IRealityTransportRuntime`; `App` is the single idempotent shutdown owner.
 Endpoint catalog construction is synchronous and does not start native

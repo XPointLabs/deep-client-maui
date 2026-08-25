@@ -240,8 +240,8 @@ try {
         $props[$name] = $value
     }
     if ($props['ro.kernel.qemu'] -cne '0' -or
-        [int]$props['ro.build.version.sdk'] -lt 26) {
-        throw 'Android lab policy requires a supported physical device.'
+        [int]$props['ro.build.version.sdk'] -lt 28) {
+        throw 'Android lab policy requires a physical Android 9 (API 28) or newer device.'
     }
 
     $random = [byte[]]::new(32)

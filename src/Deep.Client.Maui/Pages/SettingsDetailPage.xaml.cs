@@ -445,12 +445,8 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
                 "Разрешить встроенному Xray подключаться к нодам напрямую, если внешний VPN мешает работе Deep.",
                 ClientSettingKeys.NetworkBypassSystemVpn,
                 false)));
-        ContentStack.Children.Add(CreateTransportCard(
-            "Direct P2P",
-            "Не включён",
-            "Wi-Fi и Bluetooth пока не активированы в production-пути.",
-            "Deep не будет имитировать прямое соединение: транспорт появится здесь только после полной проверки радио, криптографии и физического E2E.",
-            false));
+        // Direct P2P remains absent from the product surface until its radio,
+        // cryptographic and physical E2E release gates are all implemented.
     }
 
     private Border CreatePathIntro() =>

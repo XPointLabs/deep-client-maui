@@ -43,6 +43,8 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
         AttachmentPickKind kind,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         IReadOnlyList<FileResult> results = kind switch
         {
             AttachmentPickKind.Photo => await MediaPicker.Default.PickPhotosAsync(new MediaPickerOptions
@@ -53,15 +55,14 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
             {
                 Title = "Выберите видео"
             }).ConfigureAwait(false),
-            _ => (await FilePicker.Default.PickMultipleAsync(new PickOptions
+            AttachmentPickKind.File => SingleOrEmpty(await FilePicker.Default.PickAsync(new PickOptions
             {
-                PickerTitle = "Выберите файлы"
-            }).ConfigureAwait(false))
-                .Where(static result => result is not null)
-                .Cast<FileResult>()
-                .ToArray()
+                PickerTitle = "Выберите файл"
+            }).ConfigureAwait(false)),
+            _ => []
         };
 
+        cancellationToken.ThrowIfCancellationRequested();
         if (results.Count == 0)
         {
             return [];
@@ -76,6 +77,9 @@ public sealed class MauiAttachmentPickerService : ITypedAttachmentPickerService
 
         return attachments;
     }
+
+    private static IReadOnlyList<FileResult> SingleOrEmpty(FileResult? result) =>
+        result is null ? [] : [result];
 
     private async Task<AttachmentMetadata> PrepareAsync(
         FileResult result,

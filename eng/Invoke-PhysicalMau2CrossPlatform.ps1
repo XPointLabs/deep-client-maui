@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('ProvisionIdentity', 'Attach', 'PayloadMatrix', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')]
+    [ValidateSet('ProvisionIdentity', 'Attach', 'PayloadMatrix', 'PrivacyFallback', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')]
     [string]$Phase,
     [string]$AndroidSerial = '192.168.1.45:43337',
     [string]$MailboxBootstrapRoot = 'C:\Work\DeepSession\secrets\mailbox-bootstrap',
@@ -332,7 +332,7 @@ namespace Deep.PhysicalE2E
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $devOpsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot '..\deep-devops'))
 $chaosManifestPath = Join-Path $repoRoot 'eng\physical-chaos-dependencies.v1.json'
-$chaosManifestSha256 = '2d839beea7b7789bcc49ba3572b431f7432e9eb97756c17cb0c08a57ab843529'
+$chaosManifestSha256 = '7ef641655b4529300e0cf8a228a6ded2e2b9f6be1ea7d742c3453450fdf4e9f6'
 $androidPackage = 'network.xpoint.deep.e2e'
 $productionPackage = 'network.xpoint.deep'
 $policyPath = Join-Path $repoRoot '.secrets\android-lab\approved-policy.json'
@@ -476,7 +476,7 @@ function Assert-ChaosDependencyAuthority {
         'schema', 'reviewedDevOpsCommit', 'dependencyTreeSha256',
         'files', 'closedDirectories', 'systemExecutables') 'Chaos dependency manifest'
     if ($manifest.schema -cne 'deep.physical-chaos-dependencies.v1' -or
-        $manifest.reviewedDevOpsCommit -cne '91c7cf45984e93153dab80816e3f78e931edb779' -or
+        $manifest.reviewedDevOpsCommit -cne '2a41656323cdb7a34b7570214940767f33743ef4' -or
         $manifest.dependencyTreeSha256 -cnotmatch '^[a-f0-9]{64}$') {
         throw 'Chaos dependency manifest identity is invalid.'
     }
@@ -507,6 +507,10 @@ function Assert-ChaosDependencyAuthority {
         Assert-AuthorityPathAncestors $script:devOpsRoot $full "Chaos dependency $relative"
         if ((Get-Sha256 $full) -cne $sha256) { throw 'Chaos dependency SHA-256 mismatch.' }
         $lines.Add("file:$relative=$sha256`n")
+    }
+    $haproxyConfigRelativePath = 'config/survival-uat-tls/haproxy.cfg'
+    if (-not $declaredFiles.Contains($haproxyConfigRelativePath)) {
+        throw 'Chaos dependency manifest must pin the HAProxy configuration.'
     }
 
     $previous = $null
@@ -581,6 +585,8 @@ function Assert-ChaosDependencyAuthority {
     }
     return [pscustomobject]@{
         Launcher = Join-Path $script:devOpsRoot 'scripts\survival-dev.ps1'
+        HAProxyConfig = Join-Path $script:devOpsRoot `
+            ($haproxyConfigRelativePath.Replace('/', '\'))
         DevOpsRoot = $script:devOpsRoot
         Manifest = $manifestFile
         Files = @($manifest.files)
@@ -654,6 +660,7 @@ function New-ChaosDependencySnapshot([object]$Authority, [string]$SnapshotRoot) 
         Manifest = $snapshotManifest
         Files = @($Authority.Files)
         Launcher = Join-Path $snapshotDevOps 'scripts\survival-dev.ps1'
+        HAProxyConfig = Join-Path $snapshotDevOps 'config\survival-uat-tls\haproxy.cfg'
         Docker = $Authority.Docker
         DockerSha256 = $Authority.DockerSha256
         DockerCompose = $Authority.DockerCompose
@@ -693,6 +700,13 @@ function Get-ChaosExecutionAuthority {
             (Get-Sha256 $file) -cne [string]$entry.sha256) {
             throw 'Private chaos snapshot dependency changed after creation.'
         }
+    }
+    $expectedHAProxyConfig = Join-Path $authority.DevOpsRoot `
+        'config\survival-uat-tls\haproxy.cfg'
+    if (-not [StringComparer]::OrdinalIgnoreCase.Equals(
+            [IO.Path]::GetFullPath($authority.HAProxyConfig),
+            [IO.Path]::GetFullPath($expectedHAProxyConfig))) {
+        throw 'Private chaos HAProxy configuration escaped its reviewed snapshot path.'
     }
     return $authority
 }
@@ -1054,12 +1068,13 @@ if ($runtimeEnvironmentText -cnotmatch '(?m)^DEEP_TRANSPORT_PROTOCOL=authenticat
     throw 'The physical lane requires the checked-in authenticated MAU2 user-managed runtime profile.'
 }
 $chaosPhase = $Phase -cin @(
-    'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow')
+    'PrivacyFallback', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow')
 $chaosLauncher = $null
 $chaosDependencyTreeSha256 = $null
 $chaosExecutionSnapshotSha256 = $null
 $chaosOrigin = $null
 $chaosSecretDirectory = $null
+$uatCaCertificate = $null
 $sourceChaosAuthority = Assert-ChaosDependencyAuthority
 $chaosDependencyTreeSha256 = $sourceChaosAuthority.DependencyTreeSha256
 if ($chaosPhase) {
@@ -1077,6 +1092,8 @@ if ($chaosPhase) {
     $chaosOrigin = $originMatches[0].Groups['origin'].Value
     $chaosSecretDirectory = Assert-AbsoluteExisting `
         'C:\Work\DeepSession\secrets\survival-uat-tls' 'UAT TLS secret directory' -Directory
+    $uatCaCertificate = Assert-AbsoluteExisting `
+        (Join-Path $chaosSecretDirectory 'ca.crt') 'UAT TLS CA certificate'
     $env:SURVIVAL_UAT_TLS_SECRET_DIR = $chaosSecretDirectory
 }
 $sourceCommit = @(& git -C $repoRoot rev-parse HEAD)
@@ -1135,6 +1152,7 @@ $env:DEEP_PHYSICAL_E2E_DOCKER_PATH = $script:chaosExecutionAuthority.Docker
 $env:DEEP_PHYSICAL_E2E_DOCKER_SHA256 = $script:chaosExecutionAuthority.DockerSha256
 $env:DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_PATH = $script:chaosExecutionAuthority.DockerCompose
 $env:DEEP_PHYSICAL_E2E_DOCKER_COMPOSE_SHA256 = $script:chaosExecutionAuthority.DockerComposeSha256
+$env:DEEP_PHYSICAL_E2E_HAPROXY_CONFIG_PATH = $script:chaosExecutionAuthority.HAProxyConfig
 $env:DEEP_PHYSICAL_E2E_DEVOPS_RUNTIME_ROOT = $sourceChaosAuthority.DevOpsRoot
 if ($chaosPhase) {
     $devOpsRoot = $script:chaosExecutionAuthority.DevOpsRoot
@@ -1144,7 +1162,7 @@ if ($chaosPhase) {
 $runStatePath = Join-Path $runRoot 'run-state.json'
 $artifacts = Join-Path $runRoot 'artifacts'
 [IO.Directory]::CreateDirectory($artifacts) | Out-Null
-$genericFixture = Join-Path $runRoot "payload-$runId-generic.bin"
+$genericFixture = Join-Path $runRoot "payload-$runId-generic.txt"
 $documentFixture = Join-Path $runRoot "payload-$runId-document.pdf"
 $imageFixture = Join-Path $runRoot "payload-$runId-image.png"
 [IO.File]::WriteAllBytes(
@@ -1236,6 +1254,7 @@ try {
             $env:DEEP_E2E_CHAOS_MANIFEST = $chaosManifestPath
             $env:DEEP_E2E_CHAOS_SNAPSHOT_SHA256 = $chaosExecutionSnapshotSha256
             $env:DEEP_E2E_CHAOS_HTTPS_ORIGIN = $chaosOrigin
+            $env:DEEP_E2E_UAT_CA_CERTIFICATE = $uatCaCertificate
             $env:SURVIVAL_UAT_TLS_SECRET_DIR = $chaosSecretDirectory
         }
         $negativeGenerator = Join-Path $devOpsRoot 'scripts\survival-dev-mailbox-negative-runtime.ps1'
@@ -1321,6 +1340,8 @@ try {
         $failures.Add($_.Exception)
     }
     $env:DEEP_MAU2_E2E_UAT_RESET_BINDING = $null
+    $env:DEEP_E2E_UAT_CA_CERTIFICATE = $null
+    $env:DEEP_PHYSICAL_E2E_HAPROXY_CONFIG_PATH = $null
 }
 
 if ($failures.Count -ne 0) {

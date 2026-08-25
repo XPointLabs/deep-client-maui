@@ -9,6 +9,7 @@ public sealed class Mau2PhysicalPhaseTests
     [InlineData("ProvisionIdentity", Mau2PhysicalPhase.ProvisionIdentity)]
     [InlineData("Attach", Mau2PhysicalPhase.Attach)]
     [InlineData("PayloadMatrix", Mau2PhysicalPhase.PayloadMatrix)]
+    [InlineData("PrivacyFallback", Mau2PhysicalPhase.PrivacyFallback)]
     [InlineData("Call", Mau2PhysicalPhase.Call)]
     [InlineData("RestartDurability", Mau2PhysicalPhase.RestartDurability)]
     [InlineData("ManualResendAfterRestart", Mau2PhysicalPhase.ManualResendAfterRestart)]
@@ -30,6 +31,7 @@ public sealed class Mau2PhysicalPhaseTests
     }
 
     [Theory]
+    [InlineData(Mau2PhysicalPhase.PrivacyFallback)]
     [InlineData(Mau2PhysicalPhase.ManualResendAfterRestart)]
     [InlineData(Mau2PhysicalPhase.AutomaticRetryAfterRestart)]
     [InlineData(Mau2PhysicalPhase.AckCrashWindow)]

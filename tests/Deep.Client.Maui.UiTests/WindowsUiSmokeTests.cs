@@ -366,6 +366,39 @@ public sealed class WindowsUiSmokeTests
             return names.ToHashSet(StringComparer.Ordinal);
         }
 
+        internal IReadOnlyList<string> SnapshotAutomationIdNameMultiset(string automationId)
+        {
+            var names = CurrentWindow()
+                .FindAllDescendants(condition => condition.ByAutomationId(automationId))
+                .Select(static candidate => candidate.Properties.Name.ValueOrDefault ?? string.Empty)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            if (names.Any(string.IsNullOrWhiteSpace))
+                throw new InvalidOperationException(
+                    "Windows correlated automation names must be non-empty.");
+            return names;
+        }
+
+        internal void WaitForExactAutomationIdNameMultiset(
+            string automationId,
+            IReadOnlyList<string> expected,
+            TimeSpan timeout)
+        {
+            var orderedExpected = expected.Order(StringComparer.Ordinal).ToArray();
+            var until = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < until)
+            {
+                var actual = SnapshotAutomationIdNameMultiset(automationId);
+                if (actual.Count > orderedExpected.Length)
+                    throw new InvalidOperationException(
+                        "Windows rendered unexpected duplicate correlated automation names.");
+                if (actual.SequenceEqual(orderedExpected, StringComparer.Ordinal)) return;
+                Thread.Sleep(200);
+            }
+            throw new TimeoutException(
+                "Windows did not preserve the exact correlated automation-name multiset.");
+        }
+
         internal void WaitForExactAutomationIdNameSet(
             string automationId,
             IReadOnlySet<string> expected,

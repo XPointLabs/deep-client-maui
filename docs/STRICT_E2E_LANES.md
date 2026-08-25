@@ -1,6 +1,6 @@
 # Strict client E2E lanes
 
-Last updated: 2026-07-18.
+Last updated: 2026-08-26.
 
 Program revision: `ca5ad9f0c9d4dfb509dedcbf8133524c15867fce5534816da21ff86a07057383`.
 
@@ -103,6 +103,10 @@ fragment forms fail closed. The identical LAN values remain invalid in ordinary
 Debug and Release composition.
 
 CI does not trust a pre-existing checkout directory. `eng/Provision-AndroidLabPolicy.ps1` materializes an exact allowlisted bundle from `DEEP_ANDROID_LAB_PROTECTED_SOURCE` after checkout, rejects reparse points in every existing source/destination ancestor, requires a pinned owner, and permits write access only to that owner, Local System, and Builtin Administrators by resolved SID. Every source file is regular/read-only, and both source and destination are re-enumerated against the exact signed file set with no extras. The script verifies all receipt/tool hashes and an Ed25519 signature over the complete semantic policy projection. The Mr. X public-key SHA-256 enters the protected build invocation as `DEEP_MR_X_PUBLIC_KEY_SHA256`, is passed explicitly as `DeepMrXPublicKeySha256`, and is compiled into the physical-lab binary; application runtime configuration never supplies or replaces this trust root. Release and non-physical builds reject the property. The repository contains no invented real key. The verify-only helper uses a locked dependency graph, is built before provisioning, and runs without restore/build at the trust gate. An `if: always()` step removes the destination even after a failed lane.
+
+Physical Android policy issuance and every downstream validator require Android 9 (API 28) or
+newer, matching the application minimum and its signing-lineage trust boundary. API 26/27 devices
+cannot be approved or used as physical evidence.
 
 Then attach that exact dedicated managed physical test device and invoke:
 
@@ -233,7 +237,7 @@ are never written to policy output and are zeroed by the issuer process.
 
 The physical runner `eng/Invoke-PhysicalMau2CrossPlatform.ps1`
 requires one explicit phase: `ProvisionIdentity`, `Attach`, `PayloadMatrix`, `Call`, `RestartDurability`,
-`ManualResendAfterRestart`, `AutomaticRetryAfterRestart`, `AckCrashWindow`, or `NegativeRuntime`.
+`PrivacyFallback`, `ManualResendAfterRestart`, `AutomaticRetryAfterRestart`, `AckCrashWindow`, or `NegativeRuntime`.
 `ProvisionIdentity` creates a missing Android or Windows identity only through
 the rendered production controls, otherwise reads and preserves the existing
 identity. A reset-required Windows UAT surface fails closed by default. The only
@@ -250,15 +254,28 @@ HTTPS/UAT run it requires exact text in both directions and the correlated sende
 filename/type/size metadata and a SHA-256 of the saved plaintext; an inline image
 with a stable preview selector and filename/MIME/dimension metadata; and one new
 explicit voice message in each direction. Both voice messages must expose playback
-start and natural completion, and both voice rows must remain exactly present
-after both processes restart. Open action evidence and Save/decrypt/hash evidence
-are separate booleans; invoking Open never implies that plaintext Save succeeded.
+start and natural completion. Generic, PDF, inline-image and voice rows must all
+remain as the exact same multiplicity-preserving UI sets after both processes
+restart. Inline images are opened and saved on both platforms, and each saved
+receiver copy must have the same plaintext SHA-256 as the sender copy. Open
+action evidence and Save/decrypt/hash evidence are separate booleans; invoking
+Open never implies that plaintext Save succeeded.
+
+`PrivacyFallback` first proves that `/api/client/mailbox/v2/store` is absent over
+the exact UAT CA-trusted HTTP/2 origin. It then injects one canonical 64-byte
+retryable `DIE1` `BeforeForward` response at the primary entry and requires the
+same send to complete through the separately published three-hop fallback. The
+rendered proof binds `/api/ingress/v1/frame`, all three primary router IDs, all
+three disjoint fallback router IDs, the selected route and its entry router.
 
 The retry/ACK phases use only the reviewed `deep-devops` chaos v2 CLI while the
 client remains on the unchanged CA-trusted `https://<LAN-IP>:41801` ingress. The
-runner pins the exact clean DevOps commit and launcher SHA-256, derives the origin
-from the same checked HTTPS profile, and requires a clean off baseline before the
-test. `ManualResendAfterRestart` consumes one post-durable Store response drop,
+runner pins the exact clean DevOps commit and complete dependency manifest, copies
+every reviewed dependency into a private read-leased run snapshot, and passes the
+absolute snapshotted HAProxy configuration path to Compose. The mutable DevOps
+project directory therefore cannot replace the ingress configuration used by a
+physical run. The runner derives the origin from the same checked HTTPS profile
+and requires a clean off baseline before the test. `ManualResendAfterRestart` consumes one post-durable Store response drop,
 persists the exact failed row across a distinct Windows process, invokes its
 correlated Retry control, and requires exact Store counters, sender `Sent`, and one
 recipient row. `AutomaticRetryAfterRestart` consumes one pre-dispatch Store outage,

@@ -14,6 +14,7 @@ public enum Mau2PhysicalPhase
     ProvisionIdentity,
     Attach,
     PayloadMatrix,
+    PrivacyFallback,
     Call,
     RestartDurability,
     ManualResendAfterRestart,
@@ -41,7 +42,7 @@ internal static partial class Mau2PhysicalPhaseContract
             !string.Equals(raw, phase.ToString(), StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                "Physical MAU2 E2E requires one exact DEEP_MAU2_E2E_PHASE: ProvisionIdentity, Attach, PayloadMatrix, Call, RestartDurability, ManualResendAfterRestart, AutomaticRetryAfterRestart, AckCrashWindow, or NegativeRuntime.");
+                "Physical MAU2 E2E requires one exact DEEP_MAU2_E2E_PHASE: ProvisionIdentity, Attach, PayloadMatrix, PrivacyFallback, Call, RestartDurability, ManualResendAfterRestart, AutomaticRetryAfterRestart, AckCrashWindow, or NegativeRuntime.");
         }
 
         return phase;
@@ -74,7 +75,8 @@ internal static partial class Mau2PhysicalPhaseContract
 
     internal static void RequireChaosPhase(Mau2PhysicalPhase phase)
     {
-        if (phase is not (Mau2PhysicalPhase.ManualResendAfterRestart
+        if (phase is not (Mau2PhysicalPhase.PrivacyFallback
+            or Mau2PhysicalPhase.ManualResendAfterRestart
             or Mau2PhysicalPhase.AutomaticRetryAfterRestart
             or Mau2PhysicalPhase.AckCrashWindow))
         {

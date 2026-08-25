@@ -60,10 +60,21 @@ public sealed class PhysicalChaosRunnerContractSmokeTests
         Assert.Contains("Physical MAU2 phase failed with audited cleanup results.", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_E2E_CHAOS_MANIFEST", runner, StringComparison.Ordinal);
+        Assert.Contains(
+            "$env:DEEP_PHYSICAL_E2E_HAPROXY_CONFIG_PATH = $script:chaosExecutionAuthority.HAProxyConfig",
+            runner, StringComparison.Ordinal);
+        Assert.Contains("$env:DEEP_PHYSICAL_E2E_HAPROXY_CONFIG_PATH = $null", runner,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("DEEP_E2E_CHAOS_SCRIPT_SHA256", runner, StringComparison.Ordinal);
         Assert.DoesNotContain("DEEP_E2E_CHAOS_SCRIPT =", runner, StringComparison.Ordinal);
         Assert.DoesNotContain("& dotnet test", runner, StringComparison.Ordinal);
         Assert.DoesNotMatch(new Regex(@"git\s+-C\s+\$devOpsRoot", RegexOptions.CultureInvariant), runner);
+
+        var compose = File.ReadAllText(Path.Combine(
+            root, "..", "deep-devops", "docker-compose.survival-uat-tls.dev.yml"));
+        Assert.Contains(
+            "source: ${DEEP_PHYSICAL_E2E_HAPROXY_CONFIG_PATH:-./config/survival-uat-tls/haproxy.cfg}",
+            compose, StringComparison.Ordinal);
 
         var snapshotIndex = runner.IndexOf(
             "$script:chaosExecutionAuthority = New-ChaosDependencySnapshot",

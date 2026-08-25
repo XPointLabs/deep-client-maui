@@ -34,6 +34,17 @@ public sealed class AndroidRunnerV3Tests
     }
 
     [Fact]
+    public void Options_require_android_9_or_newer_physical_device()
+    {
+        using var fixture = RunnerFixture.Create();
+
+        Assert.Throws<RunnerConfigurationException>(() =>
+            RunnerOptions.Parse(fixture.Replace("--device-sdk", "27")));
+        Assert.Equal(28, RunnerOptions.Parse(
+            fixture.Replace("--device-sdk", "28")).DeviceSdk);
+    }
+
+    [Fact]
     public void Ui_hierarchy_requires_one_exact_resource_and_bounded_valid_bounds()
     {
         const string resource = "network.xpoint.deep.e2e:id/Welcome.Create";
@@ -267,7 +278,7 @@ public sealed class AndroidRunnerV3Tests
                     ["-s", options.Serial, "shell", "pm", "dump", RunnerOptions.E2ePackage]))
             {
                 return Result(
-                    $"versionCode={options.VersionCode} minSdk=26\n" +
+                    $"versionCode={options.VersionCode} minSdk=28\n" +
                     $"versionName={PackageVersionName ?? options.VersionName}\n");
             }
             if (args.SequenceEqual(

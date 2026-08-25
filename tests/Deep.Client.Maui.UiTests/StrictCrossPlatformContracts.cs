@@ -410,7 +410,7 @@ internal static class StrictCrossPlatformContracts
         string characteristics,
         int sdk)
     {
-        if (sdk is < 26 or > 100 ||
+        if (sdk is < 28 or > 100 ||
             new[] { fingerprint, model, product, hardware, characteristics }.Any(string.IsNullOrWhiteSpace) ||
             Regex.IsMatch(
                 $"{fingerprint} {model} {product} {hardware} {characteristics}",
@@ -691,6 +691,49 @@ internal static class StrictCrossPlatformContracts
             }
 
             return this with { SigningDigest = digest };
+        }
+    }
+
+    internal sealed record PrivacyRouteProof(
+        IReadOnlyList<string> Primary,
+        IReadOnlyList<string> Fallback,
+        string Selected,
+        string Entry)
+    {
+        internal static PrivacyRouteProof ParseExact(string value)
+        {
+            var fields = value.Split('|', StringSplitOptions.None);
+            if (fields.Length != 6 || fields[0] != "v1" ||
+                fields[1] != "path=/api/ingress/v1/frame" ||
+                !fields[2].StartsWith("primary=", StringComparison.Ordinal) ||
+                !fields[3].StartsWith("fallback=", StringComparison.Ordinal) ||
+                !fields[4].StartsWith("selected=", StringComparison.Ordinal) ||
+                !fields[5].StartsWith("entry=", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Physical privacy-route proof is not canonical.");
+            }
+
+            var primary = fields[2]["primary=".Length..].Split(',', StringSplitOptions.None);
+            var fallback = fields[3]["fallback=".Length..].Split(',', StringSplitOptions.None);
+            var selected = fields[4]["selected=".Length..];
+            var entry = fields[5]["entry=".Length..];
+            var all = primary.Concat(fallback).ToArray();
+            if (primary.Length != 3 || fallback.Length != 3 ||
+                all.Any(static id => !Regex.IsMatch(
+                    id, "^[a-f0-9]{64}$", RegexOptions.CultureInvariant) ||
+                    id.All(static character => character == '0')) ||
+                all.Distinct(StringComparer.Ordinal).Count() != 6 ||
+                selected is not ("primary" or "fallback") ||
+                !string.Equals(
+                    entry,
+                    selected == "primary" ? primary[0] : fallback[0],
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Physical privacy-route proof is not exact-three, disjoint, or selected-entry bound.");
+            }
+
+            return new PrivacyRouteProof(primary, fallback, selected, entry);
         }
     }
 
