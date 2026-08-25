@@ -1437,12 +1437,14 @@ public sealed class StrictCrossPlatformUiTests
         string fileName)
     {
         windows.ActivateExact(preview);
-        windows.RequestContextMenuOnAncestor(
-            preview, "DesktopWorkspace.DirectMessageBubble");
         var before = StrictCrossPlatformContracts.SnapshotDownloads(downloadsDirectory);
-        windows.ActivateExact(Require(windows.WaitForAutomationId(
-            "DesktopWorkspace.AttachmentSave", TimeSpan.FromSeconds(15)),
-            "DesktopWorkspace.AttachmentSave"));
+        windows.ActivateExact(Require(windows.WaitForCorrelatedDescendant(
+            "DesktopWorkspace.DirectMessageBubble",
+            "DesktopWorkspace.DirectAttachmentFilename",
+            fileName,
+            "DesktopWorkspace.DirectAttachmentSave",
+            TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.DirectAttachmentSave"));
         var saved = before.WaitForNewCorrelatedFile(
             fileName, TimeSpan.FromSeconds(30), createdDownloads);
         return StrictCrossPlatformContracts.Sha256File(saved);
@@ -1492,9 +1494,14 @@ public sealed class StrictCrossPlatformUiTests
             // Open may change window focus. Re-select the same exact correlated filename before Save.
             attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(15)), "DesktopWorkspace.DirectAttachmentFilename");
         }
-        windows.RequestContextMenuOnAncestor(attachment, "DesktopWorkspace.DirectMessageBubble");
         var before = StrictCrossPlatformContracts.SnapshotDownloads(downloadsDirectory);
-        windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.AttachmentSave", TimeSpan.FromSeconds(15)), "DesktopWorkspace.AttachmentSave"));
+        windows.ActivateExact(Require(windows.WaitForCorrelatedDescendant(
+            "DesktopWorkspace.DirectMessageBubble",
+            "DesktopWorkspace.DirectAttachmentFilename",
+            marker,
+            "DesktopWorkspace.DirectAttachmentSave",
+            TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.DirectAttachmentSave"));
         var saved = before.WaitForNewCorrelatedFile(marker, TimeSpan.FromSeconds(30), createdDownloads);
         Assert.Equal(expectedSha256, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(saved))));
     }
@@ -1502,9 +1509,14 @@ public sealed class StrictCrossPlatformUiTests
     private static void ReDownloadAndVerifyWindowsAttachment(WindowsUiSmokeTests.WindowsUiTestSession windows, string downloadsDirectory, ICollection<string> createdDownloads, string marker, string expectedSha256)
     {
         var attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectAttachmentFilename");
-        windows.RequestContextMenuOnAncestor(attachment, "DesktopWorkspace.DirectMessageBubble");
         var before = StrictCrossPlatformContracts.SnapshotDownloads(downloadsDirectory);
-        windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.AttachmentSave", TimeSpan.FromSeconds(15)), "DesktopWorkspace.AttachmentSave"));
+        windows.ActivateExact(Require(windows.WaitForCorrelatedDescendant(
+            "DesktopWorkspace.DirectMessageBubble",
+            "DesktopWorkspace.DirectAttachmentFilename",
+            marker,
+            "DesktopWorkspace.DirectAttachmentSave",
+            TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.DirectAttachmentSave"));
         var saved = before.WaitForNewCorrelatedFile(marker, TimeSpan.FromSeconds(30), createdDownloads);
         Assert.NotEqual(createdDownloads.First(), saved);
         Assert.Equal(expectedSha256, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(saved))));

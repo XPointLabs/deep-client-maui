@@ -250,6 +250,7 @@
                                             <Label.GestureRecognizers><TapGestureRecognizer Tapped="OnDirectAttachmentTapped" /></Label.GestureRecognizers>
                                         </Label>
                                         <Label AutomationId="DesktopWorkspace.DirectAttachmentMetadata" Text="{Binding AttachmentSubtitle}" FontSize="11" TextColor="{StaticResource TextTertiary}" IsVisible="{Binding HasGenericAttachments}" />
+                                        <Button AutomationId="DesktopWorkspace.DirectAttachmentSave" Text="Сохранить" Style="{StaticResource GhostButton}" HorizontalOptions="Start" Padding="8,2" MinimumHeightRequest="30" FontSize="11" IsVisible="{Binding HasNonVoiceAttachments}" Clicked="OnMessageAttachmentSaveClicked" />
                                         <Label AutomationId="DesktopWorkspace.DirectMessageBody" Text="{Binding Body}" FontSize="14" LineBreakMode="WordWrap" IsVisible="{Binding HasVisibleBody}" />
                                         <FlexLayout BindableLayout.ItemsSource="{Binding ReactionChips}" Direction="Row" Wrap="Wrap" AlignItems="Start" IsVisible="{Binding HasReactions}">
                                             <BindableLayout.ItemTemplate>
@@ -348,6 +349,7 @@
                                             <Image.GestureRecognizers><TapGestureRecognizer Tapped="OnGroupAttachmentTapped" /></Image.GestureRecognizers>
                                         </Image>
                                         <Label AutomationId="DesktopWorkspace.GroupAttachmentFilename" Text="{Binding AttachmentSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding HasNonVoiceAttachments}"><Label.GestureRecognizers><TapGestureRecognizer Tapped="OnGroupAttachmentTapped" /></Label.GestureRecognizers></Label>
+                                        <Button AutomationId="DesktopWorkspace.GroupAttachmentSave" Text="Сохранить" Style="{StaticResource GhostButton}" HorizontalOptions="Start" Padding="8,2" MinimumHeightRequest="30" FontSize="11" IsVisible="{Binding HasNonVoiceAttachments}" Clicked="OnMessageAttachmentSaveClicked" />
                                         <Label AutomationId="DesktopWorkspace.GroupMessageBody" Text="{Binding Body}" FontSize="14" LineBreakMode="WordWrap" IsVisible="{Binding HasVisibleBody}" />
                                         <FlexLayout BindableLayout.ItemsSource="{Binding ReactionChips}" Direction="Row" Wrap="Wrap" AlignItems="Start" IsVisible="{Binding HasReactions}">
                                             <BindableLayout.ItemTemplate>

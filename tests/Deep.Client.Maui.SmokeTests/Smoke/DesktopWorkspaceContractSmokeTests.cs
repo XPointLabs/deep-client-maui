@@ -30,6 +30,13 @@ public sealed class DesktopWorkspaceContractSmokeTests
         Assert.Equal(2, Count(xaml, "ReactionChipTapped"));
         Assert.Equal(2, Count(xaml, "PointerPressed=\"OnVoicePointerPressed\""));
         Assert.Contains("OnContextSaveAttachmentClicked", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationId=\"DesktopWorkspace.DirectAttachmentSave\"", xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("AutomationId=\"DesktopWorkspace.GroupAttachmentSave\"", xaml,
+            StringComparison.Ordinal);
+        Assert.Equal(2, Count(xaml, "Clicked=\"OnMessageAttachmentSaveClicked\""));
+        Assert.Contains("AttachmentOpenService.SaveAsync(attachment, attachmentFiles)", codeBehind,
+            StringComparison.Ordinal);
         Assert.Contains("OnContextShareAttachmentClicked", xaml, StringComparison.Ordinal);
         Assert.Contains("ResolveContextMenuTranslation", codeBehind, StringComparison.Ordinal);
         Assert.Contains("VoiceMessagePlaybackService", codeBehind, StringComparison.Ordinal);

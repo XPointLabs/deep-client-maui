@@ -1042,6 +1042,27 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         }
     }
 
+    private async void OnMessageAttachmentSaveClicked(object? sender, EventArgs e)
+    {
+        var attachment = (sender as BindableObject)?.BindingContext switch
+        {
+            ChatMessageItem { Attachments.Count: > 0 } direct => direct.Attachments[0],
+            GroupChatMessageItem { Attachments.Count: > 0 } group => group.Attachments[0],
+            _ => null
+        };
+        if (attachment is null)
+            return;
+
+        try
+        {
+            await AttachmentOpenService.SaveAsync(attachment, attachmentFiles);
+        }
+        catch (Exception exception)
+        {
+            await DisplayAlertAsync("Вложение", exception.Message, "Закрыть");
+        }
+    }
+
     private async void OnDirectVoiceMessageTapped(object? sender, TappedEventArgs e)
     {
         if ((sender as BindableObject)?.BindingContext is ChatMessageItem { Attachments.Count: > 0 } message)

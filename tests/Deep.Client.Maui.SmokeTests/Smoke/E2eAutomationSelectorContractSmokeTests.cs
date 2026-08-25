@@ -200,7 +200,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
-    public void PhysicalWindowsAttachmentActionsUseTheExactMessageContext()
+    public void PhysicalWindowsAttachmentActionsUseExactCorrelatedMessageControls()
     {
         var physical = File.ReadAllText(WorkspacePath(
             "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
@@ -208,7 +208,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             "tests", "Deep.Client.Maui.UiTests", "WindowsUiSmokeTests.cs"));
 
         Assert.Contains(
-            "windows.RequestContextMenuOnAncestor(attachment, \"DesktopWorkspace.DirectMessageBubble\");",
+            "\"DesktopWorkspace.DirectAttachmentSave\"",
             physical,
             StringComparison.Ordinal);
         Assert.Contains("windows.ActivateExact(attachment);", physical, StringComparison.Ordinal);
@@ -217,8 +217,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             "WaitForAutomationIdWithName(\"DesktopWorkspace.DirectAttachmentFilename\", marker",
             physical,
             StringComparison.Ordinal);
+        Assert.Contains("WaitForCorrelatedDescendant(", physical, StringComparison.Ordinal);
         Assert.Contains("current = current.Parent;", windows, StringComparison.Ordinal);
-        Assert.Contains("current.RightClick();", windows, StringComparison.Ordinal);
     }
 
     [Fact]
