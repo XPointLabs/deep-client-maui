@@ -188,6 +188,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
         Assert.Contains("[switch]$ResetWindowsUatLocalState", runner,
             StringComparison.Ordinal);
+        Assert.Contains("[switch]$ResetAndroidE2eLocalState", runner,
+            StringComparison.Ordinal);
         Assert.Contains("$Phase -cne 'ProvisionIdentity'", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_MAU2_E2E_UAT_RESET_BINDING", runner,
@@ -195,6 +197,12 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("${policySha256}:$releaseInvocationId", runner,
             StringComparison.Ordinal);
         Assert.Contains("$env:DEEP_MAU2_E2E_UAT_RESET_BINDING = $null", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("DEEP_MAU2_E2E_ANDROID_RESET_BINDING", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("android-e2e-local-reset-v1:${policySha256}:$releaseInvocationId", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("$env:DEEP_MAU2_E2E_ANDROID_RESET_BINDING = $null", runner,
             StringComparison.Ordinal);
         Assert.Contains("$env:DEEP_STRICT_WINDOWS_UI = '1'", runner,
             StringComparison.Ordinal);
@@ -254,6 +262,11 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.DoesNotContain("pm clear", runner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("uninstall", runner, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("StartupResetLocalStateButton", ui, StringComparison.Ordinal);
+        Assert.Contains("options.AllowAndroidE2eLocalReset", ui, StringComparison.Ordinal);
+        Assert.Contains("android.TapExactResourceIdWithExactText(\"android:id/button1\", \"Сбросить\")", ui,
+            StringComparison.Ordinal);
+        Assert.Contains("Confirmed Android E2E reset did not reach a clean provisioning surface", ui,
+            StringComparison.Ordinal);
         Assert.Contains("windows.WaitForAutomationId(\"PrimaryButton\"", ui,
             StringComparison.Ordinal);
         Assert.Contains("Confirmed Windows UAT reset did not reach a clean provisioning surface", ui,

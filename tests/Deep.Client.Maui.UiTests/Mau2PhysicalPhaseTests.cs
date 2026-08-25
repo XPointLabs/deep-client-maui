@@ -71,6 +71,43 @@ public sealed class Mau2PhysicalPhaseTests
         }
     }
 
+    [Fact]
+    public void Android_e2e_reset_requires_exact_policy_invocation_and_provisioning_phase()
+    {
+        const string policy =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        const string invocation = "0123456789abcdef0123456789abcdef";
+        const string key = "DEEP_MAU2_E2E_ANDROID_RESET_BINDING";
+        var previous = Environment.GetEnvironmentVariable(key);
+        try
+        {
+            Environment.SetEnvironmentVariable(key, null);
+            Assert.False(Mau2PhysicalPhaseContract.LoadAndroidE2eResetAuthorization(
+                Mau2PhysicalPhase.ProvisionIdentity, policy, invocation));
+
+            Environment.SetEnvironmentVariable(
+                key, $"android-e2e-local-reset-v1:{policy}:{invocation}");
+            Assert.True(Mau2PhysicalPhaseContract.LoadAndroidE2eResetAuthorization(
+                Mau2PhysicalPhase.ProvisionIdentity, policy, invocation));
+            Assert.Null(Environment.GetEnvironmentVariable(key));
+
+            Environment.SetEnvironmentVariable(
+                key, $"android-e2e-local-reset-v1:{policy}:{invocation}");
+            Assert.Throws<InvalidOperationException>(() =>
+                Mau2PhysicalPhaseContract.LoadAndroidE2eResetAuthorization(
+                    Mau2PhysicalPhase.Attach, policy, invocation));
+
+            Environment.SetEnvironmentVariable(key, "wrong");
+            Assert.Throws<InvalidOperationException>(() =>
+                Mau2PhysicalPhaseContract.LoadAndroidE2eResetAuthorization(
+                    Mau2PhysicalPhase.ProvisionIdentity, policy, invocation));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(key, previous);
+        }
+    }
+
     [Theory]
     [InlineData("wrong")]
     [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:fedcba9876543210fedcba9876543210")]

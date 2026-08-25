@@ -6,7 +6,10 @@ The workspace and repository `AGENTS.md` files apply.
 
 - Always pass an explicit Android serial; do not rely on the script default.
 - The production package and its data are audit-only: snapshot before/after and never alter them.
-- UAT reset is allowed only through `ProvisionIdentity -ResetWindowsUatLocalState`.
+- UAT reset is allowed only through `ProvisionIdentity` with the explicit
+  `-ResetWindowsUatLocalState` or `-ResetAndroidE2eLocalState` switch. The Android path must
+  use the application-owned confirmation UI for `network.xpoint.deep.e2e`; `pm clear`, uninstall,
+  and production-package mutation remain forbidden.
 - Do not delete the whole Windows `securestorage.dat`; reset only the physical-lane state/slot.
 - Keep APK, policy, holder, authority and evidence bound to the current committed source revision.
 - Read certificates/keys only through existing scripts. Never print or copy secret material into

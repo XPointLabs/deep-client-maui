@@ -30,6 +30,8 @@ internal static partial class Mau2PhysicalPhaseContract
     private const string RunsRootEnvironmentKey = "DEEP_MAU2_E2E_RUNS_ROOT";
     private const string WindowsUatResetBindingEnvironmentKey =
         "DEEP_MAU2_E2E_UAT_RESET_BINDING";
+    private const string AndroidE2eResetBindingEnvironmentKey =
+        "DEEP_MAU2_E2E_ANDROID_RESET_BINDING";
     private const string CanonicalRunsRoot =
         @"C:\Work\DeepSession\secrets\mailbox-bootstrap\e2e-runs";
 
@@ -54,22 +56,54 @@ internal static partial class Mau2PhysicalPhaseContract
     internal static bool LoadWindowsUatResetAuthorization(
         Mau2PhysicalPhase phase,
         string policySha256,
-        string releaseInvocationId)
+        string releaseInvocationId) =>
+        LoadResetAuthorization(
+            phase,
+            policySha256,
+            releaseInvocationId,
+            WindowsUatResetBindingEnvironmentKey,
+            "Windows UAT",
+            domain: null,
+            consume: false);
+
+    internal static bool LoadAndroidE2eResetAuthorization(
+        Mau2PhysicalPhase phase,
+        string policySha256,
+        string releaseInvocationId) =>
+        LoadResetAuthorization(
+            phase,
+            policySha256,
+            releaseInvocationId,
+            AndroidE2eResetBindingEnvironmentKey,
+            "Android E2E",
+            domain: "android-e2e-local-reset-v1",
+            consume: true);
+
+    private static bool LoadResetAuthorization(
+        Mau2PhysicalPhase phase,
+        string policySha256,
+        string releaseInvocationId,
+        string environmentKey,
+        string role,
+        string? domain,
+        bool consume)
     {
         if (!Regex.IsMatch(policySha256, "^[a-f0-9]{64}$", RegexOptions.CultureInvariant) ||
             !Regex.IsMatch(releaseInvocationId, "^[a-f0-9]{32}$", RegexOptions.CultureInvariant))
             throw new InvalidOperationException(
-                "Windows UAT reset authority requires canonical policy and invocation hashes.");
-        var raw = Environment.GetEnvironmentVariable(
-            WindowsUatResetBindingEnvironmentKey);
+                $"{role} reset authority requires canonical policy and invocation hashes.");
+        var raw = Environment.GetEnvironmentVariable(environmentKey);
         if (string.IsNullOrEmpty(raw)) return false;
         if (phase != Mau2PhysicalPhase.ProvisionIdentity)
             throw new InvalidOperationException(
-                "Windows UAT local reset is allowed only during ProvisionIdentity.");
-        var expected = $"{policySha256}:{releaseInvocationId}";
+                $"{role} local reset is allowed only during ProvisionIdentity.");
+        var expected = domain is null
+            ? $"{policySha256}:{releaseInvocationId}"
+            : $"{domain}:{policySha256}:{releaseInvocationId}";
         if (!string.Equals(raw, expected, StringComparison.Ordinal))
             throw new InvalidOperationException(
-                "Windows UAT reset authority is not bound to this exact policy and invocation.");
+                $"{role} reset authority is not bound to this exact policy and invocation.");
+        if (consume) Environment.SetEnvironmentVariable(environmentKey, null);
         return true;
     }
 

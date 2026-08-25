@@ -73,9 +73,47 @@ public sealed class StrictCrossPlatformUiTests
         var androidSurface = android.WaitForExactlyOneResource(
             [
                 options.App("Welcome.DisplayName"),
-                options.App("Conversations.Root")
+                options.App("Conversations.Root"),
+                options.App("StartupResetLocalStateButton")
             ],
             TimeSpan.FromSeconds(45));
+        var androidResetPerformed = false;
+        if (options.AllowAndroidE2eLocalReset && !string.Equals(
+                androidSurface,
+                options.App("StartupResetLocalStateButton"),
+                StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                "Android E2E reset authority was issued without an exact reset surface.");
+        if (string.Equals(
+                androidSurface,
+                options.App("StartupResetLocalStateButton"),
+                StringComparison.Ordinal))
+        {
+            if (!options.AllowAndroidE2eLocalReset)
+                throw new InvalidOperationException(
+                    "Android E2E requires an explicit policy-bound local reset authorization.");
+            var resetCode = android.WaitForResource(
+                options.App("Startup.RuntimeFailureCode"),
+                TimeSpan.FromSeconds(5)).Text;
+            RequireClosedLocalResetReason(resetCode, "Android E2E");
+            android.Tap(options.App("StartupResetLocalStateButton"));
+            android.WaitForResource("android:id/button2", TimeSpan.FromSeconds(10));
+            android.TapExactResourceIdWithExactText("android:id/button1", "Сбросить");
+            androidSurface = android.WaitForExactlyOneResource(
+                [
+                    options.App("Welcome.DisplayName"),
+                    options.App("Conversations.Root"),
+                    options.App("StartupResetLocalStateButton")
+                ],
+                TimeSpan.FromSeconds(45));
+            if (!string.Equals(
+                    androidSurface,
+                    options.App("Welcome.DisplayName"),
+                    StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "Confirmed Android E2E reset did not reach a clean provisioning surface.");
+            androidResetPerformed = true;
+        }
         var androidCreated = string.Equals(
             androidSurface, options.App("Welcome.DisplayName"), StringComparison.Ordinal);
         var androidIdentity = androidCreated
@@ -97,14 +135,7 @@ public sealed class StrictCrossPlatformUiTests
             var resetCode = Require(
                 windows.WaitForAutomationId("Startup.RuntimeFailureCode", TimeSpan.FromSeconds(5)),
                 "Startup.RuntimeFailureCode").Properties.Name.ValueOrDefault;
-            if (resetCode is not ("local-state-incompatible-version"
-                or "local-state-damaged"
-                or "local-state-unreadable"
-                or "protected-identity-missing"
-                or "protected-identity-incompatible"
-                or "protected-identity-account-mismatch"))
-                throw new InvalidOperationException(
-                    "Windows UAT reset surface did not expose one closed typed reset reason.");
+            RequireClosedLocalResetReason(resetCode, "Windows UAT");
             windows.ActivateExact(Require(
                 windows.WaitForAutomationId("StartupResetLocalStateButton", TimeSpan.FromSeconds(5)),
                 "StartupResetLocalStateButton"));
@@ -133,9 +164,24 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddHash("windowsIdentityHash", windowsIdentity);
         evidence.AddBoolean("androidIdentityCreated", androidCreated);
         evidence.AddBoolean("windowsIdentityCreated", windowsCreated);
-        evidence.AddBoolean("destructiveResetPerformed", windowsResetPerformed);
+        evidence.AddBoolean("androidE2eLocalResetAuthorized", options.AllowAndroidE2eLocalReset);
+        evidence.AddBoolean("androidE2eLocalResetPerformed", androidResetPerformed);
+        evidence.AddBoolean("windowsUatLocalResetAuthorized", options.AllowWindowsUatLocalReset);
+        evidence.AddBoolean("windowsUatLocalResetPerformed", windowsResetPerformed);
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
         CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void RequireClosedLocalResetReason(string? resetCode, string role)
+    {
+        if (resetCode is not ("local-state-incompatible-version"
+            or "local-state-damaged"
+            or "local-state-unreadable"
+            or "protected-identity-missing"
+            or "protected-identity-incompatible"
+            or "protected-identity-account-mismatch"))
+            throw new InvalidOperationException(
+                $"{role} reset surface did not expose one closed typed reset reason.");
     }
 
     private static string WaitForExactlyOneWindowsSurface(
@@ -1489,7 +1535,8 @@ internal sealed class CrossPlatformOptions
 {
     private static readonly string[] RequiredAppRoles =
     [
-        "Startup.Status", "Welcome.DisplayName", "Welcome.Create", "Conversations.Root", "PhysicalE2E.RuntimeReadyMarker", "Conversations.ProfileSettings",
+        "Startup.Status", "Startup.RuntimeFailureCode", "StartupResetLocalStateButton",
+        "Welcome.DisplayName", "Welcome.Create", "Conversations.Root", "PhysicalE2E.RuntimeReadyMarker", "Conversations.ProfileSettings",
         "Conversations.NewConversationTop", "Conversations.ConversationRow", "Settings.SessionId", "Settings.Back",
         "StartConversation.NewMessage", "NewConversation.SessionId", "NewConversation.DisplayName", "NewConversation.Start",
         "NewConversation.Error", "NewConversation.Back", "Chat.Back", "Chat.Draft", "Chat.Send", "Chat.MessageBody", "Chat.MessageBubble",
@@ -1505,7 +1552,7 @@ internal sealed class CrossPlatformOptions
     private readonly Dictionary<string, string> androidSelectors;
     private readonly Uri? chaosHttpsOrigin;
     private readonly string? uatCaCertificatePath;
-    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string genericFixturePath, string documentFixturePath, string imageFixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256, bool allowWindowsUatLocalReset, Uri? chaosHttpsOrigin, string? uatCaCertificatePath)
+    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string genericFixturePath, string documentFixturePath, string imageFixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256, bool allowAndroidE2eLocalReset, bool allowWindowsUatLocalReset, Uri? chaosHttpsOrigin, string? uatCaCertificatePath)
     {
         AndroidSerial = serial; AdbPath = adbPath; ApkPath = apkPath; AaptPath = aaptPath; ApksignerPath = apksignerPath; GenericFixturePath = genericFixturePath; DocumentFixturePath = documentFixturePath; ImageFixturePath = imageFixturePath; ArtifactDirectory = artifactDirectory;
         androidSelectors = selectors; PickerFileResourceId = pickerFile; PickerConfirmResourceId = pickerConfirm;
@@ -1513,6 +1560,7 @@ internal sealed class CrossPlatformOptions
         ResultPath = Path.Combine(artifactDirectory, Mau2PhysicalPhaseContract.GetResultFileName(phase)); InvocationId = Guid.NewGuid().ToString("N"); DeviceFingerprint = fingerprint; DeviceModel = model; SourceCommit = sourceCommit; WindowsExeSha256 = windowsExeSha256; WindowsOutputTreeSha256 = windowsOutputTreeSha256;
         ReleaseInvocationId = releaseInvocationId;
         PolicySha256 = policySha256;
+        AllowAndroidE2eLocalReset = allowAndroidE2eLocalReset;
         AllowWindowsUatLocalReset = allowWindowsUatLocalReset;
         this.chaosHttpsOrigin = chaosHttpsOrigin;
         this.uatCaCertificatePath = uatCaCertificatePath;
@@ -1539,6 +1587,7 @@ internal sealed class CrossPlatformOptions
     internal string WindowsOutputTreeSha256 { get; }
     internal string ReleaseInvocationId { get; }
     internal string PolicySha256 { get; }
+    internal bool AllowAndroidE2eLocalReset { get; }
     internal bool AllowWindowsUatLocalReset { get; }
     internal Uri ChaosHttpsOrigin => chaosHttpsOrigin ?? throw new InvalidOperationException(
         "This physical phase does not have an HTTPS chaos origin.");
@@ -1604,6 +1653,9 @@ internal sealed class CrossPlatformOptions
         var allowWindowsUatLocalReset =
             Mau2PhysicalPhaseContract.LoadWindowsUatResetAuthorization(
                 phase, policy.PolicySha256, releaseInvocation);
+        var allowAndroidE2eLocalReset =
+            Mau2PhysicalPhaseContract.LoadAndroidE2eResetAuthorization(
+                phase, policy.PolicySha256, releaseInvocation);
         Uri? chaosHttpsOrigin = null;
         string? uatCaCertificatePath = null;
         if (phase == Mau2PhysicalPhase.PrivacyFallback)
@@ -1618,7 +1670,7 @@ internal sealed class CrossPlatformOptions
                     "PrivacyFallback requires one exact HTTPS chaos origin.");
             uatCaCertificatePath = RequireAbsoluteFile("DEEP_E2E_UAT_CA_CERTIFICATE");
         }
-        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, genericFixture, documentFixture, imageFixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256, allowWindowsUatLocalReset, chaosHttpsOrigin, uatCaCertificatePath);
+        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, genericFixture, documentFixture, imageFixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256, allowAndroidE2eLocalReset, allowWindowsUatLocalReset, chaosHttpsOrigin, uatCaCertificatePath);
     }
     internal StrictCrossPlatformContracts.ApkMetadata ReadAndValidateApkMetadata()
     {

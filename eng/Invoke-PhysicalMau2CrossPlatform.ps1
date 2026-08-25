@@ -8,19 +8,22 @@ param(
     [string]$MrXPublicKeySha256 = $env:DEEP_MR_X_PUBLIC_KEY_SHA256,
     [string]$AndroidPickerFileId = 'android:id/title',
     [string]$AndroidPickerConfirmId,
+    [switch]$ResetAndroidE2eLocalState,
     [switch]$ResetWindowsUatLocalState,
     [switch]$Execute
 )
 
 # This is an opt-in physical lane. It is non-destructive unless the caller supplies
-# -ResetWindowsUatLocalState for ProvisionIdentity; that closed path confirms the
-# application's own reset dialog inside the exact physical runtime. The production
-# package is always snapshotted before/after and is never altered.
+# one of the explicit UAT reset switches for ProvisionIdentity; those closed paths
+# confirm the application's own reset dialog inside the exact physical runtime. The
+# Android switch applies only to the separate E2E package. The production package is
+# always snapshotted before/after and is never altered.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-if ($ResetWindowsUatLocalState -and $Phase -cne 'ProvisionIdentity') {
-    throw '-ResetWindowsUatLocalState is allowed only for ProvisionIdentity.'
+if (($ResetAndroidE2eLocalState -or $ResetWindowsUatLocalState) -and
+    $Phase -cne 'ProvisionIdentity') {
+    throw 'UAT local reset switches are allowed only for ProvisionIdentity.'
 }
 
 Add-Type -TypeDefinition @'
@@ -746,7 +749,8 @@ function Resolve-PolicyPinnedFile(
 
 function New-CanonicalAndroidSelectorsJson {
     $roles = @(
-        'Startup.Status', 'Welcome.DisplayName', 'Welcome.Create', 'Conversations.Root',
+        'Startup.Status', 'Startup.RuntimeFailureCode', 'StartupResetLocalStateButton',
+        'Welcome.DisplayName', 'Welcome.Create', 'Conversations.Root',
         'PhysicalE2E.RuntimeReadyMarker',
         'Conversations.ProfileSettings', 'Conversations.NewConversationTop',
         'Conversations.ConversationRow', 'Settings.SessionId', 'Settings.Back',
@@ -1203,6 +1207,7 @@ try {
         androidRuntimeTreeSha256 = (Get-Sha256 (Join-Path $androidRuntime 'activation.v1.json'))
         windowsRuntimeTreeSha256 = (Get-Sha256 (Join-Path $windowsRuntime 'activation.v1.json'))
         windowsRootPresent = $true
+        androidE2eLocalResetAuthorized = [bool]$ResetAndroidE2eLocalState
         windowsUatLocalResetAuthorized = [bool]$ResetWindowsUatLocalState
         dockerHealthy = $true
         productionPackageUntouched = $true
@@ -1224,6 +1229,12 @@ try {
                 "${policySha256}:$releaseInvocationId"
         } else {
             $env:DEEP_MAU2_E2E_UAT_RESET_BINDING = $null
+        }
+        if ($ResetAndroidE2eLocalState) {
+            $env:DEEP_MAU2_E2E_ANDROID_RESET_BINDING =
+                "android-e2e-local-reset-v1:${policySha256}:$releaseInvocationId"
+        } else {
+            $env:DEEP_MAU2_E2E_ANDROID_RESET_BINDING = $null
         }
         $env:DEEP_MAU2_E2E_RUN_STATE = $runStatePath
         $env:DEEP_MAU2_E2E_RUNS_ROOT = (Join-Path $bootstrap 'e2e-runs')
@@ -1340,6 +1351,7 @@ try {
         $failures.Add($_.Exception)
     }
     $env:DEEP_MAU2_E2E_UAT_RESET_BINDING = $null
+    $env:DEEP_MAU2_E2E_ANDROID_RESET_BINDING = $null
     $env:DEEP_E2E_UAT_CA_CERTIFICATE = $null
     $env:DEEP_PHYSICAL_E2E_HAPROXY_CONFIG_PATH = $null
 }
