@@ -1349,4 +1349,8 @@ if ($failures.Count -ne 0) {
         'Physical MAU2 phase failed with audited cleanup results.', $failures)
 }
 
-Write-Output "Physical MAU2 phase '$Phase' completed without skipped tests. Sanitized protected run state: $runId"
+if ($Execute) {
+    Write-Output "Physical MAU2 phase '$Phase' completed without skipped tests. Sanitized protected run state: $runId"
+} else {
+    Write-Output "Physical MAU2 phase '$Phase' preflight completed; UI test was not executed. Sanitized protected run state: $runId"
+}
