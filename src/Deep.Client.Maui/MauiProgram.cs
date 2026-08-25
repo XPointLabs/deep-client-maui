@@ -978,7 +978,17 @@ public static class MauiProgram
                         chain.ChainPolicy.ExtraStore.Add(intermediate);
                     }
                 }
-                return chain.Build(leaf);
+                var valid = chain.Build(leaf);
+                if (!valid)
+                {
+                    var status = string.Join(",", chain.ChainStatus
+                        .Select(static item => item.Status.ToString())
+                        .OrderBy(static item => item, StringComparer.Ordinal));
+                    Android.Util.Log.Warn(
+                        "Deep.UatTls",
+                        $"Physical UAT certificate validation rejected: {status}.");
+                }
+                return valid;
             }
             finally
             {
@@ -986,8 +996,11 @@ public static class MauiProgram
                     intermediate.Dispose();
             }
         }
-        catch (System.Security.Cryptography.CryptographicException)
+        catch (System.Security.Cryptography.CryptographicException exception)
         {
+            Android.Util.Log.Warn(
+                "Deep.UatTls",
+                $"Physical UAT certificate validation failed: {exception.GetType().Name}.");
             return false;
         }
     }

@@ -25,6 +25,13 @@ public sealed class PhysicalUatTlsContractSmokeTests
         Assert.DoesNotContain("DEEP_TLS_PINS", profile, StringComparison.Ordinal);
         Assert.Contains("https://192.168.1.43:41823", profile, StringComparison.Ordinal);
         Assert.Contains("cleartextTrafficPermitted=\"false\"", network, StringComparison.Ordinal);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(
+            network,
+            "cleartextTrafficPermitted=\\\"true\\\"",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant)
+            .Cast<System.Text.RegularExpressions.Match>());
+        Assert.Contains("<domain includeSubdomains=\"false\">192.168.1.43</domain>", network,
+            StringComparison.Ordinal);
         Assert.Contains("@raw/deep_physical_uat_ca", network, StringComparison.Ordinal);
         Assert.Contains("Deep.Client.Maui.PhysicalUatRootCa", project,
             StringComparison.Ordinal);
