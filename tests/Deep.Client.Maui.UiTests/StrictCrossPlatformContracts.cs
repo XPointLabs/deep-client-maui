@@ -15,6 +15,8 @@ namespace Deep.Client.Maui.UiTests;
 internal static class StrictCrossPlatformContracts
 {
     internal const string AndroidPackage = "network.xpoint.deep.e2e";
+    private static readonly Encoding ToolOutputEncoding =
+        new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private static readonly Regex ResourceId = new(
         "^[a-zA-Z][a-zA-Z0-9_.]*:id/[a-zA-Z][a-zA-Z0-9_.]*$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -450,6 +452,8 @@ internal static class StrictCrossPlatformContracts
                 FileName = fileName,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = ToolOutputEncoding,
+                StandardErrorEncoding = ToolOutputEncoding,
                 UseShellExecute = false,
                 CreateNoWindow = true
             }

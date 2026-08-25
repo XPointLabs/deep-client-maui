@@ -3,6 +3,24 @@ namespace Deep.Client.Maui.UiTests;
 public sealed class StrictCrossPlatformContractsTests
 {
     [Fact]
+    public void Bounded_tool_output_is_decoded_as_strict_utf8()
+    {
+        var powershell = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            "WindowsPowerShell", "v1.0", "powershell.exe");
+
+        var result = StrictCrossPlatformContracts.RunBounded(
+            powershell,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+             "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);[Console]::Write('✓ Отправлено')"],
+            TimeSpan.FromSeconds(15));
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("✓ Отправлено", result.Output);
+        Assert.Equal(string.Empty, result.Error);
+    }
+
+    [Fact]
     public void Correlated_message_descendant_requires_one_exact_ancestor_and_target()
     {
         const string xml = "<hierarchy><node resource-id='pkg:id/bubble' bounds='[0,0][20,20]'><node resource-id='pkg:id/body' text='exact' bounds='[1,1][5,5]'/><node resource-id='pkg:id/status' text='✓' content-desc='Отправлено' bounds='[6,6][9,9]'/></node><node resource-id='pkg:id/bubble' bounds='[20,0][40,20]'><node resource-id='pkg:id/body' text='other' bounds='[21,1][25,5]'/></node></hierarchy>";

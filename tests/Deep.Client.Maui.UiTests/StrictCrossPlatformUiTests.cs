@@ -18,7 +18,7 @@ public sealed class StrictCrossPlatformUiTests
     // A direct MAU2 send durably writes recipient and sender copies sequentially. Each
     // authenticated Store has a 15-second protocol deadline, so the rendered acceptance
     // window must also leave bounded room for cold route establishment and UIA sampling.
-    private static readonly TimeSpan DirectMessageSentTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan DirectMessageSentTimeout = TimeSpan.FromSeconds(90);
 
     [StrictCrossPlatformUiFact]
     public void Physical_android_and_windows_exchange_persist_and_decrypt_an_attachment()
@@ -1850,7 +1850,8 @@ internal sealed class AndroidUiautomatorClient
                 if (targetText is not null && targetContentDescription is not null
                     && !target.HasExactPresentation(targetText, targetContentDescription))
                     throw new InvalidOperationException(
-                        "Correlated Android message target has not reached its exact presentation.");
+                        "Correlated Android message target has not reached its exact presentation. " +
+                        $"ActualText={target.Text}; ActualContentDescription={target.ContentDescription}.");
                 return target;
             }
             catch (Exception exception) { last = exception; }
