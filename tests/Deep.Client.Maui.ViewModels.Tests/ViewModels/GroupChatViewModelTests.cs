@@ -118,6 +118,32 @@ public sealed class GroupChatViewModelTests
     }
 
     [Fact]
+    public async Task CompletedDispatchFromPreviousGroupCannotEnterCurrentGroup()
+    {
+        var transport = new BlockingGroupSyncTransport();
+        var runtime = new ClientRuntime(
+            new InMemorySessionStore(),
+            Deep.Client.Shared.Features.ClientFeatureFlags.Defaults,
+            new FrozenClock(DateTimeOffset.Parse("2026-08-25T00:00:00Z")),
+            new StubSessionBackend(),
+            groupSyncTransport: transport);
+        var owner = await runtime.Accounts.RegisterAsync("Owner");
+        var member = SessionId.CreateNew();
+        var first = await runtime.Conversations.CreateGroupScaffoldAsync(owner.SessionId, "First", [member]);
+        var second = await runtime.Conversations.CreateGroupScaffoldAsync(owner.SessionId, "Second", [member]);
+        var chat = new GroupChatViewModel(runtime);
+        await chat.OpenFromRouteAsync(first.Id.Value, first.Name);
+        chat.Draft = "first group only";
+        await chat.SendAsync();
+
+        await chat.OpenFromRouteAsync(second.Id.Value, second.Name);
+        transport.Release();
+        await transport.WaitForSendAsync();
+
+        Assert.DoesNotContain(chat.Messages, item => item.Body == "first group only");
+    }
+
+    [Fact]
     public async Task PickAttachmentsCommandAllowsAttachmentOnlyGroupMessage()
     {
         var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
@@ -384,5 +410,40 @@ public sealed class GroupChatViewModelTests
             IsRecording = false;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class BlockingGroupSyncTransport : IGroupSyncTransport
+    {
+        private readonly TaskCompletionSource sendGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource sendCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task PublishGroupStateAsync(
+            Group group,
+            DateTimeOffset updatedAt,
+            IEnumerable<SessionId>? recipients = null,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<InboundGroupStateEnvelope>> ReceiveGroupStatesAsync(
+            SessionId member,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<InboundGroupStateEnvelope>>([]);
+
+        public async Task SendGroupMessageAsync(
+            OutboundGroupMessageEnvelope envelope,
+            CancellationToken cancellationToken = default)
+        {
+            await sendGate.Task.WaitAsync(cancellationToken);
+            sendCompleted.TrySetResult();
+        }
+
+        public Task<IReadOnlyList<InboundGroupMessageEnvelope>> ReceiveGroupMessagesAsync(
+            ConversationId groupId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<InboundGroupMessageEnvelope>>([]);
+
+        public void Release() => sendGate.TrySetResult();
+
+        public Task WaitForSendAsync() => sendCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 }

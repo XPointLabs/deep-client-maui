@@ -282,6 +282,7 @@ public sealed class GroupChatViewModel : ViewModelBase
     private readonly IAttachmentPickerService? attachmentPicker;
     private readonly IVoiceMessageRecorder? voiceRecorder;
     private readonly Dictionary<string, string> senderLabels = new(StringComparer.Ordinal);
+    private readonly HashSet<MessageId> locallyQueuedMessageIds = [];
     private IReadOnlyDictionary<string, string> contactDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
     private SessionAccount? account;
     private Group? group;
@@ -486,6 +487,10 @@ public sealed class GroupChatViewModel : ViewModelBase
     {
         Interlocked.Increment(ref messageContextGeneration);
         var id = ConversationId.Parse(groupId);
+        if (group?.Id != id)
+        {
+            locallyQueuedMessageIds.Clear();
+        }
         senderLabels.Clear();
         if (runtime.Store is IGroupConversationOpenRepository openRepository)
         {
@@ -612,6 +617,7 @@ public sealed class GroupChatViewModel : ViewModelBase
                 {
                     foreach (var message in reconciledMessages)
                     {
+                        locallyQueuedMessageIds.Remove(message.Id);
                         UpsertMessageItem(message);
                     }
                 }
@@ -1444,10 +1450,21 @@ public sealed class GroupChatViewModel : ViewModelBase
         {
             if (Messages[index].Id == message.Id)
             {
-                Messages[index] = ToItem(message);
+                var candidate = ToItem(message);
+                if (!MessageDeliveryProgress.IsRegression(Messages[index].State, candidate.State))
+                {
+                    Messages[index] = candidate;
+                }
+
                 RetryMessageCommand.RaiseCanExecuteChanged();
                 return;
             }
+        }
+
+        if (group?.Id == message.ConversationId
+            && account?.SessionId == message.Sender)
+        {
+            UpsertMessageItem(message);
         }
     }
 
@@ -1458,7 +1475,8 @@ public sealed class GroupChatViewModel : ViewModelBase
         {
             if (Messages[index].Id == item.Id)
             {
-                if (!SameMessageItem(Messages[index], item))
+                if (!MessageDeliveryProgress.IsRegression(Messages[index].State, item.State)
+                    && !SameMessageItem(Messages[index], item))
                 {
                     Messages[index] = item;
                 }
@@ -1478,6 +1496,7 @@ public sealed class GroupChatViewModel : ViewModelBase
 
     private void RemoveMessageItem(MessageId messageId)
     {
+        locallyQueuedMessageIds.Remove(messageId);
         for (var index = 0; index < Messages.Count; index++)
         {
             if (Messages[index].Id == messageId)
@@ -1521,6 +1540,7 @@ public sealed class GroupChatViewModel : ViewModelBase
             createdAt,
             attachments,
             ReplyTo: reply);
+        locallyQueuedMessageIds.Add(messageId);
         Messages.Add(new GroupChatMessageItem(
             optimistic.Id,
             optimistic.Body,
@@ -1550,6 +1570,7 @@ public sealed class GroupChatViewModel : ViewModelBase
         }
         catch
         {
+            locallyQueuedMessageIds.Remove(messageId);
             RemoveMessageItem(messageId);
             throw;
         }
@@ -1616,6 +1637,19 @@ public sealed class GroupChatViewModel : ViewModelBase
 
     private void SyncMessageItems(IReadOnlyList<GroupChatMessageItem> items)
     {
+        foreach (var item in items)
+        {
+            locallyQueuedMessageIds.Remove(item.Id);
+        }
+
+        items = MessageDeliveryProgress.MergeSnapshot(
+            Messages,
+            items,
+            locallyQueuedMessageIds,
+            static item => item.Id,
+            static item => item.State,
+            static item => item.CreatedAt);
+
         if (Messages.Count <= items.Count && HasSamePrefix(items))
         {
             for (var index = 0; index < Messages.Count; index++)

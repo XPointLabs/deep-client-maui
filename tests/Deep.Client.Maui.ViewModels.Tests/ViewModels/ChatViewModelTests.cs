@@ -506,6 +506,32 @@ public sealed class ChatViewModelTests
     }
 
     [Fact]
+    public async Task CompletedDispatchFromPreviousConversationCannotEnterCurrentConversation()
+    {
+        var transport = new BlockingMessageTransport();
+        var runtime = new ClientRuntime(
+            new InMemorySessionStore(),
+            Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults,
+            new FrozenClock(DateTimeOffset.Parse("2026-08-25T00:00:00Z")),
+            transport,
+            mailboxDeliveryPolicy: new DirectP2pMailboxDeliveryPolicy());
+        var account = await runtime.Accounts.RegisterAsync("Alice");
+        var firstRecipient = SessionId.CreateNew();
+        var secondRecipient = SessionId.CreateNew();
+        var chat = new ChatViewModel(runtime);
+        await chat.OpenOneToOneAsync(account, firstRecipient, "First");
+        chat.Draft = "first conversation only";
+        await chat.SendAsync();
+
+        await chat.OpenOneToOneAsync(account, secondRecipient, "Second");
+        transport.Release();
+        await transport.WaitForSendAsync();
+
+        Assert.Equal(ConversationId.ForOneToOne(secondRecipient), chat.Conversation!.Id);
+        Assert.DoesNotContain(chat.Messages, item => item.Body == "first conversation only");
+    }
+
+    [Fact]
     public async Task SelfChatKeepsOneOutgoingMessageAndUsesIconStatus()
     {
         var backend = new StubSessionBackend();
@@ -1137,9 +1163,13 @@ public sealed class ChatViewModelTests
     {
         public bool UsesMetadataPrivateTransport => true;
         private readonly TaskCompletionSource sendGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource sendCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public async Task SendAsync(OutboundMessageEnvelope envelope, CancellationToken cancellationToken = default) =>
+        public async Task SendAsync(OutboundMessageEnvelope envelope, CancellationToken cancellationToken = default)
+        {
             await sendGate.Task.WaitAsync(cancellationToken);
+            sendCompleted.TrySetResult();
+        }
 
         public Task<IReadOnlyList<InboundMessageEnvelope>> ReceiveAsync(
             SessionId recipient,
@@ -1152,5 +1182,7 @@ public sealed class ChatViewModelTests
             Task.FromResult<IReadOnlyList<InboundMessageEnvelope>>([]);
 
         public void Release() => sendGate.TrySetResult();
+
+        public Task WaitForSendAsync() => sendCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 }

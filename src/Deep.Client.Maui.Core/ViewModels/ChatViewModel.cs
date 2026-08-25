@@ -266,6 +266,7 @@ public sealed class ChatViewModel : ViewModelBase
     private readonly IAttachmentPickerService? attachmentPicker;
     private readonly IVoiceMessageRecorder? voiceRecorder;
     private readonly ChatOpenUiCache? openCache;
+    private readonly HashSet<MessageId> locallyQueuedMessageIds = [];
     private Conversation? conversation;
     private SessionAccount? account;
     private SessionId? counterpart;
@@ -509,6 +510,7 @@ public sealed class ChatViewModel : ViewModelBase
     public bool PrepareRoute(SessionId recipient, string? displayName = null)
     {
         Interlocked.Increment(ref messageContextGeneration);
+        ResetLocalQueueTrackingIfConversationChanged(ConversationId.ForOneToOne(recipient));
         ReplyingTo = null;
         StagedAttachments.Clear();
         if (openCache?.TryGet(recipient, runtime.Clock.UtcNow, out var cached) == true)
@@ -537,6 +539,7 @@ public sealed class ChatViewModel : ViewModelBase
 
     private void ApplyUiSnapshot(ChatOpenUiSnapshot snapshot)
     {
+        ResetLocalQueueTrackingIfConversationChanged(snapshot.Conversation.Id);
         account = snapshot.ActiveAccount;
         counterpart = snapshot.Counterpart;
         oldestLoadedMessageAt = snapshot.OldestLoadedMessageAt;
@@ -545,7 +548,7 @@ public sealed class ChatViewModel : ViewModelBase
         Conversation = snapshot.Conversation;
         IsBlocked = snapshot.IsBlocked;
         IsMessageRequest = snapshot.IsMessageRequest;
-        SyncMessageItems(snapshot.Messages);
+        SyncMessageItems(snapshot.Messages, observePersistedIds: false);
         RaisePropertyChanged(nameof(Counterpart));
         RaisePropertyChanged(nameof(IsSelfConversation));
         SendCommand.RaiseCanExecuteChanged();
@@ -558,6 +561,7 @@ public sealed class ChatViewModel : ViewModelBase
     {
         Interlocked.Increment(ref messageContextGeneration);
         var conversationId = ConversationId.ForOneToOne(recipient);
+        ResetLocalQueueTrackingIfConversationChanged(conversationId);
         account = activeAccount;
         counterpart = recipient;
         RaisePropertyChanged(nameof(Counterpart));
@@ -784,6 +788,7 @@ public sealed class ChatViewModel : ViewModelBase
             createdAt,
             attachments,
             ReplyTo: reply);
+        locallyQueuedMessageIds.Add(messageId);
         UpsertMessageItem(optimistic);
 
         try
@@ -806,6 +811,7 @@ public sealed class ChatViewModel : ViewModelBase
         }
         catch
         {
+            locallyQueuedMessageIds.Remove(messageId);
             RemoveMessageItem(messageId);
             throw;
         }
@@ -829,6 +835,7 @@ public sealed class ChatViewModel : ViewModelBase
 
             await runtime.Messages.ClearConversationMessagesAsync(Conversation.Id, ct);
             Messages.Clear();
+            locallyQueuedMessageIds.Clear();
             oldestLoadedMessageAt = null;
             oldestLoadedMessageId = null;
             hasOlderMessages = false;
@@ -846,6 +853,7 @@ public sealed class ChatViewModel : ViewModelBase
             await runtime.Messages.ClearConversationMessagesAsync(Conversation.Id, ct);
             await runtime.Conversations.SetConversationHiddenAsync(Conversation.Id, true, ct);
             Messages.Clear();
+            locallyQueuedMessageIds.Clear();
             oldestLoadedMessageAt = null;
             oldestLoadedMessageId = null;
             hasOlderMessages = false;
@@ -1185,6 +1193,7 @@ public sealed class ChatViewModel : ViewModelBase
             {
                 foreach (var message in reconciledMessages)
                 {
+                    locallyQueuedMessageIds.Remove(message.Id);
                     UpsertMessageItem(message);
                 }
             }
@@ -1407,6 +1416,7 @@ public sealed class ChatViewModel : ViewModelBase
 
     private void ApplyOpenSnapshot(SessionId recipient, OneToOneConversationOpenSnapshot snapshot)
     {
+        ResetLocalQueueTrackingIfConversationChanged(snapshot.Conversation.Id);
         account = snapshot.ActiveAccount;
         counterpart = recipient;
         oldestLoadedMessageAt = null;
@@ -1498,11 +1508,22 @@ public sealed class ChatViewModel : ViewModelBase
         {
             if (Messages[index].Id == message.Id)
             {
-                Messages[index] = ToItem(message);
+                var candidate = ToItem(message);
+                if (!MessageDeliveryProgress.IsRegression(Messages[index].State, candidate.State))
+                {
+                    Messages[index] = candidate;
+                }
+
                 CacheCurrentConversation();
                 RetryMessageCommand.RaiseCanExecuteChanged();
                 return;
             }
+        }
+
+        if (Conversation?.Id == message.ConversationId
+            && account?.SessionId == message.Sender)
+        {
+            UpsertMessageItem(message);
         }
     }
 
@@ -1513,7 +1534,8 @@ public sealed class ChatViewModel : ViewModelBase
         {
             if (Messages[index].Id == item.Id)
             {
-                if (!SameMessageItem(Messages[index], item))
+                if (!MessageDeliveryProgress.IsRegression(Messages[index].State, item.State)
+                    && !SameMessageItem(Messages[index], item))
                 {
                     Messages[index] = item;
                     CacheCurrentConversation();
@@ -1536,6 +1558,7 @@ public sealed class ChatViewModel : ViewModelBase
 
     private void RemoveMessageItem(MessageId messageId)
     {
+        locallyQueuedMessageIds.Remove(messageId);
         for (var index = 0; index < Messages.Count; index++)
         {
             if (Messages[index].Id == messageId)
@@ -1559,8 +1582,26 @@ public sealed class ChatViewModel : ViewModelBase
             ? message.Mark(MessageDeliveryState.Read, readAt)
             : message;
 
-    private void SyncMessageItems(IReadOnlyList<ChatMessageItem> items)
+    private void SyncMessageItems(
+        IReadOnlyList<ChatMessageItem> items,
+        bool observePersistedIds = true)
     {
+        if (observePersistedIds)
+        {
+            foreach (var item in items)
+            {
+                locallyQueuedMessageIds.Remove(item.Id);
+            }
+        }
+
+        items = MessageDeliveryProgress.MergeSnapshot(
+            Messages,
+            items,
+            locallyQueuedMessageIds,
+            static item => item.Id,
+            static item => item.State,
+            static item => item.CreatedAt);
+
         if (Messages.Count <= items.Count && HasSamePrefix(items))
         {
             for (var index = 0; index < Messages.Count; index++)
@@ -1602,6 +1643,14 @@ public sealed class ChatViewModel : ViewModelBase
     }
 
     private ObservableRangeCollection<ChatMessageItem> MessageItems => (ObservableRangeCollection<ChatMessageItem>)Messages;
+
+    private void ResetLocalQueueTrackingIfConversationChanged(ConversationId conversationId)
+    {
+        if (Conversation?.Id != conversationId)
+        {
+            locallyQueuedMessageIds.Clear();
+        }
+    }
 
     private void PrependMessageItems(IReadOnlyList<ChatMessageItem> items)
     {
