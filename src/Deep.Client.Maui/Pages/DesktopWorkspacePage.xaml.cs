@@ -314,8 +314,8 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         physicalRuntimeReadyMarker = new Label
         {
             AutomationId = "PhysicalE2E.RuntimeReadyMarker",
-            Text = "ready",
-            IsVisible = false,
+            Text = "pending",
+            IsVisible = true,
             FontSize = 1,
             Opacity = 0.01,
             InputTransparent = true,
@@ -353,7 +353,11 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
     {
         if (physicalRuntimeReadyMarker is null)
             return;
-        void Apply() => physicalRuntimeReadyMarker.IsVisible = ready;
+        void Apply()
+        {
+            physicalRuntimeReadyMarker.Text = ready ? "ready" : "failed";
+            physicalRuntimeReadyMarker.IsVisible = true;
+        }
         if (MainThread.IsMainThread)
             Apply();
         else
