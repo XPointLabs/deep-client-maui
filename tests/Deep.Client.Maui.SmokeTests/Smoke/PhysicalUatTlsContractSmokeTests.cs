@@ -45,6 +45,10 @@ public sealed class PhysicalUatTlsContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("X509VerificationFlags.NoFlag", program,
             StringComparison.Ordinal);
+        Assert.Contains("Certificate chain rejected with safe status", program,
+            StringComparison.Ordinal);
+        Assert.Contains("Certificate validation failed with safe exception type", program,
+            StringComparison.Ordinal);
         Assert.Contains("RemoteCertificateNameMismatch", program,
             StringComparison.Ordinal);
         Assert.Contains("RemoteCertificateNotAvailable", program,

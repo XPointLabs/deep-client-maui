@@ -843,6 +843,9 @@ public static class MauiProgram
                     var status = string.Join(",", chain.ChainStatus
                         .Select(static item => item.Status.ToString())
                         .OrderBy(static item => item, StringComparer.Ordinal));
+                    CrashDiagnostics.LogInfo(
+                        "PhysicalUatTls",
+                        $"Certificate chain rejected with safe status: {status}.");
                     Android.Util.Log.Warn(
                         "Deep.UatTls",
                         $"Physical UAT certificate validation rejected: {status}.");
@@ -855,8 +858,11 @@ public static class MauiProgram
                     intermediate.Dispose();
             }
         }
-        catch (System.Security.Cryptography.CryptographicException exception)
+        catch (Exception exception)
         {
+            CrashDiagnostics.LogInfo(
+                "PhysicalUatTls",
+                $"Certificate validation failed with safe exception type: {exception.GetType().Name}.");
             Android.Util.Log.Warn(
                 "Deep.UatTls",
                 $"Physical UAT certificate validation failed: {exception.GetType().Name}.");
