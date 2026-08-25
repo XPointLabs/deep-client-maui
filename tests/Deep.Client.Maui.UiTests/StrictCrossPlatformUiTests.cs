@@ -76,8 +76,42 @@ public sealed class StrictCrossPlatformUiTests
             .CreateStrictWithAppData(options.WindowsAppDataRoot);
         var windowsSurface = WaitForExactlyOneWindowsSurface(
             windows,
-            ["Welcome.DisplayName", "Conversations.NewConversation"],
+            ["Welcome.DisplayName", "Conversations.NewConversation", "StartupResetLocalStateButton"],
             TimeSpan.FromSeconds(45));
+        var windowsResetPerformed = false;
+        if (string.Equals(windowsSurface, "StartupResetLocalStateButton", StringComparison.Ordinal))
+        {
+            if (!options.AllowWindowsUatLocalReset)
+                throw new InvalidOperationException(
+                    "Windows requires an explicit policy-bound UAT local reset authorization.");
+            var resetCode = Require(
+                windows.WaitForAutomationId("Startup.RuntimeFailureCode", TimeSpan.FromSeconds(5)),
+                "Startup.RuntimeFailureCode").Properties.Name.ValueOrDefault;
+            if (resetCode is not ("local-state-incompatible-version"
+                or "local-state-damaged"
+                or "local-state-unreadable"
+                or "protected-identity-missing"
+                or "protected-identity-incompatible"
+                or "protected-identity-account-mismatch"))
+                throw new InvalidOperationException(
+                    "Windows UAT reset surface did not expose one closed typed reset reason.");
+            windows.ActivateExact(Require(
+                windows.WaitForAutomationId("StartupResetLocalStateButton", TimeSpan.FromSeconds(5)),
+                "StartupResetLocalStateButton"));
+            Require(windows.WaitForAutomationId("SecondaryButton", TimeSpan.FromSeconds(10)),
+                "SecondaryButton");
+            windows.ActivateExact(Require(
+                windows.WaitForAutomationId("PrimaryButton", TimeSpan.FromSeconds(10)),
+                "PrimaryButton"));
+            windowsSurface = WaitForExactlyOneWindowsSurface(
+                windows,
+                ["Welcome.DisplayName", "Conversations.NewConversation", "StartupResetLocalStateButton"],
+                TimeSpan.FromSeconds(45));
+            if (!string.Equals(windowsSurface, "Welcome.DisplayName", StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "Confirmed Windows UAT reset did not reach a clean provisioning surface.");
+            windowsResetPerformed = true;
+        }
         var windowsCreated = string.Equals(
             windowsSurface, "Welcome.DisplayName", StringComparison.Ordinal);
         var windowsIdentity = windowsCreated
@@ -89,7 +123,7 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddHash("windowsIdentityHash", windowsIdentity);
         evidence.AddBoolean("androidIdentityCreated", androidCreated);
         evidence.AddBoolean("windowsIdentityCreated", windowsCreated);
-        evidence.AddBoolean("destructiveResetPerformed", false);
+        evidence.AddBoolean("destructiveResetPerformed", windowsResetPerformed);
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
         CompletePhaseEvidence(options, evidence);
     }
@@ -1250,7 +1284,7 @@ internal sealed class CrossPlatformOptions
         "Call.MediaState", "Call.Microphone", "Call.MicrophoneState", "Call.Hangup"
     ];
     private readonly Dictionary<string, string> androidSelectors;
-    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string genericFixturePath, string documentFixturePath, string imageFixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256)
+    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string genericFixturePath, string documentFixturePath, string imageFixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256, bool allowWindowsUatLocalReset)
     {
         AndroidSerial = serial; AdbPath = adbPath; ApkPath = apkPath; AaptPath = aaptPath; ApksignerPath = apksignerPath; GenericFixturePath = genericFixturePath; DocumentFixturePath = documentFixturePath; ImageFixturePath = imageFixturePath; ArtifactDirectory = artifactDirectory;
         androidSelectors = selectors; PickerFileResourceId = pickerFile; PickerConfirmResourceId = pickerConfirm;
@@ -1258,6 +1292,7 @@ internal sealed class CrossPlatformOptions
         ResultPath = Path.Combine(artifactDirectory, Mau2PhysicalPhaseContract.GetResultFileName(phase)); InvocationId = Guid.NewGuid().ToString("N"); DeviceFingerprint = fingerprint; DeviceModel = model; SourceCommit = sourceCommit; WindowsExeSha256 = windowsExeSha256; WindowsOutputTreeSha256 = windowsOutputTreeSha256;
         ReleaseInvocationId = releaseInvocationId;
         PolicySha256 = policySha256;
+        AllowWindowsUatLocalReset = allowWindowsUatLocalReset;
     }
     internal string AndroidSerial { get; }
     internal Mau2PhysicalPhase Phase { get; }
@@ -1281,6 +1316,7 @@ internal sealed class CrossPlatformOptions
     internal string WindowsOutputTreeSha256 { get; }
     internal string ReleaseInvocationId { get; }
     internal string PolicySha256 { get; }
+    internal bool AllowWindowsUatLocalReset { get; }
     internal string App(string role) => androidSelectors.TryGetValue(role, out var id) ? id : throw new InvalidOperationException($"Missing Android selector for {role}.");
 
     internal static string? NotRunReason()
@@ -1338,7 +1374,10 @@ internal sealed class CrossPlatformOptions
         policy.ValidateTool(apksigner, "apksigner");
         var releaseInvocation = Environment.GetEnvironmentVariable("DEEP_RELEASE_INVOCATION_ID")!;
         if (!System.Text.RegularExpressions.Regex.IsMatch(releaseInvocation, "^[a-f0-9]{32}$")) throw new InvalidOperationException("Release invocation ID must be fresh 32-hex.");
-        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, genericFixture, documentFixture, imageFixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256);
+        var allowWindowsUatLocalReset =
+            Mau2PhysicalPhaseContract.LoadWindowsUatResetAuthorization(
+                phase, policy.PolicySha256, releaseInvocation);
+        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, genericFixture, documentFixture, imageFixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256, allowWindowsUatLocalReset);
     }
     internal StrictCrossPlatformContracts.ApkMetadata ReadAndValidateApkMetadata()
     {

@@ -8,14 +8,20 @@ param(
     [string]$MrXPublicKeySha256 = $env:DEEP_MR_X_PUBLIC_KEY_SHA256,
     [string]$AndroidPickerFileId = 'android:id/title',
     [string]$AndroidPickerConfirmId,
+    [switch]$ResetWindowsUatLocalState,
     [switch]$Execute
 )
 
-# This is a non-destructive, opt-in physical lane.  It only starts/stops the E2E
-# package, preserves its app data and the supplied Windows root, and never queries
-# a holder/capability value.  The production package is snapshotted before/after.
+# This is an opt-in physical lane. It is non-destructive unless the caller supplies
+# -ResetWindowsUatLocalState for ProvisionIdentity; that closed path confirms the
+# application's own reset dialog inside the exact physical runtime. The production
+# package is always snapshotted before/after and is never altered.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+if ($ResetWindowsUatLocalState -and $Phase -cne 'ProvisionIdentity') {
+    throw '-ResetWindowsUatLocalState is allowed only for ProvisionIdentity.'
+}
 
 Add-Type -TypeDefinition @'
 using System;
@@ -1111,6 +1117,8 @@ if (-not [StringComparer]::OrdinalIgnoreCase.Equals(
     throw 'Approved Windows executable must be an immediate child of the signed output tree.'
 }
 $adb = $approvedAdb
+$policySha256 = Get-Sha256 $policy
+$releaseInvocationId = [Guid]::NewGuid().ToString('N')
 
 $runId = [Guid]::NewGuid().ToString('N')
 $e2eRunsRoot = Join-Path $bootstrap 'e2e-runs'
@@ -1167,7 +1175,7 @@ try {
         generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
         status = 'prepared'
         sourceCommit = $sourceCommit
-        policySha256 = Get-Sha256 $policy
+        policySha256 = $policySha256
         runtimeEnvironmentSha256 = Get-Sha256 $runtimeEnvironment
         chaosDependencyManifestSha256 = $chaosManifestSha256
         chaosDependencyTreeSha256 = $chaosDependencyTreeSha256
@@ -1177,6 +1185,7 @@ try {
         androidRuntimeTreeSha256 = (Get-Sha256 (Join-Path $androidRuntime 'activation.v1.json'))
         windowsRuntimeTreeSha256 = (Get-Sha256 (Join-Path $windowsRuntime 'activation.v1.json'))
         windowsRootPresent = $true
+        windowsUatLocalResetAuthorized = [bool]$ResetWindowsUatLocalState
         dockerHealthy = $true
         productionPackageUntouched = $true
         storage = [ordered]@{ replication = 'shared-dev-storage-non-replicated'; before = $null; after = $null }
@@ -1192,6 +1201,12 @@ try {
         $env:DEEP_STRICT_CROSS_PLATFORM_UI = '1'
         $env:DEEP_STRICT_WINDOWS_UI = '1'
         $env:DEEP_MAU2_E2E_PHASE = $Phase
+        if ($ResetWindowsUatLocalState) {
+            $env:DEEP_MAU2_E2E_UAT_RESET_BINDING =
+                "${policySha256}:$releaseInvocationId"
+        } else {
+            $env:DEEP_MAU2_E2E_UAT_RESET_BINDING = $null
+        }
         $env:DEEP_MAU2_E2E_RUN_STATE = $runStatePath
         $env:DEEP_MAU2_E2E_RUNS_ROOT = (Join-Path $bootstrap 'e2e-runs')
         $env:DEEP_E2E_ANDROID_SERIAL = $AndroidSerial
@@ -1212,7 +1227,7 @@ try {
         $env:DEEP_MAUI_EXE = $approvedWindowsExe
         $env:DEEP_E2E_APPDATA_ROOT = $windowsAppData
         $env:DEEP_E2E_BOOTSTRAP = 'live'
-        $env:DEEP_RELEASE_INVOCATION_ID = [Guid]::NewGuid().ToString('N')
+        $env:DEEP_RELEASE_INVOCATION_ID = $releaseInvocationId
         $env:DEEP_TRANSPORT_PROTOCOL = 'authenticated-mau2'
         $env:DEEP_TRANSPORT_OWNERSHIP = 'user-managed'
         $env:DEEP_STORAGE_URL = $null
@@ -1305,6 +1320,7 @@ try {
     } catch {
         $failures.Add($_.Exception)
     }
+    $env:DEEP_MAU2_E2E_UAT_RESET_BINDING = $null
 }
 
 if ($failures.Count -ne 0) {

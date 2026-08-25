@@ -183,6 +183,16 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'PayloadMatrix', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
+        Assert.Contains("[switch]$ResetWindowsUatLocalState", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("$Phase -cne 'ProvisionIdentity'", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("DEEP_MAU2_E2E_UAT_RESET_BINDING", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("${policySha256}:$releaseInvocationId", runner,
+            StringComparison.Ordinal);
+        Assert.Contains("$env:DEEP_MAU2_E2E_UAT_RESET_BINDING = $null", runner,
+            StringComparison.Ordinal);
         Assert.Contains("$env:DEEP_STRICT_WINDOWS_UI = '1'", runner,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -240,6 +250,11 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("pm clear", runner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("uninstall", runner, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("StartupResetLocalStateButton", ui, StringComparison.Ordinal);
+        Assert.Contains("windows.WaitForAutomationId(\"PrimaryButton\"", ui,
+            StringComparison.Ordinal);
+        Assert.Contains("Confirmed Windows UAT reset did not reach a clean provisioning surface", ui,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("docker compose", runner, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Legacy_destructive_fixture", ui, StringComparison.Ordinal);
         Assert.DoesNotContain("DEEP_ALLOW_LEGACY", ui, StringComparison.Ordinal);

@@ -278,13 +278,19 @@ are never written to policy output and are zeroed by the issuer process.
 
 ## Physical Android ↔ Windows rendered flow (opt-in)
 
-The non-destructive physical runner `eng/Invoke-PhysicalMau2CrossPlatform.ps1`
+The physical runner `eng/Invoke-PhysicalMau2CrossPlatform.ps1`
 requires one explicit phase: `ProvisionIdentity`, `Attach`, `PayloadMatrix`, `Call`, `RestartDurability`,
 `ManualResendAfterRestart`, `AutomaticRetryAfterRestart`, `AckCrashWindow`, or `NegativeRuntime`.
 `ProvisionIdentity` creates a missing Android or Windows identity only through
 the rendered production controls, otherwise reads and preserves the existing
-identity. It never approves or performs a local-state reset; a reset-required
-surface fails the phase closed and requires a separate explicit user action.
+identity. A reset-required Windows UAT surface fails closed by default. The only
+destructive exception is the explicit `-ResetWindowsUatLocalState` switch on
+`ProvisionIdentity`: after the signed policy and fresh release invocation are
+validated, the runner binds a one-run reset authorization to both values and the
+rendered test confirms the application's own reset dialog. It accepts only the
+closed typed reset reasons, requires the clean Welcome surface afterward, records
+whether reset actually occurred, and still forbids Android `pm clear`, uninstall,
+production-package mutation, or mailbox-runtime mutation.
 `PayloadMatrix` replaces the earlier partial happy-path and voice phases. In one
 HTTPS/UAT run it requires exact text in both directions and the correlated sender
 `Sent` state; deterministic generic and PDF documents in both directions with

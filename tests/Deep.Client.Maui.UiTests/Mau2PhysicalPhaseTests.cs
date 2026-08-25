@@ -42,6 +42,81 @@ public sealed class Mau2PhysicalPhaseTests
                 Mau2PhysicalPhase.PayloadMatrix));
     }
 
+    [Fact]
+    public void Windows_uat_reset_requires_exact_policy_and_invocation_binding()
+    {
+        const string policy =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        const string invocation = "0123456789abcdef0123456789abcdef";
+        var previous = Environment.GetEnvironmentVariable(
+            "DEEP_MAU2_E2E_UAT_RESET_BINDING");
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                "DEEP_MAU2_E2E_UAT_RESET_BINDING", null);
+            Assert.False(Mau2PhysicalPhaseContract.LoadWindowsUatResetAuthorization(
+                Mau2PhysicalPhase.ProvisionIdentity, policy, invocation));
+
+            Environment.SetEnvironmentVariable(
+                "DEEP_MAU2_E2E_UAT_RESET_BINDING", $"{policy}:{invocation}");
+            Assert.True(Mau2PhysicalPhaseContract.LoadWindowsUatResetAuthorization(
+                Mau2PhysicalPhase.ProvisionIdentity, policy, invocation));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                "DEEP_MAU2_E2E_UAT_RESET_BINDING", previous);
+        }
+    }
+
+    [Theory]
+    [InlineData("wrong")]
+    [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:fedcba9876543210fedcba9876543210")]
+    public void Windows_uat_reset_rejects_malformed_or_stale_binding(string binding)
+    {
+        const string policy =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        const string invocation = "0123456789abcdef0123456789abcdef";
+        var previous = Environment.GetEnvironmentVariable(
+            "DEEP_MAU2_E2E_UAT_RESET_BINDING");
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                "DEEP_MAU2_E2E_UAT_RESET_BINDING", binding);
+            Assert.Throws<InvalidOperationException>(() =>
+                Mau2PhysicalPhaseContract.LoadWindowsUatResetAuthorization(
+                    Mau2PhysicalPhase.ProvisionIdentity, policy, invocation));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                "DEEP_MAU2_E2E_UAT_RESET_BINDING", previous);
+        }
+    }
+
+    [Fact]
+    public void Windows_uat_reset_is_rejected_outside_provisioning()
+    {
+        const string policy =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        const string invocation = "0123456789abcdef0123456789abcdef";
+        var previous = Environment.GetEnvironmentVariable(
+            "DEEP_MAU2_E2E_UAT_RESET_BINDING");
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                "DEEP_MAU2_E2E_UAT_RESET_BINDING", $"{policy}:{invocation}");
+            Assert.Throws<InvalidOperationException>(() =>
+                Mau2PhysicalPhaseContract.LoadWindowsUatResetAuthorization(
+                    Mau2PhysicalPhase.Attach, policy, invocation));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                "DEEP_MAU2_E2E_UAT_RESET_BINDING", previous);
+        }
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
