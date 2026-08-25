@@ -147,6 +147,10 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.Contains("SetPhysicalRuntimeReady(false);", conversations, StringComparison.Ordinal);
         Assert.Contains("AutomationId = \"PhysicalE2E.RuntimeReadyMarker\"", desktop,
             StringComparison.Ordinal);
+        Assert.Contains("WorkspaceRoot.Children.Add(physicalRuntimeReadyMarker)", desktop,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("DetailContent.Children.Add(physicalRuntimeReadyMarker)", desktop,
+            StringComparison.Ordinal);
         Assert.Contains("SetPhysicalRuntimeReady(true);", desktop, StringComparison.Ordinal);
         Assert.Contains("SetPhysicalRuntimeReady(false);", desktop, StringComparison.Ordinal);
         Assert.Contains("options.App(\"PhysicalE2E.RuntimeReadyMarker\")", physical,

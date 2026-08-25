@@ -321,7 +321,8 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             InputTransparent = true,
             ZIndex = 101
         };
-        DetailContent.Children.Add(physicalRuntimeReadyMarker);
+        WorkspaceRoot.Children.Add(physicalRuntimeReadyMarker);
+        Grid.SetColumnSpan(physicalRuntimeReadyMarker, 3);
     }
 
     private void CreatePhysicalVoicePlaybackState()
