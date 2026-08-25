@@ -137,6 +137,29 @@ public sealed class ConversationsViewModelTests
 
         Assert.False(synchronized);
         Assert.Equal("offline", viewModel.ErrorMessage);
+        Assert.Equal("invalid-state", viewModel.SyncFailureCode);
+    }
+
+    [Theory]
+    [InlineData(401, "http-401")]
+    [InlineData(503, "http-503")]
+    public void SyncFailureClassifierReturnsClosedSanitizedCodes(int status, string expected)
+    {
+        var http = new HttpRequestException("sensitive endpoint", null, (System.Net.HttpStatusCode)status);
+        Assert.Equal(expected, ConversationsViewModel.ClassifySyncFailure(http));
+        Assert.Equal("tls", ConversationsViewModel.ClassifySyncFailure(
+            new HttpRequestException("outer", new System.Security.Authentication.AuthenticationException("secret"))));
+        Assert.Equal("runtime-policy", ConversationsViewModel.ClassifySyncFailure(
+            new InvalidDataException("secret policy detail")));
+        Assert.Equal("local-access", ConversationsViewModel.ClassifySyncFailure(
+            new UnauthorizedAccessException("secret path")));
+        Assert.Equal("invalid-state", ConversationsViewModel.ClassifySyncFailure(
+            new InvalidOperationException("secret")));
+        Assert.Equal("mailbox-8", ConversationsViewModel.ClassifySyncFailure(
+            new ClientMailboxTransportException(
+                ClientMailboxTransportFailure.DependencyUnavailable,
+                retryable: true,
+                "secret upstream")));
     }
 
     private sealed class FailingInboxTransport : ISessionMessageTransport

@@ -172,10 +172,15 @@ public sealed class StrictCrossPlatformUiTests
 
         using var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot);
         Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(45)), "Conversations.NewConversation");
-        Require(windows.WaitForAutomationIdWithName(
+        var windowsRuntimeReady = windows.WaitForAutomationIdWithName(
             "PhysicalE2E.RuntimeReadyMarker",
             "ready",
-            TimeSpan.FromSeconds(45)), "PhysicalE2E.RuntimeReadyMarker=ready");
+            TimeSpan.FromSeconds(45));
+        if (windowsRuntimeReady is null)
+        {
+            var terminal = windows.FindAutomationId("PhysicalE2E.RuntimeReadyMarker")?.Name ?? "missing";
+            throw new InvalidOperationException($"Windows runtime sync did not become ready; state={terminal}.");
+        }
         var windowsIdentity = ReadWindowsIdentity(windows);
         Assert.NotEqual(androidIdentity, windowsIdentity);
 

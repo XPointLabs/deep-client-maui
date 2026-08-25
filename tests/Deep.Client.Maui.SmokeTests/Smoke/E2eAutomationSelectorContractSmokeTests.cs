@@ -152,10 +152,12 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.DoesNotContain("DetailContent.Children.Add(physicalRuntimeReadyMarker)", desktop,
             StringComparison.Ordinal);
         Assert.Contains("Text = \"pending\"", desktop, StringComparison.Ordinal);
-        Assert.Contains("physicalRuntimeReadyMarker.Text = ready ? \"ready\" : \"failed\"", desktop,
+        Assert.Contains("physicalRuntimeReadyMarker.Text = ready ? \"ready\" : $\"failed:{failureCode}\"", desktop,
             StringComparison.Ordinal);
         Assert.Contains("SetPhysicalRuntimeReady(true);", desktop, StringComparison.Ordinal);
-        Assert.Contains("SetPhysicalRuntimeReady(false);", desktop, StringComparison.Ordinal);
+        Assert.Contains("SetPhysicalRuntimeReady(false, viewModel.ConversationList.SyncFailureCode);", desktop,
+            StringComparison.Ordinal);
+        Assert.Contains("SetPhysicalRuntimeReady(false, \"page\");", desktop, StringComparison.Ordinal);
         Assert.Contains("options.App(\"PhysicalE2E.RuntimeReadyMarker\")", physical,
             StringComparison.Ordinal);
         Assert.Contains("windows.WaitForAutomationIdWithName(\n            \"PhysicalE2E.RuntimeReadyMarker\",\n            \"ready\"",

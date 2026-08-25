@@ -349,13 +349,13 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         }
     }
 
-    private void SetPhysicalRuntimeReady(bool ready)
+    private void SetPhysicalRuntimeReady(bool ready, string failureCode = "none")
     {
         if (physicalRuntimeReadyMarker is null)
             return;
         void Apply()
         {
-            physicalRuntimeReadyMarker.Text = ready ? "ready" : "failed";
+            physicalRuntimeReadyMarker.Text = ready ? "ready" : $"failed:{failureCode}";
             physicalRuntimeReadyMarker.IsVisible = true;
         }
         if (MainThread.IsMainThread)
@@ -1688,7 +1688,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
                 if (!synchronized)
                 {
 #if DEBUG && DEEP_PHYSICAL_E2E
-                    SetPhysicalRuntimeReady(false);
+                    SetPhysicalRuntimeReady(false, viewModel.ConversationList.SyncFailureCode);
 #endif
                     return;
                 }
@@ -1714,7 +1714,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         catch (Exception ex)
         {
 #if DEBUG && DEEP_PHYSICAL_E2E
-            SetPhysicalRuntimeReady(false);
+            SetPhysicalRuntimeReady(false, "page");
 #endif
             CrashDiagnostics.LogException("DesktopWorkspacePage.Sync", ex);
         }
