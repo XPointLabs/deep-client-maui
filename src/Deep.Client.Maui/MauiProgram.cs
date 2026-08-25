@@ -97,6 +97,8 @@ public static class MauiProgram
         ArgumentNullException.ThrowIfNull(inputs);
         services.AddSingleton(inputs.RuntimeEnvironment);
         services.AddSingleton(inputs.TransportMode);
+        services.AddSingleton(inputs.ServiceTransportFactory);
+        services.AddSingleton(inputs.ServiceTransportClientOptions);
         services.AddSingleton<IRealityTransportRuntime>(inputs.RealityTransportRuntime);
         services.AddSingleton<PrivacyMailboxRouteDiagnostics>();
         services.AddSingleton(inputs.FeatureFlags);
@@ -703,6 +705,8 @@ public static class MauiProgram
                 holder),
             mode.Ownership,
             featureFlags,
+            services.GetRequiredService<HttpServiceTransportFactory>(),
+            services.GetRequiredService<HttpServiceClientOptions>(),
             services.GetRequiredService<IMailboxDispatchRouteUsageObserver>());
         return new StoreBoundRuntimeTransportComposition(native, native);
 #else
@@ -782,6 +786,7 @@ public static class MauiProgram
 #if DEBUG && DEEP_PHYSICAL_E2E && ANDROID
     private const string PhysicalUatRootResource =
         "Deep.Client.Maui.PhysicalUatRootCa";
+    private static int physicalUatTlsCallbackObserved;
 
     private static bool ValidatePhysicalUatServerCertificate(
         object sender,
@@ -790,6 +795,12 @@ public static class MauiProgram
         System.Net.Security.SslPolicyErrors sslPolicyErrors)
     {
         _ = sender;
+        if (Interlocked.Exchange(ref physicalUatTlsCallbackObserved, 1) == 0)
+        {
+            CrashDiagnostics.LogInfo(
+                "PhysicalUatTls",
+                "Certificate validation callback invoked.");
+        }
         if (certificate is null ||
             (sslPolicyErrors & (System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch |
                 System.Net.Security.SslPolicyErrors.RemoteCertificateNotAvailable)) != 0)

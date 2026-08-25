@@ -92,7 +92,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.InRange(relaxationIndex, bootstrapIndex + 1, debugGuardEndIndex - 1);
         Assert.Contains("RuntimeTransportProtocol.AuthenticatedMau2", program, StringComparison.Ordinal);
         Assert.Contains("StoreBoundNativeMau2Transport", program, StringComparison.Ordinal);
-        Assert.Contains("new PrivacyRoutedMailboxBinaryIngress(", nativeTransport,
+        Assert.Contains("transportFactory.CreatePrivacyRoutedMailboxIngress(", nativeTransport,
             StringComparison.Ordinal);
         Assert.DoesNotContain("HttpClientMailboxBinaryIngress", nativeTransport,
             StringComparison.Ordinal);

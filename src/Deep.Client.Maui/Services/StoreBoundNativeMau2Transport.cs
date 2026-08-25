@@ -26,12 +26,18 @@ internal interface IMailboxRuntimeProvisioningSource
 /// <summary>Debug-only adapter for the exact local Android/Windows fixture bundle.</summary>
 internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
     Func<MailboxRuntimeProvisioning> provisioningFactory,
-    Action<MailboxHolderIdentity> holderAvailable) : IMailboxRuntimeProvisioningSource
+    Action<MailboxHolderIdentity> holderAvailable,
+    HttpServiceTransportFactory transportFactory,
+    HttpServiceClientOptions clientOptions) : IMailboxRuntimeProvisioningSource
 {
     private readonly Func<MailboxRuntimeProvisioning> provisioningFactory =
         provisioningFactory ?? throw new ArgumentNullException(nameof(provisioningFactory));
     private readonly Action<MailboxHolderIdentity> holderAvailable =
         holderAvailable ?? throw new ArgumentNullException(nameof(holderAvailable));
+    private readonly HttpServiceTransportFactory transportFactory =
+        transportFactory ?? throw new ArgumentNullException(nameof(transportFactory));
+    private readonly HttpServiceClientOptions clientOptions =
+        clientOptions ?? throw new ArgumentNullException(nameof(clientOptions));
 
     public async Task<ProvisionedMailboxRuntime> ProvisionAsync(
         SqliteSessionStore store,
@@ -56,10 +62,11 @@ internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
                 : recipient == material.PeerSessionId
                     ? material.PeerSelector
                     : null,
-            new PrivacyRoutedMailboxBinaryIngress(
+            transportFactory.CreatePrivacyRoutedMailboxIngress(
                 provisioning.PrivacyRoutes.Primary,
                 provisioning.PrivacyRoutes.Fallback,
-                material.DecodePolicies),
+                material.DecodePolicies,
+                clientOptions),
             options.TimeProvider);
 #else
         throw new InvalidOperationException(
@@ -103,13 +110,17 @@ internal sealed class StoreBoundNativeMau2Transport :
         Action<MailboxHolderIdentity> holderAvailable,
         MailboxInfrastructureOwnership ownership,
         ClientFeatureFlags featureFlags,
+        HttpServiceTransportFactory transportFactory,
+        HttpServiceClientOptions clientOptions,
         IMailboxDispatchRouteUsageObserver? routeUsageObserver = null)
         : this(
             store,
             secureStore,
             new DevelopmentMailboxRuntimeProvisioningSource(
                 provisioningFactory,
-                holderAvailable),
+                holderAvailable,
+                transportFactory,
+                clientOptions),
             ownership,
             featureFlags,
             routeUsageObserver)

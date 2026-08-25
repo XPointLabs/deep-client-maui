@@ -47,6 +47,8 @@ public sealed class PhysicalUatTlsContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("Certificate chain rejected with safe status", program,
             StringComparison.Ordinal);
+        Assert.Contains("Certificate validation callback invoked.", program,
+            StringComparison.Ordinal);
         Assert.Contains("Certificate validation failed with safe exception type", program,
             StringComparison.Ordinal);
         Assert.Contains("RemoteCertificateNameMismatch", program,
@@ -63,9 +65,15 @@ public sealed class PhysicalUatTlsContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("CreatePhysicalUatServerCertificateValidationCallback()", program,
             StringComparison.Ordinal);
-        Assert.Contains("new PrivacyRoutedMailboxBinaryIngress(", mailboxTransport,
+        Assert.Contains("services.AddSingleton(inputs.ServiceTransportFactory)", program,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("serverCertificateValidationCallback", mailboxTransport,
+        Assert.Contains("services.AddSingleton(inputs.ServiceTransportClientOptions)", program,
+            StringComparison.Ordinal);
+        Assert.Contains("transportFactory.CreatePrivacyRoutedMailboxIngress(", mailboxTransport,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("new PrivacyRoutedMailboxBinaryIngress(", mailboxTransport,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("new HttpClient", mailboxTransport,
             StringComparison.Ordinal);
         var validatorStart = program.IndexOf(
             "private static bool ValidatePhysicalUatServerCertificate(",

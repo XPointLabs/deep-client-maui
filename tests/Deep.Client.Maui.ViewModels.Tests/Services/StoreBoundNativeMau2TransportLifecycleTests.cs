@@ -42,7 +42,9 @@ public sealed class StoreBoundNativeMau2TransportLifecycleTests
                 ClientFeatureFlags.ReleaseDefaults with
                 {
                     ClientMailboxAdapterEnabled = true
-                });
+                },
+                new HttpServiceTransportFactory(HttpServiceEndpointPolicy.Production),
+                new HttpServiceClientOptions());
 
             var receive = Task.Run(async () =>
                 await transport.ReceiveAuthenticatedAsync(identity));
@@ -154,7 +156,9 @@ public sealed class StoreBoundNativeMau2TransportLifecycleTests
             ClientFeatureFlags.ReleaseDefaults with
             {
                 ClientMailboxAdapterEnabled = true
-            });
+            },
+            new HttpServiceTransportFactory(HttpServiceEndpointPolicy.Production),
+            new HttpServiceClientOptions());
         fixture = new Fixture(directory, sqlite, secureStore, identity, transport);
         return fixture;
     }
