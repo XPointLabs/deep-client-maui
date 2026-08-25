@@ -28,7 +28,9 @@ internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
     Func<MailboxRuntimeProvisioning> provisioningFactory,
     Action<MailboxHolderIdentity> holderAvailable,
     HttpServiceTransportFactory transportFactory,
-    HttpServiceClientOptions clientOptions) : IMailboxRuntimeProvisioningSource
+    HttpServiceClientOptions clientOptions,
+    IPrivacyMailboxRouteSelectionObserver? routeSelectionObserver) :
+    IMailboxRuntimeProvisioningSource
 {
     private readonly Func<MailboxRuntimeProvisioning> provisioningFactory =
         provisioningFactory ?? throw new ArgumentNullException(nameof(provisioningFactory));
@@ -38,6 +40,8 @@ internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
         transportFactory ?? throw new ArgumentNullException(nameof(transportFactory));
     private readonly HttpServiceClientOptions clientOptions =
         clientOptions ?? throw new ArgumentNullException(nameof(clientOptions));
+    private readonly IPrivacyMailboxRouteSelectionObserver? routeSelectionObserver =
+        routeSelectionObserver;
 
     public async Task<ProvisionedMailboxRuntime> ProvisionAsync(
         SqliteSessionStore store,
@@ -66,7 +70,8 @@ internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
                 provisioning.PrivacyRoutes.Primary,
                 provisioning.PrivacyRoutes.Fallback,
                 material.DecodePolicies,
-                clientOptions),
+                clientOptions,
+                routeSelectionObserver: routeSelectionObserver),
             options.TimeProvider);
 #else
         throw new InvalidOperationException(
@@ -112,6 +117,7 @@ internal sealed class StoreBoundNativeMau2Transport :
         ClientFeatureFlags featureFlags,
         HttpServiceTransportFactory transportFactory,
         HttpServiceClientOptions clientOptions,
+        IPrivacyMailboxRouteSelectionObserver? routeSelectionObserver = null,
         IMailboxDispatchRouteUsageObserver? routeUsageObserver = null)
         : this(
             store,
@@ -120,7 +126,8 @@ internal sealed class StoreBoundNativeMau2Transport :
                 provisioningFactory,
                 holderAvailable,
                 transportFactory,
-                clientOptions),
+                clientOptions,
+                routeSelectionObserver),
             ownership,
             featureFlags,
             routeUsageObserver)

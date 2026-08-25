@@ -387,30 +387,28 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
     private void UpdatePhysicalRouteNodeMarker()
     {
         if (physicalRouteNodeMarker is null) return;
-        var routerId = viewModel.IsDirectDetail &&
-            viewModel.SelectedConversation is { } selected
-                ? physicalRouteUsageTracker.GetCurrentRouterId(selected.Id)
-                : null;
+        var selectedRoute = physicalRouteDiagnostics.CurrentSelection;
+        var routerId = viewModel.IsDirectDetail
+            ? selectedRoute?.EntryRouterId
+            : null;
         physicalRouteNodeMarker.Text = routerId ?? string.Empty;
         physicalRouteNodeMarker.IsVisible = viewModel.IsDirectDetail &&
             !string.IsNullOrWhiteSpace(routerId);
 
         if (physicalRouteProofMarker is null) return;
         var routes = physicalRouteDiagnostics.Current;
-        var selectedRoute = routes is null || string.IsNullOrWhiteSpace(routerId)
-            ? null
-            : string.Equals(routes.Primary[0].RouterId, routerId, StringComparison.Ordinal)
-                ? "primary"
-                : string.Equals(routes.Fallback[0].RouterId, routerId, StringComparison.Ordinal)
-                    ? "fallback"
-                    : null;
-        physicalRouteProofMarker.Text = selectedRoute is null || routes is null
+        var routeMatches = routes is not null && selectedRoute is not null &&
+            (selectedRoute.Route == "primary" &&
+                string.Equals(routes.Primary[0].RouterId, routerId, StringComparison.Ordinal) ||
+             selectedRoute.Route == "fallback" &&
+                string.Equals(routes.Fallback[0].RouterId, routerId, StringComparison.Ordinal));
+        physicalRouteProofMarker.Text = !routeMatches || routes is null || selectedRoute is null
             ? string.Empty
             : $"v1|path={ManagedIngressH2Contract.FramePath}" +
               $"|primary={string.Join(',', routes.Primary.Select(static hop => hop.RouterId))}" +
               $"|fallback={string.Join(',', routes.Fallback.Select(static hop => hop.RouterId))}" +
-              $"|selected={selectedRoute}|entry={routerId}";
-        physicalRouteProofMarker.IsVisible = viewModel.IsDirectDetail && selectedRoute is not null;
+              $"|selected={selectedRoute.Route}|entry={routerId}";
+        physicalRouteProofMarker.IsVisible = viewModel.IsDirectDetail && routeMatches;
     }
 
     private void OnPhysicalRouteUsageChanged(

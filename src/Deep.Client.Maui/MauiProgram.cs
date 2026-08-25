@@ -101,6 +101,9 @@ public static class MauiProgram
         services.AddSingleton(inputs.ServiceTransportClientOptions);
         services.AddSingleton<IRealityTransportRuntime>(inputs.RealityTransportRuntime);
         services.AddSingleton<PrivacyMailboxRouteDiagnostics>();
+#if DEBUG && DEEP_PHYSICAL_E2E
+        services.AddSingleton<PrivacyMailboxRouteSelectionBridge>();
+#endif
         services.AddSingleton(inputs.FeatureFlags);
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton(inputs.CountryLookupFactory);
@@ -707,6 +710,7 @@ public static class MauiProgram
             featureFlags,
             services.GetRequiredService<HttpServiceTransportFactory>(),
             services.GetRequiredService<HttpServiceClientOptions>(),
+            services.GetRequiredService<PrivacyMailboxRouteSelectionBridge>(),
             services.GetRequiredService<IMailboxDispatchRouteUsageObserver>());
         return new StoreBoundRuntimeTransportComposition(native, native);
 #else

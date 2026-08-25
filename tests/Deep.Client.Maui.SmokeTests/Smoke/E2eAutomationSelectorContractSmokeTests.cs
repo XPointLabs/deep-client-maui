@@ -104,6 +104,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             "src", "Deep.Client.Maui", "Pages", "DesktopWorkspacePage.xaml.cs"));
         var tracker = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Services", "PhysicalMailboxRouteUsageTracker.cs"));
+        var diagnostics = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Services", "PrivacyMailboxRouteDiagnostics.cs"));
 
         Assert.Contains("#if DEBUG && DEEP_PHYSICAL_E2E", source,
             StringComparison.Ordinal);
@@ -117,9 +119,9 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("string.Join(',', routes.Fallback.Select", source,
             StringComparison.Ordinal);
-        Assert.Contains("|selected={selectedRoute}|entry={routerId}", source,
+        Assert.Contains("|selected={selectedRoute.Route}|entry={routerId}", source,
             StringComparison.Ordinal);
-        Assert.Contains("physicalRouteUsageTracker.GetCurrentRouterId(selected.Id)", source,
+        Assert.Contains("physicalRouteDiagnostics.CurrentSelection", source,
             StringComparison.Ordinal);
         Assert.Contains("physicalRouteNodeMarker.Text = routerId ?? string.Empty;", source,
             StringComparison.Ordinal);
@@ -136,6 +138,10 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.Contains("active.AttemptId == usage.AttemptId", tracker,
             StringComparison.Ordinal);
         Assert.Contains("Convert.ToHexStringLower(usage.EntryRouterId.Span)", tracker,
+            StringComparison.Ordinal);
+        Assert.Contains("IPrivacyMailboxRouteSelectionObserver", diagnostics,
+            StringComparison.Ordinal);
+        Assert.Contains("diagnostics.ObserveSelection(selection, entryRouterId)", diagnostics,
             StringComparison.Ordinal);
     }
 
