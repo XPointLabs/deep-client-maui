@@ -28,16 +28,10 @@ namespace Deep.Client.Maui;
 
 internal sealed record ApplicationServiceInputs(
     ClientFeatureFlags FeatureFlags,
-    IReadOnlyList<PinnedRouterEndpoint> RouterBaseUrls,
     IRealityTransportRuntime RealityTransportRuntime,
     RuntimeTransportMode TransportMode,
-    string? StorageBaseUrl,
-    HttpClient RouterHttpClient,
-    RoutedSessionStorageTransportOptions RoutedTransportOptions,
-    RoutedRuntimeEndpointPolicy RoutedEndpointPolicy,
     HttpServiceTransportFactory ServiceTransportFactory,
     HttpServiceClientOptions ServiceTransportClientOptions,
-    DeferredVerifiedMembershipRouteCatalogProvider? MembershipRouteCatalogProvider,
     RuntimeEnvironmentOptions RuntimeEnvironment,
     Func<IServiceProvider, IIpCountryLookup> CountryLookupFactory,
     Func<IServiceProvider, IAvatarProfileTransport> AvatarTransportFactory,
@@ -73,10 +67,6 @@ public static class MauiProgram
     internal const string ExternalOutboxWorkerSha256Env = "DEEP_OUTBOX_WORKER_SHA256";
     internal const string ExternalOutboxWorkerBundleSha256Env =
         "DEEP_OUTBOX_WORKER_BUNDLE_SHA256";
-    internal const string DevLocalMembershipTrustUrlEnv =
-        "DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_URL";
-    internal const string DevLocalMembershipTrustSha256Env =
-        "DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_SHA256";
     private const string ExternalOutboxWorkerDirectory = "outbox-worker";
     private const string ExternalOutboxWorkerFileName = "Deep.Client.Maui.OutboxWorker.exe";
     private const string ReleaseRuntimeEnvFile = "deep.release.env";
@@ -109,25 +99,7 @@ public static class MauiProgram
         services.AddSingleton(inputs.RuntimeEnvironment);
         services.AddSingleton(inputs.TransportMode);
         services.AddSingleton<IRealityTransportRuntime>(inputs.RealityTransportRuntime);
-        if (inputs.RouterBaseUrls.Count != 0)
-        {
-            RegisterRouteProvider(services, inputs);
-        }
-        else
-        {
-            services.AddSingleton<ITransportRouteProvider>(_ =>
-                new DirectStorageRouteProvider(inputs.StorageBaseUrl));
-        }
-
-        if (inputs.TransportMode.Protocol == RuntimeTransportProtocol.DirectP2p)
-        {
-            services.AddSingleton<ISessionMessageTransport>(_ =>
-                throw new InvalidOperationException(
-                    "Direct-P2P transport is unavailable until a verified direct peer " +
-                    "implementation is installed; generic HTTP endpoints are rejected."));
-        }
-        if (inputs.MembershipRouteCatalogProvider is not null)
-            services.AddSingleton(inputs.MembershipRouteCatalogProvider);
+        services.AddSingleton<PrivacyMailboxRouteDiagnostics>();
         services.AddSingleton(inputs.FeatureFlags);
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton(inputs.CountryLookupFactory);
@@ -206,34 +178,6 @@ public static class MauiProgram
 #if WINDOWS
         services.AddSingleton<DesktopWorkspacePage>();
 #endif
-    }
-
-    private static XNodeRpcClient CreateRouterClient(
-        ApplicationServiceInputs inputs)
-    {
-        var currentRuntimeEndpoints = inputs.RealityTransportRuntime.RouterEndpoints;
-        var endpoints = currentRuntimeEndpoints.Count == 0
-            ? inputs.RouterBaseUrls
-            : currentRuntimeEndpoints;
-        var validatedEndpoints = RoutedRuntimeConfiguration.ValidateAtLeastThree(
-            endpoints,
-            inputs.RoutedEndpointPolicy);
-        return new XNodeRpcClient(
-            inputs.RouterHttpClient,
-            new XNodeRpcClientOptions(
-                validatedEndpoints,
-                RequireMembershipRouteSelection:
-                    inputs.MembershipRouteCatalogProvider is not null),
-            membershipRouteCatalogProvider: inputs.MembershipRouteCatalogProvider);
-    }
-
-    private static void RegisterRouteProvider(
-        IServiceCollection services,
-        ApplicationServiceInputs inputs)
-    {
-        services.AddSingleton(_ => CreateRouterClient(inputs));
-        services.AddSingleton<ITransportRouteProvider>(serviceProvider =>
-            serviceProvider.GetRequiredService<XNodeRpcClient>());
     }
 
 #if ANDROID
@@ -354,21 +298,6 @@ public static class MauiProgram
             : ResolveRealityTransportBinding(routedEndpointPolicy);
         var realityTransportRuntime = realityBinding.Runtime;
         var routerBaseUrls = realityBinding.RouterEndpoints;
-        var membershipConfiguration = directP2p
-            ? null
-            :
-            DevLocalMembershipRouteConfiguration.Resolve(
-                ResolveRuntimeSetting(DevLocalMembershipTrustUrlEnv),
-                ResolveRuntimeSetting(DevLocalMembershipTrustSha256Env),
-                explicitDevelopmentProfile: survivalDevelopment,
-                productionBuild: !IsDebugBuild());
-        if (membershipConfiguration is not null && routerBaseUrls.Count == 0)
-        {
-            throw new InvalidOperationException(
-                "Development membership routing requires configured routed transport.");
-        }
-        var storageBaseUrl = directP2p ? null : ResolveRuntimeSettingForComposition(
-            StorageBaseUrlEnv, routedEndpointPolicy);
         var fileBaseUrl = directP2p ? null : ResolveRuntimeSettingForComposition(
             FileBaseUrlEnv, routedEndpointPolicy);
         var pushBaseUrl = directP2p ? null : ResolveRuntimeSettingForComposition(
@@ -445,28 +374,12 @@ public static class MauiProgram
 #else
         Func<IServiceProvider, DesktopWorkspaceViewModel>? desktopWorkspaceFactory = null;
 #endif
-        var routerHttpClient = CreateRouterHttpClient(realityTransportRuntime);
-        var membershipRouteCatalogProvider = membershipConfiguration is null
-            ? null
-            : new DeferredVerifiedMembershipRouteCatalogProvider(
-                membershipConfiguration,
-                routerHttpClient,
-                new FileMembershipRouteArtifactCache(Path.Combine(
-                    ResolveAppDataDirectory(),
-                    "membership-route",
-                    "catalog-v1.json")));
         return new ApplicationServiceInputs(
             featureFlags,
-            routerBaseUrls,
             realityTransportRuntime,
             transportMode,
-            storageBaseUrl,
-            routerHttpClient,
-            BuildRoutedTransportOptions(survivalDevelopment),
-            routedEndpointPolicy,
             httpTransportFactories.ServiceTransportFactory,
             httpTransportFactories.ServiceClientOptions,
-            membershipRouteCatalogProvider,
             directP2p
                 ? new RuntimeEnvironmentOptions(
                     null, null, null, null, null, null, null, null, null)
@@ -511,9 +424,6 @@ public static class MauiProgram
         return false;
 #endif
     }
-
-    private static RoutedSessionStorageTransportOptions BuildRoutedTransportOptions(
-        bool survivalDevelopment) => new();
 
     private static ClientFeatureFlags BuildFeatureFlags(
         bool survivalDevelopment,
@@ -747,8 +657,7 @@ public static class MauiProgram
                     secureStore,
                     appDataDirectory,
                     outboxActivation.EffectiveFeatureFlags),
-                outboxActivation.Executor,
-                services.GetService<DeferredVerifiedMembershipRouteCatalogProvider>());
+                outboxActivation.Executor);
         }
         catch
         {
@@ -802,22 +711,26 @@ public static class MauiProgram
         var native = new StoreBoundNativeMau2Transport(
             sqlite,
             secureStore,
-            () => (startupProvisioning ?? MailboxRuntimeProvisioning.LoadDevelopment(
+            () =>
+            {
+                var provisioning = startupProvisioning ?? MailboxRuntimeProvisioning.LoadDevelopment(
                     appDataDirectory,
                     platform,
                     PhysicalLabTrustRoot.MrXPublicKeySha256,
                     mode.Ownership == MailboxInfrastructureOwnership.OfficialManaged
                         ? static () => false
-                        : null))
-                .ImportOptions,
+                        : null);
+                services.GetRequiredService<PrivacyMailboxRouteDiagnostics>()
+                    .Publish(provisioning.PrivacyRoutes);
+                return provisioning;
+            },
             holder => DevelopmentMailboxHolderBootstrap.Publish(
                 appDataDirectory,
                 platform,
                 holder),
             mode.Ownership,
             featureFlags,
-            services.GetRequiredService<IMailboxDispatchRouteUsageObserver>(),
-            CreatePhysicalUatServerCertificateValidationCallback());
+            services.GetRequiredService<IMailboxDispatchRouteUsageObserver>());
         return new StoreBoundRuntimeTransportComposition(native, native);
 #else
         var productionRoot = Path.Combine(
@@ -878,33 +791,6 @@ public static class MauiProgram
     }
 
     internal static string ResolveAppDataDirectory() => AppDataPath.Resolve();
-
-    private static HttpClient CreateRouterHttpClient(IRealityTransportRuntime realityTransportRuntime)
-    {
-        var socketsHandler = CreateServiceHttpHandler();
-        socketsHandler.UseProxy = false;
-        HttpMessageHandler handler = socketsHandler;
-#if ANDROID || WINDOWS
-        handler = new RealityReadinessHandler(handler, realityTransportRuntime);
-#endif
-        return CreateServiceHttpClient(handler);
-    }
-
-    private static SocketsHttpHandler CreateServiceHttpHandler()
-    {
-        var handler = new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            ConnectTimeout = TimeSpan.FromSeconds(5),
-            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(15),
-            PooledConnectionLifetime = TimeSpan.FromMinutes(2)
-        };
-        handler.SslOptions.CertificateRevocationCheckMode =
-            System.Security.Cryptography.X509Certificates.X509RevocationMode.Online;
-        handler.SslOptions.RemoteCertificateValidationCallback =
-            CreatePhysicalUatServerCertificateValidationCallback();
-        return handler;
-    }
 
     private static System.Net.Security.RemoteCertificateValidationCallback?
         CreatePhysicalUatServerCertificateValidationCallback()
@@ -1295,37 +1181,4 @@ public static class MauiProgram
         }
     }
 
-#if ANDROID || WINDOWS
-    private sealed class RealityReadinessHandler(
-        HttpMessageHandler innerHandler,
-        IRealityTransportRuntime realityTransportRuntime)
-        : DelegatingHandler(innerHandler)
-    {
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            var localPort = LocalRealityPort(request.RequestUri);
-            if (localPort is not null)
-            {
-                await EnsureReadyAsync(request.RequestUri!, localPort.Value, cancellationToken).ConfigureAwait(false);
-            }
-
-            return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task EnsureReadyAsync(Uri requestUri, int localPort, CancellationToken cancellationToken)
-        {
-            _ = localPort;
-            await realityTransportRuntime.WaitUntilReadyAsync(requestUri, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        private static int? LocalRealityPort(Uri? requestUri) =>
-            requestUri is { IsAbsoluteUri: true, IsLoopback: true, Scheme: "http" }
-                ? requestUri.Port
-                : null;
-
-    }
-#endif
 }

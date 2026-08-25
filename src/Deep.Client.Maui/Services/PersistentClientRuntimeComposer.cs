@@ -1,4 +1,3 @@
-using Deep.Client.Maui.Core.Services;
 using Deep.Client.Shared.Features;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
@@ -20,8 +19,7 @@ internal static class PersistentClientRuntimeComposer
         string sqlCipherKey,
         Func<SqliteSessionStore, SecureRecoverySessionStore,
             StoreBoundRuntimeTransportComposition> transportFactory,
-        IExternalTransportOutboxExecutor? transportOutboxExecutor,
-        DeferredVerifiedMembershipRouteCatalogProvider? membershipRouteCatalogProvider = null)
+        IExternalTransportOutboxExecutor? transportOutboxExecutor)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDbPath);
         ArgumentNullException.ThrowIfNull(featureFlags);
@@ -60,8 +58,6 @@ internal static class PersistentClientRuntimeComposer
 #else
                 messageDispatchFailureObserver: null);
 #endif
-            if (membershipRouteCatalogProvider is not null)
-                membershipRouteCatalogProvider.Bind(secureStore);
 #if DEBUG && DEEP_PHYSICAL_E2E
             PhysicalE2eAckCorrelationProvider.Bind(runtime);
 #endif

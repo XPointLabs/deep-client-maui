@@ -32,7 +32,6 @@ $sourceTreeClean = @(& git -C $repoRoot status --porcelain).Count -eq 0
 $lanes = [ordered]@{
     windowsui = 'WindowsUi'
     androiddevice = 'AndroidDevice'
-    liveinfrastructure = 'LiveInfrastructure'
 }
 $checks = [Collections.Generic.List[object]]::new()
 $laneRecords = @{}

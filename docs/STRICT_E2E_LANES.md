@@ -60,43 +60,6 @@ Raw screenshots are disabled by default. `-CaptureStubWelcomeFailure` permits a 
 
 Use `-Bootstrap live` only when all live endpoint variables are present.
 
-## Live client acceptance
-
-Set `XNODE_URLS` to between three and sixteen distinct
-`<64-lowerhex-routerId>|<https-or-loopback-http-url>` entries, plus valid HTTPS
-or explicit-loopback HTTP `DEEP_FILE_URL`, `DEEP_PUSH_URL`, and
-`DEEP_CALL_SIGNALING_BASE_URL`. Router bases must use the root path and omit
-userinfo, query, and fragment; loopback HTTP must use a literal IP rather than a
-hostname. `DEEP_STORAGE_URL` must be absent. Then run:
-
-```powershell
-.\eng\Invoke-StrictClientLane.ps1 `
-  -Lane LiveInfrastructure `
-  -ReleaseInvocationId $releaseInvocationId
-```
-
-Without `DEEP_STRICT_LIVE=1`, the live xUnit acceptance test is explicitly reported as `NOT-RUN` instead of silently passing.
-`DEEP_STORAGE_URL` cannot satisfy this release lane. Direct storage has a separate opt-in diagnostic contract (`DEEP_STRICT_DIRECT_STORAGE=1`) and is never routed evidence.
-The acceptance verifies the actual `CurrentRoute`: mode `onion-storage`, node
-indices exactly `0,1,2`, three distinct identities from the pinned set, and three unique signed
-relay RPC endpoints. Both routed store and authenticated retrieve must cross the
-router API. A forced router-API outage must fail closed without any request to a
-direct storage endpoint. The wrapper always executes this xUnit acceptance in
-`Release`; the rendered Windows and physical Android UI lanes remain explicitly
-Debug-only and do not substitute for that Release transport contract. The
-self-hosted workflow explicitly restores and builds the ViewModel test project
-in Release before invoking the wrapper's `--no-restore` live test command, so a
-clean runner cannot fail merely because Release test assets are absent.
-
-For a development-only physical survival compose that exposes canonical local
-IPv4 HTTP endpoints (for example `192.168.1.44`), set
-`DEEP_STRICT_LIVE_PHYSICAL_E2E=1` in addition to `DEEP_STRICT_LIVE=1`. This
-exact-value opt-in passes `RoutedRuntimeEndpointPolicy.PhysicalE2eDevelopment`
-through the live harness's pinned-router parser, file/push/call service URL
-checks, and routed composition factory. When absent (or set to any value other
-than exactly `1`), the harness preserves the Production policy and rejects LAN
-HTTP. This changes no application production or Release default.
-
 ## Android device lane
 
 Build the repository-owned runner as one self-contained executable for the
@@ -129,20 +92,6 @@ Build the Debug-only E2E APK. Mr. X must provision and approve a commit-bound la
 - repository-relative paths, exact SHA-256 values, and privacy-safe exact versions for `deep-android-runner.exe`, `adb.exe`, the selected `aapt.exe` or `aapt2.exe`, and `apksigner.bat`;
 - the approved inventory serial, build fingerprint, product, hardware, model, SDK, dedicated flag, Mr. X inventory approval, `ro.kernel.qemu=0`, and `physical-managed-dedicated` class;
 - the E2E package, version, APK SHA-256, and signing-certificate SHA-256.
-
-For the verified development membership route lane, the embedded survival
-environment must include both of the following or neither:
-
-```text
-DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_URL=http://<literal-local-ipv4>:<port>/api/network/membership-route-catalog
-DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_SHA256=<64-lowercase-hex>
-```
-
-This opt-in is accepted only by a non-Release `DeepPhysicalE2E=true` build with
-`SURVIVAL_ENV=Development`. One missing value, a remote/hostname/HTTPS URL, a
-different path, or a pin mismatch fails closed. The pin binds the exact
-downloaded artifact; there is no remote trust root or TOFU fallback. Omitting
-both values preserves the existing pinned-router path.
 
 That same explicit build/profile combination may use canonical literal local
 IPv4 HTTP addresses for `XNODE_URLS` and configured service endpoints:
@@ -194,7 +143,11 @@ After the account exists, retrieve and validate that public request:
 
 Provision the pair with the Android and Windows public holder keys, assemble
 the platform-specific signed `mailbox-runtime-v1` root outside the repository,
-and, before protected runtime paths enter the process, build the locked
+including `privacy-routes.v1.json`. Its raw SHA-256 must appear identically in
+the activation and Mr. X-signed policy. The primary route is
+`xnode3 -> xnode4 -> xnode1`; the disjoint fallback is
+`xnode5 -> xnode6 -> xnode2`. Both entry origins use platform-trusted HTTPS.
+Before protected runtime paths enter the process, build the locked
 signature verifier once:
 
 ```powershell
@@ -250,7 +203,7 @@ app-data root:
 ```
 
 The command uses the prebuilt locked verifier (`--no-build --no-restore`),
-checks the pin, signature, exact ten-file/three-directory inventory, pair
+checks the pin, signature, exact eleven-file/three-directory inventory, pair
 generation, activation hashes, and minimized authority before copying. It
 creates fixed same-volume owned staging and backup siblings, applies and
 revalidates the exact non-inherited three-principal DACL to every entry, then

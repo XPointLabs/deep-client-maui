@@ -1,7 +1,7 @@
 using System.Net;
 using System.Reflection;
 using System.Text.Json;
-using Deep.Client.Shared.Services;
+using Deep.Client.Maui.Core.Services;
 
 namespace Deep.Client.Maui;
 
@@ -30,12 +30,12 @@ internal static class RealityTransportConfiguration
         return bootstrap;
     }
 
-    public static IReadOnlyList<PinnedRouterEndpoint> BuildRouterEndpoints(RealityBootstrap bootstrap)
+    public static IReadOnlyList<RealityRouterEndpoint> BuildRouterEndpoints(RealityBootstrap bootstrap)
     {
         ArgumentNullException.ThrowIfNull(bootstrap);
         Validate(bootstrap);
         return bootstrap.Seeds
-            .Select(seed => new PinnedRouterEndpoint(
+            .Select(seed => new RealityRouterEndpoint(
                 $"http://127.0.0.1:{seed.LocalPort}",
                 seed.RouterId))
             .ToArray();

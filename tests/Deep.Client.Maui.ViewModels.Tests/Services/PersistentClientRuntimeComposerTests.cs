@@ -21,8 +21,6 @@ public sealed class PersistentClientRuntimeComposerTests
         var statePath = Path.Combine(directory, "client-state.db");
         var executor = new ReadyExecutor();
         var transport = new AuthenticatedTransport();
-        using var membershipProvider =
-            DevLocalMembershipRouteCompositionTests.CreateProviderForCompositionTest();
         try
         {
             using (var runtime = PersistentClientRuntimeComposer.Create(
@@ -34,12 +32,10 @@ public sealed class PersistentClientRuntimeComposerTests
                        (_, _) => new StoreBoundRuntimeTransportComposition(
                            transport,
                            new DirectP2pMailboxDeliveryPolicy()),
-                       executor,
-                       membershipProvider))
+                       executor))
             {
 
                 Assert.NotNull(runtime.TransportOutbox);
-                Assert.True(membershipProvider.IsBound);
                 var item = TransportOutboxPreparedItem.Create(
                     OutboxAccountScope.FromBytes(Bytes(TransportOutboxLimits.AccountScopeBytes, 0x11)),
                     OutboxLogicalId.FromBytes(Bytes(TransportOutboxLimits.LogicalIdBytes, 0x22)),

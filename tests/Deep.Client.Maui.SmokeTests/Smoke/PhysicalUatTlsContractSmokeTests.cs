@@ -59,9 +59,9 @@ public sealed class PhysicalUatTlsContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("CreatePhysicalUatServerCertificateValidationCallback()", program,
             StringComparison.Ordinal);
-        Assert.Contains("CreatePhysicalDevelopment(", mailboxTransport,
+        Assert.Contains("new PrivacyRoutedMailboxBinaryIngress(", mailboxTransport,
             StringComparison.Ordinal);
-        Assert.Contains("serverCertificateValidationCallback", mailboxTransport,
+        Assert.DoesNotContain("serverCertificateValidationCallback", mailboxTransport,
             StringComparison.Ordinal);
         var validatorStart = program.IndexOf(
             "private static bool ValidatePhysicalUatServerCertificate(",

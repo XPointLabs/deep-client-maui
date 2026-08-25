@@ -1,4 +1,3 @@
-using Deep.Client.Shared.Services;
 using System.Net;
 
 namespace Deep.Client.Maui.Core.Services;
@@ -12,12 +11,14 @@ public sealed class RoutedRuntimeEndpointPolicy
     public static RoutedRuntimeEndpointPolicy Production { get; } = new();
 }
 
+public sealed record RealityRouterEndpoint(string BaseUrl, string ExpectedRouterId);
+
 public static class RoutedRuntimeConfiguration
 {
     public const int MinimumRouterCount = 3;
     public const int MaximumRouterCount = 16;
 
-    public static IReadOnlyList<PinnedRouterEndpoint> ParseAtLeastThree(
+    public static IReadOnlyList<RealityRouterEndpoint> ParseAtLeastThree(
         string raw,
         RoutedRuntimeEndpointPolicy? endpointPolicy = null)
     {
@@ -34,8 +35,8 @@ public static class RoutedRuntimeConfiguration
         return ValidateAtLeastThree(endpoints, policy);
     }
 
-    public static IReadOnlyList<PinnedRouterEndpoint> ValidateAtLeastThree(
-        IEnumerable<PinnedRouterEndpoint> endpoints,
+    public static IReadOnlyList<RealityRouterEndpoint> ValidateAtLeastThree(
+        IEnumerable<RealityRouterEndpoint> endpoints,
         RoutedRuntimeEndpointPolicy? endpointPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -71,15 +72,6 @@ public static class RoutedRuntimeConfiguration
         return normalized;
     }
 
-    public static void RejectDirectStorageForRoutedComposition(string? storageUrl)
-    {
-        if (!string.IsNullOrWhiteSpace(storageUrl))
-        {
-            throw new InvalidOperationException(
-                "DEEP_STORAGE_URL must be absent when routed XNODE_URLS composition is active.");
-        }
-    }
-
     public static Uri RequireLiveServiceUrl(
         string settingName,
         string? raw,
@@ -97,7 +89,7 @@ public static class RoutedRuntimeConfiguration
         return uri;
     }
 
-    private static PinnedRouterEndpoint ParseEndpoint(
+    private static RealityRouterEndpoint ParseEndpoint(
         string value,
         RoutedRuntimeEndpointPolicy endpointPolicy)
     {
@@ -109,14 +101,14 @@ public static class RoutedRuntimeConfiguration
         }
 
         return NormalizeEndpoint(
-            new PinnedRouterEndpoint(
+            new RealityRouterEndpoint(
                 value[(separator + 1)..].Trim(),
                 value[..separator].Trim()),
             endpointPolicy);
     }
 
-    private static PinnedRouterEndpoint NormalizeEndpoint(
-        PinnedRouterEndpoint endpoint,
+    private static RealityRouterEndpoint NormalizeEndpoint(
+        RealityRouterEndpoint endpoint,
         RoutedRuntimeEndpointPolicy endpointPolicy)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
@@ -138,7 +130,7 @@ public static class RoutedRuntimeConfiguration
                 "XNODE_URLS router base URLs must use the root path.");
         }
 
-        return new PinnedRouterEndpoint(uri.AbsoluteUri, routerId);
+        return new RealityRouterEndpoint(uri.AbsoluteUri, routerId);
     }
 
     private static bool IsAllowedLiveUri(

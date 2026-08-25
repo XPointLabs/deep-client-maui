@@ -25,17 +25,13 @@ internal interface IMailboxRuntimeProvisioningSource
 
 /// <summary>Debug-only adapter for the exact local Android/Windows fixture bundle.</summary>
 internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
-    Func<MailboxCredentialBundleImportOptions> importOptionsFactory,
-    Action<MailboxHolderIdentity> holderAvailable,
-    System.Net.Security.RemoteCertificateValidationCallback?
-        serverCertificateValidationCallback) : IMailboxRuntimeProvisioningSource
+    Func<MailboxRuntimeProvisioning> provisioningFactory,
+    Action<MailboxHolderIdentity> holderAvailable) : IMailboxRuntimeProvisioningSource
 {
-    private readonly Func<MailboxCredentialBundleImportOptions> importOptionsFactory =
-        importOptionsFactory ?? throw new ArgumentNullException(nameof(importOptionsFactory));
+    private readonly Func<MailboxRuntimeProvisioning> provisioningFactory =
+        provisioningFactory ?? throw new ArgumentNullException(nameof(provisioningFactory));
     private readonly Action<MailboxHolderIdentity> holderAvailable =
         holderAvailable ?? throw new ArgumentNullException(nameof(holderAvailable));
-    private readonly System.Net.Security.RemoteCertificateValidationCallback?
-        serverCertificateValidationCallback = serverCertificateValidationCallback;
 
     public async Task<ProvisionedMailboxRuntime> ProvisionAsync(
         SqliteSessionStore store,
@@ -44,8 +40,9 @@ internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
         CancellationToken cancellationToken = default)
     {
         holderAvailable(holder);
-        var options = importOptionsFactory() ?? throw new InvalidOperationException(
-            "The DEV-local mailbox provisioning factory returned no options.");
+        var provisioning = provisioningFactory() ?? throw new InvalidOperationException(
+            "The DEV-local mailbox provisioning factory returned no runtime.");
+        var options = provisioning.ImportOptions;
         var material = await MailboxCredentialBundleImporter.ImportAsync(
             store, holder, options, ownership, cancellationToken).ConfigureAwait(false);
 #if DEBUG && DEEP_PHYSICAL_E2E
@@ -59,10 +56,10 @@ internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
                 : recipient == material.PeerSessionId
                     ? material.PeerSelector
                     : null,
-            HttpClientMailboxBinaryIngress.CreatePhysicalDevelopment(
-                material.PhysicalCoordinator,
-                material.DecodePolicies,
-                serverCertificateValidationCallback),
+            new PrivacyRoutedMailboxBinaryIngress(
+                provisioning.PrivacyRoutes.Primary,
+                provisioning.PrivacyRoutes.Fallback,
+                material.DecodePolicies),
             options.TimeProvider);
 #else
         throw new InvalidOperationException(
@@ -102,20 +99,17 @@ internal sealed class StoreBoundNativeMau2Transport :
     public StoreBoundNativeMau2Transport(
         SqliteSessionStore store,
         SecureRecoverySessionStore secureStore,
-        Func<MailboxCredentialBundleImportOptions> importOptionsFactory,
+        Func<MailboxRuntimeProvisioning> provisioningFactory,
         Action<MailboxHolderIdentity> holderAvailable,
         MailboxInfrastructureOwnership ownership,
         ClientFeatureFlags featureFlags,
-        IMailboxDispatchRouteUsageObserver? routeUsageObserver = null,
-        System.Net.Security.RemoteCertificateValidationCallback?
-            serverCertificateValidationCallback = null)
+        IMailboxDispatchRouteUsageObserver? routeUsageObserver = null)
         : this(
             store,
             secureStore,
             new DevelopmentMailboxRuntimeProvisioningSource(
-                importOptionsFactory,
-                holderAvailable,
-                serverCertificateValidationCallback),
+                provisioningFactory,
+                holderAvailable),
             ownership,
             featureFlags,
             routeUsageObserver)

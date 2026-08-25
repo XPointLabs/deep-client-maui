@@ -21,7 +21,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
     private readonly ClientRuntime runtime;
     private readonly INetworkStatusService networkStatusService;
     private readonly IPushRegistrationCoordinator pushRegistration;
-    private readonly ITransportRouteProvider routeProvider;
+    private readonly PrivacyMailboxRouteDiagnostics routeDiagnostics;
     private readonly RuntimeEnvironmentOptions environment;
     private readonly IPrivacyScreenService privacyScreen;
     private readonly IAppLockService appLock;
@@ -34,7 +34,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         ClientRuntime runtime,
         INetworkStatusService networkStatusService,
         IPushRegistrationCoordinator pushRegistration,
-        ITransportRouteProvider routeProvider,
+        PrivacyMailboxRouteDiagnostics routeDiagnostics,
         RuntimeEnvironmentOptions environment,
         IPrivacyScreenService privacyScreen,
         IAppLockService appLock,
@@ -46,7 +46,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         this.runtime = runtime;
         this.networkStatusService = networkStatusService;
         this.pushRegistration = pushRegistration;
-        this.routeProvider = routeProvider;
+        this.routeDiagnostics = routeDiagnostics;
         this.environment = environment;
         this.privacyScreen = privacyScreen;
         this.appLock = appLock;
@@ -172,9 +172,7 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
     {
         try
         {
-            var account = await runtime.Accounts.GetActiveAccountAsync();
-            var targetKey = account?.SessionId.Value ?? "local-client";
-            var snapshot = routeProvider.CurrentRoute ?? await routeProvider.RefreshRouteAsync(targetKey);
+            var snapshot = routeDiagnostics.Current;
             if (!string.Equals(section, "path", StringComparison.OrdinalIgnoreCase))
             {
                 return;
@@ -956,14 +954,15 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         };
     }
 
-    private async Task<IReadOnlyList<PathNodeDisplay>> BuildRouteNodesAsync(TransportRouteSnapshot? snapshot)
+    private async Task<IReadOnlyList<PathNodeDisplay>> BuildRouteNodesAsync(
+        PrivacyMailboxRouteDiagnosticSnapshot? snapshot)
     {
         var nodes = new List<PathNodeDisplay>
         {
             new("Вы", null, true)
         };
 
-        if (snapshot is null || snapshot.Nodes.Count == 0)
+        if (snapshot is null || snapshot.Primary.Count == 0)
         {
             nodes.Add(new PathNodeDisplay(
                 "Маршрут пока не использовался",
@@ -972,14 +971,14 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         }
         else
         {
-            foreach (var routeNode in snapshot.Nodes.OrderBy(static node => node.Index))
+            foreach (var routeNode in snapshot.Primary.OrderBy(static node => node.Index))
             {
                 var role = routeNode.Index == 0 ? "Узел входа" : "Сервисная нода";
                 var ip = ResolveRouteIp(routeNode);
                 var country = ip is null
                     ? null
                     : await ipCountryLookup.LookupCountryAsync(ip);
-                nodes.Add(new PathNodeDisplay(role, country ?? "Страна не определена", routeNode.IsReachable));
+                nodes.Add(new PathNodeDisplay(role, country ?? "Страна не определена", true));
             }
         }
 
@@ -987,20 +986,10 @@ public partial class SettingsDetailPage : ContentPage, IQueryAttributable
         return nodes;
     }
 
-    private static string? ResolveRouteIp(TransportRouteNode node)
+    private static string? ResolveRouteIp(PrivacyMailboxRouteDiagnosticHop node)
     {
-        if (System.Net.IPAddress.TryParse(node.PublicIp, out var publicIp))
-        {
-            return publicIp.ToString();
-        }
-
-        if (System.Net.IPAddress.TryParse(node.PublicHost, out var publicHost))
-        {
-            return publicHost.ToString();
-        }
-
-        return Uri.TryCreate(node.Endpoint, UriKind.Absolute, out var endpoint) &&
-               System.Net.IPAddress.TryParse(endpoint.Host, out var endpointIp)
+        return node.PublicIngress is { } ingress &&
+               System.Net.IPAddress.TryParse(ingress.Host, out var endpointIp)
             ? endpointIp.ToString()
             : null;
     }

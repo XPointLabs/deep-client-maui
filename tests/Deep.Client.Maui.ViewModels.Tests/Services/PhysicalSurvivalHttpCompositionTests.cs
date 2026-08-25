@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
 using Deep.Client.Maui.Core.Services;
-using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Features;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Platform;
@@ -75,25 +74,6 @@ public sealed class PhysicalSurvivalHttpCompositionTests
         await Assert.ThrowsAsync<HttpRequestException>(
             () => calls.ReceiveAsync(sessionId));
 
-        var envelope = CreateEnvelope(sessionId, SessionId.CreateNew());
-        using (var sessionProvider = BuildDirectSessionBranch(
-                   factories,
-                   "https://192.168.1.44:41820/"))
-        {
-            var session = sessionProvider.GetRequiredService<HttpSessionTransport>();
-            await Assert.ThrowsAsync<HttpRequestException>(
-                () => session.SendAsync(envelope));
-        }
-        using (var storageProvider = BuildDirectStorageBranch(
-                   factories,
-                   "https://192.168.1.44:41820/"))
-        {
-            var storage = storageProvider
-                .GetRequiredService<SessionStorageMessageTransport>();
-            await Assert.ThrowsAsync<InvalidOperationException>(
-                () => storage.SendAsync(envelope));
-        }
-
         Assert.Equal(2, fileDestinations.Count);
         Assert.All(
             fileDestinations,
@@ -103,7 +83,7 @@ public sealed class PhysicalSurvivalHttpCompositionTests
                 Assert.Equal(41821, destination.Port);
             });
         Assert.Equal(
-            [41820, 41822, 41823],
+            [41822, 41823],
             serviceDestinations.Select(item => item.Port).Order().ToArray());
         Assert.All(
             serviceDestinations,
@@ -138,43 +118,6 @@ public sealed class PhysicalSurvivalHttpCompositionTests
             provider.GetRequiredService<IPushSubscriptionTransport>);
         Assert.Throws<ArgumentException>(
             provider.GetRequiredService<ICallSignalingTransport>);
-        using var sessionProvider = BuildDirectSessionBranch(
-            factories,
-            "http://192.168.1.44:41820/");
-        using var storageProvider = BuildDirectStorageBranch(
-            factories,
-            "http://192.168.1.44:41820/");
-        Assert.Throws<ArgumentException>(
-            sessionProvider.GetRequiredService<HttpSessionTransport>);
-        Assert.Throws<ArgumentException>(
-            storageProvider.GetRequiredService<SessionStorageMessageTransport>);
-    }
-
-    private static ServiceProvider BuildDirectSessionBranch(
-        ApplicationHttpTransportFactories factories,
-        string serviceUrl)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(_ => factories.ServiceTransportFactory.CreateSession(
-            new HttpSessionTransportOptions(serviceUrl),
-            factories.ServiceClientOptions));
-        return services.BuildServiceProvider(
-            new ServiceProviderOptions { ValidateOnBuild = true });
-    }
-
-    private static ServiceProvider BuildDirectStorageBranch(
-        ApplicationHttpTransportFactories factories,
-        string serviceUrl)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(_ => factories.ServiceTransportFactory.CreateStorage(
-            new SessionStorageMessageTransportOptions(
-                serviceUrl,
-                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
-            opaque: OpaqueStorageTestDependencies.Create(),
-            clientOptions: factories.ServiceClientOptions));
-        return services.BuildServiceProvider(
-            new ServiceProviderOptions { ValidateOnBuild = true });
     }
 
     private static HttpServiceNetworkHooks CreateProbeHooks(
@@ -186,17 +129,6 @@ public sealed class PhysicalSurvivalHttpCompositionTests
                 return ValueTask.FromException<Stream>(
                     new HttpRequestException("Physical composition network probe."));
             });
-
-    private static OutboundMessageEnvelope CreateEnvelope(
-        SessionId sender,
-        SessionId recipient) =>
-        new(
-            sender,
-            recipient,
-            "probe",
-            [],
-            DateTimeOffset.UtcNow,
-            null);
 
     private static PushSubscriptionRequest CreatePushRequest() =>
         new(

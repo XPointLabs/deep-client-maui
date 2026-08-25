@@ -6,7 +6,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using Deep.Client.Shared.Services;
+using Deep.Client.Maui.Core.Services;
 using Microsoft.Maui.Storage;
 using Microsoft.Win32.SafeHandles;
 #endif
@@ -37,7 +37,7 @@ internal sealed class WindowsRealityTransport : IRealityTransportRuntime
     private readonly object processSync = new();
     private readonly IReadOnlyList<RealitySeed> bootstrapSeeds;
     private readonly RealityStartupCoordinator startupCoordinator;
-    private IReadOnlyList<PinnedRouterEndpoint> routerEndpoints;
+    private IReadOnlyList<RealityRouterEndpoint> routerEndpoints;
     private IReadOnlyList<RealitySeed> configuredSeeds;
     private Process? xrayProcess;
     private WindowsJobObject? xrayJob;
@@ -62,7 +62,7 @@ internal sealed class WindowsRealityTransport : IRealityTransportRuntime
                 $"Windows Reality transport startup remains retryable: {exception.GetType().Name}"));
     }
 
-    public IReadOnlyList<PinnedRouterEndpoint> RouterEndpoints
+    public IReadOnlyList<RealityRouterEndpoint> RouterEndpoints
     {
         get
         {

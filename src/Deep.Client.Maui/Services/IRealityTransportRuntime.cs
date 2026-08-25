@@ -1,4 +1,3 @@
-using Deep.Client.Shared.Services;
 using Deep.Client.Maui.Core.Services;
 
 namespace Deep.Client.Maui;
@@ -17,7 +16,7 @@ public enum RealityTransportEndpointSource
 /// </summary>
 public interface IRealityTransportRuntime : IAsyncDisposable
 {
-    IReadOnlyList<PinnedRouterEndpoint> RouterEndpoints { get; }
+    IReadOnlyList<RealityRouterEndpoint> RouterEndpoints { get; }
 
     RealityTransportEndpointSource EndpointSource { get; }
 
@@ -53,7 +52,7 @@ internal static class RealityTransportRuntimeFactory
 
 internal sealed record RealityTransportBinding(
     IRealityTransportRuntime Runtime,
-    IReadOnlyList<PinnedRouterEndpoint> RouterEndpoints);
+    IReadOnlyList<RealityRouterEndpoint> RouterEndpoints);
 
 internal static class RealityTransportBindingResolver
 {
@@ -83,12 +82,12 @@ internal static class RealityTransportBindingResolver
 }
 
 internal sealed class ConfiguredRealityTransportRuntime(
-    IReadOnlyList<PinnedRouterEndpoint> routerEndpoints) : IRealityTransportRuntime
+    IReadOnlyList<RealityRouterEndpoint> routerEndpoints) : IRealityTransportRuntime
 {
-    private readonly IReadOnlyList<PinnedRouterEndpoint> endpoints =
+    private readonly IReadOnlyList<RealityRouterEndpoint> endpoints =
         routerEndpoints?.ToArray() ?? throw new ArgumentNullException(nameof(routerEndpoints));
 
-    public IReadOnlyList<PinnedRouterEndpoint> RouterEndpoints => endpoints;
+    public IReadOnlyList<RealityRouterEndpoint> RouterEndpoints => endpoints;
 
     public RealityTransportEndpointSource EndpointSource => RealityTransportEndpointSource.Configured;
 
@@ -113,7 +112,7 @@ internal sealed class ConfiguredRealityTransportRuntime(
 
 internal sealed class UnsupportedRealityTransportRuntime : IRealityTransportRuntime
 {
-    public IReadOnlyList<PinnedRouterEndpoint> RouterEndpoints => [];
+    public IReadOnlyList<RealityRouterEndpoint> RouterEndpoints => [];
 
     public RealityTransportEndpointSource EndpointSource => RealityTransportEndpointSource.None;
 

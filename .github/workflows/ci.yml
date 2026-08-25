@@ -76,7 +76,7 @@ jobs:
       - name: Restore pinned MAUI workloads
         working-directory: deep-client-maui
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
-      - name: Execute compiled Release routed composition guard
+      - name: Execute compiled Release privacy composition guard
         shell: pwsh
         working-directory: deep-client-maui
         run: |

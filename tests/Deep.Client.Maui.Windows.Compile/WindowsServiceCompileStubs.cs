@@ -48,7 +48,7 @@ namespace Deep.Client.Maui
         public static RealityBootstrap LoadEmbedded(Assembly assembly) =>
             new(1, []);
 
-        public static IReadOnlyList<Deep.Client.Shared.Services.PinnedRouterEndpoint> BuildRouterEndpoints(
+        public static IReadOnlyList<Deep.Client.Maui.Core.Services.RealityRouterEndpoint> BuildRouterEndpoints(
             RealityBootstrap bootstrap) => [];
 
         public static string BuildXrayConfig(IReadOnlyList<RealitySeed> seeds) => "{}";

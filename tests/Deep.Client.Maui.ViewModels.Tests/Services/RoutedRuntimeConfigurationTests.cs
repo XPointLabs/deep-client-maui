@@ -1,8 +1,5 @@
 using Deep.Client.Maui.Core.Services;
-using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
-using System.Collections.Concurrent;
-using System.Net;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
 
@@ -42,24 +39,13 @@ public sealed class RoutedRuntimeConfigurationTests
     {
         var endpoints = new[]
         {
-            new PinnedRouterEndpoint("https://router-one.example", RouterOne),
-            new PinnedRouterEndpoint("https://router-one.example/", RouterTwo),
-            new PinnedRouterEndpoint("https://router-three.example", RouterThree)
+            new RealityRouterEndpoint("https://router-one.example", RouterOne),
+            new RealityRouterEndpoint("https://router-one.example/", RouterTwo),
+            new RealityRouterEndpoint("https://router-three.example", RouterThree)
         };
 
         Assert.Throws<InvalidOperationException>(() =>
             RoutedRuntimeConfiguration.ValidateAtLeastThree(endpoints));
-    }
-
-    [Fact]
-    public void RoutedComposition_RejectsAnyDirectStorageSetting()
-    {
-        RoutedRuntimeConfiguration.RejectDirectStorageForRoutedComposition(null);
-        RoutedRuntimeConfiguration.RejectDirectStorageForRoutedComposition(" ");
-
-        Assert.Throws<InvalidOperationException>(() =>
-            RoutedRuntimeConfiguration.RejectDirectStorageForRoutedComposition(
-                "http://127.0.0.1:18100"));
     }
 
     [Theory]
@@ -184,200 +170,4 @@ public sealed class RoutedRuntimeConfigurationTests
             RoutedRuntimeConfiguration.ParseAtLeastThree(value));
     }
 
-    [Fact]
-    public async Task ProductionFactory_ResolvesRealRoutedTypesAndRejectsInvalidWireBeforeNetwork()
-    {
-        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
-            $"{RouterOne}|https://router-one.example/",
-            $"{RouterTwo}|https://router-two.example/",
-            $"{RouterThree}|https://router-three.example/"));
-        var handler = new RouterOutageHandler(endpoints);
-        var composition = RoutedProductionCompositionFactory.Create(
-            endpoints,
-            directStorageUrl: null,
-            new HttpClient(handler),
-            new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
-            OpaqueStorageTestDependencies.Create());
-
-        Assert.IsType<XNodeRpcClient>(composition.RouteProvider);
-        Assert.IsType<RoutedSessionStorageMessageTransport>(composition.SessionMessageTransport);
-        Assert.Same(composition.Router, composition.RouteProvider);
-        Assert.Same(composition.MessageTransport, composition.SessionMessageTransport);
-        Assert.Equal(endpoints, composition.PinnedRouters);
-
-        var exception = await Record.ExceptionAsync(() =>
-            composition.SessionMessageTransport.SendAsync(new OutboundMessageEnvelope(
-                new SessionId("sender"),
-                new SessionId("recipient"),
-                "must-fail-closed",
-                [],
-                DateTimeOffset.UtcNow,
-                null)));
-
-        Assert.NotNull(exception);
-        Assert.Equal(0, handler.RequestCount);
-        Assert.Empty(handler.UnexpectedDestinations);
-    }
-
-    [Fact]
-    public void ProductionFactory_DefaultOpaqueModeFailsClosedWithoutExplicitP03Dependencies()
-    {
-        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
-            $"{RouterOne}|https://router-one.example/",
-            $"{RouterTwo}|https://router-two.example/",
-            $"{RouterThree}|https://router-three.example/"));
-
-        var error = Assert.Throws<InvalidOperationException>(() =>
-            RoutedProductionCompositionFactory.Create(
-                endpoints,
-                directStorageUrl: null,
-                new HttpClient(),
-                new RoutedSessionStorageTransportOptions(),
-                opaqueDependencies: null));
-
-        Assert.Equal(
-            "Opaque P03 routed storage requires explicit capability, crypto and replay dependencies.",
-            error.Message);
-    }
-
-    [Fact]
-    public void ProductionFactory_RejectsDirectStorageAndTooFewRouters()
-    {
-        var valid = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
-            $"{RouterOne}|https://router-one.example/",
-            $"{RouterTwo}|https://router-two.example/",
-            $"{RouterThree}|https://router-three.example/"));
-
-        Assert.Throws<InvalidOperationException>(() =>
-            RoutedProductionCompositionFactory.Create(
-                valid,
-                "https://storage.example/",
-                new HttpClient(),
-                new RoutedSessionStorageTransportOptions(),
-                OpaqueStorageTestDependencies.Create()));
-        Assert.Throws<InvalidOperationException>(() =>
-            RoutedProductionCompositionFactory.Create(
-                valid.Take(2),
-                directStorageUrl: null,
-                new HttpClient(),
-                new RoutedSessionStorageTransportOptions(),
-                OpaqueStorageTestDependencies.Create()));
-    }
-
-    [Fact]
-    public void ProductionFactory_AcceptsRedundantPinnedRouters()
-    {
-        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
-            $"{RouterOne}|https://router-one.example/",
-            $"{RouterTwo}|https://router-two.example/",
-            $"{RouterThree}|https://router-three.example/",
-            $"{RouterFour}|https://router-four.example/"));
-
-        var composition = RoutedProductionCompositionFactory.Create(
-            endpoints,
-            directStorageUrl: null,
-            new HttpClient(),
-            new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
-            OpaqueStorageTestDependencies.Create());
-
-        Assert.Equal(endpoints, composition.PinnedRouters);
-    }
-
-    [Fact]
-    public void ProductionFactory_RejectsLanHttpRouters()
-    {
-        var endpoints = new[]
-        {
-            new PinnedRouterEndpoint("http://192.168.50.10:29281/", RouterOne),
-            new PinnedRouterEndpoint("http://10.20.30.40:29282/", RouterTwo),
-            new PinnedRouterEndpoint("http://172.20.30.40:29283/", RouterThree)
-        };
-
-        Assert.Throws<InvalidOperationException>(() =>
-            RoutedProductionCompositionFactory.Create(
-                endpoints,
-                directStorageUrl: null,
-                new HttpClient(),
-                new RoutedSessionStorageTransportOptions(
-                    MetadataMode: SessionStorageMetadataMode.OpaqueP03),
-                OpaqueStorageTestDependencies.Create()));
-
-    }
-
-    [Fact]
-    public async Task VerifiedFactory_UsesOnlyMembershipProviderAndFailsClosed()
-    {
-        var endpoints = RoutedRuntimeConfiguration.ParseAtLeastThree(string.Join(';',
-            $"{RouterOne}|https://router-one.example/",
-            $"{RouterTwo}|https://router-two.example/",
-            $"{RouterThree}|https://router-three.example/"));
-        var routerHandler = new RouterOutageHandler(endpoints);
-        var provider = new FailingMembershipProvider();
-        using var composition = RoutedProductionCompositionFactory.CreateVerified(
-            endpoints,
-            directStorageUrl: null,
-            new HttpClient(routerHandler),
-            new RoutedSessionStorageTransportOptions(
-                MetadataMode: SessionStorageMetadataMode.OpaqueP03),
-            OpaqueStorageTestDependencies.Create(),
-            provider);
-
-        var error = await Assert.ThrowsAsync<MembershipRouteCatalogException>(
-            () => composition.Router.RefreshRouteAsync("opaque-target"));
-
-        Assert.Equal("Verified membership catalog unavailable.", error.Message);
-        Assert.Equal(1, provider.RequestCount);
-        Assert.Equal(0, routerHandler.RequestCount);
-        Assert.Same(provider, composition.MembershipRouteCatalogProvider);
-    }
-
-    private sealed class RouterOutageHandler(
-        IReadOnlyList<PinnedRouterEndpoint> endpoints) : HttpMessageHandler
-    {
-        private readonly HashSet<string> allowedOrigins = endpoints
-            .Select(static endpoint => new Uri(endpoint.BaseUrl).GetLeftPart(UriPartial.Authority))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentQueue<string> unexpectedDestinations = new();
-        private int requestCount;
-
-        public int RequestCount => Volatile.Read(ref requestCount);
-
-        public IReadOnlyList<string> UnexpectedDestinations => unexpectedDestinations.ToArray();
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            Interlocked.Increment(ref requestCount);
-            var destination = request.RequestUri?.GetLeftPart(UriPartial.Authority) ?? "<missing>";
-            if (!allowedOrigins.Contains(destination))
-            {
-                unexpectedDestinations.Enqueue(destination);
-            }
-
-            return Task.FromException<HttpResponseMessage>(
-                new HttpRequestException(
-                    HttpRequestError.ConnectionError,
-                    "Pinned router API is unavailable.",
-                    inner: null,
-                    statusCode: HttpStatusCode.ServiceUnavailable));
-        }
-    }
-
-    private sealed class FailingMembershipProvider : IMembershipRouteCatalogProvider
-    {
-        private int requestCount;
-
-        public int RequestCount => Volatile.Read(ref requestCount);
-
-        public Task<MembershipRouteCatalogSnapshot> GetCatalogAsync(
-            CancellationToken cancellationToken = default)
-        {
-            Interlocked.Increment(ref requestCount);
-            throw new MembershipRouteCatalogException(
-                "Verified membership catalog unavailable.");
-        }
-    }
 }

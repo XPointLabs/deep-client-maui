@@ -1,7 +1,7 @@
 ﻿# Deep Client MAUI
 
 `deep-client-maui` is the production .NET MAUI client for Deep over XPoint
-Network. Shared protocol, encrypted persistence, E2EE, onion routing, groups,
+Network. Shared protocol, encrypted persistence, E2EE, Deep-native privacy routing, groups,
 attachments, push subscriptions, and call signaling live in
 `deep-client-shared`; this repository owns the MAUI UX and native platform
 integration.
@@ -50,18 +50,19 @@ Platform caveats/workarounds are documented in `docs/ARCHITECTURE.md`.
 
 Runtime transport behavior:
 
-- Debug builds can use local stub mode for deterministic UI behavior.
-- Non-Debug builds require at least three (and at most sixteen) unique authenticated XPoint onion routers and fail
-  closed when production trust/configuration is missing.
-- Routed composition requires between three and sixteen lowercase pinned
-  `<64-hex-routerId>|<absolute-url>` entries. Router bases reject
-  userinfo/query/fragment and non-root paths; HTTP is accepted only for a
-  literal loopback IP. Any simultaneous `DEEP_STORAGE_URL` is rejected.
-- `MauiProgram` and Release tests use the same Core production-composition
-  factory for the real route provider and routed session transport.
-- `DEEP_STORAGE_URL` is Debug-only direct-storage diagnostics. It cannot satisfy
-  routed release evidence and is never a fallback after router failure.
-- `DEEP_TRANSPORT_BASE_URL` remains Debug-only for a custom diagnostic HTTP message API.
+- Physical Debug MAU2 loads an exact app-private `privacy-routes.v1.json` bound
+  by both `activation.v1.json` and the Mr. X-signed mailbox policy.
+- Primary and fallback routes each contain exactly three independent X25519
+  hops. All six router identities and keys, and both HTTPS ingress origins, must
+  be distinct. The Survival order is `xnode3 -> xnode4 -> xnode1` with fallback
+  `xnode5 -> xnode6 -> xnode2`.
+- Canonical MAU2 is sealed through `PrivacyRoutedMailboxBinaryIngress`.
+  Fallback is permitted only after a definite pre-forward rejection. There is
+  no direct MAU2, Session RPC, routed-storage, or raw HTTP message fallback.
+- Non-Debug builds remain fail-closed until production mailbox credentials and
+  an independently approved production privacy-route artifact are available.
+- `XNODE_URLS` and the Reality runtime support node diagnostics and adjacent
+  transport work only; they are not the mailbox message path.
 
 Persistent transport outbox is fail-closed. `DEEP_PERSISTENT_TRANSPORT_OUTBOX=1`
 is accepted only when the fixed Windows worker
@@ -72,19 +73,6 @@ client principal, and the worker completes an authenticated live probe.
 Otherwise the effective feature remains disabled and normal message transport
 continues. No production worker is packaged yet, and Android intentionally has
 no executor registration; see `docs/ARCHITECTURE.md`.
-
-For the separate Debug direct-storage diagnostic lane only, set:
-
-```powershell
-$env:DEEP_STORAGE_URL = "http://127.0.0.1:18100"
-$env:DEEP_STRICT_DIRECT_STORAGE = "1"
-```
-
-Set `DEEP_TRANSPORT_BASE_URL` only when using custom real HTTP transport endpoints, for example:
-
-```powershell
-$env:DEEP_TRANSPORT_BASE_URL = "http://127.0.0.1:18081"
-```
 
 Optional call signaling endpoint (used when calls are enabled):
 
@@ -105,12 +93,11 @@ embedded `deep.release.env`, `deep.bootstrap.json`, and the generated embedded
 Windows environment resource. OS environment variables and loose config files
 are accepted only in Debug builds.
 
-Production Android and Windows builds do not use public HTTP(S) node URLs. They embed three
-signed bootstrap anchors from `deep.bootstrap.json`, start `XTLS/libXray`, and
-connect to each seed over VLESS Reality using the node origin IP. Session RPC is
-available to the managed client only through three loopback listeners. The seed
-then returns a dynamic three-hop route whose relay contacts are verified with
-the nodes' Ed25519 identities.
+Production Android and Windows keep the signed Reality bootstrap for node
+diagnostics and adjacent transport work. It does not send mailbox messages.
+Production MAU2 remains unavailable until its production credential and
+privacy-route acquisition seam is provisioned; startup fails closed instead of
+selecting Session RPC or a direct HTTP route.
 
 Windows releases are signed MSIX packages with architecture-specific Xray,
 Windows Hello app lock, WNS background activation, native notifications,

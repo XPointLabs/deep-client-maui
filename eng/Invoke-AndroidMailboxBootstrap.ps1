@@ -425,6 +425,7 @@ foreach ($required in @(
     $activationPath,
     (Join-Path $root 'authority.public.json'),
     (Join-Path $root 'revocations.v1.json'),
+    (Join-Path $root 'privacy-routes.v1.json'),
     (Join-Path $root 'mr-x-mailbox-policy.payload.json'),
     (Join-Path $root 'mr-x-mailbox-policy.signature'),
     (Join-Path $root 'mr-x-mailbox-policy.public-key'),
@@ -448,6 +449,7 @@ $relativeFiles = @(
     'activation.v1.json',
     'authority.public.json',
     'revocations.v1.json',
+    'privacy-routes.v1.json',
     'mr-x-mailbox-policy.payload.json',
     'mr-x-mailbox-policy.signature',
     'mr-x-mailbox-policy.public-key',
@@ -465,6 +467,7 @@ $signaturePath = Join-Path $root 'mr-x-mailbox-policy.signature'
 $signedPayloadPath = Join-Path $root 'mr-x-mailbox-policy.payload.json'
 $authorityPath = Join-Path $root 'authority.public.json'
 $revocationsPath = Join-Path $root 'revocations.v1.json'
+$privacyRoutesPath = Join-Path $root 'privacy-routes.v1.json'
 $manifestPath = Join-Path $generationRoot 'pair-manifest.v1.json'
 if ((Get-Item -LiteralPath $publicKeyPath).Length -ne 32 -or
     (Get-FileHash -Algorithm SHA256 -LiteralPath $publicKeyPath).Hash.ToLowerInvariant() -cne
@@ -486,6 +489,7 @@ try {
 if ($verifierExitCode -ne 0) {
     throw 'Mailbox runtime Mr. X Ed25519 approval signature is invalid.'
 }
+$signedPolicy = Get-Content -Raw -LiteralPath $signedPayloadPath | ConvertFrom-Json
 $authority = Get-Content -Raw -LiteralPath $authorityPath | ConvertFrom-Json
 $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 if ([long]$authority.issuerValidFromUnixSeconds -gt $now -or
@@ -498,6 +502,10 @@ if ((Get-FileHash -Algorithm SHA256 -LiteralPath $authorityPath).Hash.ToLowerInv
         [string]$activation.authoritySha256 -or
     (Get-FileHash -Algorithm SHA256 -LiteralPath $revocationsPath).Hash.ToLowerInvariant() -cne
         [string]$activation.revocationSnapshotSha256 -or
+    [string]$activation.privacyRoutesSha256 -cnotmatch '^[0-9a-f]{64}$' -or
+    (Get-FileHash -Algorithm SHA256 -LiteralPath $privacyRoutesPath).Hash.ToLowerInvariant() -cne
+        [string]$activation.privacyRoutesSha256 -or
+    [string]$signedPolicy.privacyRoutesSha256 -cne [string]$activation.privacyRoutesSha256 -or
     (Get-FileHash -Algorithm SHA256 -LiteralPath $manifestPath).Hash.ToLowerInvariant() -cne
         [string]$activation.pairManifestSha256) {
     throw 'Mailbox runtime independent activation hashes do not match staged bytes.'

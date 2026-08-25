@@ -5,7 +5,7 @@ using NetworkCapabilities = Android.Net.NetworkCapabilities;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
-using Deep.Client.Shared.Services;
+using Deep.Client.Maui.Core.Services;
 using Microsoft.Maui.Storage;
 #endif
 
@@ -18,7 +18,7 @@ internal sealed class AndroidRealityTransportRuntime : IRealityTransportRuntime
     private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(5);
     private static readonly object Sync = new();
     private global::LibXray.IDialerController? dialerController;
-    private readonly IReadOnlyList<PinnedRouterEndpoint> routerEndpoints;
+    private readonly IReadOnlyList<RealityRouterEndpoint> routerEndpoints;
     private readonly IReadOnlyList<RealitySeed> configuredSeeds;
     private readonly RealityStartupCoordinator startupCoordinator;
     private readonly ConnectivityManager? connectivityManager;
@@ -63,7 +63,6 @@ internal sealed class AndroidRealityTransportRuntime : IRealityTransportRuntime
         }
     }
 
-    public IReadOnlyList<PinnedRouterEndpoint> RouterEndpoints => routerEndpoints;
 
     public RealityTransportEndpointSource EndpointSource => RealityTransportEndpointSource.Embedded;
 

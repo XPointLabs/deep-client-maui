@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('WindowsUi', 'AndroidDevice', 'LiveInfrastructure')]
+    [ValidateSet('WindowsUi', 'AndroidDevice')]
     [string]$Lane,
 
     [Parameter(Mandatory)]
@@ -22,8 +22,7 @@ param(
     [string]$AndroidLabPolicyPath,
     [string]$MrXPublicKeySha256,
     [switch]$AllowSyntheticLabPolicyForContractTests,
-    [switch]$CaptureStubWelcomeFailure,
-    [switch]$ValidateLiveConfigurationOnly
+    [switch]$CaptureStubWelcomeFailure
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,99 +54,6 @@ function Add-Check {
         status = $(if ($Passed) { 'passed' } else { 'blocked' })
         detail = $Detail
     })
-}
-
-function Has-Value {
-    param([string]$Name)
-    return -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name))
-}
-
-function Test-StrictLiveUrl {
-    param(
-        [string]$Value,
-        [switch]$RequireRootPath
-    )
-    $uri = $null
-    if ([string]::IsNullOrWhiteSpace($Value) -or
-        -not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$uri)) {
-        return $false
-    }
-    if ([string]::IsNullOrWhiteSpace($uri.Host) -or
-        -not [string]::IsNullOrEmpty($uri.UserInfo) -or
-        -not [string]::IsNullOrEmpty($uri.Query) -or
-        -not [string]::IsNullOrEmpty($uri.Fragment) -or
-        ($RequireRootPath -and $uri.AbsolutePath -cne '/')) {
-        return $false
-    }
-    if ($uri.Scheme -ceq 'https') {
-        return $true
-    }
-    $literalAddress = $null
-    return $uri.Scheme -ceq 'http' -and
-        [Net.IPAddress]::TryParse($uri.DnsSafeHost, [ref]$literalAddress) -and
-        [Net.IPAddress]::IsLoopback($literalAddress)
-}
-
-function Test-LiveConfiguration {
-    $acceptedEndpointDetail = 'configured with HTTPS or explicit loopback HTTP'
-    $requiredEndpointDetail = 'required and must use HTTPS or explicit loopback HTTP'
-    $rawRouters = [Environment]::GetEnvironmentVariable('XNODE_URLS')
-    $routerEntries = @(if ([string]::IsNullOrWhiteSpace($rawRouters)) {
-        @()
-    } else {
-        @($rawRouters.Split(
-            @(';', ',', "`n", "`r", "`t", ' '),
-            [StringSplitOptions]::RemoveEmptyEntries) |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    })
-    $parsedRouters = @($routerEntries | ForEach-Object {
-        $separator = $_.IndexOf('|')
-        if ($separator -le 0 -or $separator -eq $_.Length - 1) {
-            return $null
-        }
-        $routerId = $_.Substring(0, $separator).Trim()
-        $routerUrl = $_.Substring($separator + 1).Trim()
-        if ($routerId -cnotmatch '^[0-9a-f]{64}$') {
-            return $null
-        }
-        $uri = $null
-        if (-not [Uri]::TryCreate($routerUrl, [UriKind]::Absolute, [ref]$uri) -or
-            -not (Test-StrictLiveUrl -Value $routerUrl -RequireRootPath)) {
-            return $null
-        }
-        [pscustomobject]@{ routerId = $routerId; url = $uri.AbsoluteUri }
-    })
-    $maximumRouterCount = 16
-    $validRouters = $routerEntries.Count -ge 3 -and $routerEntries.Count -le $maximumRouterCount -and
-        $parsedRouters.Count -eq $routerEntries.Count -and
-        @($parsedRouters | Where-Object { $null -eq $_ }).Count -eq 0 -and
-        @($parsedRouters | ForEach-Object { $_.routerId } | Sort-Object -Unique).Count -eq $routerEntries.Count -and
-        @($parsedRouters | ForEach-Object { $_.url } | Sort-Object -Unique).Count -eq $routerEntries.Count
-    Add-Check 'routed-message-endpoint' $validRouters $(if ($validRouters) {
-        "between three and sixteen distinct pinned router identities and URLs; $acceptedEndpointDetail"
-    } else {
-        "XNODE_URLS must contain between three and sixteen distinct <64-lowerhex-routerId>|<url> entries; $requiredEndpointDetail"
-    })
-    $directStorageAbsent = -not (Has-Value 'DEEP_STORAGE_URL')
-    Add-Check 'direct-storage-absent' $directStorageAbsent $(if ($directStorageAbsent) {
-        'DEEP_STORAGE_URL is absent'
-    } else {
-        'DEEP_STORAGE_URL is forbidden in routed live evidence'
-    })
-    foreach ($name in @('DEEP_FILE_URL', 'DEEP_PUSH_URL', 'DEEP_CALL_SIGNALING_BASE_URL')) {
-        $valid = Test-StrictLiveUrl -Value ([Environment]::GetEnvironmentVariable($name))
-        Add-Check $name $valid $(if ($valid) {
-            $acceptedEndpointDetail
-        } else {
-            $requiredEndpointDetail
-        })
-    }
-}
-
-if ($ValidateLiveConfigurationOnly -and
-    ($Lane -cne 'LiveInfrastructure' -or $Bootstrap -cne 'live')) {
-    throw 'ValidateLiveConfigurationOnly requires Lane=LiveInfrastructure and Bootstrap=live.'
 }
 
 function Write-Preflight {
@@ -1308,41 +1214,4 @@ if ($Lane -eq 'AndroidDevice') {
     exit 0
 }
 
-Test-LiveConfiguration
-$blocked = @($checks.Where({ $_.status -ne 'passed' })).Count -gt 0
-Write-Preflight $(if ($blocked) { 'failed' } else { 'ready' }) | Out-Null
-if ($blocked) {
-    Write-LaneResult 'blocked' $null 'machine-readable preflight'
-    exit 2
-}
-if ($ValidateLiveConfigurationOnly) {
-    Write-LaneResult 'passed' $null 'live configuration contract'
-    exit 0
-}
-
-$env:DEEP_STRICT_LIVE = '1'
-$trxName = 'strict-live-infrastructure.trx'
-dotnet test (Join-Path $repoRoot 'tests\Deep.Client.Maui.ViewModels.Tests\Deep.Client.Maui.ViewModels.Tests.csproj') `
-    --configuration Release `
-    --no-restore `
-    --filter 'FullyQualifiedName~ClientLiveAcceptanceTests' `
-    --logger "trx;LogFileName=$trxName" `
-    --results-directory $ArtifactDirectory
-$testExit = $LASTEXITCODE
-$trxPath = Join-Path $ArtifactDirectory $trxName
-if (-not (Test-Path -LiteralPath $trxPath)) {
-    Add-Check 'live-test-contract' $false 'TRX was missing'
-    Write-Preflight 'failed' | Out-Null
-    Write-LaneResult 'failed' $null 'TRX missing'
-    exit 3
-}
-
-$counters = Read-TrxCounters $trxPath
-Remove-PrivateArtifact $trxPath
-$zeroSkipPassed = $counters.executed -gt 0 -and $counters.skipped -eq 0 -and $counters.failed -eq 0
-Add-Check 'zero-skip-gate' $zeroSkipPassed ("executed={0}; skipped={1}; failed={2}" -f $counters.executed, $counters.skipped, $counters.failed)
-Write-Preflight $(if ($zeroSkipPassed -and $testExit -eq 0) { 'passed' } else { 'failed' }) | Out-Null
-Write-LaneResult $(if ($zeroSkipPassed -and $testExit -eq 0) { 'passed' } else { 'failed' }) $counters 'live infrastructure acceptance'
-if (-not $zeroSkipPassed -or $testExit -ne 0) {
-    exit 4
-}
+throw 'The selected strict lane did not terminate through its owned execution path.'

@@ -82,11 +82,11 @@ try {
     # Two lanes may not reuse a lane-scoped invocation identity.
     $androidPreflight.releaseInvocationId = $releaseInvocationId
     Write-Json (Join-Path $sandbox 'preflight-androiddevice.json') $androidPreflight
-    Write-Json (Join-Path $sandbox 'result-liveinfrastructure.json') (New-Result 'LiveInfrastructure')
-    Write-Json (Join-Path $sandbox 'preflight-liveinfrastructure.json') (New-Preflight 'LiveInfrastructure')
+    Write-Json (Join-Path $sandbox 'result-windowsui.json') (New-Result 'WindowsUi')
+    Write-Json (Join-Path $sandbox 'preflight-windowsui.json') (New-Preflight 'WindowsUi')
     $summary = Invoke-Validator $sandbox
     if (($summary.checks | Where-Object lane -eq 'androiddevice').status -ne 'failed' -or
-        ($summary.checks | Where-Object lane -eq 'liveinfrastructure').status -ne 'failed') {
+        ($summary.checks | Where-Object lane -eq 'windowsui').status -ne 'failed') {
         throw "Duplicate lane invocation identity was not rejected. $($summary | ConvertTo-Json -Depth 7)"
     }
 

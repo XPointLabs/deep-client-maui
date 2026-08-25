@@ -3,8 +3,7 @@ param(
     [ValidateSet('win-x64')]
     [string]$RuntimeIdentifier = 'win-x64',
     [string]$ArtifactDirectory,
-    [switch]$ContractOnlyVerifierFailure,
-    [switch]$ContractOnlyFactoryFailure
+    [switch]$ContractOnlyVerifierFailure
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,44 +19,32 @@ $status = 'failed'
 $assemblySha256 = ''
 $failure = [System.Collections.Generic.List[string]]::new()
 $compiledDiStatus = 'not-run'
-$factoryStatus = 'not-run'
 
 function Write-GuardEvidence {
     [ordered]@{
-        schema = 'deep.survival.release-routed-composition.v1'
+        schema = 'deep.survival.release-privacy-composition.v1'
         sourceCommitSha = $sourceCommitSha
         generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
         status = $status
         assemblySha256 = $assemblySha256
         checks = @(
             [ordered]@{
-                name = 'compiled-maui-program-routed-di'
+                name = 'compiled-maui-program-privacy-di'
                 status = $compiledDiStatus
-            },
-            [ordered]@{
-                name = 'release-production-factory-behavior'
-                status = $factoryStatus
             }
         )
         failure = $failure -join '; '
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $resultPath -Encoding utf8
 }
 
-$contractModes = @($ContractOnlyVerifierFailure, $ContractOnlyFactoryFailure).Where({ $_ }).Count
+$contractModes = @($ContractOnlyVerifierFailure).Where({ $_ }).Count
 if ($contractModes -gt 0) {
     if ([Environment]::GetEnvironmentVariable('DEEP_RELEASE_GUARD_CONTRACT_TEST') -cne '1' -or
         $contractModes -ne 1) {
         throw 'Partial-failure simulation is restricted to one explicit compiled contract test.'
     }
-    if ($ContractOnlyVerifierFailure) {
-        $compiledDiStatus = 'failed'
-        $factoryStatus = 'passed'
-        $failure.Add('simulated verifier failure')
-    } else {
-        $compiledDiStatus = 'passed'
-        $factoryStatus = 'failed'
-        $failure.Add('simulated factory failure')
-    }
+    $compiledDiStatus = 'failed'
+    $failure.Add('simulated verifier failure')
     Write-GuardEvidence
     exit 1
 }
@@ -94,7 +81,7 @@ try {
             $RuntimeIdentifier)
         & $verifier $assemblyPath
         if ($LASTEXITCODE -ne 0) {
-            throw 'Compiled MauiProgram routed DI verification failed.'
+            throw 'Compiled MauiProgram privacy DI verification failed.'
         }
         $compiledDiStatus = 'passed'
     } catch {
@@ -102,22 +89,7 @@ try {
         $failure.Add($_.Exception.Message)
     }
 
-    try {
-        dotnet test `
-            (Join-Path $repoRoot 'tests\Deep.Client.Maui.ViewModels.Tests\Deep.Client.Maui.ViewModels.Tests.csproj') `
-            --configuration Release `
-            --filter 'FullyQualifiedName~RoutedRuntimeConfigurationTests.ProductionFactory_' `
-            --logger 'console;verbosity=minimal'
-        if ($LASTEXITCODE -ne 0) {
-            throw 'Release routed production factory behavior failed.'
-        }
-        $factoryStatus = 'passed'
-    } catch {
-        $factoryStatus = 'failed'
-        $failure.Add($_.Exception.Message)
-    }
-
-    if ($compiledDiStatus -ceq 'passed' -and $factoryStatus -ceq 'passed') {
+    if ($compiledDiStatus -ceq 'passed') {
         $status = 'passed'
     }
 } catch {

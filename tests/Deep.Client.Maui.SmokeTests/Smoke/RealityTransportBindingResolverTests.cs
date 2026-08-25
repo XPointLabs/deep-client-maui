@@ -36,9 +36,9 @@ public sealed class RealityTransportBindingResolverTests
     {
         var runtimeEndpoints = new[]
         {
-            new PinnedRouterEndpoint("http://127.0.0.1:51001", new string('a', 64)),
-            new PinnedRouterEndpoint("http://127.0.0.1:51002", new string('b', 64)),
-            new PinnedRouterEndpoint("http://127.0.0.1:51003", new string('c', 64))
+            new RealityRouterEndpoint("http://127.0.0.1:51001", new string('a', 64)),
+            new RealityRouterEndpoint("http://127.0.0.1:51002", new string('b', 64)),
+            new RealityRouterEndpoint("http://127.0.0.1:51003", new string('c', 64))
         };
 
         var binding = RealityTransportBindingResolver.Resolve(
@@ -60,9 +60,9 @@ public sealed class RealityTransportBindingResolverTests
 
     private sealed class FakeRuntime(
         RealityTransportEndpointSource endpointSource,
-        IReadOnlyList<PinnedRouterEndpoint> endpoints) : IRealityTransportRuntime
+        IReadOnlyList<RealityRouterEndpoint> endpoints) : IRealityTransportRuntime
     {
-        public IReadOnlyList<PinnedRouterEndpoint> RouterEndpoints { get; } = endpoints;
+        public IReadOnlyList<RealityRouterEndpoint> RouterEndpoints { get; } = endpoints;
 
         public RealityTransportEndpointSource EndpointSource { get; } = endpointSource;
 

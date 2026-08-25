@@ -123,16 +123,14 @@ public sealed class ClientSecurityContractSmokeTests
             StringComparison.Ordinal);
 
         Assert.True(compositionStart >= 0);
-        Assert.Contains("Direct-P2P transport is unavailable until a verified direct peer",
+        Assert.Contains("Direct-P2P mode requires an explicit direct transport capability.",
             program, StringComparison.Ordinal);
-        Assert.Contains("generic HTTP endpoints are rejected", program,
+        Assert.DoesNotContain("services.AddSingleton<ISessionMessageTransport>", program,
             StringComparison.Ordinal);
         Assert.DoesNotContain("new DirectP2pSessionMessageTransport", program,
             StringComparison.Ordinal);
         Assert.Contains("new RealityTransportBinding(new UnsupportedRealityTransportRuntime(), [])",
             program, StringComparison.Ordinal);
-        Assert.Contains("var storageBaseUrl = directP2p ? null", program,
-            StringComparison.Ordinal);
         Assert.Contains("var fileBaseUrl = directP2p ? null", program,
             StringComparison.Ordinal);
         Assert.Contains("var pushBaseUrl = directP2p ? null", program,
@@ -159,16 +157,6 @@ public sealed class ClientSecurityContractSmokeTests
             "new RuntimeEnvironmentOptions(\n" +
             "                    null, null, null, null, null, null, null, null, null)",
             program.Replace("\r\n", "\n", StringComparison.Ordinal),
-            StringComparison.Ordinal);
-        var directRegistration = program[
-            program.IndexOf(
-                "if (inputs.TransportMode.Protocol == RuntimeTransportProtocol.DirectP2p)",
-                StringComparison.Ordinal)..program.IndexOf(
-                "if (inputs.MembershipRouteCatalogProvider is not null)",
-                StringComparison.Ordinal)];
-        Assert.DoesNotContain("CreateSession", directRegistration,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("IRecoveryProfileLookup", directRegistration,
             StringComparison.Ordinal);
         Assert.Contains("direct is not IDirectP2pSessionMessageTransport", program,
             StringComparison.Ordinal);
@@ -295,8 +283,6 @@ public sealed class ClientSecurityContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("return null;", program, StringComparison.Ordinal);
         Assert.DoesNotContain("CreateCertificatePinningValidationCallback", program, StringComparison.Ordinal);
-        Assert.Contains("CertificateRevocationCheckMode", program, StringComparison.Ordinal);
-        Assert.Contains("X509RevocationMode.Online", program, StringComparison.Ordinal);
         Assert.Contains("connectCallback = (context, cancellationToken) =>", program, StringComparison.Ordinal);
         Assert.Contains("address.AddressFamily", program, StringComparison.Ordinal);
         Assert.Contains("FileConnectFallbackDelay", program, StringComparison.Ordinal);
@@ -399,7 +385,7 @@ public sealed class ClientSecurityContractSmokeTests
         var composer = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "Services",
             "PersistentClientRuntimeComposer.cs");
-        Assert.Contains("membershipRouteCatalogProvider.Bind(", composer, StringComparison.Ordinal);
+        Assert.DoesNotContain("membershipRouteCatalogProvider", composer, StringComparison.Ordinal);
         Assert.Contains(
             "secureStore = new SecureRecoverySessionStore(",
             composer,
@@ -464,7 +450,7 @@ public sealed class ClientSecurityContractSmokeTests
     }
 
     [Fact]
-    public void PhysicalE2eMembershipCleartextIsBuildAndRuntimeGated()
+    public void PhysicalE2ePrivacyIngressUsesOnlyPlatformTrustedTls()
     {
         var program = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "MauiProgram.cs");
@@ -476,9 +462,6 @@ public sealed class ClientSecurityContractSmokeTests
         var physicalPolicy = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "Platforms", "Android", "Resources",
             "xml", "network_security_config_physical_e2e.xml");
-        var composition = ReadWorkspaceFile(
-            "src", "Deep.Client.Maui.Core", "Services",
-            "DevLocalMembershipRouteComposition.cs");
         var httpComposition = ReadWorkspaceFile(
             "src", "Deep.Client.Maui.Core", "Services",
             "ApplicationHttpTransportComposition.cs");
@@ -511,18 +494,6 @@ public sealed class ClientSecurityContractSmokeTests
             "<certificates src=\"user\"",
             physicalPolicy,
             StringComparison.Ordinal);
-        Assert.Contains("productionBuild", composition, StringComparison.Ordinal);
-        Assert.Contains("explicitDevelopmentProfile", composition, StringComparison.Ordinal);
-        Assert.Contains("MembershipRouteEndpointPolicy.DevLocalHttps", composition, StringComparison.Ordinal);
-        Assert.Contains("new SodiumEd25519MembershipSignatureVerifier()", composition, StringComparison.Ordinal);
-        Assert.Contains(
-            "explicitDevelopmentProfile: survivalDevelopment",
-            program,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "productionBuild: !IsDebugBuild()",
-            program,
-            StringComparison.Ordinal);
         Assert.Contains(
             "var routedEndpointPolicy = RoutedRuntimeEndpointPolicy.Production",
             program,
@@ -553,14 +524,9 @@ public sealed class ClientSecurityContractSmokeTests
             "CreateFileTransportNetworkHooks(fileConnectIps)",
             program,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "RoutedRuntimeConfiguration.ValidateAtLeastThree(",
-            program,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "inputs.RoutedEndpointPolicy",
-            program,
-            StringComparison.Ordinal);
+        Assert.Contains("ResolveRealityTransportBinding(routedEndpointPolicy)",
+            program, StringComparison.Ordinal);
+        Assert.DoesNotContain("XNodeRpcClient", program, StringComparison.Ordinal);
     }
 
     private static string ReadWorkspaceFile(params string[] parts)

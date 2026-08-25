@@ -15,7 +15,7 @@ namespace Deep.Client.Maui.UiTests;
 /// </summary>
 public sealed class StrictCrossPlatformUiTests
 {
-    // A direct MAU2 send durably writes recipient and sender copies sequentially. Each
+    // A privacy-routed MAU2 send durably writes recipient and sender copies sequentially. Each
     // authenticated Store has a 15-second protocol deadline, so the rendered acceptance
     // window must also leave bounded room for cold route establishment and UIA sampling.
     private static readonly TimeSpan DirectMessageSentTimeout = TimeSpan.FromSeconds(90);

@@ -113,23 +113,6 @@ jobs:
           dotnet test tests/Deep.Client.Maui.UiTests/Deep.Client.Maui.UiTests.csproj --no-restore `
             --filter FullyQualifiedName~StrictCrossPlatformUiTests
           if ($LASTEXITCODE -ne 0) { throw 'Optional physical cross-platform UI flow failed.' }
-      - name: Prepare clean-runner Release live acceptance
-        working-directory: deep-client-maui
-        shell: pwsh
-        run: |
-          dotnet restore tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj `
-            -p:Configuration=Release
-          if ($LASTEXITCODE -ne 0) { throw 'Release ViewModel test restore failed.' }
-          dotnet build tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj `
-            --configuration Release --no-restore
-          if ($LASTEXITCODE -ne 0) { throw 'Release ViewModel test build failed.' }
-      - name: Strict pinned-router live acceptance
-        working-directory: deep-client-maui
-        shell: pwsh
-        run: |
-          ./eng/Invoke-StrictClientLane.ps1 -Lane LiveInfrastructure `
-            -ReleaseInvocationId $env:DEEP_RELEASE_INVOCATION_ID `
-            -ArtifactDirectory artifacts/survival/I01-MAUI-STRICT-GATES
       - name: Validate fresh commit-bound evidence
         working-directory: deep-client-maui
         shell: pwsh

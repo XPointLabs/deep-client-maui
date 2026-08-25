@@ -72,8 +72,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
     public void SurvivalRuntimeHasNoLegacyMetadataCompatibilityRelaxation()
     {
         var program = File.ReadAllText(WorkspacePath("src", "Deep.Client.Maui", "MauiProgram.cs"));
-        var factory = File.ReadAllText(WorkspacePath(
-            "src", "Deep.Client.Maui.Core", "Services", "RoutedProductionCompositionFactory.cs"));
+        var nativeTransport = File.ReadAllText(WorkspacePath(
+            "src", "Deep.Client.Maui", "Services", "StoreBoundNativeMau2Transport.cs"));
 
         Assert.DoesNotContain("SessionStorageMetadataMode.LegacyCompatibility", program, StringComparison.Ordinal);
         Assert.Contains("SURVIVAL_ENV", program, StringComparison.Ordinal);
@@ -92,11 +92,12 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.InRange(relaxationIndex, bootstrapIndex + 1, debugGuardEndIndex - 1);
         Assert.Contains("RuntimeTransportProtocol.AuthenticatedMau2", program, StringComparison.Ordinal);
         Assert.Contains("StoreBoundNativeMau2Transport", program, StringComparison.Ordinal);
-        Assert.Contains("bool survivalDevelopment) => new();", program, StringComparison.Ordinal);
-        Assert.Contains("RoutedSessionStorageTransportOptions transportOptions", factory, StringComparison.Ordinal);
-        Assert.Contains("OpaqueSessionStorageDependencies? opaqueDependencies", factory, StringComparison.Ordinal);
-        Assert.Contains("new RoutedSessionStorageMessageTransport(", factory, StringComparison.Ordinal);
-        Assert.Contains("opaqueDependencies);", factory, StringComparison.Ordinal);
+        Assert.Contains("new PrivacyRoutedMailboxBinaryIngress(", nativeTransport,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("HttpClientMailboxBinaryIngress", nativeTransport,
+            StringComparison.Ordinal);
+        Assert.False(File.Exists(WorkspacePath(
+            "src", "Deep.Client.Maui.Core", "Services", "RoutedProductionCompositionFactory.cs")));
     }
 
     [Fact]
@@ -155,6 +156,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("Deep.AndroidLab.PolicyVerifier", script, StringComparison.Ordinal);
         Assert.Contains("Mr. X Ed25519 approval signature is invalid", script,
             StringComparison.Ordinal);
+        Assert.Contains("privacy-routes.v1.json", script, StringComparison.Ordinal);
+        Assert.Contains("signedPolicy.privacyRoutesSha256", script, StringComparison.Ordinal);
         Assert.Contains("Get-RelativeChildPath", script, StringComparison.Ordinal);
         Assert.DoesNotContain("[IO.Path]::GetRelativePath", script, StringComparison.Ordinal);
         Assert.DoesNotContain("/data/local/tmp", script, StringComparison.Ordinal);
@@ -346,6 +349,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains(".mailbox-runtime-v1.backup", script, StringComparison.Ordinal);
         Assert.Contains("Test-RuntimeMatchesSource", script, StringComparison.Ordinal);
         Assert.Contains("Directories = $directories", script, StringComparison.Ordinal);
+        Assert.Contains("privacy-routes.v1.json", script, StringComparison.Ordinal);
+        Assert.Contains("signedPolicy.privacyRoutesSha256", script, StringComparison.Ordinal);
         Assert.DoesNotContain("[Text.Json.JsonDocument]", script, StringComparison.Ordinal);
         Assert.Contains("Published Windows mailbox runtime failed its final byte-for-byte reread.",
             script, StringComparison.Ordinal);
@@ -422,13 +427,13 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("startupProvisioning ?? MailboxRuntimeProvisioning.LoadDevelopment(", program,
             StringComparison.Ordinal);
-        Assert.Contains("VerifyEd25519Detached", File.ReadAllText(WorkspacePath(
+        Assert.Contains("PublicKeyAuth.VerifyDetached", File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Services", "MailboxRuntimeProvisioning.cs")),
             StringComparison.Ordinal);
         var publish = transport.IndexOf(
             "holderAvailable(holder);", StringComparison.Ordinal);
         var load = transport.IndexOf(
-            "var options = importOptionsFactory()", StringComparison.Ordinal);
+            "var provisioning = provisioningFactory()", StringComparison.Ordinal);
         Assert.True(publish >= 0 && publish < load);
         Assert.Contains("ed25519PublicKey", bootstrap, StringComparison.Ordinal);
         Assert.Contains("sessionId", bootstrap, StringComparison.Ordinal);

@@ -12,7 +12,7 @@ the sibling `deep-client-shared` repository.
 
 - canonical 13-word checksummed recovery phrase identity derivation;
 - end-to-end encrypted envelopes and replay protection;
-- three-hop authenticated XPoint onion routing;
+- three-hop binary Deep-native privacy routing for canonical MAU2;
 - SQLCipher repositories with exact v13 baseline attestation, durable
   inbox/outbox, and account purge;
 - one-to-one and group conversation services;
@@ -60,10 +60,9 @@ errors are reduced to a static diagnostic and never persist endpoint or
 credential material. No failure path enables a direct or unpinned fallback.
 
 Release builds require real transports, between three and sixteen unique pinned Reality
-bootstrap nodes, TLS public-key pins, encrypted local persistence, and E2EE.
-Routed composition rejects `DEEP_STORAGE_URL`; direct storage and custom direct
-HTTP transports are Debug-only diagnostics and cannot be selected by a Release
-process or used after a router failure.
+bootstrap nodes, encrypted local persistence, and E2EE. The Reality bootstrap
+does not register a Session message transport. Mailbox delivery is available
+only through the separately provisioned Deep-native privacy routes.
 
 ## Startup
 
@@ -81,11 +80,20 @@ process or used after a router failure.
 
 ## Messaging
 
-Outgoing messages are persisted to a durable outbox before dispatch. The client
-encrypts content for the recipient, selects a signed three-node route, and sends
-through local Reality listeners. Inbox synchronization verifies authenticated
-storage responses, decrypts envelopes, rejects replay, persists domain state,
-and acknowledges only after durable processing.
+Outgoing messages are persisted to the durable MAU2 outbox before dispatch.
+The physical Debug composition loads two hash-bound, fully disjoint three-hop
+privacy routes from app-private `mailbox-runtime-v1/privacy-routes.v1.json`.
+Canonical MAU2 is wrapped in a padded binary privacy frame and sent to the first
+route's public HTTPS ingress. The exit returns a reply encrypted to the
+per-attempt client key; only then does the existing mailbox adapter verify MQR3,
+MRP1, or MAR1 evidence and advance durable state. The fallback route is eligible
+only when the primary proves forwarding did not start. Direct MAU2 HTTPS,
+Session RPC, and routed-storage fallback are absent.
+
+The raw route artifact SHA-256 must equal both the activation
+`privacyRoutesSha256` and the same field in the verified Mr. X-signed policy.
+Its exact schema binds the platform, two clean HTTPS root origins, three hops
+per route, independent X25519 keys, and six distinct router identities/keys.
 
 The routed runtime accepts between three and sixteen distinct lowercase pinned identities
 and canonical router URLs. Router bases have a root path and no
@@ -108,7 +116,7 @@ helper able to receive the builder, service collection, or an opaque object
 derived from them. The guard verifies entrypoint dominance and adjacency in
 compiled control flow, scans the reachable Release call graph for direct/stub
 tokens, executes the exact entrypoint against a real final DI container, and
-binds the complete 65-descriptor Windows Release manifest. It also checks
+binds the complete 64-descriptor Windows Release manifest. It also checks
 resolved factory instances, the configured pinned set, and the absence of direct/stub
 descriptors or concretes. Conditional/dead entrypoint, pre-entrypoint
 `RegisterExtra(builder.Services)`, environment-conditional direct/stub,
@@ -120,11 +128,10 @@ runtime rendering or Android runtime/device coverage. Android Release remains a
 separate compile/package gate plus physical-device lane; this Windows compiled
 composition guard is not presented as Android runtime evidence. It also does
 not inspect framework-owned registrations created by `UseMauiApp`.
-The separate factory outage contract is executed and reported independently;
-source-text matching is not release evidence. A live route is valid only when its mode is `onion-storage`,
-indices are exactly `0,1,2`, the signed relay identity set matches the pins, and
-relay RPC endpoints are unique. Router API loss fails the operation; there is no
-direct-storage fallback.
+Source-text matching is not release evidence. The generic Reality/XNode route
+provider retained in the app graph serves diagnostics and adjacent transport
+work only. It is not an MAU2 message transport and no Session/onion storage
+message transport is registered by the MAUI composition.
 
 ### External persistent-outbox execution boundary
 
@@ -183,26 +190,14 @@ and physical-device hostile-worker/battery evidence. Until that exists, an
 Android request resolves to `UnsupportedPlatform` and the normal runtime
 continues with persistent transport outbox disabled.
 
-## Development verified membership routing
+## Development transport diagnostics
 
-Normal routed composition remains dormant with respect to membership-route
-catalogs. A Debug physical-E2E build using the explicit Survival Development
-profile may opt in only when both
-`DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_URL` and
-`DEEP_DEV_LOCAL_MEMBERSHIP_TRUST_SHA256` are present. Supplying only one value
-fails startup. The URL must be the exact catalog path on a literal local IPv4
-HTTP origin, and the pin must be a canonical lowercase SHA-256 value. Release,
-ordinary Debug, remote HTTP/HTTPS bootstrap roots, and unpinned/TOFU activation
-are rejected.
-
-The verified provider is injected into `XNodeRpcClient` with
-`RequireMembershipRouteSelection=true`. It initially fails closed and is bound
-exactly once after runtime creation to the same encrypted `SqliteSessionStore`
-already owned by `ClientRuntime`; no second database owner or key lifecycle is
-created. It uses the dev-local bootstrap overload, Sodium Ed25519 verification,
-enabled membership trust, and a bounded persistent artifact cache below
-app-private data. Pin, artifact, cache, or verification failure aborts routed
-dispatch without logging the URL, pin, identity, or artifact.
+The optional Reality/VLESS runtime is adjacent transport diagnostics only. It
+does not implement, select, or forward the privacy mailbox message path, and no
+Session RPC client or membership-route provider is registered. Privacy mailbox
+hops come only from the separately signed and activation-bound
+`privacy-routes.v1.json`; Settings projects a read-only diagnostic view from
+that active route.
 
 Android cleartext is broadened only in non-Release
 `DeepPhysicalE2E=true` packages. The normal and Release network-security
@@ -295,7 +290,7 @@ No production trusted root or update key is embedded and no update verifier is
 registered in the Release service graph. The Settings row therefore shows an
 explicit fail-closed unavailable state until Mr. X provisions a separately
 reviewed non-production trust configuration. This preserves the exact
-65-descriptor routed Release composition. Verification failure has no override,
+64-descriptor privacy-routed Release composition. Verification failure has no override,
 and the ViewModel requires an exact visible version confirmation after success.
 
 iOS, iPadOS, and Mac Catalyst remain subject to Apple signing, provisioning,

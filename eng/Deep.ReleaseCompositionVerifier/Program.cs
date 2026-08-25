@@ -13,12 +13,12 @@ const string routerOne = "111111111111111111111111111111111111111111111111111111
 const string routerTwo = "2222222222222222222222222222222222222222222222222222222222222222";
 const string routerThree = "3333333333333333333333333333333333333333333333333333333333333333";
 const string expectedDescriptorFingerprint =
-    "d30e6bb8ccce63459fa4b8eb4061ed285ea5ad9812db259fef31d2d5e37321fe";
+    "900a41b9344a289717b205e672d3d5835f78475e099c6fcc8d5f5ac3f6c76ce5";
 var pinnedRouters = new[]
 {
-    new PinnedRouterEndpoint("http://127.0.0.1:29281/", routerOne),
-    new PinnedRouterEndpoint("http://127.0.0.1:29282/", routerTwo),
-    new PinnedRouterEndpoint("http://127.0.0.1:29283/", routerThree)
+    new RealityRouterEndpoint("http://127.0.0.1:29281/", routerOne),
+    new RealityRouterEndpoint("http://127.0.0.1:29282/", routerTwo),
+    new RealityRouterEndpoint("http://127.0.0.1:29283/", routerThree)
 };
 
 try
@@ -47,11 +47,7 @@ try
     AssertCompiledNegativeFixturesAreRejected();
     AssertNameBoundConstructorBindingIsOrderIndependent();
 
-    using var routerHttpClient = new HttpClient();
-    var inputs = CreateSyntheticInputs(
-        appAssembly,
-        pinnedRouters,
-        routerHttpClient);
+    var inputs = CreateSyntheticInputs(appAssembly);
     var services = new ServiceCollection();
     configureApplicationServices.Invoke(null, [services, inputs]);
     using var provider = services.BuildServiceProvider(
@@ -84,10 +80,7 @@ static MethodInfo RequiredMethod(Type type, string name, BindingFlags flags) =>
     type.GetMethod(name, flags)
     ?? throw new InvalidOperationException($"{type.FullName}.{name} was not found.");
 
-static object CreateSyntheticInputs(
-    Assembly appAssembly,
-    IReadOnlyList<PinnedRouterEndpoint> pinnedRouters,
-    HttpClient routerHttpClient)
+static object CreateSyntheticInputs(Assembly appAssembly)
 {
     var runtimeType = appAssembly.GetType(
         "Deep.Client.Maui.Services.RuntimeEnvironmentOptions",
@@ -141,16 +134,15 @@ static object CreateSyntheticInputs(
         {
             ["FeatureFlags"] = _ =>
                 Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults,
-            ["RouterBaseUrls"] = _ => pinnedRouters,
-            ["StorageBaseUrl"] = _ => null,
-            ["RouterHttpClient"] = _ => routerHttpClient,
-            ["RoutedTransportOptions"] = _ =>
-                new RoutedSessionStorageTransportOptions(),
-            ["RoutedEndpointPolicy"] = _ =>
-                RoutedRuntimeEndpointPolicy.Production,
+            ["RealityTransportRuntime"] = _ => Activator.CreateInstance(
+                appAssembly.GetType(
+                    "Deep.Client.Maui.UnsupportedRealityTransportRuntime",
+                    throwOnError: true)!,
+                nonPublic: true),
+            ["TransportMode"] = parameterType => CreateSyntheticTransportMode(
+                parameterType),
             ["ServiceTransportFactory"] = _ => transportFactory,
             ["ServiceTransportClientOptions"] = _ => clientOptions,
-            ["MembershipRouteCatalogProvider"] = _ => null,
             ["RuntimeEnvironment"] = _ => runtime,
             ["CountryLookupFactory"] = CreateDefaultFactory,
             ["AvatarTransportFactory"] = _ => avatarFactory,
@@ -163,6 +155,18 @@ static object CreateSyntheticInputs(
             ["IceConfigurationFactory"] = _ => iceFactory,
             ["DesktopWorkspaceFactory"] = CreateDefaultFactory
         }));
+}
+
+static object CreateSyntheticTransportMode(Type transportModeType)
+{
+    var constructor = transportModeType.GetConstructors().Single();
+    var parameters = constructor.GetParameters();
+    Require(parameters.Length == 2 && parameters.All(static parameter => parameter.ParameterType.IsEnum),
+        "Runtime transport-mode constructor changed.");
+    return constructor.Invoke([
+        Enum.ToObject(parameters[0].ParameterType, 2),
+        MailboxInfrastructureOwnership.OfficialManaged
+    ]);
 }
 
 static object?[] BindNamedArguments(
@@ -212,63 +216,28 @@ static Delegate CreateDefaultFactory(Type delegateType)
 static void ValidateFinalApplicationComposition(
     IServiceCollection descriptors,
     IServiceProvider provider,
-    IReadOnlyList<PinnedRouterEndpoint> expectedRouters,
+    IReadOnlyList<RealityRouterEndpoint> expectedRouters,
     string expectedFingerprint)
 {
-    Require(descriptors.Count == 65, "Final Windows Release app-owned descriptor count changed.");
+    Require(descriptors.Count == 64, "Final Windows Release app-owned descriptor count changed.");
     var descriptorFingerprint = DescriptorFingerprint(descriptors);
     Require(
         descriptorFingerprint == expectedFingerprint,
         $"Final Windows Release app-owned descriptor manifest changed: {descriptorFingerprint}.");
-    var routeDescriptors = descriptors
-        .Where(static descriptor => descriptor.ServiceType == typeof(ITransportRouteProvider))
-        .ToArray();
     var messageDescriptors = descriptors
         .Where(static descriptor => descriptor.ServiceType == typeof(ISessionMessageTransport))
         .ToArray();
-    var routerDescriptors = descriptors
-        .Where(static descriptor => descriptor.ServiceType == typeof(XNodeRpcClient))
-        .ToArray();
-    var compositionDescriptors = descriptors
-        .Where(static descriptor => descriptor.ServiceType == typeof(RoutedProductionComposition))
-        .ToArray();
 
-    Require(routeDescriptors.Length == 1, "Expected one final route-provider descriptor.");
-    Require(messageDescriptors.Length == 1, "Expected one final message-transport descriptor.");
-    Require(routerDescriptors.Length == 1, "Expected one final XNode client descriptor.");
-    Require(compositionDescriptors.Length == 1, "Expected one final routed-composition descriptor.");
-    Require(
-        routeDescriptors[0].ImplementationInstance?.GetType() == typeof(XNodeRpcClient),
-        "Final route descriptor is not the factory XNode instance.");
-    Require(
-        messageDescriptors[0].ImplementationInstance?.GetType() ==
-            typeof(RoutedSessionStorageMessageTransport),
-        "Final message descriptor is not the routed storage transport instance.");
+    Require(messageDescriptors.Length == 0,
+        "Legacy Session message transport must not be registered.");
 
-    var routeProviders = provider.GetServices<ITransportRouteProvider>().ToArray();
     var messageTransports = provider.GetServices<ISessionMessageTransport>().ToArray();
-    var routers = provider.GetServices<XNodeRpcClient>().ToArray();
-    var compositions = provider.GetServices<RoutedProductionComposition>().ToArray();
-    Require(routeProviders.Length == 1, "Provider resolved multiple route providers.");
-    Require(messageTransports.Length == 1, "Provider resolved multiple message transports.");
-    Require(routers.Length == 1, "Provider resolved multiple XNode clients.");
-    Require(compositions.Length == 1, "Provider resolved multiple routed compositions.");
-    Require(ReferenceEquals(routeProviders[0], routers[0]), "Route provider and XNode client differ.");
-    Require(ReferenceEquals(compositions[0].Router, routers[0]), "Factory router is not the DI router.");
-    Require(
-        ReferenceEquals(compositions[0].RouteProvider, routeProviders[0]),
-        "Factory route provider is not the final DI route provider.");
-    Require(
-        ReferenceEquals(compositions[0].SessionMessageTransport, messageTransports[0]),
-        "Factory message transport is not the final DI transport.");
-    Require(
-        compositions[0].PinnedRouters.SequenceEqual(expectedRouters),
-        "Final composition does not contain the expected synthetic pin set.");
+    Require(messageTransports.Length == 0, "Provider resolved a legacy Session message transport.");
+    Require(expectedRouters.Count >= 3,
+        "Synthetic diagnostics router set is unexpectedly incomplete.");
 
     var forbidden = new[]
     {
-        typeof(DirectStorageRouteProvider),
-        typeof(SessionStorageMessageTransport),
         typeof(StubSessionBackend)
     };
     var forbiddenDescriptor = descriptors.FirstOrDefault(descriptor =>
@@ -304,19 +273,11 @@ static string DescriptorFingerprint(IServiceCollection descriptors)
 static void AssertPostEntrypointMutationIsRejected(
     MethodInfo configureApplicationServices,
     object inputs,
-    IReadOnlyList<PinnedRouterEndpoint> expectedRouters)
+    IReadOnlyList<RealityRouterEndpoint> expectedRouters)
 {
     var mutated = new ServiceCollection();
     configureApplicationServices.Invoke(null, [mutated, inputs]);
-    mutated.AddSingleton<ITransportRouteProvider>(
-        new DirectStorageRouteProvider("https://storage.invalid/"));
     mutated.AddSingleton<ISessionMessageTransport>(new StubSessionBackend());
-    mutated.TryAddSingleton(
-        new HttpServiceTransportFactory(HttpServiceEndpointPolicy.Production)
-            .CreateStorage(
-                new SessionStorageMessageTransportOptions(
-                    "https://storage.invalid/",
-                    MetadataMode: SessionStorageMetadataMode.LegacyCompatibility)));
     using var provider = mutated.BuildServiceProvider();
 
     try
@@ -494,8 +455,6 @@ static void VerifyNoReachableForbiddenTransportTokens(MethodInfo entrypoint)
 {
     var forbidden = new HashSet<string>(StringComparer.Ordinal)
     {
-        typeof(DirectStorageRouteProvider).FullName!,
-        typeof(SessionStorageMessageTransport).FullName!,
         typeof(StubSessionBackend).FullName!
     };
     var appAssembly = entrypoint.DeclaringType!.Assembly;
@@ -968,8 +927,6 @@ static class CompiledGuardFixtures
     {
         if (Environment.GetEnvironmentVariable("DEEP_GUARD_BYPASS") == "1")
         {
-            services.AddSingleton<ITransportRouteProvider>(
-                new DirectStorageRouteProvider("https://storage.invalid/"));
             services.AddSingleton<ISessionMessageTransport>(new StubSessionBackend());
         }
     }

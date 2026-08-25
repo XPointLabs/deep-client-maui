@@ -242,10 +242,6 @@ public sealed class ConversationsViewModel : ViewModelBase
         {
             if (current is ClientMailboxTransportException mailbox)
                 return $"mailbox-{(int)mailbox.Failure}";
-            if (current is MembershipRouteDirectoryUnavailableException)
-                return "membership-directory";
-            if (current is MembershipRouteCatalogException)
-                return "membership-catalog";
             if (current is DurableInboxDigestMismatchException)
                 return "inbox-corrupt";
             if (current is TransportOutboxCorruptException)

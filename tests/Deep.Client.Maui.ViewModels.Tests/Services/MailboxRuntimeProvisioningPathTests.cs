@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Text;
+using System.Text.Json;
 using Deep.Client.Maui.Services;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
@@ -59,6 +61,82 @@ public sealed class MailboxRuntimeProvisioningPathTests
         Assert.Throws<InvalidDataException>(() =>
             MailboxRuntimeProvisioning.ValidatePinnedApproval(
                 payload, signature, publicKey, pin));
+    }
+
+    [Fact]
+    public void PrivacyRoutesRequireExactDisjointThreeHopHttpsArtifact()
+    {
+        var routes = MailboxRuntimeProvisioning.ParsePrivacyRoutes(
+            Encoding.UTF8.GetBytes(PrivacyRoutesJson()),
+            "android");
+
+        Assert.Equal("https://127.0.0.1:41803/", routes.Primary.EntryOrigin.AbsoluteUri);
+        Assert.Equal("https://127.0.0.1:41805/", routes.Fallback.EntryOrigin.AbsoluteUri);
+        Assert.Equal(3, routes.Primary.Hops.Count);
+        Assert.Equal(3, routes.Fallback.Hops.Count);
+        Assert.Equal(Enumerable.Repeat((byte)1, 32), routes.Primary.Hops[0].RouterId.ToArray());
+        Assert.Equal(Enumerable.Repeat((byte)6, 32), routes.Fallback.Hops[2].RouterId.ToArray());
+    }
+
+    [Fact]
+    public void PrivacyRouteBytesMustMatchActivationAndSignedPolicyHashes()
+    {
+        var encoded = Encoding.UTF8.GetBytes(PrivacyRoutesJson());
+        var digest = System.Security.Cryptography.SHA256.HashData(encoded);
+        var signedPolicy = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            privacyRoutesSha256 = Convert.ToHexString(digest).ToLowerInvariant()
+        });
+
+        MailboxRuntimeProvisioning.ValidatePrivacyRoutesBinding(
+            encoded, digest, signedPolicy);
+
+        digest[0] ^= 1;
+        Assert.Throws<InvalidDataException>(() =>
+            MailboxRuntimeProvisioning.ValidatePrivacyRoutesBinding(
+                encoded, digest, signedPolicy));
+        digest[0] ^= 1;
+        encoded[0] ^= 1;
+        Assert.Throws<InvalidDataException>(() =>
+            MailboxRuntimeProvisioning.ValidatePrivacyRoutesBinding(
+                encoded, digest, signedPolicy));
+    }
+
+    [Fact]
+    public void PrivacyRoutesRejectUnknownFieldsWrongPlatformAndRouteOverlap()
+    {
+        var valid = PrivacyRoutesJson();
+        Assert.Throws<InvalidDataException>(() =>
+            MailboxRuntimeProvisioning.ParsePrivacyRoutes(
+                Encoding.UTF8.GetBytes(valid.Replace(
+                    "\"schemaVersion\":1,",
+                    "\"schemaVersion\":1,\"unknown\":true,",
+                    StringComparison.Ordinal)),
+                "android"));
+        Assert.Throws<InvalidDataException>(() =>
+            MailboxRuntimeProvisioning.ParsePrivacyRoutes(
+                Encoding.UTF8.GetBytes(valid),
+                "windows"));
+        Assert.Throws<InvalidDataException>(() =>
+            MailboxRuntimeProvisioning.ParsePrivacyRoutes(
+                Encoding.UTF8.GetBytes(valid.Replace(
+                    Hex(6), Hex(1), StringComparison.Ordinal)),
+                "android"));
+    }
+
+    [Theory]
+    [InlineData("http://127.0.0.1:41803/")]
+    [InlineData("https://127.0.0.1:41803/path")]
+    [InlineData("https://user@127.0.0.1:41803/")]
+    [InlineData("https://127.0.0.1:41803/?query=1")]
+    [InlineData("HTTPS://127.0.0.1:41803/")]
+    public void PrivacyRoutesRejectNonCanonicalIngressOrigin(string origin)
+    {
+        Assert.Throws<InvalidDataException>(() =>
+            MailboxRuntimeProvisioning.ParsePrivacyRoutes(
+                Encoding.UTF8.GetBytes(PrivacyRoutesJson().Replace(
+                    "https://127.0.0.1:41803/", origin, StringComparison.Ordinal)),
+                "android"));
     }
 
     [Fact]
@@ -189,6 +267,36 @@ public sealed class MailboxRuntimeProvisioningPathTests
         Directory.CreateDirectory(root);
         return root;
     }
+
+    private static string PrivacyRoutesJson() => JsonSerializer.Serialize(new
+    {
+        schemaVersion = 1,
+        developmentOnly = true,
+        platform = "android",
+        primary = new
+        {
+            entryOrigin = "https://127.0.0.1:41803/",
+            hops = new[]
+            {
+                new { routerId = Hex(1), x25519PublicKey = Hex(17) },
+                new { routerId = Hex(2), x25519PublicKey = Hex(18) },
+                new { routerId = Hex(3), x25519PublicKey = Hex(19) }
+            }
+        },
+        fallback = new
+        {
+            entryOrigin = "https://127.0.0.1:41805/",
+            hops = new[]
+            {
+                new { routerId = Hex(4), x25519PublicKey = Hex(20) },
+                new { routerId = Hex(5), x25519PublicKey = Hex(21) },
+                new { routerId = Hex(6), x25519PublicKey = Hex(22) }
+            }
+        }
+    });
+
+    private static string Hex(byte value) =>
+        Convert.ToHexString(Enumerable.Repeat(value, 32).ToArray()).ToLowerInvariant();
 
     private static void TryDelete(string path)
     {
