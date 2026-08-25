@@ -26,12 +26,16 @@ internal interface IMailboxRuntimeProvisioningSource
 /// <summary>Debug-only adapter for the exact local Android/Windows fixture bundle.</summary>
 internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
     Func<MailboxCredentialBundleImportOptions> importOptionsFactory,
-    Action<MailboxHolderIdentity> holderAvailable) : IMailboxRuntimeProvisioningSource
+    Action<MailboxHolderIdentity> holderAvailable,
+    System.Net.Security.RemoteCertificateValidationCallback?
+        serverCertificateValidationCallback) : IMailboxRuntimeProvisioningSource
 {
     private readonly Func<MailboxCredentialBundleImportOptions> importOptionsFactory =
         importOptionsFactory ?? throw new ArgumentNullException(nameof(importOptionsFactory));
     private readonly Action<MailboxHolderIdentity> holderAvailable =
         holderAvailable ?? throw new ArgumentNullException(nameof(holderAvailable));
+    private readonly System.Net.Security.RemoteCertificateValidationCallback?
+        serverCertificateValidationCallback = serverCertificateValidationCallback;
 
     public async Task<ProvisionedMailboxRuntime> ProvisionAsync(
         SqliteSessionStore store,
@@ -56,7 +60,9 @@ internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
                     ? material.PeerSelector
                     : null,
             HttpClientMailboxBinaryIngress.CreatePhysicalDevelopment(
-                material.PhysicalCoordinator, material.DecodePolicies),
+                material.PhysicalCoordinator,
+                material.DecodePolicies,
+                serverCertificateValidationCallback),
             options.TimeProvider);
 #else
         throw new InvalidOperationException(
@@ -100,12 +106,16 @@ internal sealed class StoreBoundNativeMau2Transport :
         Action<MailboxHolderIdentity> holderAvailable,
         MailboxInfrastructureOwnership ownership,
         ClientFeatureFlags featureFlags,
-        IMailboxDispatchRouteUsageObserver? routeUsageObserver = null)
+        IMailboxDispatchRouteUsageObserver? routeUsageObserver = null,
+        System.Net.Security.RemoteCertificateValidationCallback?
+            serverCertificateValidationCallback = null)
         : this(
             store,
             secureStore,
             new DevelopmentMailboxRuntimeProvisioningSource(
-                importOptionsFactory, holderAvailable),
+                importOptionsFactory,
+                holderAvailable,
+                serverCertificateValidationCallback),
             ownership,
             featureFlags,
             routeUsageObserver)

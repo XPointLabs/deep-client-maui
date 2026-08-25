@@ -134,6 +134,9 @@
     <AndroidResource Include="Platforms\Android\Resources\raw\deep_physical_uat_ca.crt">
       <Link>Resources\raw\deep_physical_uat_ca.crt</Link>
     </AndroidResource>
+    <EmbeddedResource Include="Platforms\Android\Resources\raw\deep_physical_uat_ca.crt">
+      <LogicalName>Deep.Client.Maui.PhysicalUatRootCa</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(RuntimeIdentifier)' == 'win-x64'">

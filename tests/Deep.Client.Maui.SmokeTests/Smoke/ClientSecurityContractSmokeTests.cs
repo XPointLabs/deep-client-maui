@@ -289,7 +289,11 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("DEEP_FILE_CONNECT_IPS=111.235.151.150", releaseEnvironment, StringComparison.Ordinal);
         Assert.DoesNotContain("TLS_PUBLIC_KEY_PINS", releaseEnvironment, StringComparison.Ordinal);
         Assert.DoesNotContain("sha256/", releaseEnvironment, StringComparison.Ordinal);
-        Assert.DoesNotContain("RemoteCertificateValidationCallback", program, StringComparison.Ordinal);
+        Assert.Contains("CreatePhysicalUatServerCertificateValidationCallback", program,
+            StringComparison.Ordinal);
+        Assert.Contains("#if DEBUG && DEEP_PHYSICAL_E2E && ANDROID", program,
+            StringComparison.Ordinal);
+        Assert.Contains("return null;", program, StringComparison.Ordinal);
         Assert.DoesNotContain("CreateCertificatePinningValidationCallback", program, StringComparison.Ordinal);
         Assert.Contains("CertificateRevocationCheckMode", program, StringComparison.Ordinal);
         Assert.Contains("X509RevocationMode.Online", program, StringComparison.Ordinal);
@@ -368,8 +372,8 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("PersistentTransportOutboxEnabled = false", stubBlock, StringComparison.Ordinal);
         Assert.Contains("TransportRequired = false", stubBlock, StringComparison.Ordinal);
         Assert.Contains("MetadataPrivateTransportRequired = false", stubBlock, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "RemoteCertificateValidationCallback",
+        Assert.Contains(
+            "CreatePhysicalUatServerCertificateValidationCallback",
             program,
             StringComparison.Ordinal);
         Assert.Contains(

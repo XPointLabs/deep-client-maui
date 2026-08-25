@@ -816,7 +816,8 @@ public static class MauiProgram
                 holder),
             mode.Ownership,
             featureFlags,
-            services.GetRequiredService<IMailboxDispatchRouteUsageObserver>());
+            services.GetRequiredService<IMailboxDispatchRouteUsageObserver>(),
+            CreatePhysicalUatServerCertificateValidationCallback());
         return new StoreBoundRuntimeTransportComposition(native, native);
 #else
         var productionRoot = Path.Combine(
@@ -900,8 +901,110 @@ public static class MauiProgram
         };
         handler.SslOptions.CertificateRevocationCheckMode =
             System.Security.Cryptography.X509Certificates.X509RevocationMode.Online;
+        handler.SslOptions.RemoteCertificateValidationCallback =
+            CreatePhysicalUatServerCertificateValidationCallback();
         return handler;
     }
+
+    private static System.Net.Security.RemoteCertificateValidationCallback?
+        CreatePhysicalUatServerCertificateValidationCallback()
+    {
+#if DEBUG && DEEP_PHYSICAL_E2E && ANDROID
+        using (LoadPhysicalUatRootCertificate())
+        {
+            // Fail startup if the build lost its exact app-scoped UAT trust root.
+        }
+        return ValidatePhysicalUatServerCertificate;
+#else
+        return null;
+#endif
+    }
+
+#if DEBUG && DEEP_PHYSICAL_E2E && ANDROID
+    private const string PhysicalUatRootResource =
+        "Deep.Client.Maui.PhysicalUatRootCa";
+
+    private static bool ValidatePhysicalUatServerCertificate(
+        object sender,
+        System.Security.Cryptography.X509Certificates.X509Certificate? certificate,
+        System.Security.Cryptography.X509Certificates.X509Chain? presentedChain,
+        System.Net.Security.SslPolicyErrors sslPolicyErrors)
+    {
+        _ = sender;
+        if (certificate is null ||
+            (sslPolicyErrors & (System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch |
+                System.Net.Security.SslPolicyErrors.RemoteCertificateNotAvailable)) != 0)
+            return false;
+
+        var platformValidationSucceeded =
+            sslPolicyErrors == System.Net.Security.SslPolicyErrors.None;
+        if (platformValidationSucceeded)
+            return platformValidationSucceeded;
+        if (sslPolicyErrors != System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors)
+            return false;
+
+        try
+        {
+            using var leaf = System.Security.Cryptography.X509Certificates.X509CertificateLoader
+                .LoadCertificate(certificate.GetRawCertData());
+            using var root = LoadPhysicalUatRootCertificate();
+            using var chain = new System.Security.Cryptography.X509Certificates.X509Chain();
+            var intermediates = new List<
+                System.Security.Cryptography.X509Certificates.X509Certificate2>();
+            try
+            {
+                chain.ChainPolicy.TrustMode =
+                    System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
+                chain.ChainPolicy.CustomTrustStore.Add(root);
+                chain.ChainPolicy.RevocationMode =
+                    System.Security.Cryptography.X509Certificates.X509RevocationMode.Online;
+                chain.ChainPolicy.RevocationFlag =
+                    System.Security.Cryptography.X509Certificates.X509RevocationFlag.ExcludeRoot;
+                chain.ChainPolicy.VerificationFlags =
+                    System.Security.Cryptography.X509Certificates.X509VerificationFlags.NoFlag;
+                chain.ChainPolicy.UrlRetrievalTimeout = TimeSpan.FromSeconds(5);
+                chain.ChainPolicy.ApplicationPolicy.Add(
+                    new System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.1"));
+                if (presentedChain is not null)
+                {
+                    foreach (var element in presentedChain.ChainElements)
+                    {
+                        if (element.Certificate.RawData.AsSpan().SequenceEqual(leaf.RawData) ||
+                            element.Certificate.RawData.AsSpan().SequenceEqual(root.RawData))
+                            continue;
+                        var intermediate = System.Security.Cryptography.X509Certificates
+                            .X509CertificateLoader.LoadCertificate(element.Certificate.RawData);
+                        intermediates.Add(intermediate);
+                        chain.ChainPolicy.ExtraStore.Add(intermediate);
+                    }
+                }
+                return chain.Build(leaf);
+            }
+            finally
+            {
+                foreach (var intermediate in intermediates)
+                    intermediate.Dispose();
+            }
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return false;
+        }
+    }
+
+    private static System.Security.Cryptography.X509Certificates.X509Certificate2
+        LoadPhysicalUatRootCertificate()
+    {
+        using var stream = typeof(MauiProgram).Assembly.GetManifestResourceStream(
+            PhysicalUatRootResource)
+            ?? throw new InvalidOperationException(
+                "The physical UAT root certificate resource is missing.");
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return System.Security.Cryptography.X509Certificates.X509CertificateLoader
+            .LoadCertificate(buffer.ToArray());
+    }
+#endif
 
     private static HttpClient CreateServiceHttpClient(HttpMessageHandler handler)
     {
@@ -911,7 +1014,9 @@ public static class MauiProgram
         };
     }
 
-    private static HttpServiceNetworkHooks CreateServiceTransportNetworkHooks() => new();
+    private static HttpServiceNetworkHooks CreateServiceTransportNetworkHooks() =>
+        new(ServerCertificateValidationCallback:
+            CreatePhysicalUatServerCertificateValidationCallback());
 
     private static HttpServiceNetworkHooks CreateFileTransportNetworkHooks(
         IReadOnlyList<System.Net.IPAddress> preferredConnectIps)
@@ -925,7 +1030,9 @@ public static class MauiProgram
                 ConnectFileSocketAsync(context, preferredConnectIps, cancellationToken);
         }
 #endif
-        return new HttpServiceNetworkHooks(connectCallback);
+        return new HttpServiceNetworkHooks(
+            connectCallback,
+            CreatePhysicalUatServerCertificateValidationCallback());
     }
 
     private static HttpServiceClientOptions CreateServiceTransportClientOptions() =>
