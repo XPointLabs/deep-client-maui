@@ -15,6 +15,11 @@ namespace Deep.Client.Maui.UiTests;
 /// </summary>
 public sealed class StrictCrossPlatformUiTests
 {
+    // A direct MAU2 send durably writes recipient and sender copies sequentially. Each
+    // authenticated Store has a 15-second protocol deadline, so the rendered acceptance
+    // window must also leave bounded room for cold route establishment and UIA sampling.
+    private static readonly TimeSpan DirectMessageSentTimeout = TimeSpan.FromSeconds(60);
+
     [StrictCrossPlatformUiFact]
     public void Physical_android_and_windows_exchange_persist_and_decrypt_an_attachment()
     {
@@ -962,7 +967,7 @@ public sealed class StrictCrossPlatformUiTests
         SendAndroidMessage(android, options, message);
         var status = android.WaitForCorrelatedDescendant(
             options.App("Chat.MessageBubble"), options.App("Chat.MessageBody"), message,
-            options.App("Chat.DeliveryStatus"), TimeSpan.FromSeconds(30),
+            options.App("Chat.DeliveryStatus"), DirectMessageSentTimeout,
             targetText: "✓", targetContentDescription: "Отправлено");
         Assert.True(status.HasExactPresentation("✓", "Отправлено"));
     }
@@ -982,7 +987,7 @@ public sealed class StrictCrossPlatformUiTests
         StageAndSendAndroidAttachment(android, options, fileName);
         var androidStatus = android.WaitForCorrelatedDescendant(
             options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
-            fileName, options.App("Chat.DeliveryStatus"), TimeSpan.FromSeconds(30),
+            fileName, options.App("Chat.DeliveryStatus"), DirectMessageSentTimeout,
             targetText: "✓", targetContentDescription: "Отправлено");
         Assert.True(androidStatus.HasExactPresentation("✓", "Отправлено"));
         var attachment = Require(windows.WaitForAutomationIdWithName(
