@@ -26,6 +26,7 @@ public sealed class DesktopWorkspaceContractSmokeTests
         Assert.Contains("Clicked=\"OnOpenSettingsClicked\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Border.GestureRecognizers><TapGestureRecognizer Tapped=\"OnOpenSettingsClicked\"", xaml, StringComparison.Ordinal);
         Assert.Equal(2, Count(xaml, "MessageContextGestureBehavior Invoked="));
+        Assert.Equal(2, Count(xaml, "TapGestureRecognizer Buttons=\"Secondary\""));
         Assert.Equal(2, Count(xaml, "ReactionChipTapped"));
         Assert.Equal(2, Count(xaml, "PointerPressed=\"OnVoicePointerPressed\""));
         Assert.Contains("OnContextSaveAttachmentClicked", xaml, StringComparison.Ordinal);

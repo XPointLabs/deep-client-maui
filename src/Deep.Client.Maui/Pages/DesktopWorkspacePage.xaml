@@ -216,6 +216,9 @@
                                     <Border.Behaviors>
                                         <controls:MessageContextGestureBehavior Invoked="OnDirectMessageContextRequested" />
                                     </Border.Behaviors>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Buttons="Secondary" Tapped="OnDirectMessageContextRequested" />
+                                    </Border.GestureRecognizers>
                                     <Border.Triggers>
                                          <DataTrigger TargetType="Border" Binding="{Binding IsOutgoing}" Value="True">
                                              <Setter Property="HorizontalOptions" Value="End" />
@@ -315,6 +318,9 @@
                                     <Border.Behaviors>
                                         <controls:MessageContextGestureBehavior Invoked="OnGroupMessageContextRequested" />
                                     </Border.Behaviors>
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Buttons="Secondary" Tapped="OnGroupMessageContextRequested" />
+                                    </Border.GestureRecognizers>
                                     <Border.Triggers>
                                          <DataTrigger TargetType="Border" Binding="{Binding IsOutgoing}" Value="True">
                                              <Setter Property="HorizontalOptions" Value="End" />
