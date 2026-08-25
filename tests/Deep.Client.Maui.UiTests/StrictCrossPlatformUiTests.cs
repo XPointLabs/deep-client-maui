@@ -1846,7 +1846,10 @@ internal sealed class AndroidUiautomatorClient
                 return target;
             }
             catch (Exception exception) { last = exception; }
-            Thread.Sleep(250);
+            // A physical uiautomator dump temporarily enables Android accessibility and
+            // takes several seconds on Samsung devices. Exact presentation polling must
+            // leave the app a bounded quiet interval to finish its real async dispatch.
+            Thread.Sleep(targetText is null ? 250 : 2000);
         }
         throw new InvalidOperationException("Correlated Android message target was not observed.", last);
     }
