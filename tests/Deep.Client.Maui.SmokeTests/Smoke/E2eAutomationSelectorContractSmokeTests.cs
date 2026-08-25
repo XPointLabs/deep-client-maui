@@ -218,6 +218,9 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             physical,
             StringComparison.Ordinal);
         Assert.Contains("WaitForCorrelatedDescendant(", physical, StringComparison.Ordinal);
+        Assert.Contains("Thread.Sleep(TimeSpan.FromSeconds(3));", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("windows.FocusWindow();", physical, StringComparison.Ordinal);
         Assert.Contains("current = current.Parent;", windows, StringComparison.Ordinal);
     }
 

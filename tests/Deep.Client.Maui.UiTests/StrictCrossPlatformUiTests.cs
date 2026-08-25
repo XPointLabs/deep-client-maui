@@ -1208,6 +1208,7 @@ public sealed class StrictCrossPlatformUiTests
         string sha256,
         bool verifyOpen)
     {
+        windows.FocusWindow();
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectAttach"));
@@ -1299,6 +1300,7 @@ public sealed class StrictCrossPlatformUiTests
         var previousAndroidImages = android.CountResourceId(options.App("Chat.ImagePreview"));
         var previousAndroidImageMetadata = android.CountResourceId(
             options.App("Chat.ImageMetadata"));
+        windows.FocusWindow();
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectAttach"));
@@ -1437,6 +1439,8 @@ public sealed class StrictCrossPlatformUiTests
         string fileName)
     {
         windows.ActivateExact(preview);
+        Thread.Sleep(TimeSpan.FromSeconds(3));
+        windows.FocusWindow();
         var before = StrictCrossPlatformContracts.SnapshotDownloads(downloadsDirectory);
         windows.ActivateExact(Require(windows.WaitForCorrelatedDescendant(
             "DesktopWorkspace.DirectMessageBubble",
@@ -1491,6 +1495,8 @@ public sealed class StrictCrossPlatformUiTests
         if (verifyOpen)
         {
             windows.ActivateExact(attachment);
+            Thread.Sleep(TimeSpan.FromSeconds(3));
+            windows.FocusWindow();
             // Open may change window focus. Re-select the same exact correlated filename before Save.
             attachment = Require(windows.WaitForAutomationIdWithName("DesktopWorkspace.DirectAttachmentFilename", marker, TimeSpan.FromSeconds(15)), "DesktopWorkspace.DirectAttachmentFilename");
         }
