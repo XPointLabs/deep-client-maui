@@ -791,11 +791,13 @@ internal sealed class PhysicalChaosController
             long preOutage,
             long ackDrop)
         {
-            if (!Running || Armed || !Consumed || Fault != expectedFault
-                || Operation != expectedOperation || InjectedFaultCount != 1
-                || PostDurableResponseDropCount != postDrop
-                || PreDispatchOutageCount != preOutage
-                || PostDurableAckResponseDropCount != ackDrop
+            var lifecycleIsReachable = Armed != Consumed
+                && (Consumed ? InjectedFaultCount == 1 : InjectedFaultCount == 0);
+            if (!Running || !lifecycleIsReachable || Fault != expectedFault
+                || Operation != expectedOperation
+                || PostDurableResponseDropCount > postDrop
+                || PreDispatchOutageCount > preOutage
+                || PostDurableAckResponseDropCount > ackDrop
                 || OperationAttemptCount > attempts
                 || OperationUpstreamDispatchCount > dispatches
                 || OperationUpstreamSuccessCount > successes

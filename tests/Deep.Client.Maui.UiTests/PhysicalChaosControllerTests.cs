@@ -93,6 +93,41 @@ public sealed class PhysicalChaosControllerTests
     }
 
     [Fact]
+    public void Bounded_wait_accepts_the_clean_armed_state_before_consumption()
+    {
+        var armed = PhysicalChaosController.ChaosStatus.ParseExact(StatusJson(
+            running: true,
+            operation: "mailbox-store",
+            fault: "pre-dispatch-outage",
+            armed: true,
+            consumed: false,
+            started: 1_000,
+            deadline: 301_000,
+            expires: 300));
+
+        armed.AssertCanStillReachConsumedCounters(
+            "pre-dispatch-outage", "mailbox-store",
+            attempts: 1, dispatches: 0, successes: 0,
+            postDrop: 0, preOutage: 1, ackDrop: 0);
+
+        var impossible = PhysicalChaosController.ChaosStatus.ParseExact(StatusJson(
+            running: true,
+            operation: "mailbox-store",
+            fault: "pre-dispatch-outage",
+            armed: true,
+            consumed: false,
+            injected: 1,
+            started: 1_000,
+            deadline: 301_000,
+            expires: 300));
+        Assert.Throws<InvalidOperationException>(() =>
+            impossible.AssertCanStillReachConsumedCounters(
+                "pre-dispatch-outage", "mailbox-store",
+                attempts: 1, dispatches: 0, successes: 0,
+                postDrop: 0, preOutage: 1, ackDrop: 0));
+    }
+
+    [Fact]
     public void Off_baseline_and_property_set_are_closed()
     {
         PhysicalChaosController.ChaosStatus.ParseExact(StatusJson()).AssertOffBaseline();
