@@ -439,13 +439,16 @@ public sealed class StrictCrossPlatformUiTests
 
             controller.Begin(fault, "mailbox-store");
             SendWindowsMessage(windows, marker);
-            controller.WaitForConsumed(fault, "mailbox-store", attempts: 1,
-                dispatches: 0, successes: 0, postDrop: 0, preOutage: 1,
+            // One logical send stores recipient and sender copies sequentially.
+            // The recipient copy is rejected on primary and uses fallback; the
+            // sender copy is the one exact post-fault primary dispatch.
+            controller.WaitForConsumed(fault, "mailbox-store", attempts: 2,
+                dispatches: 1, successes: 1, postDrop: 0, preOutage: 1,
                 ackDrop: 0, timeout: TimeSpan.FromSeconds(60));
             var routeProof = AssertWindowsXPointRouteObserved(windows, "fallback");
             var status = controller.Status();
-            status.AssertConsumed(fault, "mailbox-store", attempts: 1,
-                dispatches: 0, successes: 0, postDrop: 0, preOutage: 1, ackDrop: 0);
+            status.AssertConsumed(fault, "mailbox-store", attempts: 2,
+                dispatches: 1, successes: 1, postDrop: 0, preOutage: 1, ackDrop: 0);
             controller.EndAndAssertBaseline();
 
             android.ColdStart();
