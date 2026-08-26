@@ -434,10 +434,11 @@ public sealed class StrictCrossPlatformUiTests
                 marker, 0, TimeSpan.FromSeconds(2));
 
             controller.Begin(fault, "mailbox-store");
-            SendWindowsMessageAndAssertSent(
-                windows, marker, TimeSpan.FromSeconds(90));
+            SendWindowsMessage(windows, marker);
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 1, TimeSpan.FromSeconds(60));
+            RequireSuccessfulWindowsDeliveryStatus(
+                windows, marker, TimeSpan.FromSeconds(60));
             var routeProof = AssertWindowsXPointRouteObserved(windows, "fallback");
             var status = controller.Status();
             status.AssertConsumed(fault, "mailbox-store", attempts: 1,
