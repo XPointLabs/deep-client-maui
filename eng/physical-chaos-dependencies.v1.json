@@ -1,15 +1,15 @@
 {
   "schema": "deep.physical-chaos-dependencies.v1",
-  "reviewedDevOpsCommit": "4ed6d7317e50ba1795460ce10bab9b6695cab3f9",
-  "dependencyTreeSha256": "b4519e1294ce6bc9a7ae295039ce41a02360b427247bd6d2b9d9a8403fda4308",
+  "reviewedDevOpsCommit": "096e8776bfb4cadd126f2c20504bd305e085d3bf",
+  "dependencyTreeSha256": "b272eab93e49cb9d3f216bda162869e5499bf224fd22c78ff4009702ced81c80",
   "files": [
     { "path": "config/survival-uat-tls/haproxy.cfg", "sha256": "812c37b8cf7d5dfb925459e32bf0992800e71fa8c7a377aad3eaf0f0312d02b9" },
     { "path": "docker-compose.survival-resend-chaos.dev.yml", "sha256": "c0c2daeb778174636f2ce4926f1696292cf11f1dbb0fd03b1627272b344fc1ec" },
     { "path": "docker-compose.survival-uat-tls.dev.yml", "sha256": "02b42259ff1a85793ef016eefa8715e3d0143e895a11ab806cc87955fed7026f" },
-    { "path": "docker-compose.survival.dev.yml", "sha256": "c75819e8b8dfceb3dbdaaf663ff3d3af42bbe9334489fd09a80577066633fbad" },
+    { "path": "docker-compose.survival.dev.yml", "sha256": "754c7264614d696b8d63821095966c7d5cff1ae086bc51c30b8cf15b4fc81a0f" },
     { "path": "scripts/survival-dev-mailbox-build-inputs.ps1", "sha256": "c5e0f08e0816296734195a27b2c8a47a207b0f1ade88f0186caffe02334f1456" },
     { "path": "scripts/survival-dev-private-secrets.ps1", "sha256": "c2db46d258501aa54b263ca8731817c1e2020e4a88e7c0e66e5558dd991c380e" },
-    { "path": "scripts/survival-dev.ps1", "sha256": "ccf58ed34f6f6848a881fcf51e929bc0d5a99c11891985f4c409e63ce88ba639" },
+    { "path": "scripts/survival-dev.ps1", "sha256": "e373a6145b10d2c3fbd1e042bd63c2cdcf8f337809aeb31087013c3094aa943c" },
     { "path": "tools/survival-resend-chaos/control-client.mjs", "sha256": "59ab1782fbf63bf44aaa1980f98ab1574d794125ea63c549df322ab54294404f" },
     { "path": "tools/survival-resend-chaos/resend-chaos-proxy.mjs", "sha256": "4c94789b95352d97932154e8ffa1ca3e0b838c862fb76beb042da8a867078744" },
     { "path": "tools/survival-resend-chaos/resend-chaos-proxy.test.mjs", "sha256": "8dd17afb9f0a922ed57ed84d8a8e7d01b698e783b798fd2605911e6ea75b29e6" }
