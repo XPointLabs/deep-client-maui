@@ -543,6 +543,45 @@ public sealed class WindowsUiSmokeTests
             string targetAutomationId,
             TimeSpan timeout,
             string? targetName = null)
+            => WaitForCorrelatedDescendantCore(
+                ancestorAutomationId,
+                correlationAutomationId,
+                correlationName,
+                targetAutomationId,
+                timeout,
+                targetName is null
+                    ? null
+                    : new HashSet<string>(StringComparer.Ordinal) { targetName });
+
+        internal AutomationElement? WaitForCorrelatedDescendantWithAnyName(
+            string ancestorAutomationId,
+            string correlationAutomationId,
+            string correlationName,
+            string targetAutomationId,
+            TimeSpan timeout,
+            params string[] targetNames)
+        {
+            ArgumentNullException.ThrowIfNull(targetNames);
+            var acceptedNames = targetNames.ToHashSet(StringComparer.Ordinal);
+            if (acceptedNames.Count == 0 || acceptedNames.Count != targetNames.Length)
+                throw new ArgumentException(
+                    "At least one unique exact target name is required.", nameof(targetNames));
+            return WaitForCorrelatedDescendantCore(
+                ancestorAutomationId,
+                correlationAutomationId,
+                correlationName,
+                targetAutomationId,
+                timeout,
+                acceptedNames);
+        }
+
+        private AutomationElement? WaitForCorrelatedDescendantCore(
+            string ancestorAutomationId,
+            string correlationAutomationId,
+            string correlationName,
+            string targetAutomationId,
+            TimeSpan timeout,
+            IReadOnlySet<string>? acceptedTargetNames)
         {
             var result = Retry.WhileNull(
                 () =>
@@ -561,9 +600,8 @@ public sealed class WindowsUiSmokeTests
                         var targets = ancestors[0].FindAllDescendants(
                             condition => condition.ByAutomationId(targetAutomationId));
                         if (targets.Length != 1) return null;
-                        return targetName is null || string.Equals(
-                            targets[0].Properties.Name.ValueOrDefault,
-                            targetName, StringComparison.Ordinal)
+                        return acceptedTargetNames is null || acceptedTargetNames.Contains(
+                            targets[0].Properties.Name.ValueOrDefault ?? string.Empty)
                                 ? targets[0]
                                 : null;
                     }

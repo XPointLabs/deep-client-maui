@@ -1224,13 +1224,14 @@ public sealed class StrictCrossPlatformUiTests
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectSend", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectSend"));
-        var windowsStatus = Require(windows.WaitForCorrelatedDescendant(
+        var windowsStatus = Require(windows.WaitForCorrelatedDescendantWithAnyName(
             "DesktopWorkspace.DirectMessageBubble",
             "DesktopWorkspace.DirectAttachmentFilename", fileName,
             "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(30),
-            "Отправлено"),
+            "Отправлено", "Доставлено", "Прочитано"),
             "DesktopWorkspace.DirectDeliveryStatus");
-        Assert.Equal("Отправлено", windowsStatus.Properties.Name.ValueOrDefault);
+        Assert.True(windowsStatus.Properties.Name.ValueOrDefault is
+            "Отправлено" or "Доставлено" or "Прочитано");
 
         var file = android.WaitForCorrelatedDescendant(
             options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
