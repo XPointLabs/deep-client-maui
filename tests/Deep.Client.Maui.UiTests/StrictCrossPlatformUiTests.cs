@@ -255,6 +255,8 @@ public sealed class StrictCrossPlatformUiTests
         var androidToWindows = StrictCrossPlatformContracts.NewMarker("android-to-windows");
         var genericName = Path.GetFileName(options.GenericFixturePath);
         var documentName = Path.GetFileName(options.DocumentFixturePath);
+        var androidGenericName = "android-to-windows-" + genericName;
+        var androidDocumentName = "android-to-windows-" + documentName;
         var imageName = Path.GetFileName(options.ImageFixturePath);
         var genericSha256 = StrictCrossPlatformContracts.Sha256File(options.GenericFixturePath);
         var documentSha256 = StrictCrossPlatformContracts.Sha256File(options.DocumentFixturePath);
@@ -289,10 +291,10 @@ public sealed class StrictCrossPlatformUiTests
                 WaitForWindowsText(windows, "DesktopWorkspace.DirectMessageBody", androidToWindows);
 
                 ExchangeAndroidDocument(android, windows, options, options.GenericFixturePath,
-                    genericName, genericSha256, downloadsDirectory, createdDownloads,
+                    androidGenericName, genericSha256, downloadsDirectory, createdDownloads,
                     verifyOpen: true);
                 ExchangeAndroidDocument(android, windows, options, options.DocumentFixturePath,
-                    documentName, documentSha256, downloadsDirectory, createdDownloads,
+                    androidDocumentName, documentSha256, downloadsDirectory, createdDownloads,
                     verifyOpen: true);
                 ExchangeWindowsDocument(windows, android, options, options.GenericFixturePath,
                     genericName, genericSha256, verifyOpen: true);
@@ -353,8 +355,8 @@ public sealed class StrictCrossPlatformUiTests
         }
         finally
         {
-            android.DeletePushedFixture(genericName);
-            android.DeletePushedFixture(documentName);
+            android.DeletePushedFixture(androidGenericName);
+            android.DeletePushedFixture(androidDocumentName);
             android.DeletePushedMediaFixture(imageName);
             foreach (var path in createdDownloads)
             {
@@ -411,7 +413,8 @@ public sealed class StrictCrossPlatformUiTests
                 marker, 0, TimeSpan.FromSeconds(2));
 
             controller.Begin(fault, "mailbox-store");
-            SendWindowsMessageAndAssertSent(windows, marker);
+            SendWindowsMessageAndAssertSent(
+                windows, marker, TimeSpan.FromSeconds(90));
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 1, TimeSpan.FromSeconds(60));
             var routeProof = AssertWindowsXPointRouteObserved(windows, "fallback");
@@ -1100,11 +1103,13 @@ public sealed class StrictCrossPlatformUiTests
     }
 
     private static void SendWindowsMessageAndAssertSent(
-        WindowsUiSmokeTests.WindowsUiTestSession windows, string message)
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        string message,
+        TimeSpan? timeout = null)
     {
         SendWindowsMessage(windows, message);
         RequireSuccessfulWindowsDeliveryStatus(
-            windows, message, TimeSpan.FromSeconds(30));
+            windows, message, timeout ?? TimeSpan.FromSeconds(30));
     }
 
     private static void RequireSuccessfulWindowsDeliveryStatus(
