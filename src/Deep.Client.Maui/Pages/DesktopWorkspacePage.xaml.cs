@@ -1749,9 +1749,6 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
                     return;
                 }
 
-#if DEBUG && DEEP_PHYSICAL_E2E
-                SetPhysicalRuntimeReady(true);
-#endif
                 if (viewModel.IsDirectDetail)
                 {
                     await viewModel.DirectChat.ReceiveAsync(activity.Token);
@@ -1761,6 +1758,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
                     await viewModel.GroupChat.RefreshAsync(activity.Token);
                 }
 
+#if DEBUG && DEEP_PHYSICAL_E2E
+                SetPhysicalRuntimeReady(true);
+#endif
                 BackgroundSyncBridge.MarkHandled();
             }
         }

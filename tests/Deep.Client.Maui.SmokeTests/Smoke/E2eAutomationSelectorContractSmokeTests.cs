@@ -171,6 +171,16 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.Contains("physicalRuntimeReadyMarker.Text = ready ? \"ready\" : $\"failed:{failureCode}\"", desktop,
             StringComparison.Ordinal);
         Assert.Contains("SetPhysicalRuntimeReady(true);", desktop, StringComparison.Ordinal);
+        var syncPump = desktop.IndexOf("private async Task RunSyncPumpAsync",
+            StringComparison.Ordinal);
+        Assert.True(syncPump >= 0);
+        var directReceive = desktop.IndexOf(
+            "await viewModel.DirectChat.ReceiveAsync(activity.Token);",
+            syncPump, StringComparison.Ordinal);
+        Assert.True(directReceive > syncPump);
+        var readyAfterReceive = desktop.IndexOf(
+            "SetPhysicalRuntimeReady(true);", directReceive, StringComparison.Ordinal);
+        Assert.True(readyAfterReceive > directReceive);
         Assert.Contains("SetPhysicalRuntimeReady(false, viewModel.ConversationList.SyncFailureCode);", desktop,
             StringComparison.Ordinal);
         Assert.Contains("SetPhysicalRuntimeReady(false, \"page\");", desktop, StringComparison.Ordinal);

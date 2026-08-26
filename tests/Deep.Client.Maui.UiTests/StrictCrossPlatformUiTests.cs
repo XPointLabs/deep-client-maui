@@ -432,6 +432,10 @@ public sealed class StrictCrossPlatformUiTests
             AddWindowsContact(windows, androidIdentity, windowsContact);
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 0, TimeSpan.FromSeconds(2));
+            // Keep recipient mailbox polling and its encrypted ACK outside the
+            // primary fault window. The ingress proxy deliberately does not inspect
+            // payloads, so it cannot distinguish that ACK from the sender's store.
+            android.ForceStop();
 
             controller.Begin(fault, "mailbox-store");
             SendWindowsMessage(windows, marker);
@@ -442,6 +446,14 @@ public sealed class StrictCrossPlatformUiTests
             var status = controller.Status();
             status.AssertConsumed(fault, "mailbox-store", attempts: 1,
                 dispatches: 0, successes: 0, postDrop: 0, preOutage: 1, ackDrop: 0);
+            controller.EndAndAssertBaseline();
+
+            android.ColdStart();
+            android.WaitForResource(options.App("Conversations.Root"),
+                TimeSpan.FromSeconds(45));
+            android.TapExactResourceIdWithAccessibleText(
+                options.App("Conversations.ConversationRow"), androidContact,
+                TimeSpan.FromSeconds(45));
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 1, TimeSpan.FromSeconds(60));
             RequireSuccessfulWindowsDeliveryStatus(
@@ -463,6 +475,7 @@ public sealed class StrictCrossPlatformUiTests
             evidence.AddBoolean("fallbackRouteSelectedAndDelivered", true);
             evidence.AddBoolean("recipientRenderedExactlyOnce", true);
             evidence.AddBoolean("directClientMailboxEndpointAbsent", true);
+            evidence.AddBoolean("recipientAckExcludedFromFaultWindow", true);
         }
         catch (Exception exception)
         {
