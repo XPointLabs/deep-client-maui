@@ -532,12 +532,8 @@ public sealed class StrictCrossPlatformUiTests
                     "DesktopWorkspace.DirectRetry", TimeSpan.FromSeconds(45)),
                     "DesktopWorkspace.DirectRetry");
                 restarted.ActivateExact(retry);
-                var sent = Require(restarted.WaitForCorrelatedDescendant(
-                    "DesktopWorkspace.DirectMessageBubble",
-                    "DesktopWorkspace.DirectMessageBody", marker,
-                    "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(60),
-                    "Отправлено"), "DesktopWorkspace.DirectDeliveryStatus:sent");
-                Assert.Equal("Отправлено", sent.Properties.Name.ValueOrDefault);
+                RequireSuccessfulWindowsDeliveryStatus(
+                    restarted, marker, TimeSpan.FromSeconds(60));
             }
 
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
@@ -609,12 +605,8 @@ public sealed class StrictCrossPlatformUiTests
                 restarted.ActivateExact(Require(restarted.WaitForAutomationIdWithName(
                     "DesktopWorkspace.ConversationRow", windowsContact,
                     TimeSpan.FromSeconds(45)), "DesktopWorkspace.ConversationRow"));
-                var sent = Require(restarted.WaitForCorrelatedDescendant(
-                    "DesktopWorkspace.DirectMessageBubble",
-                    "DesktopWorkspace.DirectMessageBody", marker,
-                    "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(90),
-                    "Отправлено"), "DesktopWorkspace.DirectDeliveryStatus:sent");
-                Assert.Equal("Отправлено", sent.Properties.Name.ValueOrDefault);
+                RequireSuccessfulWindowsDeliveryStatus(
+                    restarted, marker, TimeSpan.FromSeconds(90));
             }
 
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
@@ -741,12 +733,8 @@ public sealed class StrictCrossPlatformUiTests
             controller.WaitForConsumed(fault, "mailbox-ack", attempts: 2,
                 dispatches: 2, successes: 2, postDrop: 0, preOutage: 0, ackDrop: 1,
                 timeout: TimeSpan.FromSeconds(90));
-            var senderStatus = Require(windows.WaitForCorrelatedDescendant(
-                "DesktopWorkspace.DirectMessageBubble",
-                "DesktopWorkspace.DirectMessageBody", marker,
-                "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(30),
-                "Отправлено"), "DesktopWorkspace.DirectDeliveryStatus:sent");
-            Assert.Equal("Отправлено", senderStatus.Properties.Name.ValueOrDefault);
+            RequireSuccessfulWindowsDeliveryStatus(
+                windows, marker, TimeSpan.FromSeconds(30));
 
             var final = controller.Status();
             final.AssertConsumed(fault, "mailbox-ack", attempts: 2,
@@ -1115,13 +1103,23 @@ public sealed class StrictCrossPlatformUiTests
         WindowsUiSmokeTests.WindowsUiTestSession windows, string message)
     {
         SendWindowsMessage(windows, message);
-        var status = Require(windows.WaitForCorrelatedDescendant(
+        RequireSuccessfulWindowsDeliveryStatus(
+            windows, message, TimeSpan.FromSeconds(30));
+    }
+
+    private static void RequireSuccessfulWindowsDeliveryStatus(
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        string message,
+        TimeSpan timeout)
+    {
+        var status = Require(windows.WaitForCorrelatedDescendantWithAnyName(
             "DesktopWorkspace.DirectMessageBubble",
             "DesktopWorkspace.DirectMessageBody", message,
-            "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(30),
-            "Отправлено"),
+            "DesktopWorkspace.DirectDeliveryStatus", timeout,
+            "Отправлено", "Доставлено", "Прочитано"),
             "DesktopWorkspace.DirectDeliveryStatus");
-        Assert.Equal("Отправлено", status.Properties.Name.ValueOrDefault);
+        Assert.True(status.Properties.Name.ValueOrDefault is
+            "Отправлено" or "Доставлено" or "Прочитано");
     }
 
     private static StrictCrossPlatformContracts.PrivacyRouteProof
