@@ -1135,9 +1135,15 @@ public sealed class StrictCrossPlatformUiTests
             displayName ?? StrictCrossPlatformContracts.NewMarker("android-contact");
         windows.ActivateExact(Require(windows.WaitForAutomationId("NewConversation.Start", TimeSpan.FromSeconds(10)), "NewConversation.Start"));
         Require(windows.WaitForAutomationId("DesktopWorkspace.DirectDraft", TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectDraft");
-        Require(windows.WaitForAutomationIdWithName(
-            "PhysicalE2E.RuntimeReadyMarker", "ready", TimeSpan.FromSeconds(45)),
-            "PhysicalE2E.RuntimeReadyMarker:ready");
+        var runtimeReady = windows.WaitForAutomationIdWithName(
+            "PhysicalE2E.RuntimeReadyMarker", "ready", TimeSpan.FromSeconds(45));
+        if (runtimeReady is null)
+        {
+            var terminal = windows.FindAutomationId(
+                "PhysicalE2E.RuntimeReadyMarker")?.Name ?? "missing";
+            throw new InvalidOperationException(
+                $"Windows direct mailbox sync did not become ready; state={terminal}.");
+        }
     }
 
     private static void SendWindowsMessage(WindowsUiSmokeTests.WindowsUiTestSession windows, string message)
