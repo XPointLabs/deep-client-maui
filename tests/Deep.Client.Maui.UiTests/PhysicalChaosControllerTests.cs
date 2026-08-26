@@ -89,11 +89,13 @@ public sealed class PhysicalChaosControllerTests
         restarted.AssertConsumed("post-durable-ack-response-drop", "mailbox-ack",
             attempts: 2, dispatches: 2, successes: 2,
             postDrop: 0, preOutage: 0, ackDrop: 1);
-        Assert.Throws<InvalidOperationException>(() =>
+        var exception = Assert.Throws<InvalidOperationException>(() =>
             restarted.AssertCanStillReachConsumedCounters(
                 "post-durable-ack-response-drop", "mailbox-ack",
                 attempts: 1, dispatches: 1, successes: 1,
                 postDrop: 0, preOutage: 0, ackDrop: 1));
+        Assert.Contains(restarted.SanitizedLifecycle, exception.Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]

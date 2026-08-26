@@ -813,7 +813,8 @@ internal sealed class PhysicalChaosController
                 || FaultWindowStartedUnixMilliseconds <= 0
                 || FaultWindowDeadlineUnixMilliseconds <= FaultWindowStartedUnixMilliseconds)
                 throw new InvalidOperationException(
-                    "ChaosStatus diverged from the exact expected fault lifecycle.");
+                    "ChaosStatus diverged from the exact expected fault lifecycle; " +
+                    SanitizedLifecycle);
         }
 
         internal void AssertOffBaseline()
