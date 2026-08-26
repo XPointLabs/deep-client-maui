@@ -41,11 +41,13 @@ public sealed class PhysicalChaosAuthorityTests
     }
 
     [Fact]
-    public void DependencyAuthority_VerifiesUnderParentReadLease()
+    public void DependencyAuthority_VerifiesManifestAndReviewedFilesUnderParentReadLease()
     {
         using var fixture = AuthorityFixture.Create();
-        using var parentLease = File.Open(
+        using var manifestLease = File.Open(
             fixture.Manifest, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var reviewedFileLease = File.Open(
+            fixture.Launcher, FileMode.Open, FileAccess.Read, FileShare.Read);
 
         fixture.Authority.Verify();
     }

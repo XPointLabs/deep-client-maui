@@ -636,7 +636,10 @@ internal sealed class PhysicalChaosController
 
         private static string Sha256File(string path)
         {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None,
+            // The parent runner keeps read-only leases on every execution-snapshot file.
+            // Sharing reads preserves that anti-mutation lease while allowing this child
+            // verifier to hash the exact same bytes.
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
                 bufferSize: 64 * 1024, FileOptions.SequentialScan);
             return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
         }
