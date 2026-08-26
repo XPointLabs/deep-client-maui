@@ -224,6 +224,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.Contains("WaitForCorrelatedDescendant(", physical, StringComparison.Ordinal);
         Assert.Contains("WaitForCorrelatedDescendantWithAnyName(", windows,
             StringComparison.Ordinal);
+        Assert.Contains("WaitForAutomationIdWithNameContaining(", physical,
+            StringComparison.Ordinal);
         Assert.Contains("CountCorrelatedAncestors(", physical, StringComparison.Ordinal);
         Assert.Contains("WaitForNewCorrelatedDescendantWithAnyName(", physical,
             StringComparison.Ordinal);

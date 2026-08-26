@@ -1157,23 +1157,24 @@ public sealed class StrictCrossPlatformUiTests
             WindowsUiSmokeTests.WindowsUiTestSession windows,
             string expectedSelection)
     {
+        var proofMarker = Require(
+            windows.WaitForAutomationIdWithNameContaining(
+                "PhysicalE2E.RouteProofMarker",
+                "|selected=" + expectedSelection + "|",
+                TimeSpan.FromSeconds(30)),
+            "PhysicalE2E.RouteProofMarker");
+        var proof = StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
+            proofMarker.Properties.Name.ValueOrDefault ?? string.Empty);
+        Assert.Equal(expectedSelection, proof.Selected);
         var marker = Require(
-            windows.WaitForAutomationId(
-                "PhysicalE2E.RouteNodeMarker",
+            windows.WaitForAutomationIdWithName(
+                "PhysicalE2E.RouteNodeMarker", proof.Entry,
                 TimeSpan.FromSeconds(30)),
             "PhysicalE2E.RouteNodeMarker");
         var routerId = marker.Properties.Name.ValueOrDefault ?? string.Empty;
         Assert.Equal(64, routerId.Length);
         Assert.All(routerId, static value =>
             Assert.True(value is >= '0' and <= '9' or >= 'a' and <= 'f'));
-        var proofMarker = Require(
-            windows.WaitForAutomationId(
-                "PhysicalE2E.RouteProofMarker",
-                TimeSpan.FromSeconds(30)),
-            "PhysicalE2E.RouteProofMarker");
-        var proof = StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
-            proofMarker.Properties.Name.ValueOrDefault ?? string.Empty);
-        Assert.Equal(expectedSelection, proof.Selected);
         Assert.Equal(routerId, proof.Entry);
         return proof;
     }

@@ -624,6 +624,30 @@ public sealed class WindowsUiSmokeTests
             return result.Result;
         }
 
+        internal AutomationElement? WaitForAutomationIdWithNameContaining(
+            string automationId,
+            string exactMarker,
+            TimeSpan timeout)
+        {
+            if (string.IsNullOrEmpty(exactMarker))
+                throw new ArgumentException("A nonempty exact marker is required.", nameof(exactMarker));
+            var result = Retry.WhileNull(
+                () =>
+                {
+                    var matches = CurrentWindow().FindAllDescendants(
+                        condition => condition.ByAutomationId(automationId));
+                    if (matches.Length > 1)
+                        throw new InvalidOperationException(
+                            "AutomationId was not unique while waiting for an exact name marker.");
+                    return matches.Length == 1 &&
+                        (matches[0].Properties.Name.ValueOrDefault ?? string.Empty)
+                            .Contains(exactMarker, StringComparison.Ordinal)
+                        ? matches[0]
+                        : null;
+                }, timeout, TimeSpan.FromMilliseconds(200), throwOnTimeout: false);
+            return result.Result;
+        }
+
         internal AutomationElement? WaitForCorrelatedDescendant(
             string ancestorAutomationId,
             string correlationAutomationId,
