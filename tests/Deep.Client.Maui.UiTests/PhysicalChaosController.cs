@@ -146,7 +146,8 @@ internal sealed class PhysicalChaosController
             Thread.Sleep(250);
         }
         throw new InvalidOperationException(
-            "ChaosStatus did not reach the exact expected counters within the bounded wait.");
+            "ChaosStatus did not reach the exact expected counters within the bounded wait; " +
+            (last?.SanitizedLifecycle ?? "no status was observed"));
     }
 
     internal string WriteVerifiedStatusEvidence(
@@ -780,6 +781,14 @@ internal sealed class PhysicalChaosController
             && PostDurableAckResponseDropCount == ackDrop
             && FaultWindowStartedUnixMilliseconds > 0
             && FaultWindowDeadlineUnixMilliseconds > FaultWindowStartedUnixMilliseconds;
+
+        internal string SanitizedLifecycle =>
+            $"running={Running};armed={Armed};consumed={Consumed};" +
+            $"requests={RequestCount};attempts={OperationAttemptCount};" +
+            $"dispatches={OperationUpstreamDispatchCount};" +
+            $"successes={OperationUpstreamSuccessCount};injected={InjectedFaultCount};" +
+            $"postDrop={PostDurableResponseDropCount};" +
+            $"preOutage={PreDispatchOutageCount};ackDrop={PostDurableAckResponseDropCount}";
 
         internal void AssertCanStillReachConsumedCounters(
             string expectedFault,

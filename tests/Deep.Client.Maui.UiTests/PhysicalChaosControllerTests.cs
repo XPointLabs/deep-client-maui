@@ -42,6 +42,10 @@ public sealed class PhysicalChaosControllerTests
         status.AssertConsumed("pre-dispatch-outage", "mailbox-store",
             attempts: 2, dispatches: 1, successes: 1,
             postDrop: 0, preOutage: 1, ackDrop: 0);
+        Assert.Equal(
+            "running=True;armed=False;consumed=True;requests=0;attempts=2;" +
+            "dispatches=1;successes=1;injected=1;postDrop=0;preOutage=1;ackDrop=0",
+            status.SanitizedLifecycle);
         Assert.Throws<InvalidOperationException>(() =>
             status.AssertConsumed("pre-dispatch-outage", "mailbox-store",
                 attempts: 3, dispatches: 1, successes: 1,
