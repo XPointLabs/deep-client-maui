@@ -2042,12 +2042,20 @@ internal sealed class AndroidUiautomatorClient
         while (DateTime.UtcNow < until)
         {
             var query = Adb("shell", "content", "query", "--uri",
-                "content://media/external/images/media", "--projection", "_display_name",
-                "--where", $"_display_name='{marker}'");
+                "content://media/external/images/media", "--projection", "_display_name");
             RequireSuccess(query);
-            if (query.Output.Split('\n').Any(line => string.Equals(
-                    line.Trim(), "Row: 0 _display_name=" + marker,
-                    StringComparison.Ordinal)))
+            var matches = query.Output.Split('\n')
+                .Select(line =>
+                {
+                    const string Prefix = "_display_name=";
+                    var index = line.IndexOf(Prefix, StringComparison.Ordinal);
+                    return index < 0 ? string.Empty : line[(index + Prefix.Length)..].Trim();
+                })
+                .Count(name => string.Equals(name, marker, StringComparison.Ordinal));
+            if (matches > 1)
+                throw new InvalidOperationException(
+                    "Android MediaStore registered duplicate exact image fixtures.");
+            if (matches == 1)
                 return;
             Thread.Sleep(250);
         }
