@@ -472,7 +472,8 @@ public sealed class StrictCrossPlatformUiTests
             VersionPolicy = HttpVersionPolicy.RequestVersionExact,
             Content = new ByteArrayContent([])
         };
-        using var response = client.Send(request);
+        using var response = client.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
