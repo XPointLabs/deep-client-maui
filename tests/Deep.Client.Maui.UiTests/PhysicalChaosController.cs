@@ -623,7 +623,7 @@ internal sealed class PhysicalChaosController
 
         private static byte[] ReadBoundedExclusive(string path, int maximumBytes, string label)
         {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None,
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
                 bufferSize: 4096, FileOptions.SequentialScan);
             if (stream.Length <= 0 || stream.Length > maximumBytes)
                 throw new InvalidOperationException($"{label} has an invalid size.");

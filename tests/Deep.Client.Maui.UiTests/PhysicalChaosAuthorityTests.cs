@@ -41,6 +41,16 @@ public sealed class PhysicalChaosAuthorityTests
     }
 
     [Fact]
+    public void DependencyAuthority_VerifiesUnderParentReadLease()
+    {
+        using var fixture = AuthorityFixture.Create();
+        using var parentLease = File.Open(
+            fixture.Manifest, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        fixture.Authority.Verify();
+    }
+
+    [Fact]
     public void EndAndAssertBaseline_RetriesAndDoesNotMarkEndedAfterFailure()
     {
         var calls = 0;
