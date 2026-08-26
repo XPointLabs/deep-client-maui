@@ -188,6 +188,17 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("windows.WaitForAutomationIdWithName(\n            \"PhysicalE2E.RuntimeReadyMarker\",\n            \"ready\"",
             physical, StringComparison.Ordinal);
+        var addWindowsContact = physical.IndexOf(
+            "private static void AddWindowsContact", StringComparison.Ordinal);
+        Assert.True(addWindowsContact >= 0);
+        var directDraft = physical.IndexOf(
+            "windows.WaitForAutomationId(\"DesktopWorkspace.DirectDraft\"",
+            addWindowsContact, StringComparison.Ordinal);
+        Assert.True(directDraft > addWindowsContact);
+        var directReady = physical.IndexOf(
+            "windows.WaitForAutomationIdWithName(", directDraft,
+            StringComparison.Ordinal);
+        Assert.True(directReady > directDraft);
         Assert.Contains("'PhysicalE2E.RuntimeReadyMarker'", runner, StringComparison.Ordinal);
     }
 

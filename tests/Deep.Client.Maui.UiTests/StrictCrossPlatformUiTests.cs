@@ -1135,6 +1135,9 @@ public sealed class StrictCrossPlatformUiTests
             displayName ?? StrictCrossPlatformContracts.NewMarker("android-contact");
         windows.ActivateExact(Require(windows.WaitForAutomationId("NewConversation.Start", TimeSpan.FromSeconds(10)), "NewConversation.Start"));
         Require(windows.WaitForAutomationId("DesktopWorkspace.DirectDraft", TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectDraft");
+        Require(windows.WaitForAutomationIdWithName(
+            "PhysicalE2E.RuntimeReadyMarker", "ready", TimeSpan.FromSeconds(45)),
+            "PhysicalE2E.RuntimeReadyMarker:ready");
     }
 
     private static void SendWindowsMessage(WindowsUiSmokeTests.WindowsUiTestSession windows, string message)
