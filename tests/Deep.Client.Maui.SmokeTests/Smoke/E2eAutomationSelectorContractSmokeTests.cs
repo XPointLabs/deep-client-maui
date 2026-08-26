@@ -119,9 +119,11 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("string.Join(',', routes.Fallback.Select", source,
             StringComparison.Ordinal);
-        Assert.Contains("|selected={selectedRoute.Route}|entry={routerId}", source,
+        Assert.Contains("|selected={selectedRoute}|entry={routerId}", source,
             StringComparison.Ordinal);
-        Assert.Contains("physicalRouteDiagnostics.CurrentSelection", source,
+        Assert.Contains("physicalRouteUsageTracker.GetObservedRouterIds", source,
+            StringComparison.Ordinal);
+        Assert.Contains("physicalRouteUsageTracker.Reset(selected.Id)", source,
             StringComparison.Ordinal);
         Assert.Contains("physicalRouteNodeMarker.Text = routerId ?? string.Empty;", source,
             StringComparison.Ordinal);
@@ -139,6 +141,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("Convert.ToHexStringLower(usage.EntryRouterId.Span)", tracker,
             StringComparison.Ordinal);
+        Assert.Contains("observedDurableRouters", tracker, StringComparison.Ordinal);
         Assert.Contains("IPrivacyMailboxRouteSelectionObserver", diagnostics,
             StringComparison.Ordinal);
         Assert.Contains("diagnostics.ObserveSelection(selection, entryRouterId)", diagnostics,

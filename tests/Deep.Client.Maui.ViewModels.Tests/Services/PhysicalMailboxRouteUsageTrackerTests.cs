@@ -82,6 +82,31 @@ public sealed class PhysicalMailboxRouteUsageTrackerTests
         Assert.Null(tracker.GetCurrentRouterId(ConversationA));
     }
 
+    [Fact]
+    public void DurableHistoryPreservesBothRoutesUntilExplicitConversationReset()
+    {
+        var tracker = new PhysicalMailboxRouteUsageTracker();
+        var fallbackAttempt = Guid.NewGuid();
+        var primaryAttempt = Guid.NewGuid();
+        tracker.Observe(Usage(ConversationA, fallbackAttempt,
+            MailboxDispatchRouteOutcome.Started));
+        tracker.Observe(Usage(ConversationA, fallbackAttempt,
+            MailboxDispatchRouteOutcome.Durable, RouterB));
+        tracker.Observe(Usage(ConversationA, primaryAttempt,
+            MailboxDispatchRouteOutcome.Started));
+        tracker.Observe(Usage(ConversationA, primaryAttempt,
+            MailboxDispatchRouteOutcome.Durable, RouterA));
+
+        Assert.Equal(
+            [Convert.ToHexStringLower(RouterA), Convert.ToHexStringLower(RouterB)],
+            tracker.GetObservedRouterIds(ConversationA));
+
+        tracker.Reset(ConversationA);
+
+        Assert.Empty(tracker.GetObservedRouterIds(ConversationA));
+        Assert.Null(tracker.GetCurrentRouterId(ConversationA));
+    }
+
     private static MailboxDispatchRouteUsage Usage(
         ConversationId conversationId,
         Guid attemptId,

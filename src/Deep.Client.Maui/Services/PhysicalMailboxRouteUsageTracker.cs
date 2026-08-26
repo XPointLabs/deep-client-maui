@@ -12,6 +12,7 @@ internal sealed class PhysicalMailboxRouteUsageTracker :
 {
     private readonly object gate = new();
     private readonly Dictionary<ConversationId, AttemptState> current = [];
+    private readonly Dictionary<ConversationId, HashSet<string>> observedDurableRouters = [];
 
     public event EventHandler<ConversationId>? Changed;
 
@@ -31,11 +32,22 @@ internal sealed class PhysicalMailboxRouteUsageTracker :
             else if (current.TryGetValue(usage.ConversationId, out var active) &&
                      active.AttemptId == usage.AttemptId)
             {
+                var entryRouterId = usage.Outcome == MailboxDispatchRouteOutcome.Durable
+                    ? Convert.ToHexStringLower(usage.EntryRouterId.Span)
+                    : null;
                 current[usage.ConversationId] = new AttemptState(
                     usage.AttemptId,
-                    usage.Outcome == MailboxDispatchRouteOutcome.Durable
-                        ? Convert.ToHexStringLower(usage.EntryRouterId.Span)
-                        : null);
+                    entryRouterId);
+                if (entryRouterId is not null)
+                {
+                    if (!observedDurableRouters.TryGetValue(
+                            usage.ConversationId, out var routers))
+                    {
+                        routers = new HashSet<string>(StringComparer.Ordinal);
+                        observedDurableRouters.Add(usage.ConversationId, routers);
+                    }
+                    routers.Add(entryRouterId);
+                }
                 changed = true;
             }
         }
@@ -52,6 +64,27 @@ internal sealed class PhysicalMailboxRouteUsageTracker :
                 ? state.EntryRouterId
                 : null;
         }
+    }
+
+    public IReadOnlyList<string> GetObservedRouterIds(
+        ConversationId conversationId)
+    {
+        lock (gate)
+        {
+            return observedDurableRouters.TryGetValue(conversationId, out var routers)
+                ? routers.Order(StringComparer.Ordinal).ToArray()
+                : [];
+        }
+    }
+
+    public void Reset(ConversationId conversationId)
+    {
+        lock (gate)
+        {
+            current.Remove(conversationId);
+            observedDurableRouters.Remove(conversationId);
+        }
+        PublishChanged(conversationId);
     }
 
     private void PublishChanged(ConversationId conversationId)
