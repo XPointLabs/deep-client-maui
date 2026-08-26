@@ -2005,7 +2005,28 @@ internal sealed class AndroidUiautomatorClient
         // already-running task. A physical phase must begin at the app root, while
         // preserving all production data, so close the process before every launch.
         ForceStop();
+        DismissStaleDocumentPicker();
         RequireSuccess(Adb("shell", "monkey", "-p", StrictCrossPlatformContracts.AndroidPackage, "1"));
+    }
+    private void DismissStaleDocumentPicker()
+    {
+        const string DocumentPickerActivity =
+            "com.google.android.documentsui/com.android.documentsui.picker.PickActivity";
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var activities = Adb("shell", "dumpsys", "activity", "activities");
+            RequireSuccess(activities);
+            var resumed = activities.Output.Split('\n')
+                .FirstOrDefault(line => line.Contains(
+                    "mResumedActivity", StringComparison.Ordinal));
+            if (resumed is null || !resumed.Contains(
+                    DocumentPickerActivity, StringComparison.Ordinal))
+                return;
+            RequireSuccess(Adb("shell", "input", "keyevent", "KEYCODE_BACK"));
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException(
+            "The stale Android document picker did not close before E2E launch.");
     }
     internal void ForceStop() => RequireSuccess(Adb("shell", "am", "force-stop", StrictCrossPlatformContracts.AndroidPackage));
     internal void PushFixture(string source, string marker) { var target = "/sdcard/Download/" + marker; RequireSuccess(Adb("push", source, target)); }
