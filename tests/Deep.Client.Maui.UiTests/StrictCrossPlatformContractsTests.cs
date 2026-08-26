@@ -114,6 +114,21 @@ public sealed class StrictCrossPlatformContractsTests
     }
 
     [Fact]
+    public void Visible_picker_lookup_ignores_only_zero_area_system_duplicates()
+    {
+        const string xml = "<hierarchy><node resource-id='android:id/title' text='Files' bounds='[0,0][0,0]' /><node resource-id='android:id/title' text='Files' bounds='[4,8][8,16]' /></hierarchy>";
+
+        var node = StrictCrossPlatformContracts.FindExactlyOneVisibleResourceIdWithText(
+            xml, "android:id/title", "Files");
+
+        Assert.Equal((6, 12), node.Bounds.Center);
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.FindExactlyOneVisibleResourceIdWithText(
+                xml.Replace("[0,0][0,0]", "[1,1][2,2]", StringComparison.Ordinal),
+                "android:id/title", "Files"));
+    }
+
+    [Fact]
     public void Repeated_message_body_nodes_match_the_unique_marker_not_the_unique_resource_id()
     {
         const string xml = "<hierarchy><node resource-id='network.xpoint.deep.e2e:id/message' text='older' bounds='[0,0][2,2]' /><node resource-id='network.xpoint.deep.e2e:id/message' text='marker-123' bounds='[2,2][4,4]' /></hierarchy>";

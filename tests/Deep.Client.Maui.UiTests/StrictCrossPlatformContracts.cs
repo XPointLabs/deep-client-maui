@@ -306,6 +306,34 @@ internal static class StrictCrossPlatformContracts
         };
     }
 
+    internal static AndroidNode FindExactlyOneVisibleResourceIdWithText(
+        string xml,
+        string resourceId,
+        string text)
+    {
+        ValidateResourceId(resourceId, "resource-id");
+        var document = XDocument.Parse(xml, LoadOptions.None);
+        var matches = document.Descendants("node")
+            .Where(node => string.Equals(
+                (string?)node.Attribute("resource-id"), resourceId,
+                StringComparison.Ordinal))
+            .Where(node => string.Equals(
+                (string?)node.Attribute("text") ?? string.Empty, text,
+                StringComparison.Ordinal))
+            .Select(AndroidNode.FromVisibleOrNull)
+            .Where(static node => node is not null)
+            .Cast<AndroidNode>()
+            .ToArray();
+        return matches.Length switch
+        {
+            1 => matches[0],
+            0 => throw new InvalidOperationException(
+                $"Required visible Android resource-id/text pair was not present: {resourceId}."),
+            _ => throw new InvalidOperationException(
+                $"Visible Android resource-id/text pair was not unique: {resourceId} ({matches.Length} matches).")
+        };
+    }
+
     internal static AndroidNode FindExactlyOneResourceIdContainingText(string xml, string resourceId, string text)
     {
         ValidateResourceId(resourceId, "resource-id");
@@ -702,24 +730,50 @@ internal static class StrictCrossPlatformContracts
                 (string?)node.Attribute("content-desc") ?? string.Empty,
                 bounds);
         }
+
+        internal static AndroidNode? FromVisibleOrNull(XElement node)
+        {
+            var resourceId = (string?)node.Attribute("resource-id") ??
+                throw new InvalidOperationException("uiautomator node has no resource-id.");
+            if (!AndroidBounds.TryParseVisible(
+                    (string?)node.Attribute("bounds") ?? string.Empty,
+                    out var bounds))
+                return null;
+            return new AndroidNode(
+                resourceId,
+                (string?)node.Attribute("text") ?? string.Empty,
+                (string?)node.Attribute("content-desc") ?? string.Empty,
+                bounds);
+        }
     }
 
     internal readonly record struct AndroidBounds(int Left, int Top, int Right, int Bottom)
     {
         internal static AndroidBounds Parse(string value)
         {
+            if (!TryParseVisible(value, out var bounds))
+                throw new InvalidOperationException("uiautomator bounds are invalid.");
+            return bounds;
+        }
+
+        internal static bool TryParseVisible(string value, out AndroidBounds bounds)
+        {
             var match = Bounds.Match(value);
             if (!match.Success ||
                 !int.TryParse(match.Groups["left"].Value, out var left) ||
                 !int.TryParse(match.Groups["top"].Value, out var top) ||
                 !int.TryParse(match.Groups["right"].Value, out var right) ||
-                !int.TryParse(match.Groups["bottom"].Value, out var bottom) ||
-                right <= left || bottom <= top)
+                !int.TryParse(match.Groups["bottom"].Value, out var bottom))
             {
                 throw new InvalidOperationException("uiautomator bounds are invalid.");
             }
-
-            return new AndroidBounds(left, top, right, bottom);
+            if (right <= left || bottom <= top)
+            {
+                bounds = default;
+                return false;
+            }
+            bounds = new AndroidBounds(left, top, right, bottom);
+            return true;
         }
 
         internal (int X, int Y) Center => (checked(Left + ((Right - Left) / 2)), checked(Top + ((Bottom - Top) / 2)));
