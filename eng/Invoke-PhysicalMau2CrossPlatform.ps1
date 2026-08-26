@@ -335,7 +335,7 @@ namespace Deep.PhysicalE2E
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $devOpsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot '..\deep-devops'))
 $chaosManifestPath = Join-Path $repoRoot 'eng\physical-chaos-dependencies.v1.json'
-$chaosManifestSha256 = '7ef641655b4529300e0cf8a228a6ded2e2b9f6be1ea7d742c3453450fdf4e9f6'
+$chaosManifestSha256 = '16ad16c859a20c3991e6ef08f388b6c708732c813a95fbc6db6c8ff422a919a6'
 $androidPackage = 'network.xpoint.deep.e2e'
 $productionPackage = 'network.xpoint.deep'
 $policyPath = Join-Path $repoRoot '.secrets\android-lab\approved-policy.json'
@@ -581,7 +581,8 @@ function Assert-ChaosDependencyAuthority {
     if ($systemPaths.Count -ne $expectedSystems.Count) {
         throw 'Chaos system executable set is incomplete.'
     }
-    $orderedLines = @($lines | Sort-Object -CaseSensitive)
+    $orderedLines = $lines.ToArray()
+    [Array]::Sort($orderedLines, [StringComparer]::Ordinal)
     $treeMaterial = 'deep.physical-chaos.dependency-tree.v1' + [char]0 + ($orderedLines -join '')
     if ((Get-TextSha256 $treeMaterial) -cne $manifest.dependencyTreeSha256) {
         throw 'Chaos dependency tree digest is invalid.'

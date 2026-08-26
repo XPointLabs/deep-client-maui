@@ -1,7 +1,7 @@
 {
   "schema": "deep.physical-chaos-dependencies.v1",
   "reviewedDevOpsCommit": "2a41656323cdb7a34b7570214940767f33743ef4",
-  "dependencyTreeSha256": "c9d073cb4661298177a716d1d624c89914fc911e0e5ca233a6f2128ea907ae1f",
+  "dependencyTreeSha256": "d6a250233460e1ffff522d91a8232e7801175e7511fb1835eef9922de2d09b78",
   "files": [
     { "path": "config/survival-uat-tls/haproxy.cfg", "sha256": "812c37b8cf7d5dfb925459e32bf0992800e71fa8c7a377aad3eaf0f0312d02b9" },
     { "path": "docker-compose.survival-resend-chaos.dev.yml", "sha256": "c0c2daeb778174636f2ce4926f1696292cf11f1dbb0fd03b1627272b344fc1ec" },

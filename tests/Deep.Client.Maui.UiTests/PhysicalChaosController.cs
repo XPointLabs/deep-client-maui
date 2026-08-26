@@ -10,7 +10,7 @@ internal sealed class PhysicalChaosController
 {
     internal const string DevOpsCommit = "2a41656323cdb7a34b7570214940767f33743ef4";
     internal const string DependencyManifestSha256 =
-        "7ef641655b4529300e0cf8a228a6ded2e2b9f6be1ea7d742c3453450fdf4e9f6";
+        "16ad16c859a20c3991e6ef08f388b6c708732c813a95fbc6db6c8ff422a919a6";
     internal const int TtlSeconds = 300;
     private const int CleanupAttempts = 3;
     private readonly string launcher;

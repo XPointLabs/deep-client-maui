@@ -52,6 +52,11 @@ public sealed class PhysicalChaosRunnerContractSmokeTests
         var manifestHash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(manifestPath)));
 
         Assert.Contains($"$chaosManifestSha256 = '{manifestHash}'", runner, StringComparison.Ordinal);
+        Assert.Contains("$orderedLines = $lines.ToArray()", runner, StringComparison.Ordinal);
+        Assert.Contains("[Array]::Sort($orderedLines, [StringComparer]::Ordinal)", runner,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("$lines | Sort-Object -CaseSensitive", runner,
+            StringComparison.Ordinal);
         Assert.Contains("CreateSuspended | CreateNoWindow", runner, StringComparison.Ordinal);
         Assert.True(runner.IndexOf("AssignProcessToJobObject", StringComparison.Ordinal)
             < runner.IndexOf("ResumeThread(information.ThreadHandle)", StringComparison.Ordinal));
