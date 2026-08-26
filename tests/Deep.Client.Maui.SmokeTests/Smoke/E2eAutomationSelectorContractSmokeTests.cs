@@ -222,9 +222,13 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("windows.FocusWindow();", physical, StringComparison.Ordinal);
         Assert.Contains("current = current.Parent;", windows, StringComparison.Ordinal);
-        Assert.Contains("IsOwnedByExactWindow(", windows, StringComparison.Ordinal);
-        Assert.Contains("depth < 8", windows, StringComparison.Ordinal);
-        Assert.Contains("seen.Add(current)", windows, StringComparison.Ordinal);
+        Assert.Contains("SnapshotTopLevelWindowHandles()", windows, StringComparison.Ordinal);
+        Assert.Contains("ChooseSingleFileFromNewForegroundPicker(", windows,
+            StringComparison.Ordinal);
+        Assert.Contains("!topLevelBaseline.Contains(", windows, StringComparison.Ordinal);
+        Assert.Contains("GetForegroundWindow()", windows, StringComparison.Ordinal);
+        Assert.Contains("AutomationId.ValueOrDefault == \"1\"", windows,
+            StringComparison.Ordinal);
     }
 
     [Fact]

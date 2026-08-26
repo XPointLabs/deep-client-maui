@@ -591,24 +591,38 @@ public sealed class WindowsUiSmokeTests
                 "The app did not expose one exact requested action-sheet button.");
         }
 
-        internal void ChooseSingleFileFromOwnedPicker(string absolutePath, TimeSpan timeout)
+        internal IReadOnlySet<IntPtr> SnapshotTopLevelWindowHandles() =>
+            automation.GetDesktop()
+                .FindAllChildren(condition => condition.ByControlType(ControlType.Window))
+                .Select(static element => element.Properties.NativeWindowHandle.ValueOrDefault)
+                .Where(static handle => handle != IntPtr.Zero)
+                .ToHashSet();
+
+        internal void ChooseSingleFileFromNewForegroundPicker(
+            string absolutePath,
+            IReadOnlySet<IntPtr> topLevelBaseline,
+            TimeSpan timeout)
         {
             if (!Path.IsPathFullyQualified(absolutePath) || !File.Exists(absolutePath))
                 throw new InvalidOperationException("Picker input must be one existing absolute file.");
-            var mainHandle = CurrentWindow().Properties.NativeWindowHandle.ValueOrDefault;
+            ArgumentNullException.ThrowIfNull(topLevelBaseline);
             var result = Retry.WhileNull(
                 () => automation.GetDesktop().FindAllChildren()
                     .Where(element => element.ControlType == ControlType.Window
-                        && element.Properties.NativeWindowHandle.ValueOrDefault != mainHandle)
-                    .Where(element => element.Properties.ProcessId.ValueOrDefault == application.ProcessId
-                        || IsOwnedByExactWindow(
-                            element.Properties.NativeWindowHandle.ValueOrDefault,
-                            mainHandle))
+                        && element.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero
+                        && !topLevelBaseline.Contains(
+                            element.Properties.NativeWindowHandle.ValueOrDefault)
+                        && element.Properties.NativeWindowHandle.ValueOrDefault ==
+                            GetForegroundWindow())
                     .SingleOrDefault(element => element.FindAllDescendants(
-                        condition => condition.ByControlType(ControlType.Edit)).Length > 0),
+                            condition => condition.ByControlType(ControlType.Edit)).Length > 0
+                        && element.FindAllDescendants(
+                            condition => condition.ByControlType(ControlType.Button))
+                            .Count(button =>
+                                button.Properties.AutomationId.ValueOrDefault == "1") == 1),
                 timeout, TimeSpan.FromMilliseconds(200), throwOnTimeout: false);
             var picker = result.Result ?? throw new InvalidOperationException(
-                "The file picker was not uniquely owned by the exact app window.");
+                "The exact app action did not create one new canonical foreground file picker.");
             var editors = picker.FindAllDescendants(
                 condition => condition.ByControlType(ControlType.Edit));
             var editor = editors.SingleOrDefault(element =>
@@ -622,24 +636,6 @@ public sealed class WindowsUiSmokeTests
             if (openButtons.Length != 1)
                 throw new InvalidOperationException("The owned file picker has no unique affirmative button.");
             ActivateExact(openButtons[0]);
-        }
-
-        private static bool IsOwnedByExactWindow(
-            IntPtr candidateHandle,
-            IntPtr expectedOwnerHandle)
-        {
-            var seen = new HashSet<IntPtr>();
-            var current = candidateHandle;
-            for (var depth = 0; depth < 8 && current != IntPtr.Zero; depth++)
-            {
-                if (!seen.Add(current))
-                    return false;
-                current = GetWindow(current, 4);
-                if (current == expectedOwnerHandle)
-                    return true;
-            }
-
-            return false;
         }
 
         internal void HoldExact(AutomationElement element, TimeSpan duration)
@@ -958,7 +954,7 @@ public sealed class WindowsUiSmokeTests
         private static extern bool PrintWindow(IntPtr windowHandle, IntPtr deviceContext, uint flags);
 
         [DllImport("user32.dll")]
-        private static extern IntPtr GetWindow(IntPtr windowHandle, uint command);
+        private static extern IntPtr GetForegroundWindow();
 
         private static void WriteLaunchFailure(string artifactDirectory, Application app, Exception exception)
         {

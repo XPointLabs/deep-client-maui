@@ -1209,13 +1209,15 @@ public sealed class StrictCrossPlatformUiTests
         bool verifyOpen)
     {
         windows.FocusWindow();
+        var pickerBaseline = windows.SnapshotTopLevelWindowHandles();
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectAttach"));
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.AttachmentPickFile", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.AttachmentPickFile"));
-        windows.ChooseSingleFileFromOwnedPicker(fixturePath, TimeSpan.FromSeconds(20));
+        windows.ChooseSingleFileFromNewForegroundPicker(
+            fixturePath, pickerBaseline, TimeSpan.FromSeconds(20));
         Require(windows.WaitForAutomationIdWithName(
             "DesktopWorkspace.DirectStagedAttachmentFilename", fileName,
             TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectStagedAttachmentFilename");
@@ -1301,13 +1303,15 @@ public sealed class StrictCrossPlatformUiTests
         var previousAndroidImageMetadata = android.CountResourceId(
             options.App("Chat.ImageMetadata"));
         windows.FocusWindow();
+        var pickerBaseline = windows.SnapshotTopLevelWindowHandles();
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectAttach"));
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.AttachmentPickPhoto", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.AttachmentPickPhoto"));
-        windows.ChooseSingleFileFromOwnedPicker(options.ImageFixturePath,
+        windows.ChooseSingleFileFromNewForegroundPicker(options.ImageFixturePath,
+            pickerBaseline,
             TimeSpan.FromSeconds(20));
         Require(windows.WaitForAutomationIdWithName(
             "DesktopWorkspace.DirectStagedAttachmentFilename", expectedSentName,
