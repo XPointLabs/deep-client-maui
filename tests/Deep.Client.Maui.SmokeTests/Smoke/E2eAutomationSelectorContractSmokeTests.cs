@@ -163,6 +163,12 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.Contains("SetPhysicalRuntimeReady(false);", conversations, StringComparison.Ordinal);
         Assert.Contains("AutomationId = \"PhysicalE2E.RuntimeReadyMarker\"", desktop,
             StringComparison.Ordinal);
+        Assert.Contains("AutomationId = \"PhysicalE2E.MailboxQuiescence\"", desktop,
+            StringComparison.Ordinal);
+        Assert.Contains("physicalMailboxSyncQuiesced = true;", desktop,
+            StringComparison.Ordinal);
+        Assert.Contains("&& !physicalMailboxSyncQuiesced", desktop,
+            StringComparison.Ordinal);
         Assert.Contains("WorkspaceRoot.Children.Add(physicalRuntimeReadyMarker)", desktop,
             StringComparison.Ordinal);
         Assert.DoesNotContain("DetailContent.Children.Add(physicalRuntimeReadyMarker)", desktop,
@@ -199,6 +205,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             "windows.WaitForAutomationIdWithName(", directDraft,
             StringComparison.Ordinal);
         Assert.True(directReady > directDraft);
+        Assert.Contains("QuiesceWindowsMailboxPolling(windows);", physical,
+            StringComparison.Ordinal);
         Assert.Contains("'PhysicalE2E.RuntimeReadyMarker'", runner, StringComparison.Ordinal);
     }
 

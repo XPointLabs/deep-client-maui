@@ -33,6 +33,8 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
     private Label? physicalRouteProofMarker;
     private Label? physicalRuntimeReadyMarker;
     private Label? physicalVoicePlaybackState;
+    private Button? physicalMailboxQuiescence;
+    private bool physicalMailboxSyncQuiesced;
 #endif
     private IncomingCallPollingBackoff incomingCallPolling = new();
     private readonly VoiceMessagePlaybackService voicePlayback = new();
@@ -105,6 +107,7 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         CreatePhysicalRouteProofMarker();
         CreatePhysicalRuntimeReadyMarker();
         CreatePhysicalVoicePlaybackState();
+        CreatePhysicalMailboxQuiescence();
 #endif
         BindingContext = viewModel;
     }
@@ -120,6 +123,14 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
         pageActivityCancellation = new CancellationTokenSource();
         incomingCallPolling = new IncomingCallPollingBackoff();
         var cancellationToken = pageActivityCancellation.Token;
+#if DEBUG && DEEP_PHYSICAL_E2E
+        lock (syncPumpGate)
+        {
+            physicalMailboxSyncQuiesced = false;
+        }
+        SetPhysicalRuntimePending();
+        SetPhysicalMailboxQuiescenceState("active");
+#endif
 
         SubscribeEvents();
         viewModel.UpdateWindowWidth(Width);
@@ -358,6 +369,72 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             ZIndex = 102
         };
         DetailContent.Children.Add(physicalVoicePlaybackState);
+    }
+
+    private void CreatePhysicalMailboxQuiescence()
+    {
+        physicalMailboxQuiescence = new Button
+        {
+            AutomationId = "PhysicalE2E.MailboxQuiescence",
+            Text = "active",
+            IsVisible = true,
+            FontSize = 1,
+            Opacity = 0.01,
+            Padding = 0,
+            WidthRequest = 2,
+            HeightRequest = 2,
+            ZIndex = 103
+        };
+        physicalMailboxQuiescence.Clicked += OnPhysicalMailboxQuiescenceClicked;
+        WorkspaceRoot.Children.Add(physicalMailboxQuiescence);
+        Grid.SetColumnSpan(physicalMailboxQuiescence, 3);
+    }
+
+    private void SetPhysicalRuntimePending()
+    {
+        if (physicalRuntimeReadyMarker is not null)
+        {
+            physicalRuntimeReadyMarker.Text = "pending";
+            physicalRuntimeReadyMarker.IsVisible = true;
+        }
+    }
+
+    private void SetPhysicalMailboxQuiescenceState(string state)
+    {
+        if (physicalMailboxQuiescence is not null)
+        {
+            physicalMailboxQuiescence.Text = state;
+            physicalMailboxQuiescence.IsVisible = true;
+        }
+    }
+
+    private async void OnPhysicalMailboxQuiescenceClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+            Task? pending;
+            lock (syncPumpGate)
+            {
+                physicalMailboxSyncQuiesced = true;
+                Interlocked.Exchange(ref syncRequested, 0);
+                pending = syncPump;
+            }
+
+            syncTimer?.Stop();
+            SetPhysicalMailboxQuiescenceState("draining");
+            if (pending is not null)
+            {
+                await pending;
+            }
+
+            SetPhysicalMailboxQuiescenceState("quiescent");
+        }
+        catch (Exception ex)
+        {
+            SetPhysicalMailboxQuiescenceState("failed");
+            CrashDiagnostics.LogException(
+                "DesktopWorkspacePage.PhysicalMailboxQuiescence", ex);
+        }
     }
 
     private void UpdatePhysicalVoicePlaybackMarker(VoicePlaybackSnapshot snapshot)
@@ -1721,9 +1798,15 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             return;
         }
 
-        Interlocked.Exchange(ref syncRequested, 1);
         lock (syncPumpGate)
         {
+#if DEBUG && DEEP_PHYSICAL_E2E
+            if (physicalMailboxSyncQuiesced)
+            {
+                return;
+            }
+#endif
+            Interlocked.Exchange(ref syncRequested, 1);
             if (syncPump is { IsCompleted: false })
             {
                 return;
@@ -1781,6 +1864,9 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             {
                 syncPump = null;
                 restart = Volatile.Read(ref syncRequested) != 0
+#if DEBUG && DEEP_PHYSICAL_E2E
+                    && !physicalMailboxSyncQuiesced
+#endif
                     && pageActivityCancellation is { IsCancellationRequested: false };
             }
 

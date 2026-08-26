@@ -430,6 +430,7 @@ public sealed class StrictCrossPlatformUiTests
             var windowsIdentity = ReadWindowsIdentity(windows);
             AddAndroidContact(android, options, windowsIdentity, androidContact);
             AddWindowsContact(windows, androidIdentity, windowsContact);
+            QuiesceWindowsMailboxPolling(windows);
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 0, TimeSpan.FromSeconds(2));
             // Keep recipient mailbox polling and its encrypted ACK outside the
@@ -1143,6 +1144,24 @@ public sealed class StrictCrossPlatformUiTests
                 "PhysicalE2E.RuntimeReadyMarker")?.Name ?? "missing";
             throw new InvalidOperationException(
                 $"Windows direct mailbox sync did not become ready; state={terminal}.");
+        }
+    }
+
+    private static void QuiesceWindowsMailboxPolling(
+        WindowsUiSmokeTests.WindowsUiTestSession windows)
+    {
+        windows.ActivateExact(Require(windows.WaitForAutomationId(
+            "PhysicalE2E.MailboxQuiescence", TimeSpan.FromSeconds(15)),
+            "PhysicalE2E.MailboxQuiescence"));
+        var quiescent = windows.WaitForAutomationIdWithName(
+            "PhysicalE2E.MailboxQuiescence", "quiescent",
+            TimeSpan.FromSeconds(45));
+        if (quiescent is null)
+        {
+            var terminal = windows.FindAutomationId(
+                "PhysicalE2E.MailboxQuiescence")?.Name ?? "missing";
+            throw new InvalidOperationException(
+                $"Windows mailbox polling did not quiesce; state={terminal}.");
         }
     }
 
