@@ -121,6 +121,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("|selected={selectedRoute}|entry={routerId}", source,
             StringComparison.Ordinal);
+        Assert.Contains("|coordinator={coordinatorId}", source,
+            StringComparison.Ordinal);
         Assert.Contains("physicalRouteUsageTracker.GetObservedRouterIds", source,
             StringComparison.Ordinal);
         Assert.Contains("physicalRouteUsageTracker.Reset(selected.Id)", source,
@@ -142,6 +144,7 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.Contains("Convert.ToHexStringLower(usage.EntryRouterId.Span)", tracker,
             StringComparison.Ordinal);
         Assert.Contains("observedDurableRouters", tracker, StringComparison.Ordinal);
+        Assert.Contains("GetObservedCoordinatorId", tracker, StringComparison.Ordinal);
         Assert.Contains("IPrivacyMailboxRouteSelectionObserver", diagnostics,
             StringComparison.Ordinal);
         Assert.Contains("diagnostics.ObserveSelection(selection, entryRouterId)", diagnostics,

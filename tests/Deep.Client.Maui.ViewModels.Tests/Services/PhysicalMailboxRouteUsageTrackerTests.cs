@@ -98,7 +98,7 @@ public sealed class PhysicalMailboxRouteUsageTrackerTests
         diagnostics.ObserveSelection(
             PrivacyMailboxRouteSelection.Fallback, EntryB);
         tracker.Observe(Usage(ConversationA, fallbackAttempt,
-            MailboxDispatchRouteOutcome.Durable, RouterB));
+            MailboxDispatchRouteOutcome.Durable, RouterA));
         tracker.Observe(Usage(ConversationA, primaryAttempt,
             MailboxDispatchRouteOutcome.Started));
         diagnostics.ObserveSelection(
@@ -109,11 +109,38 @@ public sealed class PhysicalMailboxRouteUsageTrackerTests
         Assert.Equal(
             [Convert.ToHexStringLower(EntryA), Convert.ToHexStringLower(EntryB)],
             tracker.GetObservedRouterIds(ConversationA));
+        Assert.Equal(Convert.ToHexStringLower(RouterA),
+            tracker.GetObservedCoordinatorId(
+                ConversationA, Convert.ToHexStringLower(EntryB)));
+        Assert.NotEqual(Convert.ToHexStringLower(RouterB),
+            tracker.GetObservedCoordinatorId(
+                ConversationA, Convert.ToHexStringLower(EntryB)));
 
         tracker.Reset(ConversationA);
 
         Assert.Empty(tracker.GetObservedRouterIds(ConversationA));
         Assert.Null(tracker.GetCurrentRouterId(ConversationA));
+        Assert.Null(tracker.GetObservedCoordinatorId(
+            ConversationA, Convert.ToHexStringLower(EntryB)));
+    }
+
+    [Fact]
+    public void FallbackTerminalExitCannotMasqueradeAsAuthenticatedCoordinator()
+    {
+        var diagnostics = CreateDiagnostics();
+        var tracker = new PhysicalMailboxRouteUsageTracker(diagnostics);
+        var attempt = Guid.NewGuid();
+        tracker.Observe(Usage(ConversationA, attempt,
+            MailboxDispatchRouteOutcome.Started));
+        diagnostics.ObserveSelection(
+            PrivacyMailboxRouteSelection.Fallback, EntryB);
+
+        tracker.Observe(Usage(ConversationA, attempt,
+            MailboxDispatchRouteOutcome.Durable, RouterB));
+
+        Assert.Empty(tracker.GetObservedRouterIds(ConversationA));
+        Assert.Null(tracker.GetObservedCoordinatorId(
+            ConversationA, Convert.ToHexStringLower(EntryB)));
     }
 
     private static PrivacyMailboxRouteDiagnostics CreateDiagnostics()

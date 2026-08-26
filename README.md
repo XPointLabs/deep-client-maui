@@ -54,8 +54,12 @@ Runtime transport behavior:
   by both `activation.v1.json` and the Mr. X-signed mailbox policy.
 - Primary and fallback routes each contain exactly three independent X25519
   hops. All six router identities and keys, and both HTTPS ingress origins, must
-  be distinct. The Survival order is `xnode3 -> xnode4 -> xnode1` with fallback
-  `xnode5 -> xnode6 -> xnode2`.
+  be distinct. The Survival primary route is `xnode3 -> xnode4 -> xnode1`, where
+  `xnode1` is the sole authoritative mailbox coordinator. The fallback route is
+  `xnode5 -> xnode6 -> xnode2`, where `xnode2` is a forwarding-only privacy exit:
+  after unwrapping the privacy frame it forwards the unchanged canonical MAU2 to
+  `xnode1`. Consequently, authenticated MQR3 evidence identifies `xnode1`; its
+  coordinator is not the terminal fallback hop (`xnode2`).
 - Canonical MAU2 is sealed through `PrivacyRoutedMailboxBinaryIngress`.
   Fallback is permitted only after a definite pre-forward rejection. There is
   no direct MAU2, Session RPC, routed-storage, or raw HTTP message fallback.

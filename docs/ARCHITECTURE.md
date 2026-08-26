@@ -97,6 +97,13 @@ MRP1, or MAR1 evidence and advance durable state. The fallback route is eligible
 only when the primary proves forwarding did not start. Direct MAU2 HTTPS,
 Session RPC, and routed-storage fallback are absent.
 
+The Survival primary topology is `xnode3 -> xnode4 -> xnode1`; `xnode1` is the
+sole authoritative mailbox coordinator. The disjoint fallback topology is
+`xnode5 -> xnode6 -> xnode2`; `xnode2` is a forwarding-only privacy exit and,
+after unwrapping the privacy frame, forwards the unchanged canonical MAU2 to
+`xnode1`. MQR3 therefore authenticates `xnode1` as coordinator and does not
+identify the terminal fallback hop (`xnode2`) as the coordinator.
+
 The raw route artifact SHA-256 must equal both the activation
 `privacyRoutesSha256` and the same field in the verified Mr. X-signed policy.
 Its exact schema binds the platform, two clean HTTPS root origins, three hops

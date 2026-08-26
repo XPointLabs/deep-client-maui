@@ -149,8 +149,12 @@ Provision the pair with the Android and Windows public holder keys, assemble
 the platform-specific signed `mailbox-runtime-v1` root outside the repository,
 including `privacy-routes.v1.json`. Its raw SHA-256 must appear identically in
 the activation and Mr. X-signed policy. The primary route is
-`xnode3 -> xnode4 -> xnode1`; the disjoint fallback is
-`xnode5 -> xnode6 -> xnode2`. Both entry origins use platform-trusted HTTPS.
+`xnode3 -> xnode4 -> xnode1`, where `xnode1` is the sole authoritative mailbox
+coordinator. The disjoint fallback is `xnode5 -> xnode6 -> xnode2`, where
+`xnode2` is a forwarding-only privacy exit. After unwrapping the privacy frame,
+`xnode2` forwards the unchanged canonical MAU2 to `xnode1`. MQR3 authenticates
+`xnode1` as coordinator and is not evidence that the terminal fallback hop
+`xnode2` is a coordinator. Both entry origins use platform-trusted HTTPS.
 Before protected runtime paths enter the process, build the locked
 signature verifier once:
 
@@ -268,7 +272,9 @@ the exact UAT CA-trusted HTTP/2 origin. It then injects one canonical 64-byte
 retryable `DIE1` `BeforeForward` response at the primary entry and requires the
 same send to complete through the separately published three-hop fallback. The
 rendered proof binds `/api/ingress/v1/frame`, all three primary router IDs, all
-three disjoint fallback router IDs, the selected route and its entry router.
+three disjoint fallback router IDs, the selected route and its entry router. It
+also binds the authenticated MQR3 coordinator as `xnode1`, independently of the
+selected fallback route whose terminal forwarding-only privacy exit is `xnode2`.
 
 The retry/ACK phases use only the reviewed `deep-devops` chaos v2 CLI while the
 client remains on the unchanged CA-trusted `https://<LAN-IP>:41801` ingress. The

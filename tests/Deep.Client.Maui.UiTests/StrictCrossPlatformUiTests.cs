@@ -472,6 +472,8 @@ public sealed class StrictCrossPlatformUiTests
             evidence.AddSafeValue("chaosExecutionSnapshotSha256",
                 controller.ExecutionSnapshotSha256);
             evidence.AddHash("fallbackEntryRouterHash", routeProof.Entry);
+            evidence.AddHash(
+                "authoritativeCoordinatorRouterHash", routeProof.Coordinator);
             evidence.AddBoolean("managedIngressFramePathObserved", true);
             evidence.AddBoolean("primaryRouteContainsExactlyThreeHops", true);
             evidence.AddBoolean("fallbackRouteContainsExactlyThreeDisjointHops", true);
@@ -1210,6 +1212,9 @@ public sealed class StrictCrossPlatformUiTests
         var proof = StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
             proofMarker.Properties.Name.ValueOrDefault ?? string.Empty);
         Assert.Equal(expectedSelection, proof.Selected);
+        Assert.Equal(proof.Primary[^1], proof.Coordinator);
+        if (expectedSelection == "fallback")
+            Assert.NotEqual(proof.Fallback[^1], proof.Coordinator);
         var marker = Require(
             windows.WaitForAutomationIdWithName(
                 "PhysicalE2E.RouteNodeMarker", proof.Entry,

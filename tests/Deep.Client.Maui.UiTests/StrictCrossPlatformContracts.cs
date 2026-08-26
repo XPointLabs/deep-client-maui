@@ -891,17 +891,19 @@ internal static class StrictCrossPlatformContracts
         IReadOnlyList<string> Primary,
         IReadOnlyList<string> Fallback,
         string Selected,
-        string Entry)
+        string Entry,
+        string Coordinator)
     {
         internal static PrivacyRouteProof ParseExact(string value)
         {
             var fields = value.Split('|', StringSplitOptions.None);
-            if (fields.Length != 6 || fields[0] != "v1" ||
+            if (fields.Length != 7 || fields[0] != "v1" ||
                 fields[1] != "path=/api/ingress/v1/frame" ||
                 !fields[2].StartsWith("primary=", StringComparison.Ordinal) ||
                 !fields[3].StartsWith("fallback=", StringComparison.Ordinal) ||
                 !fields[4].StartsWith("selected=", StringComparison.Ordinal) ||
-                !fields[5].StartsWith("entry=", StringComparison.Ordinal))
+                !fields[5].StartsWith("entry=", StringComparison.Ordinal) ||
+                !fields[6].StartsWith("coordinator=", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("Physical privacy-route proof is not canonical.");
             }
@@ -910,6 +912,7 @@ internal static class StrictCrossPlatformContracts
             var fallback = fields[3]["fallback=".Length..].Split(',', StringSplitOptions.None);
             var selected = fields[4]["selected=".Length..];
             var entry = fields[5]["entry=".Length..];
+            var coordinator = fields[6]["coordinator=".Length..];
             var all = primary.Concat(fallback).ToArray();
             if (primary.Length != 3 || fallback.Length != 3 ||
                 all.Any(static id => !Regex.IsMatch(
@@ -917,6 +920,10 @@ internal static class StrictCrossPlatformContracts
                     id.All(static character => character == '0')) ||
                 all.Distinct(StringComparer.Ordinal).Count() != 6 ||
                 selected is not ("primary" or "fallback") ||
+                !Regex.IsMatch(coordinator, "^[a-f0-9]{64}$",
+                    RegexOptions.CultureInvariant) ||
+                coordinator.All(static character => character == '0') ||
+                !string.Equals(coordinator, primary[^1], StringComparison.Ordinal) ||
                 !string.Equals(
                     entry,
                     selected == "primary" ? primary[0] : fallback[0],
@@ -926,7 +933,8 @@ internal static class StrictCrossPlatformContracts
                     "Physical privacy-route proof is not exact-three, disjoint, or selected-entry bound.");
             }
 
-            return new PrivacyRouteProof(primary, fallback, selected, entry);
+            return new PrivacyRouteProof(
+                primary, fallback, selected, entry, coordinator);
         }
     }
 

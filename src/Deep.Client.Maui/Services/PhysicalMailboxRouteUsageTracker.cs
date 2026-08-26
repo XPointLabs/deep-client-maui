@@ -14,6 +14,8 @@ internal sealed class PhysicalMailboxRouteUsageTracker :
     private readonly object gate = new();
     private readonly Dictionary<ConversationId, AttemptState> current = [];
     private readonly Dictionary<ConversationId, HashSet<string>> observedDurableRouters = [];
+    private readonly Dictionary<ConversationId, Dictionary<string, string>>
+        observedDurableCoordinators = [];
 
     public event EventHandler<ConversationId>? Changed;
 
@@ -59,6 +61,16 @@ internal sealed class PhysicalMailboxRouteUsageTracker :
                             observedDurableRouters.Add(usage.ConversationId, routers);
                         }
                         routers.Add(durableEntryRouterId);
+                        if (!observedDurableCoordinators.TryGetValue(
+                                usage.ConversationId, out var coordinators))
+                        {
+                            coordinators = new Dictionary<string, string>(
+                                StringComparer.Ordinal);
+                            observedDurableCoordinators.Add(
+                                usage.ConversationId, coordinators);
+                        }
+                        coordinators[durableEntryRouterId] =
+                            Convert.ToHexStringLower(usage.EntryRouterId.Span);
                     }
                 }
                 changed = true;
@@ -90,34 +102,57 @@ internal sealed class PhysicalMailboxRouteUsageTracker :
         }
     }
 
+    public string? GetObservedCoordinatorId(
+        ConversationId conversationId,
+        string entryRouterId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(entryRouterId);
+        lock (gate)
+        {
+            return observedDurableCoordinators.TryGetValue(
+                       conversationId, out var coordinators) &&
+                   coordinators.TryGetValue(entryRouterId, out var coordinator)
+                ? coordinator
+                : null;
+        }
+    }
+
     public void Reset(ConversationId conversationId)
     {
         lock (gate)
         {
             current.Remove(conversationId);
             observedDurableRouters.Remove(conversationId);
+            observedDurableCoordinators.Remove(conversationId);
         }
         PublishChanged(conversationId);
     }
 
     private string? ResolveDurableEntryRouterId(
-        ReadOnlySpan<byte> coordinatorId)
+        ReadOnlySpan<byte> authenticatedCoordinatorId)
     {
         var routes = routeDiagnostics.Current;
         var selection = routeDiagnostics.CurrentSelection;
-        if (routes is null || selection is null)
+        if (routes is null || selection is null ||
+            authenticatedCoordinatorId.Length != 32 ||
+            authenticatedCoordinatorId.IndexOfAnyExcept((byte)0) < 0)
             return null;
         var selected = selection.Route == "primary"
             ? routes.Primary
             : selection.Route == "fallback"
                 ? routes.Fallback
                 : null;
-        if (selected is null || selected.Count == 0)
+        if (selected is null || selected.Count != 3)
             return null;
-        var coordinator = Convert.ToHexStringLower(coordinatorId);
+
+        // The selected privacy exit and the authenticated mailbox coordinator
+        // are intentionally independent identities. This physical lane binds
+        // the sole authority to the primary route's xnode1 terminal, while the
+        // fallback route terminates at forwarding-only xnode2.
+        var coordinator = Convert.ToHexStringLower(authenticatedCoordinatorId);
         return string.Equals(selected[0].RouterId, selection.EntryRouterId,
                    StringComparison.Ordinal) &&
-               string.Equals(selected[^1].RouterId, coordinator,
+               string.Equals(routes.Primary[^1].RouterId, coordinator,
                    StringComparison.Ordinal)
             ? selection.EntryRouterId
             : null;

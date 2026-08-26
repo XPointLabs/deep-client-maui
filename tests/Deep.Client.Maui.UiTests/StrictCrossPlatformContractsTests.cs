@@ -482,12 +482,14 @@ public sealed class StrictCrossPlatformContractsTests
         var canonical = $"v1|path=/api/ingress/v1/frame" +
             $"|primary={string.Join(',', ids[..3])}" +
             $"|fallback={string.Join(',', ids[3..])}" +
-            $"|selected=fallback|entry={ids[3]}";
+            $"|selected=fallback|entry={ids[3]}|coordinator={ids[2]}";
 
         var proof = StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(canonical);
 
         Assert.Equal("fallback", proof.Selected);
         Assert.Equal(ids[3], proof.Entry);
+        Assert.Equal(ids[2], proof.Coordinator);
+        Assert.NotEqual(proof.Fallback[^1], proof.Coordinator);
         Assert.Equal(3, proof.Primary.Count);
         Assert.Equal(3, proof.Fallback.Count);
         Assert.Throws<InvalidOperationException>(() =>
@@ -497,6 +499,10 @@ public sealed class StrictCrossPlatformContractsTests
             StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
                 canonical.Replace($"entry={ids[3]}", $"entry={ids[4]}",
                     StringComparison.Ordinal)));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
+                canonical.Replace($"coordinator={ids[2]}",
+                    $"coordinator={ids[5]}", StringComparison.Ordinal)));
     }
 
     [Fact]

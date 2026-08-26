@@ -489,12 +489,20 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             : string.Equals(routerId, primaryEntry, StringComparison.Ordinal)
                 ? "primary"
                 : null;
+        var coordinatorId = routerId is null ||
+            viewModel.SelectedConversation is not { } selectedConversation
+                ? null
+                : physicalRouteUsageTracker.GetObservedCoordinatorId(
+                    selectedConversation.Id, routerId);
         physicalRouteNodeMarker.Text = routerId ?? string.Empty;
         physicalRouteNodeMarker.IsVisible = viewModel.IsDirectDetail &&
             !string.IsNullOrWhiteSpace(routerId);
 
         if (physicalRouteProofMarker is null) return;
         var routeMatches = routes is not null && selectedRoute is not null &&
+            coordinatorId is not null &&
+            string.Equals(routes.Primary[^1].RouterId, coordinatorId,
+                StringComparison.Ordinal) &&
             (selectedRoute == "primary" &&
                 string.Equals(routes.Primary[0].RouterId, routerId, StringComparison.Ordinal) ||
              selectedRoute == "fallback" &&
@@ -504,7 +512,8 @@ public partial class DesktopWorkspacePage : ContentPage, IConversationActivation
             : $"v1|path={ManagedIngressH2Contract.FramePath}" +
               $"|primary={string.Join(',', routes.Primary.Select(static hop => hop.RouterId))}" +
               $"|fallback={string.Join(',', routes.Fallback.Select(static hop => hop.RouterId))}" +
-              $"|selected={selectedRoute}|entry={routerId}";
+              $"|selected={selectedRoute}|entry={routerId}" +
+              $"|coordinator={coordinatorId}";
         physicalRouteProofMarker.IsVisible = viewModel.IsDirectDetail && routeMatches;
     }
 
