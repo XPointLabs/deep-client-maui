@@ -299,8 +299,9 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("^(05|15|25)[0-9a-f]{64}$", ui, StringComparison.Ordinal);
         Assert.Contains("internal void ColdStart()", ui, StringComparison.Ordinal);
         Assert.Contains("DismissStaleDocumentPicker();", ui, StringComparison.Ordinal);
-        Assert.Contains(
-            "com.google.android.documentsui/com.android.documentsui.picker.PickActivity",
+        Assert.Contains("RequireSingleResumedActivityComponent", ui,
+            StringComparison.Ordinal);
+        Assert.Contains("component.Contains(\"documentsui\"",
             ui, StringComparison.Ordinal);
         Assert.Contains("ForceStop();", ui, StringComparison.Ordinal);
         Assert.Contains("already-running task", ui, StringComparison.Ordinal);

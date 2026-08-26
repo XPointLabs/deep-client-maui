@@ -1237,15 +1237,16 @@ public sealed class StrictCrossPlatformUiTests
         var previousMatchingBubbles = windows.CountCorrelatedAncestors(
             "DesktopWorkspace.DirectMessageBubble",
             "DesktopWorkspace.DirectAttachmentFilename", fileName);
-        var pickerBaseline = windows.SnapshotVisibleCanonicalFilePickerHandles();
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectAttach"));
-        windows.ActivateExact(Require(windows.WaitForAutomationId(
+        var pickFile = Require(windows.WaitForAutomationId(
             "DesktopWorkspace.AttachmentPickFile", TimeSpan.FromSeconds(15)),
-            "DesktopWorkspace.AttachmentPickFile"));
-        windows.ChooseSingleFileFromNewVisiblePicker(
-            fixturePath, pickerBaseline, TimeSpan.FromSeconds(20));
+            "DesktopWorkspace.AttachmentPickFile");
+        var pickerInvocation = windows.CaptureFilePickerInvocationContext();
+        windows.ActivateExact(pickFile);
+        windows.ChooseSingleFileFromOwnedForegroundPicker(
+            fixturePath, pickerInvocation, TimeSpan.FromSeconds(20));
         Require(windows.WaitForAutomationIdWithName(
             "DesktopWorkspace.DirectStagedAttachmentFilename", fileName,
             TimeSpan.FromSeconds(30)), "DesktopWorkspace.DirectStagedAttachmentFilename");
@@ -1334,15 +1335,16 @@ public sealed class StrictCrossPlatformUiTests
         var previousAndroidImageMetadata = android.CountResourceId(
             options.App("Chat.ImageMetadata"));
         windows.FocusWindow();
-        var pickerBaseline = windows.SnapshotVisibleCanonicalFilePickerHandles();
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectAttach"));
-        windows.ActivateExact(Require(windows.WaitForAutomationId(
+        var pickPhoto = Require(windows.WaitForAutomationId(
             "DesktopWorkspace.AttachmentPickPhoto", TimeSpan.FromSeconds(15)),
-            "DesktopWorkspace.AttachmentPickPhoto"));
-        windows.ChooseSingleFileFromNewVisiblePicker(options.ImageFixturePath,
-            pickerBaseline,
+            "DesktopWorkspace.AttachmentPickPhoto");
+        var pickerInvocation = windows.CaptureFilePickerInvocationContext();
+        windows.ActivateExact(pickPhoto);
+        windows.ChooseSingleFileFromOwnedForegroundPicker(options.ImageFixturePath,
+            pickerInvocation,
             TimeSpan.FromSeconds(20));
         Require(windows.WaitForAutomationIdWithName(
             "DesktopWorkspace.DirectStagedAttachmentFilename", expectedSentName,

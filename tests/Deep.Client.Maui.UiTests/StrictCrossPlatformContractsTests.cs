@@ -498,4 +498,105 @@ public sealed class StrictCrossPlatformContractsTests
                 canonical.Replace($"entry={ids[3]}", $"entry={ids[4]}",
                     StringComparison.Ordinal)));
     }
+
+    [Fact]
+    public void Windows_picker_precondition_requires_one_clean_foreground_app_window()
+    {
+        var main = new IntPtr(100);
+        var valid = new WindowsUiSmokeTests.FilePickerInvocationFacts(
+            main, 42, 42, 42, main, main,
+            IsNativeVisible: true,
+            IsNativeEnabled: true,
+            IsUiaEnabled: true,
+            IsUiaOffscreen: false,
+            VisibleOwnedPopupCount: 0);
+
+        Assert.True(WindowsUiSmokeTests.IsSafeFilePickerInvocationPrecondition(valid));
+        Assert.False(WindowsUiSmokeTests.IsSafeFilePickerInvocationPrecondition(
+            valid with { NativeProcessId = 43 }));
+        Assert.False(WindowsUiSmokeTests.IsSafeFilePickerInvocationPrecondition(
+            valid with { ForegroundRootHandle = new IntPtr(200) }));
+        Assert.False(WindowsUiSmokeTests.IsSafeFilePickerInvocationPrecondition(
+            valid with { LastActivePopupHandle = new IntPtr(200) }));
+        Assert.False(WindowsUiSmokeTests.IsSafeFilePickerInvocationPrecondition(
+            valid with { VisibleOwnedPopupCount = 1 }));
+        Assert.False(WindowsUiSmokeTests.IsSafeFilePickerInvocationPrecondition(
+            valid with { IsNativeEnabled = false }));
+        Assert.False(WindowsUiSmokeTests.IsSafeFilePickerInvocationPrecondition(
+            valid with { IsUiaOffscreen = true }));
+    }
+
+    [Fact]
+    public void Windows_picker_requires_owned_foreground_pid_consistent_exact_controls()
+    {
+        var main = new IntPtr(100);
+        var picker = new IntPtr(200);
+        var context = new WindowsUiSmokeTests.FilePickerInvocationContext(main, 42, main);
+        var valid = new WindowsUiSmokeTests.FilePickerWindowFacts(
+            picker,
+            UiaProcessId: 900,
+            NativeProcessId: 900,
+            OwnerHandle: main,
+            RootOwnerHandle: main,
+            ForegroundRootHandle: picker,
+            LastActivePopupHandle: picker,
+            IsNativeVisible: true,
+            IsNativeEnabled: true,
+            IsUiaEnabled: true,
+            IsUiaOffscreen: false,
+            FilenameEditorCount: 1,
+            AffirmativeButtonCount: 1);
+
+        // No baseline HWND is part of the contract: a native picker may reuse its handle.
+        Assert.True(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(context, valid));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { OwnerHandle = IntPtr.Zero }));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { RootOwnerHandle = new IntPtr(300) }));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { ForegroundRootHandle = main }));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { LastActivePopupHandle = main }));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { NativeProcessId = 901 }));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { IsNativeVisible = false }));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { IsNativeEnabled = false }));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { IsUiaEnabled = false }));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { IsUiaOffscreen = true }));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { FilenameEditorCount = 2 }));
+        Assert.False(WindowsUiSmokeTests.IsOwnedForegroundFilePicker(
+            context, valid with { AffirmativeButtonCount = 0 }));
+    }
+
+    [Fact]
+    public void Windows_picker_selection_rejects_ambiguity_and_ignores_unowned_desktop_dialogs()
+    {
+        var main = new IntPtr(100);
+        var picker = new IntPtr(200);
+        var context = new WindowsUiSmokeTests.FilePickerInvocationContext(main, 42, main);
+        var valid = new WindowsUiSmokeTests.FilePickerWindowFacts(
+            picker, 900, 900, main, main, picker, picker,
+            true, true, true, false, 1, 1);
+        var unrelated = valid with
+        {
+            WindowHandle = new IntPtr(300),
+            OwnerHandle = new IntPtr(400),
+            RootOwnerHandle = new IntPtr(400),
+            ForegroundRootHandle = new IntPtr(300),
+            LastActivePopupHandle = new IntPtr(300)
+        };
+
+        Assert.Equal(1, WindowsUiSmokeTests.FindSingleOwnedForegroundFilePickerIndex(
+            context, [unrelated, valid]));
+        Assert.Equal(-1, WindowsUiSmokeTests.FindSingleOwnedForegroundFilePickerIndex(
+            context, [unrelated]));
+        Assert.Throws<InvalidOperationException>(() =>
+            WindowsUiSmokeTests.FindSingleOwnedForegroundFilePickerIndex(
+                context, [valid, valid]));
+    }
 }

@@ -19,6 +19,94 @@ public sealed class WindowsUiSmokeTests
     private const string AuthenticatedControlId = "Conversations.NewConversation";
     private static readonly UiBaseline Baseline = LoadBaseline();
 
+    internal readonly record struct FilePickerInvocationFacts(
+        IntPtr MainWindowHandle,
+        int ApplicationProcessId,
+        int UiaProcessId,
+        int NativeProcessId,
+        IntPtr ForegroundRootHandle,
+        IntPtr LastActivePopupHandle,
+        bool IsNativeVisible,
+        bool IsNativeEnabled,
+        bool IsUiaEnabled,
+        bool IsUiaOffscreen,
+        int VisibleOwnedPopupCount);
+
+    internal readonly record struct FilePickerInvocationContext(
+        IntPtr MainWindowHandle,
+        int ApplicationProcessId,
+        IntPtr ForegroundRootHandle);
+
+    internal readonly record struct FilePickerWindowFacts(
+        IntPtr WindowHandle,
+        int UiaProcessId,
+        int NativeProcessId,
+        IntPtr OwnerHandle,
+        IntPtr RootOwnerHandle,
+        IntPtr ForegroundRootHandle,
+        IntPtr LastActivePopupHandle,
+        bool IsNativeVisible,
+        bool IsNativeEnabled,
+        bool IsUiaEnabled,
+        bool IsUiaOffscreen,
+        int FilenameEditorCount,
+        int AffirmativeButtonCount);
+
+    internal static bool IsSafeFilePickerInvocationPrecondition(
+        FilePickerInvocationFacts facts) =>
+        facts.MainWindowHandle != IntPtr.Zero &&
+        facts.ApplicationProcessId > 0 &&
+        facts.UiaProcessId == facts.ApplicationProcessId &&
+        facts.NativeProcessId == facts.ApplicationProcessId &&
+        facts.ForegroundRootHandle == facts.MainWindowHandle &&
+        facts.LastActivePopupHandle == facts.MainWindowHandle &&
+        facts.IsNativeVisible &&
+        facts.IsNativeEnabled &&
+        facts.IsUiaEnabled &&
+        !facts.IsUiaOffscreen &&
+        facts.VisibleOwnedPopupCount == 0;
+
+    internal static bool IsOwnedForegroundFilePicker(
+        FilePickerInvocationContext context,
+        FilePickerWindowFacts facts) =>
+        context.MainWindowHandle != IntPtr.Zero &&
+        context.ApplicationProcessId > 0 &&
+        context.ForegroundRootHandle == context.MainWindowHandle &&
+        facts.WindowHandle != IntPtr.Zero &&
+        facts.WindowHandle != context.MainWindowHandle &&
+        facts.UiaProcessId > 0 &&
+        facts.NativeProcessId == facts.UiaProcessId &&
+        facts.OwnerHandle != IntPtr.Zero &&
+        facts.RootOwnerHandle == context.MainWindowHandle &&
+        facts.ForegroundRootHandle == facts.WindowHandle &&
+        facts.ForegroundRootHandle != context.ForegroundRootHandle &&
+        facts.LastActivePopupHandle == facts.WindowHandle &&
+        facts.IsNativeVisible &&
+        facts.IsNativeEnabled &&
+        facts.IsUiaEnabled &&
+        !facts.IsUiaOffscreen &&
+        facts.FilenameEditorCount == 1 &&
+        facts.AffirmativeButtonCount == 1;
+
+    internal static int FindSingleOwnedForegroundFilePickerIndex(
+        FilePickerInvocationContext context,
+        IReadOnlyList<FilePickerWindowFacts> candidates)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        var matches = candidates
+            .Select((facts, index) => (facts, index))
+            .Where(candidate => IsOwnedForegroundFilePicker(context, candidate.facts))
+            .Select(candidate => candidate.index)
+            .ToArray();
+        return matches.Length switch
+        {
+            0 => -1,
+            1 => matches[0],
+            _ => throw new InvalidOperationException(
+                "The app action exposed more than one owned foreground file picker.")
+        };
+    }
+
     [StrictWindowsUiFact]
     public void WelcomePageRendersInteractiveControlsInRealWindowsApp()
     {
@@ -693,54 +781,126 @@ public sealed class WindowsUiSmokeTests
                 "The app did not expose one exact requested action-sheet button.");
         }
 
-        internal IReadOnlySet<IntPtr> SnapshotVisibleCanonicalFilePickerHandles() =>
-            automation.GetDesktop()
+        internal FilePickerInvocationContext CaptureFilePickerInvocationContext()
+        {
+            var mainWindow = CurrentWindow();
+            var mainHandle = mainWindow.Properties.NativeWindowHandle.ValueOrDefault;
+            var foregroundRoot = RootWindow(GetForegroundWindow());
+            var visibleOwnedPopupCount = automation.GetDesktop()
                 .FindAllChildren(condition => condition.ByControlType(ControlType.Window))
-                .Where(IsVisibleCanonicalFilePicker)
-                .Select(static element => element.Properties.NativeWindowHandle.ValueOrDefault)
-                .ToHashSet();
+                .Count(element =>
+                {
+                    var handle = element.Properties.NativeWindowHandle.ValueOrDefault;
+                    return handle != IntPtr.Zero &&
+                        handle != mainHandle &&
+                        GetAncestor(handle, GetAncestorRootOwner) == mainHandle &&
+                        IsWindowVisible(handle) &&
+                        element.Properties.IsOffscreen.ValueOrDefault != true;
+                });
+            var facts = new FilePickerInvocationFacts(
+                mainHandle,
+                application.ProcessId,
+                mainWindow.Properties.ProcessId.ValueOrDefault,
+                NativeProcessId(mainHandle),
+                foregroundRoot,
+                GetLastActivePopup(mainHandle),
+                IsWindowVisible(mainHandle),
+                IsWindowEnabled(mainHandle),
+                mainWindow.Properties.IsEnabled.ValueOrDefault,
+                mainWindow.Properties.IsOffscreen.ValueOrDefault,
+                visibleOwnedPopupCount);
+            if (!IsSafeFilePickerInvocationPrecondition(facts))
+            {
+                throw new InvalidOperationException(
+                    "The MAUI window was not in a clean foreground state before opening the file picker.");
+            }
 
-        internal void ChooseSingleFileFromNewVisiblePicker(
+            return new FilePickerInvocationContext(
+                mainHandle, application.ProcessId, foregroundRoot);
+        }
+
+        internal void ChooseSingleFileFromOwnedForegroundPicker(
             string absolutePath,
-            IReadOnlySet<IntPtr> visiblePickerBaseline,
+            FilePickerInvocationContext invocation,
             TimeSpan timeout)
         {
             if (!Path.IsPathFullyQualified(absolutePath) || !File.Exists(absolutePath))
                 throw new InvalidOperationException("Picker input must be one existing absolute file.");
-            ArgumentNullException.ThrowIfNull(visiblePickerBaseline);
             var result = Retry.WhileNull(
-                () => automation.GetDesktop().FindAllChildren()
-                    .Where(IsVisibleCanonicalFilePicker)
-                    .SingleOrDefault(element => !visiblePickerBaseline.Contains(
-                        element.Properties.NativeWindowHandle.ValueOrDefault)),
+                () =>
+                {
+                    try
+                    {
+                        var snapshots = automation.GetDesktop()
+                            .FindAllChildren(condition => condition.ByControlType(ControlType.Window))
+                            .Select(CreateFilePickerSnapshot)
+                            .ToArray();
+                        var index = FindSingleOwnedForegroundFilePickerIndex(
+                            invocation, snapshots.Select(snapshot => snapshot.Facts).ToArray());
+                        return index < 0 ? null : snapshots[index];
+                    }
+                    catch (COMException) when (!application.HasExited)
+                    {
+                        return null;
+                    }
+                },
                 timeout, TimeSpan.FromMilliseconds(200), throwOnTimeout: false);
             var picker = result.Result ?? throw new InvalidOperationException(
-                "The exact app action did not expose one new visible canonical file picker.");
-            var editors = picker.FindAllDescendants(
-                condition => condition.ByControlType(ControlType.Edit));
-            var editor = editors.SingleOrDefault(element =>
-                    element.Properties.AutomationId.ValueOrDefault is "FileNameControlHost" or "1148")
-                ?? (editors.Length == 1 ? editors[0] : null)
-                ?? throw new InvalidOperationException("The owned file picker has no unique filename editor.");
-            editor.AsTextBox().Text = absolutePath;
-            var openButtons = picker.FindAllDescendants(condition => condition.ByControlType(ControlType.Button))
-                .Where(element => element.Properties.AutomationId.ValueOrDefault == "1")
-                .ToArray();
-            if (openButtons.Length != 1)
-                throw new InvalidOperationException("The owned file picker has no unique affirmative button.");
-            ActivateExact(openButtons[0]);
+                "The exact app action did not expose one owned foreground canonical file picker.");
+            picker.FilenameEditors[0].AsTextBox().Text = absolutePath;
+            ActivateExact(picker.AffirmativeButtons[0]);
         }
 
-        private static bool IsVisibleCanonicalFilePicker(AutomationElement element) =>
-            element.ControlType == ControlType.Window &&
-            element.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero &&
-            element.Properties.IsOffscreen.ValueOrDefault != true &&
-            element.FindAllDescendants(
-                condition => condition.ByControlType(ControlType.Edit)).Length > 0 &&
-            element.FindAllDescendants(
-                condition => condition.ByControlType(ControlType.Button))
-                .Count(button =>
-                    button.Properties.AutomationId.ValueOrDefault == "1") == 1;
+        private FilePickerSnapshot CreateFilePickerSnapshot(AutomationElement element)
+        {
+            var handle = element.Properties.NativeWindowHandle.ValueOrDefault;
+            var editors = element.FindAllDescendants(
+                condition => condition.ByControlType(ControlType.Edit));
+            var namedEditors = editors.Where(candidate =>
+                    candidate.Properties.AutomationId.ValueOrDefault is "FileNameControlHost" or "1148")
+                .ToArray();
+            var filenameEditors = namedEditors.Length > 0
+                ? namedEditors
+                : editors.Length == 1 ? editors : [];
+            var affirmativeButtons = element.FindAllDescendants(
+                    condition => condition.ByControlType(ControlType.Button))
+                .Where(button => button.Properties.AutomationId.ValueOrDefault == "1")
+                .ToArray();
+            var facts = new FilePickerWindowFacts(
+                handle,
+                element.Properties.ProcessId.ValueOrDefault,
+                NativeProcessId(handle),
+                GetWindow(handle, GetWindowOwner),
+                GetAncestor(handle, GetAncestorRootOwner),
+                RootWindow(GetForegroundWindow()),
+                GetLastActivePopup(CurrentWindow().Properties.NativeWindowHandle.ValueOrDefault),
+                IsWindowVisible(handle),
+                IsWindowEnabled(handle),
+                element.Properties.IsEnabled.ValueOrDefault,
+                element.Properties.IsOffscreen.ValueOrDefault,
+                filenameEditors.Length,
+                affirmativeButtons.Length);
+            return new FilePickerSnapshot(filenameEditors, affirmativeButtons, facts);
+        }
+
+        private static IntPtr RootWindow(IntPtr handle) =>
+            handle == IntPtr.Zero ? IntPtr.Zero : GetAncestor(handle, GetAncestorRoot);
+
+        private static int NativeProcessId(IntPtr handle)
+        {
+            if (handle == IntPtr.Zero ||
+                GetWindowThreadProcessId(handle, out var processId) == 0 ||
+                processId == 0 || processId > int.MaxValue)
+            {
+                return 0;
+            }
+            return checked((int)processId);
+        }
+
+        private sealed record FilePickerSnapshot(
+            AutomationElement[] FilenameEditors,
+            AutomationElement[] AffirmativeButtons,
+            FilePickerWindowFacts Facts);
 
         internal void HoldExact(AutomationElement element, TimeSpan duration)
         {
@@ -1052,10 +1212,38 @@ public sealed class WindowsUiSmokeTests
         }
 
         private const uint PrintWindowRenderFullContent = 2;
+        private const uint GetWindowOwner = 4;
+        private const uint GetAncestorRoot = 2;
+        private const uint GetAncestorRootOwner = 3;
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool PrintWindow(IntPtr windowHandle, IntPtr deviceContext, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetWindow(IntPtr windowHandle, uint command);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetAncestor(IntPtr windowHandle, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetLastActivePopup(IntPtr windowHandle);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(
+            IntPtr windowHandle,
+            out uint processId);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindowVisible(IntPtr windowHandle);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindowEnabled(IntPtr windowHandle);
 
 
         private static void WriteLaunchFailure(string artifactDirectory, Application app, Exception exception)

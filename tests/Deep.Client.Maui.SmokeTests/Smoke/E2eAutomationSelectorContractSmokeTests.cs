@@ -235,12 +235,18 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("windows.FocusWindow();", physical, StringComparison.Ordinal);
         Assert.Contains("current = current.Parent;", windows, StringComparison.Ordinal);
-        Assert.Contains("SnapshotVisibleCanonicalFilePickerHandles()", windows,
+        Assert.Contains("CaptureFilePickerInvocationContext()", windows,
             StringComparison.Ordinal);
-        Assert.Contains("ChooseSingleFileFromNewVisiblePicker(", windows,
+        Assert.Contains("ChooseSingleFileFromOwnedForegroundPicker(", windows,
             StringComparison.Ordinal);
-        Assert.Contains("IsVisibleCanonicalFilePicker", windows, StringComparison.Ordinal);
-        Assert.Contains("Properties.IsOffscreen.ValueOrDefault != true", windows,
+        Assert.Contains("IsSafeFilePickerInvocationPrecondition", windows,
+            StringComparison.Ordinal);
+        Assert.Contains("IsOwnedForegroundFilePicker", windows, StringComparison.Ordinal);
+        Assert.Contains("GetAncestorRootOwner", windows, StringComparison.Ordinal);
+        Assert.Contains("GetForegroundWindow()", windows, StringComparison.Ordinal);
+        Assert.Contains("GetLastActivePopup", windows, StringComparison.Ordinal);
+        Assert.Contains("GetWindowThreadProcessId", windows, StringComparison.Ordinal);
+        Assert.Contains("element.Properties.IsOffscreen.ValueOrDefault", windows,
             StringComparison.Ordinal);
         Assert.Contains("AutomationId.ValueOrDefault == \"1\"", windows,
             StringComparison.Ordinal);
