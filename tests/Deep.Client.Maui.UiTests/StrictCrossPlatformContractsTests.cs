@@ -316,6 +316,35 @@ public sealed class StrictCrossPlatformContractsTests
     }
 
     [Fact]
+    public async Task Downloads_snapshot_waits_until_the_save_writer_closes_a_nonempty_file()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"deep-download-writer-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var saved = Path.Combine(root, "fixture.bin");
+        try
+        {
+            var snapshot = StrictCrossPlatformContracts.SnapshotDownloads(root);
+            using (var writer = new FileStream(
+                saved, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+            {
+                writer.Write([0x11, 0x22, 0x33]);
+                writer.Flush();
+                var wait = Task.Run(() => snapshot.WaitForNewCorrelatedFile(
+                    "fixture.bin", TimeSpan.FromSeconds(3)));
+                await Task.Delay(300);
+                Assert.False(wait.IsCompleted);
+                writer.Dispose();
+                Assert.Equal(saved, await wait);
+            }
+        }
+        finally
+        {
+            if (File.Exists(saved)) File.Delete(saved);
+            if (Directory.Exists(root)) Directory.Delete(root);
+        }
+    }
+
+    [Fact]
     public void Cleanup_attempts_every_step_and_aggregates_failures()
     {
         var firstAttempted = false;

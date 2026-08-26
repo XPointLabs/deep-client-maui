@@ -562,7 +562,26 @@ internal static class StrictCrossPlatformContracts
                 }
                 if (matches.Length == 1)
                 {
-                    return matches[0];
+                    try
+                    {
+                        using var completed = new FileStream(
+                            matches[0],
+                            FileMode.Open,
+                            FileAccess.Read,
+                            FileShare.None);
+                        if (completed.Length > 0)
+                        {
+                            return matches[0];
+                        }
+                    }
+                    catch (IOException)
+                    {
+                        // The production Save writer still owns the correlated file.
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        // Retry until the bounded deadline; never accept a partial file.
+                    }
                 }
                 if (matches.Length > 1)
                 {
