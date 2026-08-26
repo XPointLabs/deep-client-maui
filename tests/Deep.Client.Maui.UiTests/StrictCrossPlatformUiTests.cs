@@ -2033,13 +2033,35 @@ internal sealed class AndroidUiautomatorClient
     internal void DeletePushedFixture(string marker) => RequireSuccess(Adb("shell", "rm", "-f", "/sdcard/Download/" + marker));
     internal void PushMediaFixture(string source, string marker)
     {
-        var target = "/sdcard/Pictures/" + marker;
+        StrictCrossPlatformContracts.AssertSafeMarker(marker);
+        var target = "/sdcard/Download/" + marker;
         RequireSuccess(Adb("push", source, target));
         RequireSuccess(Adb("shell", "am", "broadcast", "-a",
             "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file://" + target));
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        while (DateTime.UtcNow < until)
+        {
+            var query = Adb("shell", "content", "query", "--uri",
+                "content://media/external/images/media", "--projection", "_display_name",
+                "--where", $"_display_name='{marker}'");
+            RequireSuccess(query);
+            if (query.Output.Split('\n').Any(line => string.Equals(
+                    line.Trim(), "Row: 0 _display_name=" + marker,
+                    StringComparison.Ordinal)))
+                return;
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException(
+            "The pushed image fixture did not register in Android MediaStore.");
     }
-    internal void DeletePushedMediaFixture(string marker) =>
-        RequireSuccess(Adb("shell", "rm", "-f", "/sdcard/Pictures/" + marker));
+    internal void DeletePushedMediaFixture(string marker)
+    {
+        StrictCrossPlatformContracts.AssertSafeMarker(marker);
+        var target = "/sdcard/Download/" + marker;
+        RequireSuccess(Adb("shell", "rm", "-f", target));
+        RequireSuccess(Adb("shell", "am", "broadcast", "-a",
+            "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file://" + target));
+    }
     internal StrictCrossPlatformContracts.AndroidNode WaitForResource(string resourceId, TimeSpan timeout) => Wait(resourceId, null, timeout);
     internal int CountResourceId(string resourceId) =>
         StrictCrossPlatformContracts.FindAllResourceIds(Dump(), resourceId).Length;

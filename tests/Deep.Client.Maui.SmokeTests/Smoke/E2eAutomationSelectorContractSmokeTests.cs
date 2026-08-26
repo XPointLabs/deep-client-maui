@@ -197,6 +197,10 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.DoesNotContain("AndroidPickerDownloadsId", runner, StringComparison.Ordinal);
         Assert.DoesNotContain("com.google.android.documentsui:id/item_root", runner,
             StringComparison.Ordinal);
+        Assert.Contains("content://media/external/images/media", physical,
+            StringComparison.Ordinal);
+        Assert.Contains("The pushed image fixture did not register in Android MediaStore.",
+            physical, StringComparison.Ordinal);
     }
 
     [Fact]
