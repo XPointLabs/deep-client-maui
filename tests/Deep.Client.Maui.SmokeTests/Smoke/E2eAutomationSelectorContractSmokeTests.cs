@@ -222,6 +222,9 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("windows.FocusWindow();", physical, StringComparison.Ordinal);
         Assert.Contains("current = current.Parent;", windows, StringComparison.Ordinal);
+        Assert.Contains("IsOwnedByExactWindow(", windows, StringComparison.Ordinal);
+        Assert.Contains("depth < 8", windows, StringComparison.Ordinal);
+        Assert.Contains("seen.Add(current)", windows, StringComparison.Ordinal);
     }
 
     [Fact]

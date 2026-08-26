@@ -601,7 +601,9 @@ public sealed class WindowsUiSmokeTests
                     .Where(element => element.ControlType == ControlType.Window
                         && element.Properties.NativeWindowHandle.ValueOrDefault != mainHandle)
                     .Where(element => element.Properties.ProcessId.ValueOrDefault == application.ProcessId
-                        || GetWindow(element.Properties.NativeWindowHandle.ValueOrDefault, 4) == mainHandle)
+                        || IsOwnedByExactWindow(
+                            element.Properties.NativeWindowHandle.ValueOrDefault,
+                            mainHandle))
                     .SingleOrDefault(element => element.FindAllDescendants(
                         condition => condition.ByControlType(ControlType.Edit)).Length > 0),
                 timeout, TimeSpan.FromMilliseconds(200), throwOnTimeout: false);
@@ -620,6 +622,24 @@ public sealed class WindowsUiSmokeTests
             if (openButtons.Length != 1)
                 throw new InvalidOperationException("The owned file picker has no unique affirmative button.");
             ActivateExact(openButtons[0]);
+        }
+
+        private static bool IsOwnedByExactWindow(
+            IntPtr candidateHandle,
+            IntPtr expectedOwnerHandle)
+        {
+            var seen = new HashSet<IntPtr>();
+            var current = candidateHandle;
+            for (var depth = 0; depth < 8 && current != IntPtr.Zero; depth++)
+            {
+                if (!seen.Add(current))
+                    return false;
+                current = GetWindow(current, 4);
+                if (current == expectedOwnerHandle)
+                    return true;
+            }
+
+            return false;
         }
 
         internal void HoldExact(AutomationElement element, TimeSpan duration)
