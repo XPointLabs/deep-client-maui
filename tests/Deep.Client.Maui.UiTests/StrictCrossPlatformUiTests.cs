@@ -262,6 +262,8 @@ public sealed class StrictCrossPlatformUiTests
         var documentSha256 = StrictCrossPlatformContracts.Sha256File(options.DocumentFixturePath);
         var downloadsDirectory = options.ResolveProductionDownloadsDirectory();
         var createdDownloads = new List<string>();
+        var cleanupFailures = new List<Exception>();
+        Exception? operationFailure = null;
         VoiceMatrixSnapshot? voiceSnapshot = null;
         PayloadPersistenceSnapshot? payloadSnapshot = null;
 
@@ -353,16 +355,29 @@ public sealed class StrictCrossPlatformUiTests
                 persistedPayloads.WindowsImageMetadata,
                 TimeSpan.FromSeconds(45));
         }
+        catch (Exception exception)
+        {
+            operationFailure = exception;
+        }
         finally
         {
-            android.DeletePushedFixture(androidGenericName);
-            android.DeletePushedFixture(androidDocumentName);
-            android.DeletePushedMediaFixture(imageName);
+            CaptureCleanup(() => android.DeletePushedFixture(androidGenericName));
+            CaptureCleanup(() => android.DeletePushedFixture(androidDocumentName));
+            CaptureCleanup(() => android.DeletePushedMediaFixture(imageName));
             foreach (var path in createdDownloads)
             {
-                if (File.Exists(path)) File.Delete(path);
+                CaptureCleanup(() =>
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                });
             }
         }
+
+        if (operationFailure is not null)
+            cleanupFailures.Insert(0, operationFailure);
+        if (cleanupFailures.Count > 0)
+            throw new AggregateException(
+                "Payload matrix failed with audited cleanup results.", cleanupFailures);
 
         evidence.AddHash("windowsToAndroidMarkerHash", windowsToAndroid);
         evidence.AddHash("androidToWindowsMarkerHash", androidToWindows);
@@ -388,6 +403,12 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddBoolean("selfCopyUiSupported", false);
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
         CompletePhaseEvidence(options, evidence);
+
+        void CaptureCleanup(Action cleanup)
+        {
+            try { cleanup(); }
+            catch (Exception exception) { cleanupFailures.Add(exception); }
+        }
     }
 
     private static void ExercisePrivacyFallbackOnExistingProvisionedClients(
@@ -1969,6 +1990,9 @@ internal sealed class ApprovedCrossPlatformPolicy
 internal sealed class AndroidUiautomatorClient
 {
     private readonly CrossPlatformOptions options;
+    private readonly Dictionary<string, StrictCrossPlatformContracts.MediaStoreFixture>
+        ownedMediaFixtures =
+        new(StringComparer.Ordinal);
     internal AndroidUiautomatorClient(CrossPlatformOptions options) => this.options = options;
     internal void AssertPhysicalConnectedDevice()
     {
@@ -2014,21 +2038,33 @@ internal sealed class AndroidUiautomatorClient
     }
     private void DismissStaleDocumentPicker()
     {
-        const string DocumentPickerActivity =
-            "com.google.android.documentsui/com.android.documentsui.picker.PickActivity";
+        Exception? lastParseFailure = null;
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var activities = Adb("shell", "dumpsys", "activity", "activities");
             RequireSuccess(activities);
-            var resumed = activities.Output.Split('\n')
-                .FirstOrDefault(line => line.Contains(
-                    "mResumedActivity", StringComparison.Ordinal));
-            if (resumed is null || !resumed.Contains(
-                    DocumentPickerActivity, StringComparison.Ordinal))
+            string component;
+            try
+            {
+                component = StrictCrossPlatformContracts
+                    .RequireSingleResumedActivityComponent(activities.Output);
+                lastParseFailure = null;
+            }
+            catch (InvalidOperationException exception)
+            {
+                lastParseFailure = exception;
+                Thread.Sleep(250);
+                continue;
+            }
+            if (!component.Contains("documentsui", StringComparison.OrdinalIgnoreCase))
                 return;
             RequireSuccess(Adb("shell", "input", "keyevent", "KEYCODE_BACK"));
             Thread.Sleep(250);
         }
+        if (lastParseFailure is not null)
+            throw new InvalidOperationException(
+                "Android resumed activity could not be identified before E2E launch.",
+                lastParseFailure);
         throw new InvalidOperationException(
             "The stale Android document picker did not close before E2E launch.");
     }
@@ -2039,28 +2075,28 @@ internal sealed class AndroidUiautomatorClient
     {
         StrictCrossPlatformContracts.AssertSafeMarker(marker);
         var target = "/sdcard/Download/" + marker;
+        var expectedSize = new FileInfo(source).Length;
         RequireSuccess(Adb("push", source, target));
         RequireSuccess(Adb("shell", "am", "broadcast", "-a",
             "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file://" + target));
         var until = DateTime.UtcNow + TimeSpan.FromSeconds(30);
         while (DateTime.UtcNow < until)
         {
-            var query = Adb("shell", "content", "query", "--uri",
-                "content://media/external/images/media", "--projection", "_display_name");
-            RequireSuccess(query);
-            var matches = query.Output.Split('\n')
-                .Select(line =>
-                {
-                    const string Prefix = "_display_name=";
-                    var index = line.IndexOf(Prefix, StringComparison.Ordinal);
-                    return index < 0 ? string.Empty : line[(index + Prefix.Length)..].Trim();
-                })
-                .Count(name => string.Equals(name, marker, StringComparison.Ordinal));
-            if (matches > 1)
+            var matches = QueryMediaStoreFixtures(marker);
+            if (matches.Length > 1)
                 throw new InvalidOperationException(
                     "Android MediaStore registered duplicate exact image fixtures.");
-            if (matches == 1)
+            if (matches.Length == 1)
+            {
+                var fixture = matches[0];
+                if (fixture.Size != expectedSize
+                    || fixture.RelativePath != "Download/"
+                    || fixture.IsPending != 0
+                    || !ownedMediaFixtures.TryAdd(marker, fixture))
+                    throw new InvalidOperationException(
+                        "Android MediaStore image fixture identity is not canonical.");
                 return;
+            }
             Thread.Sleep(250);
         }
         throw new InvalidOperationException(
@@ -2070,10 +2106,94 @@ internal sealed class AndroidUiautomatorClient
     {
         StrictCrossPlatformContracts.AssertSafeMarker(marker);
         var target = "/sdcard/Download/" + marker;
-        RequireSuccess(Adb("shell", "rm", "-f", target));
-        RequireSuccess(Adb("shell", "am", "broadcast", "-a",
-            "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file://" + target));
+        var failures = new List<Exception>();
+        ownedMediaFixtures.TryGetValue(marker, out var owned);
+        StrictCrossPlatformContracts.MediaStoreFixture[] current = [];
+        try
+        {
+            current = QueryMediaStoreFixtures(marker);
+            if (current.Length > 1)
+                throw new InvalidOperationException(
+                    "Android MediaStore cleanup found duplicate exact image fixtures.");
+            if (owned is not null && (current.Length != 1 || current[0] != owned))
+                throw new InvalidOperationException(
+                    "Android MediaStore cleanup identity changed before deletion.");
+        }
+        catch (Exception exception) { failures.Add(exception); }
+        if (owned is not null && current.Length == 1 && current[0] == owned)
+        {
+            try
+            {
+                var delete = Adb("shell", "content", "delete", "--uri",
+                    "content://media/external/images/media/" + owned.Id.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture));
+                RequireSuccess(delete);
+                if (!delete.Output.Trim().Equals("Deleted 1 rows", StringComparison.Ordinal))
+                    throw new InvalidOperationException(
+                        "Android MediaStore did not delete exactly one run-owned image row.");
+            }
+            catch (Exception exception) { failures.Add(exception); }
+        }
+        try { RequireSuccess(Adb("shell", "rm", "-f", target)); }
+        catch (Exception exception) { failures.Add(exception); }
+        try
+        {
+            RequireSuccess(Adb("shell", "am", "broadcast", "-a",
+                "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file://" + target));
+        }
+        catch (Exception exception) { failures.Add(exception); }
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        var removed = false;
+        while (DateTime.UtcNow < until)
+        {
+            try
+            {
+                if (QueryMediaStoreFixtures(marker).Length == 0
+                    && (owned is null || !MediaStoreIdExists(owned.Id)))
+                {
+                    removed = true;
+                    ownedMediaFixtures.Remove(marker);
+                    break;
+                }
+            }
+            catch (Exception exception) when (DateTime.UtcNow < until)
+            {
+                failures.Add(exception);
+                break;
+            }
+            Thread.Sleep(250);
+        }
+        if (!removed)
+            failures.Add(new InvalidOperationException(
+                "Android MediaStore retained a run-owned image row after cleanup."));
+        if (failures.Count > 0)
+            throw new AggregateException(
+                "Android media fixture cleanup did not complete cleanly.", failures);
     }
+
+    private StrictCrossPlatformContracts.MediaStoreFixture[] QueryMediaStoreFixtures(
+        string marker)
+    {
+        var query = Adb("shell", "content", "query", "--uri",
+            "content://media/external/images/media", "--projection",
+            "_id:_display_name:_size:relative_path:is_pending");
+        RequireSuccess(query);
+        return StrictCrossPlatformContracts.ParseMediaStoreFixtures(query.Output, marker);
+    }
+
+    private bool MediaStoreIdExists(long id)
+    {
+        var query = Adb("shell", "content", "query", "--uri",
+            "content://media/external/images/media/" + id.ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
+            "--projection", "_id");
+        RequireSuccess(query);
+        return query.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Any(line => line.Contains("_id=" + id.ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal));
+    }
+
     internal StrictCrossPlatformContracts.AndroidNode WaitForResource(string resourceId, TimeSpan timeout) => Wait(resourceId, null, timeout);
     internal int CountResourceId(string resourceId) =>
         StrictCrossPlatformContracts.FindAllResourceIds(Dump(), resourceId).Length;

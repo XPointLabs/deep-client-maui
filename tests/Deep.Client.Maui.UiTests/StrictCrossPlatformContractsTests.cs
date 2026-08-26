@@ -116,7 +116,7 @@ public sealed class StrictCrossPlatformContractsTests
     [Fact]
     public void Visible_picker_lookup_ignores_only_zero_area_system_duplicates()
     {
-        const string xml = "<hierarchy><node resource-id='android:id/title' text='Files' bounds='[0,0][0,0]' /><node resource-id='android:id/title' text='Files' bounds='[4,8][8,16]' /></hierarchy>";
+        const string xml = "<hierarchy><node resource-id='android:id/title' text='Files' enabled='true' bounds='[0,0][0,0]' /><node resource-id='android:id/title' text='Files' enabled='true' bounds='[4,8][8,16]' /></hierarchy>";
 
         var node = StrictCrossPlatformContracts.FindExactlyOneVisibleResourceIdWithText(
             xml, "android:id/title", "Files");
@@ -126,6 +126,65 @@ public sealed class StrictCrossPlatformContractsTests
             StrictCrossPlatformContracts.FindExactlyOneVisibleResourceIdWithText(
                 xml.Replace("[0,0][0,0]", "[1,1][2,2]", StringComparison.Ordinal),
                 "android:id/title", "Files"));
+    }
+
+    [Fact]
+    public void Visible_picker_lookup_rejects_disabled_hidden_and_off_parent_nodes()
+    {
+        const string disabled = "<hierarchy><node resource-id='android:id/title' text='Files' enabled='false' bounds='[4,8][8,16]' /></hierarchy>";
+        const string hidden = "<hierarchy><node resource-id='android:id/title' text='Files' enabled='true' visible-to-user='false' bounds='[4,8][8,16]' /></hierarchy>";
+        const string outside = "<hierarchy><node enabled='true' bounds='[0,0][2,2]'><node resource-id='android:id/title' text='Files' enabled='true' bounds='[4,8][8,16]' /></node></hierarchy>";
+
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.FindExactlyOneVisibleResourceIdWithText(
+                disabled, "android:id/title", "Files"));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.FindExactlyOneVisibleResourceIdWithText(
+                hidden, "android:id/title", "Files"));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.FindExactlyOneVisibleResourceIdWithText(
+                outside, "android:id/title", "Files"));
+    }
+
+    [Fact]
+    public void Resumed_activity_parser_is_exact_and_oem_neutral()
+    {
+        const string google = "mResumedActivity: ActivityRecord{abc u0 com.google.android.documentsui/com.android.documentsui.picker.PickActivity t42}";
+        const string app = "mResumedActivity: ActivityRecord{def u0 network.xpoint.deep.e2e/crc.MainActivity t43}";
+
+        Assert.Equal(
+            "com.google.android.documentsui/com.android.documentsui.picker.PickActivity",
+            StrictCrossPlatformContracts.RequireSingleResumedActivityComponent(google));
+        Assert.Equal(
+            "network.xpoint.deep.e2e/crc.MainActivity",
+            StrictCrossPlatformContracts.RequireSingleResumedActivityComponent(app));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.RequireSingleResumedActivityComponent(string.Empty));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.RequireSingleResumedActivityComponent(google + "\n" + app));
+    }
+
+    [Fact]
+    public void MediaStore_fixture_parser_correlates_the_exact_run_owned_identity()
+    {
+        const string marker = "payload-123456-image.png";
+        const string output = "Row: 0 _id=41, _display_name=personal.png, _size=99, relative_path=Pictures/, is_pending=0\nRow: 1 _id=42, _display_name=payload-123456-image.png, _size=68, relative_path=Download/, is_pending=0";
+
+        var fixture = Assert.Single(
+            StrictCrossPlatformContracts.ParseMediaStoreFixtures(output, marker));
+
+        Assert.Equal(42, fixture.Id);
+        Assert.Equal(marker, fixture.Name);
+        Assert.Equal(68, fixture.Size);
+        Assert.Equal("Download/", fixture.RelativePath);
+        Assert.Equal(0, fixture.IsPending);
+        Assert.Empty(StrictCrossPlatformContracts.ParseMediaStoreFixtures(
+            output, "payload-123456-image-other.png"));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.ParseMediaStoreFixtures(
+                "Row: 0 _id=bad, _display_name=" + marker +
+                ", _size=68, relative_path=Download/, is_pending=0",
+                marker));
     }
 
     [Fact]

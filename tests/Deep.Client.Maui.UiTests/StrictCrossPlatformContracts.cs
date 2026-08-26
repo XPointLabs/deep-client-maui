@@ -334,6 +334,66 @@ internal static class StrictCrossPlatformContracts
         };
     }
 
+    internal static string RequireSingleResumedActivityComponent(string output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        var lines = output.Split('\n')
+            .Where(line => line.Contains("mResumedActivity", StringComparison.Ordinal))
+            .ToArray();
+        if (lines.Length != 1)
+            throw new InvalidOperationException(
+                "Android activity state did not expose exactly one resumed-activity record.");
+        var matches = Regex.Matches(
+            lines[0],
+            "(?<component>[A-Za-z0-9._]+/[A-Za-z0-9._$]+)",
+            RegexOptions.CultureInvariant);
+        if (matches.Count != 1)
+            throw new InvalidOperationException(
+                "Android resumed-activity record did not expose one canonical component.");
+        return matches[0].Groups["component"].Value;
+    }
+
+    internal static MediaStoreFixture[] ParseMediaStoreFixtures(
+        string output,
+        string marker)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        AssertSafeMarker(marker);
+        return output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => line.Contains(", _display_name=" + marker + ",",
+                StringComparison.Ordinal))
+            .Select(line => new MediaStoreFixture(
+                ParseMediaStoreLong(line, "_id"),
+                marker,
+                ParseMediaStoreLong(line, "_size"),
+                ParseMediaStoreField(line, "relative_path"),
+                checked((int)ParseMediaStoreLong(line, "is_pending"))))
+            .ToArray();
+    }
+
+    private static long ParseMediaStoreLong(string line, string field)
+    {
+        var value = ParseMediaStoreField(line, field);
+        return long.TryParse(value, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : throw new InvalidOperationException(
+                $"Android MediaStore {field} is not canonical.");
+    }
+
+    private static string ParseMediaStoreField(string line, string field)
+    {
+        var match = Regex.Match(
+            line,
+            "(?:^Row: [0-9]+ |, )" + Regex.Escape(field) +
+            "=(?<value>.*?)(?=, [A-Za-z_][A-Za-z0-9_]*=|$)",
+            RegexOptions.CultureInvariant);
+        return match.Success && match.Groups["value"].Value.Length > 0
+            ? match.Groups["value"].Value
+            : throw new InvalidOperationException(
+                $"Android MediaStore row omitted {field}.");
+    }
+
     internal static AndroidNode FindExactlyOneResourceIdContainingText(string xml, string resourceId, string text)
     {
         ValidateResourceId(resourceId, "resource-id");
@@ -735,10 +795,26 @@ internal static class StrictCrossPlatformContracts
         {
             var resourceId = (string?)node.Attribute("resource-id") ??
                 throw new InvalidOperationException("uiautomator node has no resource-id.");
+            if (!string.Equals((string?)node.Attribute("enabled"), "true",
+                    StringComparison.Ordinal)
+                || string.Equals((string?)node.Attribute("visible-to-user"), "false",
+                    StringComparison.Ordinal)
+                || string.Equals((string?)node.Attribute("displayed"), "false",
+                    StringComparison.Ordinal))
+                return null;
             if (!AndroidBounds.TryParseVisible(
                     (string?)node.Attribute("bounds") ?? string.Empty,
                     out var bounds))
                 return null;
+            var center = bounds.Center;
+            foreach (var ancestor in node.Ancestors("node"))
+            {
+                if (!AndroidBounds.TryParseVisible(
+                        (string?)ancestor.Attribute("bounds") ?? string.Empty,
+                        out var ancestorBounds)
+                    || !ancestorBounds.Contains(center.X, center.Y))
+                    return null;
+            }
             return new AndroidNode(
                 resourceId,
                 (string?)node.Attribute("text") ?? string.Empty,
@@ -746,6 +822,9 @@ internal static class StrictCrossPlatformContracts
                 bounds);
         }
     }
+
+    internal sealed record MediaStoreFixture(
+        long Id, string Name, long Size, string RelativePath, int IsPending);
 
     internal readonly record struct AndroidBounds(int Left, int Top, int Right, int Bottom)
     {
@@ -777,6 +856,9 @@ internal static class StrictCrossPlatformContracts
         }
 
         internal (int X, int Y) Center => (checked(Left + ((Right - Left) / 2)), checked(Top + ((Bottom - Top) / 2)));
+
+        internal bool Contains(int x, int y) =>
+            x >= Left && x < Right && y >= Top && y < Bottom;
     }
 
     internal sealed record ApkMetadata(string PackageName, string VersionCode, string VersionName, string Sha256, string SigningDigest)
