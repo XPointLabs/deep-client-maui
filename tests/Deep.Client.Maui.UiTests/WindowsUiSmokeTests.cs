@@ -591,43 +591,29 @@ public sealed class WindowsUiSmokeTests
                 "The app did not expose one exact requested action-sheet button.");
         }
 
-        internal IntPtr SnapshotForegroundWindowHandle()
-        {
-            var handle = GetForegroundWindow();
-            return handle != IntPtr.Zero
-                ? handle
-                : throw new InvalidOperationException(
-                    "The exact foreground window handle is unavailable.");
-        }
+        internal IReadOnlySet<IntPtr> SnapshotVisibleCanonicalFilePickerHandles() =>
+            automation.GetDesktop()
+                .FindAllChildren(condition => condition.ByControlType(ControlType.Window))
+                .Where(IsVisibleCanonicalFilePicker)
+                .Select(static element => element.Properties.NativeWindowHandle.ValueOrDefault)
+                .ToHashSet();
 
-        internal void ChooseSingleFileFromForegroundPicker(
+        internal void ChooseSingleFileFromNewVisiblePicker(
             string absolutePath,
-            IntPtr previousForegroundHandle,
+            IReadOnlySet<IntPtr> visiblePickerBaseline,
             TimeSpan timeout)
         {
             if (!Path.IsPathFullyQualified(absolutePath) || !File.Exists(absolutePath))
                 throw new InvalidOperationException("Picker input must be one existing absolute file.");
-            if (previousForegroundHandle == IntPtr.Zero)
-                throw new ArgumentException(
-                    "Picker baseline requires a nonzero foreground handle.",
-                    nameof(previousForegroundHandle));
+            ArgumentNullException.ThrowIfNull(visiblePickerBaseline);
             var result = Retry.WhileNull(
                 () => automation.GetDesktop().FindAllChildren()
-                    .Where(element => element.ControlType == ControlType.Window
-                        && element.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero
-                        && element.Properties.NativeWindowHandle.ValueOrDefault ==
-                            GetForegroundWindow()
-                        && element.Properties.NativeWindowHandle.ValueOrDefault !=
-                            previousForegroundHandle)
-                    .SingleOrDefault(element => element.FindAllDescendants(
-                            condition => condition.ByControlType(ControlType.Edit)).Length > 0
-                        && element.FindAllDescendants(
-                            condition => condition.ByControlType(ControlType.Button))
-                            .Count(button =>
-                                button.Properties.AutomationId.ValueOrDefault == "1") == 1),
+                    .Where(IsVisibleCanonicalFilePicker)
+                    .SingleOrDefault(element => !visiblePickerBaseline.Contains(
+                        element.Properties.NativeWindowHandle.ValueOrDefault)),
                 timeout, TimeSpan.FromMilliseconds(200), throwOnTimeout: false);
             var picker = result.Result ?? throw new InvalidOperationException(
-                "The exact app action did not activate one canonical foreground file picker.");
+                "The exact app action did not expose one new visible canonical file picker.");
             var editors = picker.FindAllDescendants(
                 condition => condition.ByControlType(ControlType.Edit));
             var editor = editors.SingleOrDefault(element =>
@@ -642,6 +628,17 @@ public sealed class WindowsUiSmokeTests
                 throw new InvalidOperationException("The owned file picker has no unique affirmative button.");
             ActivateExact(openButtons[0]);
         }
+
+        private static bool IsVisibleCanonicalFilePicker(AutomationElement element) =>
+            element.ControlType == ControlType.Window &&
+            element.Properties.NativeWindowHandle.ValueOrDefault != IntPtr.Zero &&
+            element.Properties.IsOffscreen.ValueOrDefault != true &&
+            element.FindAllDescendants(
+                condition => condition.ByControlType(ControlType.Edit)).Length > 0 &&
+            element.FindAllDescendants(
+                condition => condition.ByControlType(ControlType.Button))
+                .Count(button =>
+                    button.Properties.AutomationId.ValueOrDefault == "1") == 1;
 
         internal void HoldExact(AutomationElement element, TimeSpan duration)
         {
@@ -958,8 +955,6 @@ public sealed class WindowsUiSmokeTests
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool PrintWindow(IntPtr windowHandle, IntPtr deviceContext, uint flags);
 
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
 
         private static void WriteLaunchFailure(string artifactDirectory, Application app, Exception exception)
         {
