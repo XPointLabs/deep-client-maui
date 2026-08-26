@@ -575,6 +575,60 @@ public sealed class WindowsUiSmokeTests
                 acceptedNames);
         }
 
+        internal int CountCorrelatedAncestors(
+            string ancestorAutomationId,
+            string correlationAutomationId,
+            string correlationName) =>
+            FindCorrelatedAncestors(
+                ancestorAutomationId,
+                correlationAutomationId,
+                correlationName).Length;
+
+        internal AutomationElement? WaitForNewCorrelatedDescendantWithAnyName(
+            string ancestorAutomationId,
+            string correlationAutomationId,
+            string correlationName,
+            int previousCount,
+            string targetAutomationId,
+            TimeSpan timeout,
+            params string[] targetNames)
+        {
+            if (previousCount < 0)
+                throw new ArgumentOutOfRangeException(nameof(previousCount));
+            ArgumentNullException.ThrowIfNull(targetNames);
+            var acceptedNames = targetNames.ToHashSet(StringComparer.Ordinal);
+            if (acceptedNames.Count == 0 || acceptedNames.Count != targetNames.Length)
+                throw new ArgumentException(
+                    "At least one unique exact target name is required.", nameof(targetNames));
+            var result = Retry.WhileNull(
+                () =>
+                {
+                    try
+                    {
+                        var ancestors = FindCorrelatedAncestors(
+                            ancestorAutomationId,
+                            correlationAutomationId,
+                            correlationName);
+                        if (ancestors.Length > previousCount + 1)
+                            throw new InvalidOperationException(
+                                "More than one new correlated Windows element appeared.");
+                        if (ancestors.Length != previousCount + 1) return null;
+                        var target = ancestors[^1].FindAllDescendants(
+                            condition => condition.ByAutomationId(targetAutomationId));
+                        if (target.Length != 1) return null;
+                        return acceptedNames.Contains(
+                            target[0].Properties.Name.ValueOrDefault ?? string.Empty)
+                                ? target[0]
+                                : null;
+                    }
+                    catch (COMException) when (!application.HasExited) { return null; }
+                },
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            return result.Result;
+        }
+
         private AutomationElement? WaitForCorrelatedDescendantCore(
             string ancestorAutomationId,
             string correlationAutomationId,
@@ -588,14 +642,10 @@ public sealed class WindowsUiSmokeTests
                 {
                     try
                     {
-                        var ancestors = CurrentWindow().FindAllDescendants(
-                                condition => condition.ByAutomationId(ancestorAutomationId))
-                            .Where(ancestor => ancestor.FindAllDescendants(
-                                    condition => condition.ByAutomationId(correlationAutomationId))
-                                .Any(candidate => string.Equals(
-                                    candidate.Properties.Name.ValueOrDefault,
-                                    correlationName, StringComparison.Ordinal)))
-                            .ToArray();
+                        var ancestors = FindCorrelatedAncestors(
+                            ancestorAutomationId,
+                            correlationAutomationId,
+                            correlationName);
                         if (ancestors.Length != 1) return null;
                         var targets = ancestors[0].FindAllDescendants(
                             condition => condition.ByAutomationId(targetAutomationId));
@@ -612,6 +662,20 @@ public sealed class WindowsUiSmokeTests
                 throwOnTimeout: false);
             return result.Result;
         }
+
+        private AutomationElement[] FindCorrelatedAncestors(
+            string ancestorAutomationId,
+            string correlationAutomationId,
+            string correlationName) =>
+            CurrentWindow().FindAllDescendants(
+                    condition => condition.ByAutomationId(ancestorAutomationId))
+                .Where(ancestor => ancestor.FindAllDescendants(
+                        condition => condition.ByAutomationId(correlationAutomationId))
+                    .Any(candidate => string.Equals(
+                        candidate.Properties.Name.ValueOrDefault,
+                        correlationName, StringComparison.Ordinal)))
+                .OrderBy(ancestor => ancestor.BoundingRectangle.Top)
+                .ToArray();
 
         internal AutomationElement WaitForExactButtonName(string name, TimeSpan timeout)
         {

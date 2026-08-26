@@ -1209,6 +1209,9 @@ public sealed class StrictCrossPlatformUiTests
         bool verifyOpen)
     {
         windows.FocusWindow();
+        var previousMatchingBubbles = windows.CountCorrelatedAncestors(
+            "DesktopWorkspace.DirectMessageBubble",
+            "DesktopWorkspace.DirectAttachmentFilename", fileName);
         var pickerBaseline = windows.SnapshotVisibleCanonicalFilePickerHandles();
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
@@ -1224,9 +1227,10 @@ public sealed class StrictCrossPlatformUiTests
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectSend", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectSend"));
-        var windowsStatus = Require(windows.WaitForCorrelatedDescendantWithAnyName(
+        var windowsStatus = Require(windows.WaitForNewCorrelatedDescendantWithAnyName(
             "DesktopWorkspace.DirectMessageBubble",
             "DesktopWorkspace.DirectAttachmentFilename", fileName,
+            previousMatchingBubbles,
             "DesktopWorkspace.DirectDeliveryStatus", TimeSpan.FromSeconds(30),
             "Отправлено", "Доставлено", "Прочитано"),
             "DesktopWorkspace.DirectDeliveryStatus");
