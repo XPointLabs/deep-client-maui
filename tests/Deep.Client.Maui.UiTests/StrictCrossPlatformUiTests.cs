@@ -455,6 +455,8 @@ public sealed class StrictCrossPlatformUiTests
             android.ColdStart();
             android.WaitForResource(options.App("Conversations.Root"),
                 TimeSpan.FromSeconds(45));
+            android.WaitForResource(options.App("PhysicalE2E.RuntimeReadyMarker"),
+                TimeSpan.FromSeconds(60));
             AddAndroidContact(android, options, windowsIdentity, androidContact);
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 1, TimeSpan.FromSeconds(60));
@@ -754,6 +756,8 @@ public sealed class StrictCrossPlatformUiTests
 
             android.ColdStart();
             android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+            android.WaitForResource(options.App("PhysicalE2E.RuntimeReadyMarker"),
+                TimeSpan.FromSeconds(60));
             AddAndroidContact(android, options, windowsIdentity, androidContact);
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 1, TimeSpan.FromSeconds(60));
