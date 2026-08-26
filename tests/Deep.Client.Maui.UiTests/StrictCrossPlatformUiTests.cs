@@ -1209,14 +1209,14 @@ public sealed class StrictCrossPlatformUiTests
         bool verifyOpen)
     {
         windows.FocusWindow();
-        var pickerBaseline = windows.SnapshotTopLevelWindowHandles();
+        var pickerBaseline = windows.SnapshotForegroundWindowHandle();
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectAttach"));
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.AttachmentPickFile", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.AttachmentPickFile"));
-        windows.ChooseSingleFileFromNewForegroundPicker(
+        windows.ChooseSingleFileFromForegroundPicker(
             fixturePath, pickerBaseline, TimeSpan.FromSeconds(20));
         Require(windows.WaitForAutomationIdWithName(
             "DesktopWorkspace.DirectStagedAttachmentFilename", fileName,
@@ -1303,14 +1303,14 @@ public sealed class StrictCrossPlatformUiTests
         var previousAndroidImageMetadata = android.CountResourceId(
             options.App("Chat.ImageMetadata"));
         windows.FocusWindow();
-        var pickerBaseline = windows.SnapshotTopLevelWindowHandles();
+        var pickerBaseline = windows.SnapshotForegroundWindowHandle();
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.DirectAttach", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.DirectAttach"));
         windows.ActivateExact(Require(windows.WaitForAutomationId(
             "DesktopWorkspace.AttachmentPickPhoto", TimeSpan.FromSeconds(15)),
             "DesktopWorkspace.AttachmentPickPhoto"));
-        windows.ChooseSingleFileFromNewForegroundPicker(options.ImageFixturePath,
+        windows.ChooseSingleFileFromForegroundPicker(options.ImageFixturePath,
             pickerBaseline,
             TimeSpan.FromSeconds(20));
         Require(windows.WaitForAutomationIdWithName(
