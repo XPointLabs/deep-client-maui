@@ -10,11 +10,19 @@ namespace Deep.Client.Maui.Services;
 internal sealed class PhysicalMailboxRouteUsageTracker :
     IMailboxDispatchRouteUsageObserver
 {
+    private readonly PrivacyMailboxRouteDiagnostics routeDiagnostics;
     private readonly object gate = new();
     private readonly Dictionary<ConversationId, AttemptState> current = [];
     private readonly Dictionary<ConversationId, HashSet<string>> observedDurableRouters = [];
 
     public event EventHandler<ConversationId>? Changed;
+
+    public PhysicalMailboxRouteUsageTracker(
+        PrivacyMailboxRouteDiagnostics routeDiagnostics)
+    {
+        this.routeDiagnostics = routeDiagnostics ??
+            throw new ArgumentNullException(nameof(routeDiagnostics));
+    }
 
     public void Observe(MailboxDispatchRouteUsage usage)
     {
@@ -40,13 +48,18 @@ internal sealed class PhysicalMailboxRouteUsageTracker :
                     entryRouterId);
                 if (entryRouterId is not null)
                 {
-                    if (!observedDurableRouters.TryGetValue(
-                            usage.ConversationId, out var routers))
+                    var durableEntryRouterId = ResolveDurableEntryRouterId(
+                        usage.EntryRouterId.Span);
+                    if (durableEntryRouterId is not null)
                     {
-                        routers = new HashSet<string>(StringComparer.Ordinal);
-                        observedDurableRouters.Add(usage.ConversationId, routers);
+                        if (!observedDurableRouters.TryGetValue(
+                                usage.ConversationId, out var routers))
+                        {
+                            routers = new HashSet<string>(StringComparer.Ordinal);
+                            observedDurableRouters.Add(usage.ConversationId, routers);
+                        }
+                        routers.Add(durableEntryRouterId);
                     }
-                    routers.Add(entryRouterId);
                 }
                 changed = true;
             }
@@ -85,6 +98,29 @@ internal sealed class PhysicalMailboxRouteUsageTracker :
             observedDurableRouters.Remove(conversationId);
         }
         PublishChanged(conversationId);
+    }
+
+    private string? ResolveDurableEntryRouterId(
+        ReadOnlySpan<byte> coordinatorId)
+    {
+        var routes = routeDiagnostics.Current;
+        var selection = routeDiagnostics.CurrentSelection;
+        if (routes is null || selection is null)
+            return null;
+        var selected = selection.Route == "primary"
+            ? routes.Primary
+            : selection.Route == "fallback"
+                ? routes.Fallback
+                : null;
+        if (selected is null || selected.Count == 0)
+            return null;
+        var coordinator = Convert.ToHexStringLower(coordinatorId);
+        return string.Equals(selected[0].RouterId, selection.EntryRouterId,
+                   StringComparison.Ordinal) &&
+               string.Equals(selected[^1].RouterId, coordinator,
+                   StringComparison.Ordinal)
+            ? selection.EntryRouterId
+            : null;
     }
 
     private void PublishChanged(ConversationId conversationId)
