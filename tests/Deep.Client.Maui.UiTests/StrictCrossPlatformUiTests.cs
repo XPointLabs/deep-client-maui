@@ -455,9 +455,7 @@ public sealed class StrictCrossPlatformUiTests
             android.ColdStart();
             android.WaitForResource(options.App("Conversations.Root"),
                 TimeSpan.FromSeconds(45));
-            android.TapExactResourceIdWithAccessibleText(
-                options.App("Conversations.ConversationRow"), androidContact,
-                TimeSpan.FromSeconds(45));
+            AddAndroidContact(android, options, windowsIdentity, androidContact);
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 1, TimeSpan.FromSeconds(60));
             RequireSuccessfulWindowsDeliveryStatus(
@@ -756,9 +754,7 @@ public sealed class StrictCrossPlatformUiTests
 
             android.ColdStart();
             android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
-            android.TapExactResourceIdWithAccessibleText(
-                options.App("Conversations.ConversationRow"), androidContact,
-                TimeSpan.FromSeconds(45));
+            AddAndroidContact(android, options, windowsIdentity, androidContact);
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                 marker, 1, TimeSpan.FromSeconds(60));
             var expectedRecovered = ambiguous with
@@ -2504,40 +2500,6 @@ internal sealed class AndroidUiautomatorClient
     internal void Hold(string resourceId, TimeSpan duration) { if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10)) throw new ArgumentOutOfRangeException(nameof(duration)); var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "swipe", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), ((int)duration.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void Hold(StrictCrossPlatformContracts.AndroidNode node, TimeSpan duration) { if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10)) throw new ArgumentOutOfRangeException(nameof(duration)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "swipe", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), ((int)duration.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void TapExactResourceIdWithExactText(string resourceId, string text) { var node = WaitByText(resourceId, text, TimeSpan.FromSeconds(15)); Assert.Equal(text, node.Text); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
-    internal void TapExactResourceIdWithAccessibleText(
-        string resourceId,
-        string exactText,
-        TimeSpan timeout)
-    {
-        var until = DateTime.UtcNow + timeout;
-        Exception? last = null;
-        while (DateTime.UtcNow < until)
-        {
-            try
-            {
-                var matches = StrictCrossPlatformContracts.FindAllResourceIds(
-                        Dump(), resourceId)
-                    .Where(node => string.Equals(
-                        node.AccessibleText, exactText, StringComparison.Ordinal))
-                    .ToArray();
-                if (matches.Length > 1)
-                    throw new InvalidOperationException(
-                        "Android resource-id/accessible-text pair was ambiguous.");
-                if (matches.Length == 1)
-                {
-                    var point = matches[0].Bounds.Center;
-                    RequireSuccess(Adb("shell", "input", "tap",
-                        point.X.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                        point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture)));
-                    return;
-                }
-            }
-            catch (Exception exception) { last = exception; }
-            Thread.Sleep(250);
-        }
-        throw new InvalidOperationException(
-            "Android exact resource-id/accessible-text pair was not observed.", last);
-    }
     internal bool AllowMicrophonePermissionIfRequested(TimeSpan timeout)
     {
         string[] permissionButtons =
