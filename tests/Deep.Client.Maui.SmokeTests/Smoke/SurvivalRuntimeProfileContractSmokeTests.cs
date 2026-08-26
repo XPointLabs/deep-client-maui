@@ -400,6 +400,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
 
         Assert.Contains("GeneratePhysicalLabTrustRoot", project, StringComparison.Ordinal);
         Assert.Contains("DeepMrXPublicKeySha256", project, StringComparison.Ordinal);
+        Assert.Contains(
+            @"deep-physical\$(TargetFramework)\$(RuntimeIdentifier)\PhysicalLabTrustRoot.g.cs",
+            project,
+            StringComparison.Ordinal);
         Assert.Contains("RejectPhysicalLabTrustRootOutsidePhysicalDebug", project,
             StringComparison.Ordinal);
         Assert.Contains("PhysicalLabTrustRoot.MrXPublicKeySha256", program,

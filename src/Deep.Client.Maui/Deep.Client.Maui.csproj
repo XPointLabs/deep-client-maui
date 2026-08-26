@@ -53,7 +53,7 @@
 
   <PropertyGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
     <DefineConstants>$(DefineConstants);DEEP_PHYSICAL_E2E</DefineConstants>
-    <PhysicalLabTrustRootSource>$(BaseIntermediateOutputPath)deep-physical\$(TargetFramework)\PhysicalLabTrustRoot.g.cs</PhysicalLabTrustRootSource>
+    <PhysicalLabTrustRootSource>$(BaseIntermediateOutputPath)deep-physical\$(TargetFramework)\$(RuntimeIdentifier)\PhysicalLabTrustRoot.g.cs</PhysicalLabTrustRootSource>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
