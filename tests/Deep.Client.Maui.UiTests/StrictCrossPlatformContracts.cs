@@ -202,6 +202,43 @@ internal static class StrictCrossPlatformContracts
                 "Correlated Android message did not contain exactly one target descendant.");
     }
 
+    internal static AndroidNode FindLastCorrelatedDescendant(
+        string xml,
+        string ancestorResourceId,
+        string correlationResourceId,
+        string correlationText,
+        string targetResourceId)
+    {
+        ValidateResourceId(ancestorResourceId, "ancestor resource-id");
+        ValidateResourceId(correlationResourceId, "correlation resource-id");
+        ValidateResourceId(targetResourceId, "target resource-id");
+        var document = XDocument.Parse(xml, LoadOptions.None);
+        var ancestors = document.Descendants("node")
+            .Where(node => string.Equals(
+                (string?)node.Attribute("resource-id"), ancestorResourceId,
+                StringComparison.Ordinal))
+            .Where(node => node.Descendants("node").Any(descendant =>
+                string.Equals((string?)descendant.Attribute("resource-id"),
+                    correlationResourceId, StringComparison.Ordinal)
+                && string.Equals(
+                    ReadAccessibleText(descendant), correlationText,
+                    StringComparison.Ordinal)))
+            .ToArray();
+        if (ancestors.Length == 0)
+            throw new InvalidOperationException(
+                "Android correlation did not identify a message ancestor.");
+        var targets = ancestors[^1].Descendants("node")
+            .Where(node => string.Equals(
+                (string?)node.Attribute("resource-id"), targetResourceId,
+                StringComparison.Ordinal))
+            .Select(AndroidNode.From)
+            .ToArray();
+        return targets.Length == 1
+            ? targets[0]
+            : throw new InvalidOperationException(
+                "Last correlated Android message did not contain exactly one target descendant.");
+    }
+
     internal static AndroidNode FindExactlyOneResourceIdContainingDescendantText(
         string xml,
         string ancestorResourceId,

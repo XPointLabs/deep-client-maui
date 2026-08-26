@@ -1237,11 +1237,11 @@ public sealed class StrictCrossPlatformUiTests
         Assert.True(windowsStatus.Properties.Name.ValueOrDefault is
             "Отправлено" or "Доставлено" or "Прочитано");
 
-        var file = android.WaitForCorrelatedDescendant(
+        var file = android.WaitForLastCorrelatedDescendant(
             options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
             fileName, options.App("Chat.AttachmentFilename"), TimeSpan.FromSeconds(60));
         Assert.Equal(fileName, file.AccessibleText);
-        var metadata = android.WaitForCorrelatedDescendant(
+        var metadata = android.WaitForLastCorrelatedDescendant(
             options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
             fileName, options.App("Chat.AttachmentMetadata"), TimeSpan.FromSeconds(15));
         Assert.Equal(ExpectedAttachmentMetadata(fixturePath), metadata.AccessibleText);
@@ -1252,12 +1252,13 @@ public sealed class StrictCrossPlatformUiTests
             android.Tap(options.App("Chat.AttachmentOpen"));
             android.WaitForExternalActivity(TimeSpan.FromSeconds(15));
             android.PressBack();
-            android.WaitForMessageBubbleContaining(options.App("Chat.AttachmentFilename"),
-                fileName, TimeSpan.FromSeconds(20));
+            android.WaitForLastCorrelatedDescendant(
+                options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
+                fileName, options.App("Chat.AttachmentFilename"), TimeSpan.FromSeconds(20));
         }
 
         var before = android.SnapshotDownloadPaths();
-        file = android.WaitForCorrelatedDescendant(
+        file = android.WaitForLastCorrelatedDescendant(
             options.App("Chat.MessageBubble"), options.App("Chat.AttachmentFilename"),
             fileName, options.App("Chat.AttachmentFilename"), TimeSpan.FromSeconds(15));
         android.Tap(file);
@@ -2195,6 +2196,26 @@ internal sealed class AndroidUiautomatorClient
             Thread.Sleep(targetText is null ? 250 : 2000);
         }
         throw new InvalidOperationException("Correlated Android message target was not observed.", last);
+    }
+    internal StrictCrossPlatformContracts.AndroidNode WaitForLastCorrelatedDescendant(
+        string ancestorResourceId, string correlationResourceId, string correlationText,
+        string targetResourceId, TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        Exception? last = null;
+        while (DateTime.UtcNow < until)
+        {
+            try
+            {
+                return StrictCrossPlatformContracts.FindLastCorrelatedDescendant(
+                    Dump(), ancestorResourceId, correlationResourceId, correlationText,
+                    targetResourceId);
+            }
+            catch (Exception exception) { last = exception; }
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException(
+            "Last correlated Android message target was not observed.", last);
     }
     internal StrictCrossPlatformContracts.AndroidNode WaitForMessageBubbleContaining(
         string descendantResourceId, string exactText, TimeSpan timeout)

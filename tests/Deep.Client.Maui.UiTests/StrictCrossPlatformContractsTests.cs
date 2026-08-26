@@ -35,6 +35,20 @@ public sealed class StrictCrossPlatformContractsTests
                 xml, "pkg:id/bubble", "pkg:id/body", "exact").ResourceId);
     }
 
+    [Fact]
+    public void Last_correlated_message_descendant_selects_the_newest_duplicate()
+    {
+        const string xml = "<hierarchy><node resource-id='pkg:id/bubble' bounds='[0,0][20,20]'><node resource-id='pkg:id/file' text='same.bin' bounds='[1,1][5,5]'/><node resource-id='pkg:id/action' text='old' bounds='[6,6][9,9]'/></node><node resource-id='pkg:id/bubble' bounds='[20,0][40,20]'><node resource-id='pkg:id/file' text='same.bin' bounds='[21,1][25,5]'/><node resource-id='pkg:id/action' text='new' bounds='[26,6][29,9]'/></node></hierarchy>";
+
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.FindExactlyOneCorrelatedDescendant(
+                xml, "pkg:id/bubble", "pkg:id/file", "same.bin", "pkg:id/action"));
+        var target = StrictCrossPlatformContracts.FindLastCorrelatedDescendant(
+            xml, "pkg:id/bubble", "pkg:id/file", "same.bin", "pkg:id/action");
+
+        Assert.Equal("new", target.AccessibleText);
+    }
+
     [Theory]
     [InlineData("…", "Отправка")]
     [InlineData("!", "Ошибка отправки")]
