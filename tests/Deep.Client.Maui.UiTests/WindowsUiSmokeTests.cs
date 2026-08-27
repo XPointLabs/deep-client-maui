@@ -807,54 +807,40 @@ public sealed class WindowsUiSmokeTests
 
         internal FilePickerInvocationContext CaptureFilePickerInvocationContext()
         {
-            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-            FilePickerInvocationFacts facts = default;
-            do
+            var mainWindow = CurrentWindow();
+            var mainHandle = mainWindow.Properties.NativeWindowHandle.ValueOrDefault;
+            var foregroundRoot = RootWindow(GetForegroundWindow());
+            var visibleOwnedPopupCount = automation.GetDesktop()
+                .FindAllChildren(condition => condition.ByControlType(ControlType.Window))
+                .Count(element =>
+                {
+                    var handle = element.Properties.NativeWindowHandle.ValueOrDefault;
+                    return handle != IntPtr.Zero &&
+                        handle != mainHandle &&
+                        GetAncestor(handle, GetAncestorRootOwner) == mainHandle &&
+                        IsWindowVisible(handle) &&
+                        element.Properties.IsOffscreen.ValueOrDefault != true;
+                });
+            var facts = new FilePickerInvocationFacts(
+                mainHandle,
+                application.ProcessId,
+                mainWindow.Properties.ProcessId.ValueOrDefault,
+                NativeProcessId(mainHandle),
+                foregroundRoot,
+                GetLastActivePopup(mainHandle),
+                IsWindowVisible(mainHandle),
+                IsWindowEnabled(mainHandle),
+                mainWindow.Properties.IsEnabled.ValueOrDefault,
+                mainWindow.Properties.IsOffscreen.ValueOrDefault,
+                visibleOwnedPopupCount);
+            if (!IsSafeFilePickerInvocationPrecondition(facts))
             {
-                FocusWindow();
-                Thread.Sleep(TimeSpan.FromMilliseconds(200));
-                var mainWindow = CurrentWindow();
-                var mainHandle = mainWindow.Properties.NativeWindowHandle.ValueOrDefault;
-                var foregroundRoot = RootWindow(GetForegroundWindow());
-                var visibleOwnedPopupCount = automation.GetDesktop()
-                    .FindAllChildren(condition => condition.ByControlType(ControlType.Window))
-                    .Count(element =>
-                    {
-                        var handle = element.Properties.NativeWindowHandle.ValueOrDefault;
-                        return handle != IntPtr.Zero &&
-                            handle != mainHandle &&
-                            GetAncestor(handle, GetAncestorRootOwner) == mainHandle &&
-                            IsWindowVisible(handle) &&
-                            element.Properties.IsOffscreen.ValueOrDefault != true;
-                    });
-                facts = new FilePickerInvocationFacts(
-                    mainHandle,
-                    application.ProcessId,
-                    mainWindow.Properties.ProcessId.ValueOrDefault,
-                    NativeProcessId(mainHandle),
-                    foregroundRoot,
-                    GetLastActivePopup(mainHandle),
-                    IsWindowVisible(mainHandle),
-                    IsWindowEnabled(mainHandle),
-                    mainWindow.Properties.IsEnabled.ValueOrDefault,
-                    mainWindow.Properties.IsOffscreen.ValueOrDefault,
-                    visibleOwnedPopupCount);
-                if (IsSafeFilePickerInvocationPrecondition(facts))
-                    return new FilePickerInvocationContext(
-                        mainHandle, application.ProcessId, foregroundRoot);
+                throw new InvalidOperationException(
+                    "The MAUI window was not in a clean foreground state before opening the file picker.");
             }
-            while (DateTime.UtcNow < deadline);
 
-            throw new InvalidOperationException(
-                "The MAUI window did not reach a clean foreground state before opening " +
-                $"the file picker (main={facts.MainWindowHandle != IntPtr.Zero}, " +
-                $"uiaPid={facts.UiaProcessId == facts.ApplicationProcessId}, " +
-                $"nativePid={facts.NativeProcessId == facts.ApplicationProcessId}, " +
-                $"foreground={facts.ForegroundRootHandle == facts.MainWindowHandle}, " +
-                $"lastPopup={facts.LastActivePopupHandle == facts.MainWindowHandle}, " +
-                $"nativeVisible={facts.IsNativeVisible}, nativeEnabled={facts.IsNativeEnabled}, " +
-                $"uiaEnabled={facts.IsUiaEnabled}, uiaOffscreen={facts.IsUiaOffscreen}, " +
-                $"ownedPopups={facts.VisibleOwnedPopupCount}).");
+            return new FilePickerInvocationContext(
+                mainHandle, application.ProcessId, foregroundRoot);
         }
 
         internal void ChooseSingleFileFromOwnedForegroundPicker(
