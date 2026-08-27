@@ -880,7 +880,6 @@ public sealed class WindowsUiSmokeTests
                 _ = SetActiveWindow(mainHandle);
                 _ = SetFocus(mainHandle);
                 _ = SetForegroundWindow(mainHandle);
-                SwitchToThisWindow(mainHandle, true);
             }
             finally
             {
@@ -1323,11 +1322,6 @@ public sealed class WindowsUiSmokeTests
 
         [DllImport("kernel32.dll")]
         private static extern uint GetCurrentThreadId();
-
-        [DllImport("user32.dll")]
-        private static extern void SwitchToThisWindow(
-            IntPtr windowHandle,
-            [MarshalAs(UnmanagedType.Bool)] bool altTab);
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetWindow(IntPtr windowHandle, uint command);
