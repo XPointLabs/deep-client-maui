@@ -811,15 +811,10 @@ public sealed class WindowsUiSmokeTests
             FilePickerInvocationFacts facts = default;
             do
             {
+                FocusWindow();
+                Thread.Sleep(TimeSpan.FromMilliseconds(200));
                 var mainWindow = CurrentWindow();
                 var mainHandle = mainWindow.Properties.NativeWindowHandle.ValueOrDefault;
-                if (mainHandle != IntPtr.Zero)
-                {
-                    _ = ShowWindowAsync(mainHandle, ShowWindowRestore);
-                    _ = SetForegroundWindow(mainHandle);
-                }
-                mainWindow.Focus();
-                Thread.Sleep(TimeSpan.FromMilliseconds(200));
                 var foregroundRoot = RootWindow(GetForegroundWindow());
                 var visibleOwnedPopupCount = automation.GetDesktop()
                     .FindAllChildren(condition => condition.ByControlType(ControlType.Window))
@@ -1258,7 +1253,6 @@ public sealed class WindowsUiSmokeTests
         private const uint GetWindowOwner = 4;
         private const uint GetAncestorRoot = 2;
         private const uint GetAncestorRootOwner = 3;
-        private const int ShowWindowRestore = 9;
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -1266,14 +1260,6 @@ public sealed class WindowsUiSmokeTests
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetForegroundWindow(IntPtr windowHandle);
-
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool ShowWindowAsync(IntPtr windowHandle, int command);
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetWindow(IntPtr windowHandle, uint command);
