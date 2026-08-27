@@ -15,6 +15,7 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
     IMailboxRuntimeProvisioningSource,
     IContactMailboxOnboarding,
     IContactInvitationProvider,
+    IGroupMailboxRouteExchange,
     IDisposable
 {
     internal const string RoutesResource =
@@ -123,36 +124,181 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
         try
         {
             var state = RequireBound();
-            var existing = await state.ContactState.LoadLocalInvitationAsync(
-                state.Material.LocalSessionId, cancellationToken).ConfigureAwait(false);
-            if (existing is not null)
-            {
-                _ = ContactMailboxInvitationService.ParseAndVerify(existing, timeProvider);
-                return existing;
-            }
-
-            var advertisement = ProductionMailboxRouteAdvertisementCodec.DecodeAdvertisement(
-                state.PublicRoute.CanonicalRouteAdvertisement.Span);
-            var expires = Math.Min(
-                state.PublicRoute.ExpiresAtUnixSeconds,
-                Math.Min(advertisement.Certificate.ExpiresAtUnixSeconds,
-                    advertisement.ExpiresAtUnixSeconds));
-            var invitation = ContactMailboxInvitationService.Create(
-                state.SessionIdentity,
-                state.PublicRoute.MailboxOwnerEd25519PublicKey.Span,
-                state.PublicRoute.CanonicalRouteAdvertisement.Span,
-                DateTimeOffset.FromUnixTimeSeconds(checked((long)expires)),
-                timeProvider);
-            await state.ContactState.SaveLocalInvitationAsync(
-                state.Material.LocalSessionId, invitation, cancellationToken)
+            return await GetOrCreateLocalInvitationLockedAsync(state, cancellationToken)
                 .ConfigureAwait(false);
-            return invitation;
         }
         finally
         {
             gate.Release();
         }
     }
+
+    public async Task<GroupMailboxRouteBundle?> CaptureForPublishAsync(
+        Group group,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(group);
+        await EnsureBoundToActiveAccountAsync(cancellationToken).ConfigureAwait(false);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var state = RequireBound();
+            if (!group.Members.Any(member =>
+                    member.SessionId == state.Material.LocalSessionId &&
+                    !member.IsPendingRemoval))
+                throw new InvalidOperationException(
+                    "The active account is not an active member of the group.");
+
+            var invitations = new List<GroupMemberMailboxInvitation>(group.Members.Count);
+            foreach (var member in group.Members
+                         .OrderBy(static value => value.SessionId.Value, StringComparer.Ordinal))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var encoded = member.SessionId == state.Material.LocalSessionId
+                    ? await GetOrCreateLocalInvitationLockedAsync(state, cancellationToken)
+                        .ConfigureAwait(false)
+                    : await state.ContactState.LoadPeerInvitationAsync(
+                        state.Material.LocalSessionId,
+                        member.SessionId,
+                        cancellationToken).ConfigureAwait(false);
+                if (encoded is null)
+                    throw new InvalidOperationException(
+                        $"Authenticated mailbox invitation is unavailable for group member {member.SessionId}.");
+                var verified = ContactMailboxInvitationService.ParseAndVerify(
+                    encoded, timeProvider);
+                if (verified.SessionId != member.SessionId)
+                    throw new InvalidDataException(
+                        "Persisted group member invitation has a different Session ID.");
+                invitations.Add(new GroupMemberMailboxInvitation(
+                    member.SessionId,
+                    ContactMailboxInvitationService.DecodeCanonicalText(encoded)));
+            }
+
+            return new GroupMailboxRouteBundle(
+                group.Id,
+                group.Revision,
+                E2eeContentCodec.ComputeGroupMembershipDigest(group),
+                invitations);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task ImportReceivedAsync(
+        SessionId localAccount,
+        Group group,
+        GroupMailboxRouteBundle bundle,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(group);
+        ArgumentNullException.ThrowIfNull(bundle);
+        GroupMailboxRouteBundleCodec.ValidateForGroup(bundle, group);
+
+        var verified = bundle.Invitations.Select(invitation =>
+        {
+            var value = ContactMailboxInvitationService.ParseAndVerify(
+                invitation.CanonicalInvitation, timeProvider);
+            if (value.SessionId != invitation.Member)
+                throw new InvalidDataException(
+                    "A group mailbox invitation is bound to a different Session ID.");
+            return (invitation.Member, Value: value,
+                Text: ContactMailboxInvitationService.EncodeCanonicalBinary(
+                    invitation.CanonicalInvitation));
+        }).ToArray();
+
+        await EnsureBoundToActiveAccountAsync(cancellationToken).ConfigureAwait(false);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var state = RequireBound();
+            if (localAccount != state.Material.LocalSessionId)
+                throw new InvalidOperationException(
+                    "The group mailbox route bundle targets another active account.");
+
+            foreach (var invitation in verified)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (invitation.Member == localAccount)
+                {
+                    if (!IsCurrentLocalInvitation(state, invitation.Value))
+                        throw new InvalidDataException(
+                            "The group mailbox route bundle contains a stale local route.");
+                    continue;
+                }
+
+                var imported = await state.Acquirer.AcquirePeerDepositAsync(
+                    invitation.Value, cancellationToken).ConfigureAwait(false);
+                await state.ContactState.SavePeerInvitationAsync(
+                    localAccount,
+                    invitation.Member,
+                    invitation.Text,
+                    cancellationToken).ConfigureAwait(false);
+                await state.PeerSelectorState.SaveAsync(
+                    localAccount,
+                    invitation.Member,
+                    imported.PeerSelector,
+                    cancellationToken).ConfigureAwait(false);
+                state.PeerSelectors[invitation.Member] = imported.PeerSelector;
+            }
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<string> GetOrCreateLocalInvitationLockedAsync(
+        BoundState state,
+        CancellationToken cancellationToken)
+    {
+        var existing = await state.ContactState.LoadLocalInvitationAsync(
+            state.Material.LocalSessionId, cancellationToken).ConfigureAwait(false);
+        if (existing is not null)
+        {
+            try
+            {
+                var verified = ContactMailboxInvitationService.ParseAndVerify(
+                    existing, timeProvider);
+                if (IsCurrentLocalInvitation(state, verified)) return existing;
+            }
+            catch (ContactMailboxInvitationException)
+            {
+                // A stale cache is replaceable only from the currently verified bound route below.
+            }
+        }
+
+        var advertisement = ProductionMailboxRouteAdvertisementCodec.DecodeAdvertisement(
+            state.PublicRoute.CanonicalRouteAdvertisement.Span);
+        var expires = Math.Min(
+            state.PublicRoute.ExpiresAtUnixSeconds,
+            Math.Min(advertisement.Certificate.ExpiresAtUnixSeconds,
+                advertisement.ExpiresAtUnixSeconds));
+        var invitation = ContactMailboxInvitationService.Create(
+            state.SessionIdentity,
+            state.PublicRoute.MailboxOwnerEd25519PublicKey.Span,
+            state.PublicRoute.CanonicalRouteAdvertisement.Span,
+            DateTimeOffset.FromUnixTimeSeconds(checked((long)expires)),
+            timeProvider);
+        await state.ContactState.SaveLocalInvitationAsync(
+            state.Material.LocalSessionId, invitation, cancellationToken)
+            .ConfigureAwait(false);
+        return invitation;
+    }
+
+    private static bool IsCurrentLocalInvitation(
+        BoundState state,
+        VerifiedContactMailboxInvitation invitation) =>
+        invitation.SessionId == state.Material.LocalSessionId &&
+        System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            invitation.MailboxOwnerEd25519PublicKey.Span,
+            state.PublicRoute.MailboxOwnerEd25519PublicKey.Span) &&
+        System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            invitation.CanonicalRouteAdvertisement.Span,
+            state.PublicRoute.CanonicalRouteAdvertisement.Span);
 
     public async Task<ProvisionedMailboxRuntime> ProvisionAsync(
         SqliteSessionStore store,

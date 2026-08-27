@@ -19,7 +19,8 @@ internal static class PersistentClientRuntimeComposer
         string sqlCipherKey,
         Func<SqliteSessionStore, SecureRecoverySessionStore,
             StoreBoundRuntimeTransportComposition> transportFactory,
-        IExternalTransportOutboxExecutor? transportOutboxExecutor)
+        IExternalTransportOutboxExecutor? transportOutboxExecutor,
+        IGroupMailboxRouteExchange? groupMailboxRoutes = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDbPath);
         ArgumentNullException.ThrowIfNull(featureFlags);
@@ -54,10 +55,11 @@ internal static class PersistentClientRuntimeComposer
                 composition.DeliveryPolicy,
                 ownsMessageTransport: true,
 #if DEBUG && DEEP_PHYSICAL_E2E
-                messageDispatchFailureObserver: PhysicalE2eMessageDispatchFailureObserver.Instance);
+                messageDispatchFailureObserver: PhysicalE2eMessageDispatchFailureObserver.Instance,
 #else
-                messageDispatchFailureObserver: null);
+                messageDispatchFailureObserver: null,
 #endif
+                groupMailboxRoutes: groupMailboxRoutes);
 #if DEBUG && DEEP_PHYSICAL_E2E
             PhysicalE2eAckCorrelationProvider.Bind(runtime);
 #endif
