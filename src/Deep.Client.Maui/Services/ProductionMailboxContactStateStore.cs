@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Persistence;
+using Deep.Client.Shared.Services;
 
 namespace Deep.Client.Maui.Services;
 
@@ -12,13 +13,16 @@ namespace Deep.Client.Maui.Services;
 /// exchanged only through an authenticated contact channel.
 /// </summary>
 internal sealed class ProductionMailboxContactStateStore(
-    IAtomicBoundedSettingsRepository settings)
+    IAtomicBoundedSettingsRepository settings,
+    TimeProvider? timeProvider = null)
 {
+    private const int HashLength = 32;
     private const int MaximumEncodedBytes = 2 * 1024;
     private const int MaximumAttempts = 4;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly IAtomicBoundedSettingsRepository settings =
         settings ?? throw new ArgumentNullException(nameof(settings));
+    private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
 
     public Task SaveLocalInvitationAsync(
         SessionId local,
@@ -50,7 +54,11 @@ internal sealed class ProductionMailboxContactStateStore(
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(invitation);
-        var encoded = Encode(invitation);
+        if (StrictUtf8.GetByteCount(invitation) > MaximumEncodedBytes)
+            throw new InvalidDataException("Production contact invitation is oversized.");
+
+        StoredInvitationState? candidate = null;
+        byte[]? encoded = null;
         try
         {
             for (var attempt = 0; attempt < MaximumAttempts; attempt++)
@@ -62,16 +70,27 @@ internal sealed class ProductionMailboxContactStateStore(
                 switch (current.Result)
                 {
                     case AtomicBoundedSettingReadResult.Missing:
+                        candidate ??= VerifyForWrite(invitation);
+                        encoded ??= Encode(candidate);
                         result = await settings.CreateAtomicBoundedSettingAsync(
                             key, encoded, MaximumEncodedBytes, cancellationToken)
                             .ConfigureAwait(false);
                         break;
                     case AtomicBoundedSettingReadResult.Found when current.Revision is not null:
-                        if (Fixed(current.GetValueCopy(), encoded)) return;
+                    {
+                        var persisted = Decode(current.GetValueCopy());
+                        if (string.Equals(
+                                persisted.Invitation, invitation, StringComparison.Ordinal))
+                            return;
+
+                        candidate ??= VerifyForWrite(invitation);
+                        EnsureMonotonicSuccessor(persisted, candidate);
+                        encoded ??= Encode(candidate);
                         result = await settings.ReplaceAtomicBoundedSettingAsync(
                             key, current.Revision, encoded, MaximumEncodedBytes,
                             cancellationToken).ConfigureAwait(false);
                         break;
+                    }
                     case AtomicBoundedSettingReadResult.Oversized:
                         throw new InvalidDataException(
                             "Persisted production contact invitation is oversized.");
@@ -89,7 +108,10 @@ internal sealed class ProductionMailboxContactStateStore(
                     var observed = await settings.ReadAtomicBoundedSettingAsync(
                         key, MaximumEncodedBytes, CancellationToken.None).ConfigureAwait(false);
                     if (observed.Result == AtomicBoundedSettingReadResult.Found &&
-                        Fixed(observed.GetValueCopy(), encoded))
+                        string.Equals(
+                            Decode(observed.GetValueCopy()).Invitation,
+                            invitation,
+                            StringComparison.Ordinal))
                         return;
                 }
                 throw new InvalidOperationException(
@@ -100,7 +122,8 @@ internal sealed class ProductionMailboxContactStateStore(
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(encoded);
+            if (encoded is not null)
+                CryptographicOperations.ZeroMemory(encoded);
         }
     }
 
@@ -113,7 +136,7 @@ internal sealed class ProductionMailboxContactStateStore(
         return outcome.Result switch
         {
             AtomicBoundedSettingReadResult.Missing => null,
-            AtomicBoundedSettingReadResult.Found => Decode(outcome.GetValueCopy()),
+            AtomicBoundedSettingReadResult.Found => Decode(outcome.GetValueCopy()).Invitation,
             AtomicBoundedSettingReadResult.Oversized => throw new InvalidDataException(
                 "Persisted production contact invitation is oversized."),
             _ => throw new InvalidOperationException(
@@ -121,16 +144,60 @@ internal sealed class ProductionMailboxContactStateStore(
         };
     }
 
-    private static byte[] Encode(string invitation)
+    private StoredInvitationState VerifyForWrite(string invitation)
     {
-        var output = JsonSerializer.SerializeToUtf8Bytes(new StoredInvitation(1, invitation));
+        var verified = ContactMailboxInvitationService.ParseAndVerify(
+            invitation, timeProvider);
+        var canonicalInvitation = ContactMailboxInvitationService.DecodeCanonicalText(invitation);
+        try
+        {
+            return new StoredInvitationState(
+                invitation,
+                verified.RouteSequence,
+                verified.CanonicalRouteAdvertisementHash.ToArray(),
+                verified.IssuedAtUnixSeconds,
+                verified.ExpiresAtUnixSeconds,
+                SHA256.HashData(canonicalInvitation));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(canonicalInvitation);
+        }
+    }
+
+    private static void EnsureMonotonicSuccessor(
+        StoredInvitationState current,
+        StoredInvitationState candidate)
+    {
+        if (candidate.RouteSequence < current.RouteSequence)
+            throw new InvalidDataException(
+                "Production contact invitation route sequence cannot roll back.");
+        if (candidate.RouteSequence == current.RouteSequence)
+            throw new InvalidDataException(
+                "Production contact invitation route sequence equivocation was detected.");
+    }
+
+    private static byte[] Encode(StoredInvitationState state)
+    {
+        var output = JsonSerializer.SerializeToUtf8Bytes(new StoredInvitation(
+            2,
+            state.Invitation,
+            state.RouteSequence,
+            Convert.ToHexString(state.CanonicalPra1Hash),
+            state.IssuedAtUnixSeconds,
+            state.ExpiresAtUnixSeconds,
+            Convert.ToHexString(state.Cmi1Hash)));
         if (output.Length is 0 or > MaximumEncodedBytes)
+        {
+            CryptographicOperations.ZeroMemory(output);
             throw new InvalidDataException("Production contact invitation is oversized.");
+        }
         return output;
     }
 
-    private static string Decode(byte[] encoded)
+    private static StoredInvitationState Decode(byte[] encoded)
     {
+        byte[]? canonicalInvitation = null;
         try
         {
             if (encoded.Length is 0 or > MaximumEncodedBytes)
@@ -143,31 +210,94 @@ internal sealed class ProductionMailboxContactStateStore(
                 MaxDepth = 3
             });
             var root = document.RootElement;
-            var properties = root.EnumerateObject().Select(static value => value.Name).ToArray();
-            if (root.ValueKind != JsonValueKind.Object || properties.Length != 2 ||
-                !properties.Contains("Schema", StringComparer.Ordinal) ||
-                !properties.Contains("Invitation", StringComparer.Ordinal) ||
-                root.GetProperty("Schema").GetInt32() != 1 ||
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException(
+                    "Persisted production contact invitation is invalid.");
+            var expectedProperties = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "Schema",
+                "Invitation",
+                "RouteSequence",
+                "CanonicalPra1Hash",
+                "IssuedAtUnixSeconds",
+                "ExpiresAtUnixSeconds",
+                "Cmi1Hash"
+            };
+            foreach (var property in root.EnumerateObject())
+            {
+                if (!expectedProperties.Remove(property.Name))
+                    throw new InvalidDataException(
+                        "Persisted production contact invitation is invalid.");
+            }
+            if (expectedProperties.Count != 0 || root.GetProperty("Schema").GetInt32() != 2 ||
                 root.GetProperty("Invitation").ValueKind != JsonValueKind.String)
                 throw new InvalidDataException(
                     "Persisted production contact invitation is invalid.");
+
             var invitation = root.GetProperty("Invitation").GetString();
             if (string.IsNullOrWhiteSpace(invitation) ||
                 StrictUtf8.GetByteCount(invitation) > MaximumEncodedBytes)
                 throw new InvalidDataException(
                     "Persisted production contact invitation is invalid.");
-            return invitation;
+            var routeSequence = root.GetProperty("RouteSequence").GetUInt64();
+            var issuedAt = root.GetProperty("IssuedAtUnixSeconds").GetUInt64();
+            var expiresAt = root.GetProperty("ExpiresAtUnixSeconds").GetUInt64();
+            var pra1Hash = ParseCanonicalHash(root.GetProperty("CanonicalPra1Hash"));
+            var cmi1Hash = ParseCanonicalHash(root.GetProperty("Cmi1Hash"));
+
+            var verified = ContactMailboxInvitationService.ParseAndVerify(
+                invitation,
+                new FixedTimeProvider(issuedAt),
+                clockSkewSeconds: 0);
+            canonicalInvitation = ContactMailboxInvitationService.DecodeCanonicalText(invitation);
+            var computedCmi1Hash = SHA256.HashData(canonicalInvitation);
+            if (verified.RouteSequence != routeSequence ||
+                verified.IssuedAtUnixSeconds != issuedAt ||
+                verified.ExpiresAtUnixSeconds != expiresAt ||
+                !Fixed(verified.CanonicalRouteAdvertisementHash.Span, pra1Hash) ||
+                !Fixed(computedCmi1Hash, cmi1Hash))
+                throw new InvalidDataException(
+                    "Persisted production contact invitation metadata is invalid.");
+
+            return new StoredInvitationState(
+                invitation,
+                routeSequence,
+                pra1Hash,
+                issuedAt,
+                expiresAt,
+                cmi1Hash);
         }
         catch (Exception exception) when (exception is JsonException or
-            InvalidOperationException or FormatException)
+            InvalidOperationException or ArgumentException or FormatException or
+            OverflowException or
+            ContactMailboxInvitationException)
         {
             throw new InvalidDataException(
                 "Persisted production contact invitation is invalid.", exception);
         }
         finally
         {
+            if (canonicalInvitation is not null)
+                CryptographicOperations.ZeroMemory(canonicalInvitation);
             CryptographicOperations.ZeroMemory(encoded);
         }
+    }
+
+    private static byte[] ParseCanonicalHash(JsonElement property)
+    {
+        if (property.ValueKind != JsonValueKind.String)
+            throw new InvalidDataException(
+                "Persisted production contact invitation hash is invalid.");
+        var encoded = property.GetString();
+        if (encoded is null || encoded.Length != HashLength * 2)
+            throw new InvalidDataException(
+                "Persisted production contact invitation hash is invalid.");
+        var decoded = Convert.FromHexString(encoded);
+        if (decoded.Length != HashLength ||
+            !string.Equals(Convert.ToHexString(decoded), encoded, StringComparison.Ordinal))
+            throw new InvalidDataException(
+                "Persisted production contact invitation hash is invalid.");
+        return decoded;
     }
 
     private static string Key(SessionId local, SessionId? peer) =>
@@ -177,5 +307,26 @@ internal sealed class ProductionMailboxContactStateStore(
     private static bool Fixed(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right) =>
         left.Length == right.Length && CryptographicOperations.FixedTimeEquals(left, right);
 
-    private sealed record StoredInvitation(int Schema, string Invitation);
+    private sealed record StoredInvitation(
+        int Schema,
+        string Invitation,
+        ulong RouteSequence,
+        string CanonicalPra1Hash,
+        ulong IssuedAtUnixSeconds,
+        ulong ExpiresAtUnixSeconds,
+        string Cmi1Hash);
+
+    private sealed record StoredInvitationState(
+        string Invitation,
+        ulong RouteSequence,
+        byte[] CanonicalPra1Hash,
+        ulong IssuedAtUnixSeconds,
+        ulong ExpiresAtUnixSeconds,
+        byte[] Cmi1Hash);
+
+    private sealed class FixedTimeProvider(ulong unixSeconds) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() =>
+            DateTimeOffset.FromUnixTimeSeconds(checked((long)unixSeconds));
+    }
 }
