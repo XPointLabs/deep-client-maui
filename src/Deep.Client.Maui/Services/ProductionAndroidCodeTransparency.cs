@@ -113,7 +113,8 @@ internal static class ProductionAndroidTransparencyManifestCodec
 
     private static void Validate(ProductionAndroidTransparencyManifest value)
     {
-        if (!string.Equals(value.ApplicationId, "network.xpoint.deep", StringComparison.Ordinal) ||
+        if (value.ApplicationId is not ("network.xpoint.deep" or
+                "network.xpoint.deep.e2e") ||
             value.VersionCode == 0 || value.PlaySignerLineageSha256.Count is < 1 or > 32 ||
             value.Artifacts.Count is < 1 or > MaximumArtifacts ||
             value.MrXEd25519PublicKey.Length != 32 ||

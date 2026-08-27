@@ -28,6 +28,9 @@
     <ProductionMailboxTrustFloorSupplied Condition="'$(DeepProductionMrXPublicKeySha256)$(DeepProductionNetworkId)$(DeepProductionAuthorityGeneration)$(DeepProductionAuthorityHash)$(DeepProductionRevocationGeneration)$(DeepProductionRevocationHeadHash)$(DeepProductionRevocationSnapshotHash)$(DeepProductionTopologyGeneration)$(DeepProductionTopologyHash)' != ''">true</ProductionMailboxTrustFloorSupplied>
     <ProductionAndroidBuildIdentitySupplied Condition="'$(DeepProductionAndroidApplicationId)$(DeepProductionAndroidVersionCode)$(DeepProductionAndroidSignerLineageSha256)' != ''">true</ProductionAndroidBuildIdentitySupplied>
     <ProductionAndroidTransparencySupplied Condition="'$(DeepProductionAndroidCodeTransparencyManifest)' != ''">true</ProductionAndroidTransparencySupplied>
+    <PhysicalUatMailboxTrustFloorSupplied Condition="'$(DeepPhysicalUatMrXPublicKeySha256)$(DeepPhysicalUatNetworkId)$(DeepPhysicalUatAuthorityGeneration)$(DeepPhysicalUatAuthorityHash)$(DeepPhysicalUatRevocationGeneration)$(DeepPhysicalUatRevocationHeadHash)$(DeepPhysicalUatRevocationSnapshotHash)$(DeepPhysicalUatTopologyGeneration)$(DeepPhysicalUatTopologyHash)' != ''">true</PhysicalUatMailboxTrustFloorSupplied>
+    <PhysicalUatAndroidBuildIdentitySupplied Condition="'$(DeepPhysicalUatAndroidApplicationId)$(DeepPhysicalUatAndroidVersionCode)$(DeepPhysicalUatAndroidSignerLineageSha256)' != ''">true</PhysicalUatAndroidBuildIdentitySupplied>
+    <PhysicalUatAndroidTransparencySupplied Condition="'$(DeepPhysicalUatAndroidCodeTransparencyManifest)' != ''">true</PhysicalUatAndroidTransparencySupplied>
     <DeepGoogleServicesJson Condition="'$(DeepGoogleServicesJson)' == '' And '$(Configuration)' != 'Release'">Platforms\Android\google-services.json</DeepGoogleServicesJson>
   </PropertyGroup>
 
@@ -46,8 +49,28 @@
     <AssemblyMetadata Include="DeepProductionAndroidSignerLineageSha256" Value="$(DeepProductionAndroidSignerLineageSha256)" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+    <AssemblyMetadata Include="DeepPhysicalUatMrXPublicKeySha256" Value="$(DeepPhysicalUatMrXPublicKeySha256)" />
+    <AssemblyMetadata Include="DeepPhysicalUatNetworkId" Value="$(DeepPhysicalUatNetworkId)" />
+    <AssemblyMetadata Include="DeepPhysicalUatAuthorityGeneration" Value="$(DeepPhysicalUatAuthorityGeneration)" />
+    <AssemblyMetadata Include="DeepPhysicalUatAuthorityHash" Value="$(DeepPhysicalUatAuthorityHash)" />
+    <AssemblyMetadata Include="DeepPhysicalUatRevocationGeneration" Value="$(DeepPhysicalUatRevocationGeneration)" />
+    <AssemblyMetadata Include="DeepPhysicalUatRevocationHeadHash" Value="$(DeepPhysicalUatRevocationHeadHash)" />
+    <AssemblyMetadata Include="DeepPhysicalUatRevocationSnapshotHash" Value="$(DeepPhysicalUatRevocationSnapshotHash)" />
+    <AssemblyMetadata Include="DeepPhysicalUatTopologyGeneration" Value="$(DeepPhysicalUatTopologyGeneration)" />
+    <AssemblyMetadata Include="DeepPhysicalUatTopologyHash" Value="$(DeepPhysicalUatTopologyHash)" />
+    <AssemblyMetadata Include="DeepPhysicalUatAndroidApplicationId" Value="$(DeepPhysicalUatAndroidApplicationId)" />
+    <AssemblyMetadata Include="DeepPhysicalUatAndroidVersionCode" Value="$(DeepPhysicalUatAndroidVersionCode)" />
+    <AssemblyMetadata Include="DeepPhysicalUatAndroidSignerLineageSha256" Value="$(DeepPhysicalUatAndroidSignerLineageSha256)" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(Configuration)' == 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(ProductionAndroidTransparencySupplied)' == 'true'">
     <AndroidAsset Include="$(DeepProductionAndroidCodeTransparencyManifest)"
+                  Link="deep/production/android-code-transparency.act1" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(PhysicalUatAndroidTransparencySupplied)' == 'true'">
+    <AndroidAsset Include="$(DeepPhysicalUatAndroidCodeTransparencyManifest)"
                   Link="deep/production/android-code-transparency.act1" />
   </ItemGroup>
 
@@ -103,6 +126,18 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <ItemGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release' And '$(DeepPhysicalUatPrivacyRoutesJson)' != '' And '$(DeepPhysicalUatPrivacyRoutesSignature)' != '' And '$(DeepPhysicalUatPrivacyRoutesPublicKey)' != ''">
+    <EmbeddedResource Include="$(DeepPhysicalUatPrivacyRoutesJson)">
+      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(DeepPhysicalUatPrivacyRoutesSignature)">
+      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.sig</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(DeepPhysicalUatPrivacyRoutesPublicKey)">
+      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.pub</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <Target Name="ValidateProductionPrivacyRouteInputs" BeforeTargets="BeforeBuild"
           Condition="'$(Configuration)' == 'Release'">
     <Error Condition="'$(DeepProductionPrivacyRoutesJson)' == '' Or !Exists('$(DeepProductionPrivacyRoutesJson)')"
@@ -111,6 +146,39 @@
            Text="Release requires the detached production privacy-route signature." />
     <Error Condition="'$(DeepProductionPrivacyRoutesPublicKey)' == '' Or !Exists('$(DeepProductionPrivacyRoutesPublicKey)')"
            Text="Release requires the production privacy-route signer public key." />
+  </Target>
+
+  <Target Name="ValidatePhysicalUatMailboxInputs" BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+    <Error Condition="'$(PhysicalUatMailboxTrustFloorSupplied)' != 'true'"
+           Text="Physical UAT builds require the complete, separately named UAT mailbox trust floor." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatMrXPublicKeySha256)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatNetworkId)', '^[0-9a-f]{32}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatAuthorityHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatRevocationHeadHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatRevocationSnapshotHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatTopologyHash)', '^[0-9a-f]{64}$'))"
+           Text="Physical UAT mailbox trust-floor hashes must be complete lowercase hexadecimal values." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatAuthorityGeneration)', '^[1-9][0-9]*$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatRevocationGeneration)', '^[1-9][0-9]*$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatTopologyGeneration)', '^[1-9][0-9]*$'))"
+           Text="Physical UAT mailbox trust-floor generations must be positive decimal integers." />
+    <Error Condition="'$(DeepMrXPublicKeySha256)' != '$(DeepPhysicalUatMrXPublicKeySha256)'"
+           Text="Physical UAT transport policy and mailbox control plane must use the same build-pinned Mr. X key." />
+    <Error Condition="'$(DeepPhysicalUatPrivacyRoutesJson)' == '' Or !Exists('$(DeepPhysicalUatPrivacyRoutesJson)')"
+           Text="Physical UAT requires a signed UAT privacy-route JSON artifact." />
+    <Error Condition="'$(DeepPhysicalUatPrivacyRoutesSignature)' == '' Or !Exists('$(DeepPhysicalUatPrivacyRoutesSignature)')"
+           Text="Physical UAT requires the detached UAT privacy-route signature." />
+    <Error Condition="'$(DeepPhysicalUatPrivacyRoutesPublicKey)' == '' Or !Exists('$(DeepPhysicalUatPrivacyRoutesPublicKey)')"
+           Text="Physical UAT requires the UAT privacy-route signer public key." />
+    <Error Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(PhysicalUatAndroidBuildIdentitySupplied)' != 'true'"
+           Text="Android physical UAT requires its exact package, version and signer lineage." />
+    <Error Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And ('$(DeepPhysicalUatAndroidApplicationId)' != '$(ApplicationId)' Or '$(DeepPhysicalUatAndroidApplicationId)' != 'network.xpoint.deep.e2e')"
+           Text="Android physical UAT identity differs from the isolated E2E package." />
+    <Error Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And (!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatAndroidVersionCode)', '^[1-9][0-9]*$')) Or '$(DeepPhysicalUatAndroidVersionCode)' != '$(ApplicationVersion)')"
+           Text="Android physical UAT versionCode differs from the E2E package." />
+    <Error Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatAndroidSignerLineageSha256)', '^[0-9a-f]{64}(\|[0-9a-f]{64}){0,31}$'))"
+           Text="Android physical UAT signer lineage must contain complete lowercase SHA-256 values." />
+    <Error Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And ('$(PhysicalUatAndroidTransparencySupplied)' != 'true' Or !Exists('$(DeepPhysicalUatAndroidCodeTransparencyManifest)'))"
+           Text="Android physical UAT requires an external UAT Mr. X-signed ACT1 manifest." />
+  </Target>
+
+  <Target Name="RejectPhysicalUatMailboxInputsOutsidePhysicalDebug" BeforeTargets="PrepareForBuild"
+          Condition="'$(PhysicalUatMailboxTrustFloorSupplied)$(PhysicalUatAndroidBuildIdentitySupplied)$(PhysicalUatAndroidTransparencySupplied)$(DeepPhysicalUatPrivacyRoutesJson)$(DeepPhysicalUatPrivacyRoutesSignature)$(DeepPhysicalUatPrivacyRoutesPublicKey)' != '' And ('$(DeepPhysicalE2E)' != 'true' Or '$(Configuration)' == 'Release')">
+    <Error Text="Physical UAT mailbox inputs are forbidden outside a physical non-Release build." />
   </Target>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">

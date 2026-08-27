@@ -391,7 +391,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
     }
 
     [Fact]
-    public void PhysicalMrXTrustRootIsCompiledAndReleaseUnreachable()
+    public void PhysicalUatTrustFloorIsCompiledAndReleaseUnreachable()
     {
         var project = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Deep.Client.Maui.csproj"));
@@ -406,7 +406,11 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("RejectPhysicalLabTrustRootOutsidePhysicalDebug", project,
             StringComparison.Ordinal);
-        Assert.Contains("PhysicalLabTrustRoot.MrXPublicKeySha256", program,
+        Assert.Contains("DeepPhysicalUatMrXPublicKeySha256", project,
+            StringComparison.Ordinal);
+        Assert.Contains("RejectPhysicalUatMailboxInputsOutsidePhysicalDebug", project,
+            StringComparison.Ordinal);
+        Assert.Contains("ProductionMailboxRuntimeCoordinator", program,
             StringComparison.Ordinal);
         Assert.DoesNotContain("MrXPublicKeySha256Env", program, StringComparison.Ordinal);
         Assert.DoesNotContain("ResolveRuntimeSetting(\"DEEP_MR_X_PUBLIC_KEY_SHA256\")",
@@ -460,46 +464,26 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
     }
 
     [Fact]
-    public void PhysicalMailboxProvisioningEagerlyRejectsPresentRuntimeAndKeepsBootstrapLazy()
+    public void PhysicalAuthenticatedOnboardingUsesControlPlaneWithoutDevelopmentPairProvisioning()
     {
         var program = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "MauiProgram.cs"));
         var transport = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Services", "StoreBoundNativeMau2Transport.cs"));
-        var bootstrap = File.ReadAllText(WorkspacePath(
-            "src", "Deep.Client.Maui", "Services", "DevelopmentMailboxHolderBootstrap.cs"));
-
-        Assert.Contains("Directory.Exists(runtimeRoot)", program,
+        Assert.Contains("services.GetRequiredService<ProductionMailboxRuntimeCoordinator>()",
+            program,
             StringComparison.Ordinal);
-        Assert.Contains("startupProvisioning ?? MailboxRuntimeProvisioning.LoadDevelopment(", program,
+        Assert.DoesNotContain("MailboxRuntimeProvisioning.LoadDevelopment(", program,
             StringComparison.Ordinal);
         Assert.Contains("PublicKeyAuth.VerifyDetached", File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Services", "MailboxRuntimeProvisioning.cs")),
             StringComparison.Ordinal);
-        var publish = transport.IndexOf(
-            "holderAvailable(holder);", StringComparison.Ordinal);
-        var load = transport.IndexOf(
-            "var provisioning = provisioningFactory()", StringComparison.Ordinal);
-        Assert.True(publish >= 0 && publish < load);
-        Assert.Contains("ed25519PublicKey", bootstrap, StringComparison.Ordinal);
-        Assert.Contains("sessionId", bootstrap, StringComparison.Ordinal);
-        Assert.DoesNotContain("RecoveryPhrase", bootstrap, StringComparison.Ordinal);
-        Assert.DoesNotContain("PrivateKey", bootstrap, StringComparison.Ordinal);
         Assert.Contains("IResumableMailboxIdentityAuthenticatedRawTransport", transport,
             StringComparison.Ordinal);
         Assert.Contains("runtime.Transport.TryResumeScopedMailboxBatchAsync(", transport,
             StringComparison.Ordinal);
         Assert.Contains("runtime.Transport.PrepareScopedMailboxLogicalBatchAsync(", transport,
             StringComparison.Ordinal);
-        var platformHelpers = bootstrap.IndexOf(
-            "private static void ProtectNewPrivateDirectory", StringComparison.Ordinal);
-        Assert.True(platformHelpers > 0);
-        Assert.DoesNotContain(
-            "WindowsMailboxAccessControl",
-            bootstrap[..platformHelpers],
-            StringComparison.Ordinal);
-        Assert.Contains("File.GetUnixFileMode(path)", bootstrap, StringComparison.Ordinal);
-        Assert.Contains("actual != expected", bootstrap, StringComparison.Ordinal);
     }
 
     [Fact]

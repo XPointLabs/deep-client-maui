@@ -152,7 +152,7 @@ public static class MauiProgram
         services.AddSingleton<IVoiceMessageRecorder, MauiVoiceMessageRecorder>();
         services.AddSingleton<INetworkStatusService, MauiConnectivityStatusService>();
         services.AddSingleton<AuthNavigationState>();
-#if DEBUG
+#if DEBUG && !DEEP_PHYSICAL_E2E
         services.AddSingleton<IContactMailboxOnboarding,
             SessionIdContactMailboxOnboarding>();
         services.AddSingleton<IContactInvitationProvider,
@@ -167,6 +167,8 @@ public static class MauiProgram
             ResolveProductionMailboxOnboarding(serviceProvider, inputs));
         services.AddSingleton<IContactInvitationProvider>(serviceProvider =>
             ResolveProductionContactInvitationProvider(serviceProvider, inputs));
+        services.AddSingleton<IGroupMailboxRouteExchange>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductionMailboxRuntimeCoordinator>());
 #endif
 
         services.AddTransient<OnboardingViewModel>();
@@ -651,7 +653,8 @@ public static class MauiProgram
                     secureStore,
                     appDataDirectory,
                     outboxActivation.EffectiveFeatureFlags),
-                outboxActivation.Executor);
+                outboxActivation.Executor,
+                services.GetService<IGroupMailboxRouteExchange>());
 #if DEBUG && DEEP_PHYSICAL_E2E
             try
             {
@@ -727,54 +730,9 @@ public static class MauiProgram
                 new DirectP2pMailboxDeliveryPolicy());
         }
 
-#if DEBUG && DEEP_PHYSICAL_E2E
-#if ANDROID
-        const MailboxClientPlatform platform = MailboxClientPlatform.Android;
-#elif WINDOWS
-        const MailboxClientPlatform platform = MailboxClientPlatform.Windows;
-#else
-        throw new PlatformNotSupportedException(
-            "DEV-local mailbox pair supports only Android and Windows.");
-#endif
-        var runtimeRoot = Path.Combine(
-            appDataDirectory,
-            MailboxRuntimeProvisioning.DirectoryName);
-        var startupProvisioning = Directory.Exists(runtimeRoot)
-            ? MailboxRuntimeProvisioning.LoadDevelopment(
-                appDataDirectory,
-                platform,
-                PhysicalLabTrustRoot.MrXPublicKeySha256,
-                mode.Ownership == MailboxInfrastructureOwnership.OfficialManaged
-                    ? static () => false
-                    : null)
-            : null;
-        var native = new StoreBoundNativeMau2Transport(
-            sqlite,
-            secureStore,
-            () =>
-            {
-                var provisioning = startupProvisioning ?? MailboxRuntimeProvisioning.LoadDevelopment(
-                    appDataDirectory,
-                    platform,
-                    PhysicalLabTrustRoot.MrXPublicKeySha256,
-                    mode.Ownership == MailboxInfrastructureOwnership.OfficialManaged
-                        ? static () => false
-                        : null);
-                services.GetRequiredService<PrivacyMailboxRouteDiagnostics>()
-                    .Publish(provisioning.PrivacyRoutes);
-                return provisioning;
-            },
-            holder => DevelopmentMailboxHolderBootstrap.Publish(
-                appDataDirectory,
-                platform,
-                holder),
-            mode.Ownership,
-            featureFlags,
-            services.GetRequiredService<HttpServiceTransportFactory>(),
-            services.GetRequiredService<HttpServiceClientOptions>(),
-            services.GetRequiredService<PrivacyMailboxRouteSelectionBridge>(),
-            services.GetRequiredService<IMailboxDispatchRouteUsageObserver>());
-        return new StoreBoundRuntimeTransportComposition(native, native);
+#if DEBUG && !DEEP_PHYSICAL_E2E
+        throw new InvalidOperationException(
+            "Authenticated MAU2 in Debug requires an explicit physical UAT build.");
 #else
         var native = new StoreBoundNativeMau2Transport(
             sqlite,

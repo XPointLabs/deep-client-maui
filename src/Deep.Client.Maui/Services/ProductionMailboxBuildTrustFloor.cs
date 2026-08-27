@@ -24,6 +24,27 @@ internal static class ProductionMailboxBuildTrustFloor
     internal const string AndroidSignerLineageKey =
         "DeepProductionAndroidSignerLineageSha256";
 
+    internal const string PhysicalUatMrXKey = "DeepPhysicalUatMrXPublicKeySha256";
+    internal const string PhysicalUatNetworkKey = "DeepPhysicalUatNetworkId";
+    internal const string PhysicalUatAuthorityGenerationKey =
+        "DeepPhysicalUatAuthorityGeneration";
+    internal const string PhysicalUatAuthorityHashKey = "DeepPhysicalUatAuthorityHash";
+    internal const string PhysicalUatRevocationGenerationKey =
+        "DeepPhysicalUatRevocationGeneration";
+    internal const string PhysicalUatRevocationHeadHashKey =
+        "DeepPhysicalUatRevocationHeadHash";
+    internal const string PhysicalUatRevocationSnapshotHashKey =
+        "DeepPhysicalUatRevocationSnapshotHash";
+    internal const string PhysicalUatTopologyGenerationKey =
+        "DeepPhysicalUatTopologyGeneration";
+    internal const string PhysicalUatTopologyHashKey = "DeepPhysicalUatTopologyHash";
+    internal const string PhysicalUatAndroidApplicationIdKey =
+        "DeepPhysicalUatAndroidApplicationId";
+    internal const string PhysicalUatAndroidVersionCodeKey =
+        "DeepPhysicalUatAndroidVersionCode";
+    internal const string PhysicalUatAndroidSignerLineageKey =
+        "DeepPhysicalUatAndroidSignerLineageSha256";
+
     private static readonly string[] Keys =
     [
         MrXKey,
@@ -44,16 +65,35 @@ internal static class ProductionMailboxBuildTrustFloor
         AndroidSignerLineageKey
     ];
 
+    private static readonly string[] PhysicalUatKeys =
+    [
+        PhysicalUatMrXKey,
+        PhysicalUatNetworkKey,
+        PhysicalUatAuthorityGenerationKey,
+        PhysicalUatAuthorityHashKey,
+        PhysicalUatRevocationGenerationKey,
+        PhysicalUatRevocationHeadHashKey,
+        PhysicalUatRevocationSnapshotHashKey,
+        PhysicalUatTopologyGenerationKey,
+        PhysicalUatTopologyHashKey
+    ];
+
+    private static readonly string[] PhysicalUatAndroidIdentityKeys =
+    [
+        PhysicalUatAndroidApplicationIdKey,
+        PhysicalUatAndroidVersionCodeKey,
+        PhysicalUatAndroidSignerLineageKey
+    ];
+
     public static bool TryLoad(out ProductionMailboxTrustAnchor? anchor)
     {
-        var values = typeof(ProductionMailboxBuildTrustFloor).Assembly
-            .GetCustomAttributes<AssemblyMetadataAttribute>()
-            .Where(attribute => Keys.Contains(attribute.Key, StringComparer.Ordinal))
-            .GroupBy(attribute => attribute.Key, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Count() == 1 ? group.Single().Value : null,
-                StringComparer.Ordinal);
+        var values = ReadActiveMetadata(Keys,
+#if DEBUG && DEEP_PHYSICAL_E2E
+            PhysicalUatKeys
+#else
+            Keys
+#endif
+        );
         return TryParse(values, out anchor);
     }
 
@@ -94,23 +134,50 @@ internal static class ProductionMailboxBuildTrustFloor
         }
     }
 
+    internal static bool TryParsePhysicalUat(
+        IReadOnlyDictionary<string, string?> values,
+        out ProductionMailboxTrustAnchor? anchor) =>
+        TryParse(Remap(values, PhysicalUatKeys, Keys), out anchor);
+
     public static bool TryLoadAndroidIdentity(
         out ProductionAndroidBuildIdentity? identity)
     {
-        var values = typeof(ProductionMailboxBuildTrustFloor).Assembly
-            .GetCustomAttributes<AssemblyMetadataAttribute>()
-            .Where(attribute => AndroidIdentityKeys.Contains(
-                attribute.Key, StringComparer.Ordinal))
-            .GroupBy(attribute => attribute.Key, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Count() == 1 ? group.Single().Value : null,
-                StringComparer.Ordinal);
-        return TryParseAndroidIdentity(values, out identity);
+        var values = ReadActiveMetadata(AndroidIdentityKeys,
+#if DEBUG && DEEP_PHYSICAL_E2E
+            PhysicalUatAndroidIdentityKeys
+#else
+            AndroidIdentityKeys
+#endif
+        );
+        return TryParseAndroidIdentityCore(
+            values,
+#if DEBUG && DEEP_PHYSICAL_E2E
+            "network.xpoint.deep.e2e",
+#else
+            ProductionMailboxControlPlaneVerifier.AndroidApplicationIdentity,
+#endif
+            out identity);
     }
 
     internal static bool TryParseAndroidIdentity(
         IReadOnlyDictionary<string, string?> values,
+        out ProductionAndroidBuildIdentity? identity) =>
+        TryParseAndroidIdentityCore(
+            values,
+            ProductionMailboxControlPlaneVerifier.AndroidApplicationIdentity,
+            out identity);
+
+    internal static bool TryParsePhysicalUatAndroidIdentity(
+        IReadOnlyDictionary<string, string?> values,
+        out ProductionAndroidBuildIdentity? identity) =>
+        TryParseAndroidIdentityCore(
+            Remap(values, PhysicalUatAndroidIdentityKeys, AndroidIdentityKeys),
+            "network.xpoint.deep.e2e",
+            out identity);
+
+    private static bool TryParseAndroidIdentityCore(
+        IReadOnlyDictionary<string, string?> values,
+        string installedApplicationId,
         out ProductionAndroidBuildIdentity? identity)
     {
         ArgumentNullException.ThrowIfNull(values);
@@ -124,9 +191,7 @@ internal static class ProductionMailboxBuildTrustFloor
         try
         {
             var applicationId = values[AndroidApplicationIdKey]!;
-            if (!string.Equals(
-                    applicationId,
-                    ProductionMailboxControlPlaneVerifier.AndroidApplicationIdentity,
+            if (!string.Equals(applicationId, installedApplicationId,
                     StringComparison.Ordinal))
                 throw new FormatException();
             var lineage = values[AndroidSignerLineageKey]!
@@ -138,7 +203,8 @@ internal static class ProductionMailboxBuildTrustFloor
                     .Distinct(StringComparer.Ordinal).Count() != lineage.Length)
                 throw new FormatException();
             identity = new ProductionAndroidBuildIdentity(
-                applicationId,
+                installedApplicationId,
+                ProductionMailboxControlPlaneVerifier.AndroidApplicationIdentity,
                 Generation(values[AndroidVersionCodeKey]!),
                 lineage);
             return true;
@@ -158,7 +224,8 @@ internal static class ProductionMailboxBuildTrustFloor
     {
         ArgumentNullException.ThrowIfNull(expected);
         ArgumentNullException.ThrowIfNull(signerLineageSha256);
-        if (!string.Equals(applicationId, expected.ApplicationId, StringComparison.Ordinal) ||
+        if (!string.Equals(applicationId, expected.InstalledApplicationId,
+                StringComparison.Ordinal) ||
             versionCode != expected.VersionCode ||
             signerLineageSha256.Count != expected.SignerLineageSha256.Count ||
             signerLineageSha256.Where((hash, index) =>
@@ -166,6 +233,38 @@ internal static class ProductionMailboxBuildTrustFloor
                     .FixedTimeEquals(hash.Span, expected.SignerLineageSha256[index].Span)).Any())
             throw new InvalidDataException(
                 "Production Android package/version/Play signer tuple is not approved.");
+    }
+
+    private static IReadOnlyDictionary<string, string?> ReadActiveMetadata(
+        IReadOnlyList<string> canonicalKeys,
+        IReadOnlyList<string> activeKeys)
+    {
+        var attributes = typeof(ProductionMailboxBuildTrustFloor).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .ToArray();
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal);
+        for (var index = 0; index < canonicalKeys.Count; index++)
+        {
+            var matches = attributes.Where(attribute => string.Equals(
+                attribute.Key, activeKeys[index], StringComparison.Ordinal)).ToArray();
+            values[canonicalKeys[index]] = matches.Length == 1
+                ? matches[0].Value
+                : null;
+        }
+        return values;
+    }
+
+    private static IReadOnlyDictionary<string, string?> Remap(
+        IReadOnlyDictionary<string, string?> values,
+        IReadOnlyList<string> sourceKeys,
+        IReadOnlyList<string> destinationKeys)
+    {
+        var mapped = new Dictionary<string, string?>(StringComparer.Ordinal);
+        for (var index = 0; index < sourceKeys.Count; index++)
+            mapped[destinationKeys[index]] = values.TryGetValue(sourceKeys[index], out var value)
+                ? value
+                : null;
+        return mapped;
     }
 
     private static byte[] Hex(string value, int bytes)
@@ -198,17 +297,20 @@ internal sealed class ProductionAndroidBuildIdentity
     private readonly byte[][] signerLineageSha256;
 
     public ProductionAndroidBuildIdentity(
-        string applicationId,
+        string installedApplicationId,
+        string applicationIdentity,
         ulong versionCode,
         IEnumerable<byte[]> signerLineageSha256)
     {
-        ApplicationId = applicationId;
+        InstalledApplicationId = installedApplicationId;
+        ApplicationIdentity = applicationIdentity;
         VersionCode = versionCode;
         this.signerLineageSha256 = signerLineageSha256
             .Select(static hash => hash.ToArray()).ToArray();
     }
 
-    public string ApplicationId { get; }
+    public string InstalledApplicationId { get; }
+    public string ApplicationIdentity { get; }
     public ulong VersionCode { get; }
     public IReadOnlyList<ReadOnlyMemory<byte>> SignerLineageSha256 =>
         signerLineageSha256.Select(static hash => (ReadOnlyMemory<byte>)hash.ToArray())

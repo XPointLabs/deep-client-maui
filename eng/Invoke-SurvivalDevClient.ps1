@@ -8,12 +8,19 @@ param(
     [string]$JavaHome = $env:JAVA_HOME,
     [string]$RuntimeEnvironmentPath,
     [string]$MrXPublicKeySha256 = $env:DEEP_MR_X_PUBLIC_KEY_SHA256,
+    [string]$PhysicalUatTrustFloorBundle = $env:DEEP_PHYSICAL_UAT_TRUST_FLOOR_BUNDLE,
+    [string]$PhysicalUatPrivacyRoutesJson = $env:DEEP_PHYSICAL_UAT_PRIVACY_ROUTES_JSON,
+    [string]$PhysicalUatPrivacyRoutesSignature = $env:DEEP_PHYSICAL_UAT_PRIVACY_ROUTES_SIGNATURE,
+    [string]$PhysicalUatPrivacyRoutesPublicKey = $env:DEEP_PHYSICAL_UAT_PRIVACY_ROUTES_PUBLIC_KEY,
+    [string]$PhysicalUatAndroidTransparencyManifest =
+        $env:DEEP_PHYSICAL_UAT_ANDROID_TRANSPARENCY_MANIFEST,
     [switch]$NoBuild,
     [switch]$NoInstall
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+. (Join-Path $PSScriptRoot 'Read-ProductionTrustBundle.ps1')
 
 function Resolve-CanonicalRuntimeEnvironmentFile {
     param([Parameter(Mandatory)] [string]$Path)
@@ -49,6 +56,30 @@ function Resolve-CanonicalRuntimeEnvironmentFile {
     return $resolved
 }
 
+function Resolve-CanonicalPhysicalUatFile {
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [Parameter(Mandatory)] [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "Physical UAT $Label path is required."
+    }
+    $candidate = [IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        throw "Physical UAT $Label must be an existing file."
+    }
+    for ($current = $candidate; -not [string]::IsNullOrWhiteSpace($current); $current = [IO.Path]::GetDirectoryName($current)) {
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Physical UAT $Label path must not traverse a reparse point."
+        }
+        $parent = [IO.Path]::GetDirectoryName($current)
+        if ([string]::IsNullOrWhiteSpace($parent) -or $parent -ceq $current) { break }
+    }
+    return (Resolve-Path -LiteralPath $candidate -ErrorAction Stop).ProviderPath
+}
+
 if ([string]::IsNullOrWhiteSpace($RuntimeEnvironmentPath)) {
     $RuntimeEnvironmentPath = Join-Path $PSScriptRoot 'survival.dev.env'
 }
@@ -64,6 +95,51 @@ $mrXTrustRootProperty = "-p:DeepMrXPublicKeySha256=$MrXPublicKeySha256"
 $androidPackage = 'network.xpoint.deep.e2e'
 $productionPackage = 'network.xpoint.deep'
 $reversePorts = @(41545) + @(41801..41806) + @(41810..41823)
+$physicalUatTrustFloorBundle = Resolve-CanonicalPhysicalUatFile `
+    -Path $PhysicalUatTrustFloorBundle -Label 'trust-floor bundle'
+$physicalUatPrivacyRoutesJson = Resolve-CanonicalPhysicalUatFile `
+    -Path $PhysicalUatPrivacyRoutesJson -Label 'privacy-route JSON'
+$physicalUatPrivacyRoutesSignature = Resolve-CanonicalPhysicalUatFile `
+    -Path $PhysicalUatPrivacyRoutesSignature -Label 'privacy-route signature'
+$physicalUatPrivacyRoutesPublicKey = Resolve-CanonicalPhysicalUatFile `
+    -Path $PhysicalUatPrivacyRoutesPublicKey -Label 'privacy-route public key'
+$requireAndroidUatIdentity = $Target -in @('Android', 'All')
+$physicalUatTrust = Import-ProductionTrustBundle `
+    -Path $physicalUatTrustFloorBundle `
+    -RequireAndroid:$requireAndroidUatIdentity `
+    -ExpectedAndroidApplicationId $androidPackage
+if ([string]$physicalUatTrust.DeepProductionMrXPublicKeySha256 -cne $MrXPublicKeySha256) {
+    throw 'Physical UAT trust floor differs from the build-pinned Mr. X key.'
+}
+$physicalUatBuildProperties = @(
+    "-p:DeepPhysicalUatMrXPublicKeySha256=$($physicalUatTrust.DeepProductionMrXPublicKeySha256)",
+    "-p:DeepPhysicalUatNetworkId=$($physicalUatTrust.DeepProductionNetworkId)",
+    "-p:DeepPhysicalUatAuthorityGeneration=$($physicalUatTrust.DeepProductionAuthorityGeneration)",
+    "-p:DeepPhysicalUatAuthorityHash=$($physicalUatTrust.DeepProductionAuthorityHash)",
+    "-p:DeepPhysicalUatRevocationGeneration=$($physicalUatTrust.DeepProductionRevocationGeneration)",
+    "-p:DeepPhysicalUatRevocationHeadHash=$($physicalUatTrust.DeepProductionRevocationHeadHash)",
+    "-p:DeepPhysicalUatRevocationSnapshotHash=$($physicalUatTrust.DeepProductionRevocationSnapshotHash)",
+    "-p:DeepPhysicalUatTopologyGeneration=$($physicalUatTrust.DeepProductionTopologyGeneration)",
+    "-p:DeepPhysicalUatTopologyHash=$($physicalUatTrust.DeepProductionTopologyHash)",
+    "-p:DeepPhysicalUatPrivacyRoutesJson=$physicalUatPrivacyRoutesJson",
+    "-p:DeepPhysicalUatPrivacyRoutesSignature=$physicalUatPrivacyRoutesSignature",
+    "-p:DeepPhysicalUatPrivacyRoutesPublicKey=$physicalUatPrivacyRoutesPublicKey"
+)
+if ($requireAndroidUatIdentity) {
+    $physicalUatAndroidTransparencyManifest = Resolve-CanonicalPhysicalUatFile `
+        -Path $PhysicalUatAndroidTransparencyManifest -Label 'Android ACT1 manifest'
+    $actualManifestSha256 = (Get-FileHash `
+        -LiteralPath $physicalUatAndroidTransparencyManifest -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualManifestSha256 -cne [string]$physicalUatTrust.DeepProductionAndroidBuildIdSha256) {
+        throw 'Physical UAT ACT1 SHA-256 differs from the UAT trust-floor approval.'
+    }
+    $physicalUatBuildProperties += @(
+        "-p:DeepPhysicalUatAndroidApplicationId=$androidPackage",
+        "-p:DeepPhysicalUatAndroidVersionCode=$($physicalUatTrust.DeepProductionAndroidVersionCode)",
+        "-p:DeepPhysicalUatAndroidSignerLineageSha256=$($physicalUatTrust.DeepProductionAndroidSignerLineageSha256)",
+        "-p:DeepPhysicalUatAndroidCodeTransparencyManifest=$physicalUatAndroidTransparencyManifest"
+    )
+}
 
 function Resolve-Adb {
     if (-not [string]::IsNullOrWhiteSpace($AdbPath) -and (Test-Path -LiteralPath $AdbPath -PathType Leaf)) {
@@ -192,7 +268,7 @@ function Get-ApkSignerSha256 {
 
 if ($Target -in @('Windows', 'All')) {
     if (-not $NoBuild) {
-        & dotnet build $project -f net10.0-windows10.0.19041.0 -c Debug $physicalE2eProperty $runtimeEnvironmentProperty $mrXTrustRootProperty
+        & dotnet build $project -f net10.0-windows10.0.19041.0 -c Debug $physicalE2eProperty $runtimeEnvironmentProperty $mrXTrustRootProperty @physicalUatBuildProperties
         if ($LASTEXITCODE -ne 0) {
             throw 'Survival Windows Debug build failed.'
         }
@@ -221,7 +297,7 @@ if ($Target -in @('Android', 'All')) {
     }
 
     if (-not $NoBuild) {
-        & dotnet build $project -f net10.0-android -c Debug $physicalE2eProperty $runtimeEnvironmentProperty $mrXTrustRootProperty
+        & dotnet build $project -f net10.0-android -c Debug $physicalE2eProperty $runtimeEnvironmentProperty $mrXTrustRootProperty @physicalUatBuildProperties
         if ($LASTEXITCODE -ne 0) {
             throw 'Survival Android Debug build failed.'
         }

@@ -4,7 +4,9 @@ function Import-ProductionTrustBundle {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
-        [switch]$RequireAndroid
+        [switch]$RequireAndroid,
+        [ValidateSet('network.xpoint.deep', 'network.xpoint.deep.e2e')]
+        [string]$ExpectedAndroidApplicationId = 'network.xpoint.deep'
     )
 
     $resolved = [IO.Path]::GetFullPath($Path)
@@ -140,7 +142,7 @@ function Import-ProductionTrustBundle {
     if ($RequireAndroid) {
         $android = $document.android
         if ($null -eq $android -or
-            [string]$android.applicationId -cne 'network.xpoint.deep') {
+            [string]$android.applicationId -cne $ExpectedAndroidApplicationId) {
             throw 'Production Android build identity is missing or has the wrong applicationId.'
         }
         $versionCode = Require-Generation $android.versionCode 'android.versionCode'
@@ -156,7 +158,7 @@ function Import-ProductionTrustBundle {
         }
         $result.DeepProductionAndroidBuildIdSha256 =
             Require-LowerHex $android.buildIdSha256 64 'android.buildIdSha256'
-        $result.DeepProductionAndroidApplicationId = 'network.xpoint.deep'
+        $result.DeepProductionAndroidApplicationId = $ExpectedAndroidApplicationId
         $result.DeepProductionAndroidVersionCode = $versionCode
         $result.DeepProductionAndroidSignerLineageSha256 = $normalizedLineage -join '|'
     }

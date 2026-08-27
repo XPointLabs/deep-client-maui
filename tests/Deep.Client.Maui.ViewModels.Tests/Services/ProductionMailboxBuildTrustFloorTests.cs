@@ -59,7 +59,8 @@ public sealed class ProductionMailboxBuildTrustFloorTests
             values, out var identity));
 
         Assert.NotNull(identity);
-        Assert.Equal("network.xpoint.deep", identity!.ApplicationId);
+        Assert.Equal("network.xpoint.deep", identity!.InstalledApplicationId);
+        Assert.Equal("network.xpoint.deep", identity.ApplicationIdentity);
         Assert.Equal(15UL, identity.VersionCode);
         Assert.Equal(2, identity.SignerLineageSha256.Count);
         Assert.DoesNotContain(
@@ -113,6 +114,28 @@ public sealed class ProductionMailboxBuildTrustFloorTests
                 identity!, "network.xpoint.deep.copy", 15, exact));
     }
 
+    [Fact]
+    public void PhysicalUatMetadataUsesSeparateTrustKeysAndInstalledPackageIdentity()
+    {
+        Assert.True(ProductionMailboxBuildTrustFloor.TryParsePhysicalUat(
+            PhysicalUatValues(), out var anchor));
+        Assert.True(ProductionMailboxBuildTrustFloor.TryParsePhysicalUatAndroidIdentity(
+            PhysicalUatAndroidValues(), out var identity));
+
+        Assert.NotNull(anchor);
+        Assert.Equal(2UL, anchor!.AuthorityGeneration);
+        Assert.NotNull(identity);
+        Assert.Equal("network.xpoint.deep.e2e", identity!.InstalledApplicationId);
+        Assert.Equal("network.xpoint.deep", identity.ApplicationIdentity);
+        ProductionMailboxBuildTrustFloor.VerifyInstalledAndroidTuple(
+            identity, "network.xpoint.deep.e2e", 15,
+            [Fill(32, 0x81), Fill(32, 0x91)]);
+        Assert.Throws<InvalidDataException>(() =>
+            ProductionMailboxBuildTrustFloor.VerifyInstalledAndroidTuple(
+                identity, "network.xpoint.deep", 15,
+                [Fill(32, 0x81), Fill(32, 0x91)]));
+    }
+
     private static Dictionary<string, string?> Changed(string key, string value)
     {
         var values = Values();
@@ -141,6 +164,30 @@ public sealed class ProductionMailboxBuildTrustFloorTests
         [ProductionMailboxBuildTrustFloor.AndroidSignerLineageKey] =
             FillHex(32, 0x81) + "|" + FillHex(32, 0x91)
     };
+
+    private static Dictionary<string, string?> PhysicalUatValues() =>
+        new(StringComparer.Ordinal)
+        {
+            [ProductionMailboxBuildTrustFloor.PhysicalUatMrXKey] = FillHex(32, 0x11),
+            [ProductionMailboxBuildTrustFloor.PhysicalUatNetworkKey] = FillHex(16, 0x22),
+            [ProductionMailboxBuildTrustFloor.PhysicalUatAuthorityGenerationKey] = "2",
+            [ProductionMailboxBuildTrustFloor.PhysicalUatAuthorityHashKey] = FillHex(32, 0x33),
+            [ProductionMailboxBuildTrustFloor.PhysicalUatRevocationGenerationKey] = "3",
+            [ProductionMailboxBuildTrustFloor.PhysicalUatRevocationHeadHashKey] = FillHex(32, 0x44),
+            [ProductionMailboxBuildTrustFloor.PhysicalUatRevocationSnapshotHashKey] = FillHex(32, 0x55),
+            [ProductionMailboxBuildTrustFloor.PhysicalUatTopologyGenerationKey] = "4",
+            [ProductionMailboxBuildTrustFloor.PhysicalUatTopologyHashKey] = FillHex(32, 0x66)
+        };
+
+    private static Dictionary<string, string?> PhysicalUatAndroidValues() =>
+        new(StringComparer.Ordinal)
+        {
+            [ProductionMailboxBuildTrustFloor.PhysicalUatAndroidApplicationIdKey] =
+                "network.xpoint.deep.e2e",
+            [ProductionMailboxBuildTrustFloor.PhysicalUatAndroidVersionCodeKey] = "15",
+            [ProductionMailboxBuildTrustFloor.PhysicalUatAndroidSignerLineageKey] =
+                FillHex(32, 0x81) + "|" + FillHex(32, 0x91)
+        };
 
     private static string FillHex(int bytes, byte value) =>
         Convert.ToHexStringLower(Enumerable.Repeat(value, bytes).ToArray());

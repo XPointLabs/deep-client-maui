@@ -57,6 +57,25 @@ public sealed class ProductionAndroidCodeTransparencyTests
     }
 
     [Fact]
+    public async Task UatManifestIsAcceptedOnlyForExactE2ePackageIdentity()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var apk = Path.Combine(root, "uat.apk");
+            CreateApk(apk, [4, 3, 2, 1]);
+            var signed = CreateSignedManifest(
+                [new("base", await ProductionAndroidSemanticApkDigest.ComputeAsync(apk))],
+                "network.xpoint.deep.e2e");
+
+            await VerifyRuntime(signed, apk, applicationId: "network.xpoint.deep.e2e");
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                VerifyRuntime(signed, apk, applicationId: "network.xpoint.deep"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task SemanticDigestIgnoresOnlySigningMetadataAndTransparencyPayload()
     {
         var root = CreateRoot();
@@ -367,13 +386,14 @@ public sealed class ProductionAndroidCodeTransparencyTests
     };
 
     private static SignedManifest CreateSignedManifest(
-        IReadOnlyList<ProductionAndroidTransparencyArtifact> artifacts)
+        IReadOnlyList<ProductionAndroidTransparencyArtifact> artifacts,
+        string applicationId = "network.xpoint.deep")
     {
         var signer = Fill(0x31);
         var mrX = PublicKeyAuth.GenerateKeyPair(Fill(0x61));
         var unsigned = new ProductionAndroidTransparencyManifest
         {
-            ApplicationId = "network.xpoint.deep",
+            ApplicationId = applicationId,
             VersionCode = 15,
             PlaySignerLineageSha256 = [signer],
             Artifacts = artifacts,

@@ -43,6 +43,24 @@ try {
     $windows = Import-ProductionTrustBundle -Path $validPath
     if ($windows.Count -ne 9) { throw "Windows trust bundle returned $($windows.Count), expected 9 properties." }
 
+    $uatPath = Join-Path $temp 'uat.json'
+    $uatJson = ($bundle | ConvertTo-Json -Depth 5 -Compress).Replace(
+        '"applicationId":"network.xpoint.deep"',
+        '"applicationId":"network.xpoint.deep.e2e"')
+    [IO.File]::WriteAllText($uatPath, $uatJson, [Text.UTF8Encoding]::new($false))
+    try {
+        Import-ProductionTrustBundle -Path $uatPath -RequireAndroid | Out-Null
+        throw 'Physical UAT package identity was accepted by the production default.'
+    }
+    catch {
+        if ($_.Exception.Message -like 'Physical UAT package identity was accepted*') { throw }
+    }
+    $uat = Import-ProductionTrustBundle -Path $uatPath -RequireAndroid `
+        -ExpectedAndroidApplicationId 'network.xpoint.deep.e2e'
+    if ([string]$uat.DeepProductionAndroidApplicationId -cne 'network.xpoint.deep.e2e') {
+        throw 'Physical UAT package identity was not preserved by the explicit parser mode.'
+    }
+
     $writer = [IO.File]::Open(
         $validPath,
         [IO.FileMode]::Open,

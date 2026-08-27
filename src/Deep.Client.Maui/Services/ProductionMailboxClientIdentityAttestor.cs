@@ -41,7 +41,7 @@ internal static class ProductionMailboxClientIdentityAttestor
         var beforeTransparency = await ProductionAndroidCodeTransparencyVerifier.VerifyRuntimeAsync(
             transparency,
             trustAnchor.MrXPublicKeySha256,
-            buildIdentity.ApplicationId,
+            buildIdentity.InstalledApplicationId,
             buildIdentity.VersionCode,
             before.Lineage.Select(static hash => (ReadOnlyMemory<byte>)hash).ToArray(),
             before.InstalledArtifacts,
@@ -55,7 +55,7 @@ internal static class ProductionMailboxClientIdentityAttestor
         var afterTransparency = await ProductionAndroidCodeTransparencyVerifier.VerifyRuntimeAsync(
             transparency,
             trustAnchor.MrXPublicKeySha256,
-            buildIdentity.ApplicationId,
+            buildIdentity.InstalledApplicationId,
             buildIdentity.VersionCode,
             after.Lineage.Select(static hash => (ReadOnlyMemory<byte>)hash).ToArray(),
             after.InstalledArtifacts,
@@ -72,7 +72,7 @@ internal static class ProductionMailboxClientIdentityAttestor
                 "Production Android package changed during attestation.");
         return new ProductionMailboxClientApprovalIdentity(
             MailboxClientPlatform.Android,
-            buildIdentity.ApplicationId,
+            buildIdentity.ApplicationIdentity,
             before.CurrentSigner,
             beforeTransparency);
 #elif WINDOWS
@@ -236,7 +236,7 @@ internal static class ProductionMailboxClientIdentityAttestor
                     "Production Android split identities are duplicated.");
         }
         return new AndroidPackageSnapshot(
-            buildIdentity.ApplicationId + ":" + buildIdentity.VersionCode,
+            buildIdentity.InstalledApplicationId + ":" + buildIdentity.VersionCode,
             currentSigner,
             lineage,
             artifacts,
