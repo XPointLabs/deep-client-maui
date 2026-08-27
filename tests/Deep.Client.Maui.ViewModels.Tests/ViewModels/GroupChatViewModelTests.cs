@@ -235,6 +235,46 @@ public sealed class GroupChatViewModelTests
     }
 
     [Fact]
+    public async Task AddMemberOnboardsInvitationBeforeMutatingGroup()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var owner = await runtime.Accounts.RegisterAsync("Owner");
+        var group = await runtime.Conversations.CreateGroupScaffoldAsync(owner.SessionId, "Invitations", []);
+        var recipient = SessionId.Parse("05" + new string('8', 64));
+        var onboarding = new RecordingContactOnboarding("protected-invitation", recipient);
+        var viewModel = new GroupChatViewModel(runtime, contactOnboarding: onboarding);
+        await viewModel.OpenFromRouteAsync(group.Id.Value, group.Name);
+        viewModel.MemberSessionId = "protected-invitation";
+
+        await viewModel.AddMemberAsync();
+
+        Assert.Equal(1, onboarding.PrepareCalls);
+        Assert.Contains(viewModel.Members, item => item.SessionId == recipient);
+    }
+
+    [Fact]
+    public async Task AddMemberOnboardingFailureDoesNotMutateGroup()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var owner = await runtime.Accounts.RegisterAsync("Owner");
+        var group = await runtime.Conversations.CreateGroupScaffoldAsync(owner.SessionId, "Invitations", []);
+        var recipient = SessionId.Parse("05" + new string('9', 64));
+        var onboarding = new RecordingContactOnboarding("expired-invitation", recipient, fail: true);
+        var viewModel = new GroupChatViewModel(runtime, contactOnboarding: onboarding);
+        await viewModel.OpenFromRouteAsync(group.Id.Value, group.Name);
+        viewModel.MemberSessionId = "expired-invitation";
+
+        await viewModel.AddMemberAsync();
+
+        Assert.Equal(1, onboarding.PrepareCalls);
+        Assert.Single(viewModel.Members);
+        Assert.DoesNotContain(viewModel.Members, item => item.SessionId == recipient);
+        var persisted = await runtime.Conversations.GetGroupAsync(group.Id);
+        Assert.Single(persisted!.Members);
+        Assert.True(viewModel.HasError);
+    }
+
+    [Fact]
     public async Task MembersUseKnownDisplayNameAndShortUnknownFallback()
     {
         var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
@@ -379,6 +419,31 @@ public sealed class GroupChatViewModelTests
             [
                 AttachmentMetadata.Local("group-note.txt", "text/plain", 256)
             ]);
+    }
+
+    private sealed class RecordingContactOnboarding(
+        string acceptedInput,
+        SessionId recipient,
+        bool fail = false) : IContactMailboxOnboarding
+    {
+        public int PrepareCalls { get; private set; }
+
+        public bool CanAccept(string contactInput) =>
+            string.Equals(contactInput, acceptedInput, StringComparison.Ordinal);
+
+        public Task<SessionId> PrepareAsync(
+            string contactInput,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PrepareCalls++;
+            if (!CanAccept(contactInput) || fail)
+            {
+                throw new InvalidDataException("unverified contact");
+            }
+
+            return Task.FromResult(recipient);
+        }
     }
 
     private sealed class FakeVoiceMessageRecorder : IVoiceMessageRecorder

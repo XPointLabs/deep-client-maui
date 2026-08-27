@@ -152,6 +152,22 @@ public static class MauiProgram
         services.AddSingleton<IVoiceMessageRecorder, MauiVoiceMessageRecorder>();
         services.AddSingleton<INetworkStatusService, MauiConnectivityStatusService>();
         services.AddSingleton<AuthNavigationState>();
+#if DEBUG
+        services.AddSingleton<IContactMailboxOnboarding,
+            SessionIdContactMailboxOnboarding>();
+        services.AddSingleton<IContactInvitationProvider,
+            SessionIdContactInvitationProvider>();
+#else
+        services.AddSingleton(serviceProvider => new ProductionMailboxRuntimeCoordinator(
+            RequireRegistryOrigin(inputs.RuntimeEnvironment.RegistryUrl),
+            FileSystem.AppDataDirectory,
+            serviceProvider.GetRequiredService<HttpServiceTransportFactory>(),
+            serviceProvider.GetRequiredService<HttpServiceClientOptions>()));
+        services.AddSingleton<IContactMailboxOnboarding>(serviceProvider =>
+            ResolveProductionMailboxOnboarding(serviceProvider, inputs));
+        services.AddSingleton<IContactInvitationProvider>(serviceProvider =>
+            ResolveProductionContactInvitationProvider(serviceProvider, inputs));
+#endif
 
         services.AddTransient<OnboardingViewModel>();
         services.AddTransient<WelcomeViewModel>();
@@ -714,18 +730,45 @@ public static class MauiProgram
             services.GetRequiredService<IMailboxDispatchRouteUsageObserver>());
         return new StoreBoundRuntimeTransportComposition(native, native);
 #else
-        var productionRoot = Path.Combine(
-            appDataDirectory,
-            "production-mailbox-runtime-v1");
-        if (!ProductionMailboxBuildTrustFloor.TryLoad(out _))
-            throw new InvalidOperationException("production-credentials-unavailable");
-        _ = ProtectedProductionMailboxTrustStateStore.OpenOrCreate(productionRoot);
-        _ = ProductionMailboxClientIdentityAttestor.AttestAsync()
-            .GetAwaiter().GetResult();
-        // The production registry/acquisition seam must supply the exact verified PMA1/PMR1/
-        // PMT1/PMS1/MCG2 set. Never fall back to DEV bundles, raw transport, or cloud routes.
-        throw new InvalidOperationException("production-credentials-unavailable");
+        var native = new StoreBoundNativeMau2Transport(
+            sqlite,
+            secureStore,
+            services.GetRequiredService<ProductionMailboxRuntimeCoordinator>(),
+            mode.Ownership,
+            featureFlags,
+            services.GetService<IMailboxDispatchRouteUsageObserver>());
+        return new StoreBoundRuntimeTransportComposition(native, native);
 #endif
+    }
+
+    private static Uri RequireRegistryOrigin(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var origin) ||
+            origin.Scheme != Uri.UriSchemeHttps ||
+            !string.IsNullOrEmpty(origin.UserInfo) ||
+            origin.AbsolutePath != "/" ||
+            !string.IsNullOrEmpty(origin.Query) ||
+            !string.IsNullOrEmpty(origin.Fragment))
+            throw new InvalidOperationException(
+                "DEEP_REGISTRY_URL must be a clean HTTPS origin for authenticated MAU2.");
+        return origin;
+    }
+
+    private static IContactMailboxOnboarding ResolveProductionMailboxOnboarding(
+        IServiceProvider services,
+        ApplicationServiceInputs inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        return services.GetRequiredService<ProductionMailboxRuntimeCoordinator>();
+    }
+
+    private static IContactInvitationProvider ResolveProductionContactInvitationProvider(
+        IServiceProvider services,
+        ApplicationServiceInputs inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        return services.GetRequiredService<ProductionMailboxRuntimeCoordinator>();
     }
 
     private static ProcessExternalTransportOutboxExecutorOptions? ResolveExternalOutboxWorkerOptions(

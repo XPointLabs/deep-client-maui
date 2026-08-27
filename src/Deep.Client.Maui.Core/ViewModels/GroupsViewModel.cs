@@ -16,6 +16,7 @@ public sealed class GroupsViewModel : ViewModelBase
 {
     private readonly ClientRuntime runtime;
     private readonly IContactRepository contacts;
+    private readonly IContactMailboxOnboarding contactOnboarding;
     private IReadOnlyDictionary<string, string> contactDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
     private bool contactDisplayNamesLoaded;
     private string groupName = string.Empty;
@@ -23,9 +24,12 @@ public sealed class GroupsViewModel : ViewModelBase
     private GroupDraftMemberItem? selectedDraftMember;
     private GroupListItem? selectedGroup;
 
-    public GroupsViewModel(ClientRuntime runtime)
+    public GroupsViewModel(
+        ClientRuntime runtime,
+        IContactMailboxOnboarding? contactOnboarding = null)
     {
-        this.runtime = runtime;
+        this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        this.contactOnboarding = contactOnboarding ?? new SessionIdContactMailboxOnboarding();
         contacts = (IContactRepository)runtime.Store;
         Groups = [];
         DraftMembers = [];
@@ -118,24 +122,27 @@ public sealed class GroupsViewModel : ViewModelBase
 
     public async Task AddDraftMemberAsync(CancellationToken cancellationToken = default)
     {
-        if (!TryParseMemberSessionId(out var member))
+        var contactInput = MemberSessionId.Trim();
+        if (!contactOnboarding.CanAccept(contactInput))
         {
-            ErrorMessage = "Введите корректный ID аккаунта.";
+            ErrorMessage = "Введите корректный ID аккаунта или защищённое приглашение.";
             return;
         }
 
-        if (DraftMembers.Any(item => item.SessionId == member))
+        await RunBusyAsync(async ct =>
         {
+            var member = await contactOnboarding.PrepareAsync(contactInput, ct);
+            if (DraftMembers.Any(item => item.SessionId == member))
+            {
+                MemberSessionId = string.Empty;
+                return;
+            }
+
+            await EnsureContactDisplayNamesLoadedAsync(ct, member);
+            DraftMembers.Add(ToDraftMemberItem(member));
             MemberSessionId = string.Empty;
-            ErrorMessage = null;
-            return;
-        }
-
-        await EnsureContactDisplayNamesLoadedAsync(cancellationToken, member);
-        DraftMembers.Add(ToDraftMemberItem(member));
-        MemberSessionId = string.Empty;
-        ErrorMessage = null;
-        RaiseDraftMemberPropertiesChanged();
+            RaiseDraftMemberPropertiesChanged();
+        }, cancellationToken);
     }
 
     public void RemoveDraftMember(GroupDraftMemberItem member)
@@ -382,8 +389,17 @@ public sealed class GroupsViewModel : ViewModelBase
         }
     }
 
-    private bool CanAddDraftMember() => TryParseMemberSessionId(out var member)
-        && DraftMembers.All(item => item.SessionId != member);
+    private bool CanAddDraftMember()
+    {
+        var contactInput = MemberSessionId.Trim();
+        if (!contactOnboarding.CanAccept(contactInput))
+        {
+            return false;
+        }
+
+        return !TryParseMemberSessionId(out var member)
+            || DraftMembers.All(item => item.SessionId != member);
+    }
 
     private bool TryParseMemberSessionId(out SessionId member)
     {

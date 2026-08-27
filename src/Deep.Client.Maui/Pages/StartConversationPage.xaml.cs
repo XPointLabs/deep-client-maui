@@ -1,4 +1,5 @@
 ﻿using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Services;
 using Deep.Client.Shared.State;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
 using QRCoder;
@@ -7,30 +8,48 @@ namespace Deep.Client.Maui.Pages;
 
 public partial class StartConversationPage : ContentPage
 {
-    private readonly ClientRuntime runtime;
-    private string accountId = string.Empty;
-    private byte[]? accountQrBytes;
+    private readonly IContactInvitationProvider invitationProvider;
+    private string invitation = string.Empty;
+    private byte[]? invitationQrBytes;
 
-    public StartConversationPage(ClientRuntime runtime)
+    public StartConversationPage(IContactInvitationProvider invitationProvider)
     {
         InitializeComponent();
-        this.runtime = runtime;
+        this.invitationProvider = invitationProvider;
     }
 
     protected override async void OnAppearing()
     {
         base.OnAppearing();
 
-        var account = await runtime.Accounts.GetActiveAccountAsync();
-        accountId = account?.SessionId.Value ?? string.Empty;
-        AccountIdLabel.Text = string.IsNullOrWhiteSpace(accountId) ? "-" : accountId;
-        accountQrBytes = string.IsNullOrWhiteSpace(accountId)
-            ? null
-            : PngByteQRCodeHelper.GetQRCode(accountId, QRCodeGenerator.ECCLevel.Q, 12);
-        AccountQrImage.IsVisible = accountQrBytes is not null;
-        AccountQrImage.Source = accountQrBytes is null
-            ? null
-            : ImageSource.FromStream(() => new MemoryStream(accountQrBytes, writable: false));
+        try
+        {
+            invitation = await invitationProvider.GetInvitationAsync() ?? string.Empty;
+            AccountIdLabel.Text = string.IsNullOrWhiteSpace(invitation) ? "-" : invitation;
+            invitationQrBytes = string.IsNullOrWhiteSpace(invitation)
+                ? null
+                : PngByteQRCodeHelper.GetQRCode(
+                    invitation,
+                    QRCodeGenerator.ECCLevel.Q,
+                    12);
+            AccountQrImage.IsVisible = invitationQrBytes is not null;
+            AccountQrImage.Source = invitationQrBytes is null
+                ? null
+                : ImageSource.FromStream(() =>
+                    new MemoryStream(invitationQrBytes, writable: false));
+        }
+        catch
+        {
+            invitation = string.Empty;
+            invitationQrBytes = null;
+            AccountIdLabel.Text = "-";
+            AccountQrImage.IsVisible = false;
+            AccountQrImage.Source = null;
+            await DisplayAlertAsync(
+                "Приглашение недоступно",
+                "Не удалось подготовить защищённое приглашение. Проверьте подключение и повторите попытку.",
+                "OK");
+        }
     }
 
     protected override bool OnBackButtonPressed()
@@ -69,15 +88,15 @@ public partial class StartConversationPage : ContentPage
 
     private async void OnCopyClicked(object? sender, EventArgs e)
     {
-        if (!string.IsNullOrWhiteSpace(accountId))
+        if (!string.IsNullOrWhiteSpace(invitation))
         {
-            await Clipboard.Default.SetTextAsync(accountId);
+            await Clipboard.Default.SetTextAsync(invitation);
         }
     }
 
     private async Task ShareAccountIdAsync()
     {
-        if (string.IsNullOrWhiteSpace(accountId))
+        if (string.IsNullOrWhiteSpace(invitation))
         {
             return;
         }
@@ -85,7 +104,7 @@ public partial class StartConversationPage : ContentPage
         await Share.Default.RequestAsync(new ShareTextRequest
         {
             Title = "Пригласить друга",
-            Text = $"Добавьте меня в Deep: {accountId}"
+            Text = $"Добавьте меня в Deep: {invitation}"
         });
     }
 }

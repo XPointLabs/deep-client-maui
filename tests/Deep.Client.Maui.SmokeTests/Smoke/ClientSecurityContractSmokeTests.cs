@@ -15,7 +15,9 @@ public sealed class ClientSecurityContractSmokeTests
             releaseEnvironment, StringComparison.Ordinal);
         Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=official-managed",
             releaseEnvironment, StringComparison.Ordinal);
-        Assert.Contains("production-credentials-unavailable", program,
+        Assert.Contains("ProductionMailboxRuntimeCoordinator", program,
+            StringComparison.Ordinal);
+        Assert.Contains("new StoreBoundNativeMau2Transport(", program,
             StringComparison.Ordinal);
         Assert.Contains("direct-p2p", mode, StringComparison.Ordinal);
         Assert.Contains("authenticated-mau2", mode, StringComparison.Ordinal);

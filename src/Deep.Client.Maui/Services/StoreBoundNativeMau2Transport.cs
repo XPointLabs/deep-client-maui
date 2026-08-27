@@ -2,6 +2,8 @@ using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Features;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Deep.Client.Maui.Services;
 
@@ -10,17 +12,256 @@ internal sealed record ProvisionedMailboxRuntime(
     ClientMailboxActivation Activation,
     IMailboxClientDecodePolicyProvider DecodePolicies,
     SessionId LocalSessionId,
-    Func<SessionId, MailboxCredentialSelector?> ResolveRecipient,
+    MailboxCredentialSelector SelfSelector,
+    Func<SessionId, CancellationToken, Task<MailboxCredentialSelector?>>
+        ResolveRecipientAsync,
     IClientMailboxBinaryIngress Ingress,
     TimeProvider TimeProvider);
 
 internal interface IMailboxRuntimeProvisioningSource
 {
+    void AttachRuntimeState(
+        SqliteSessionStore store,
+        SecureRecoverySessionStore secureStore)
+    {
+    }
+
     Task<ProvisionedMailboxRuntime> ProvisionAsync(
         SqliteSessionStore store,
         MailboxHolderIdentity holder,
         MailboxInfrastructureOwnership ownership,
         CancellationToken cancellationToken = default);
+
+    Task ReleaseAsync(
+        SessionId account,
+        CancellationToken cancellationToken = default) => Task.CompletedTask;
+}
+
+internal sealed class PersistedMailboxPeerSelectorStore(
+    IAtomicBoundedSettingsRepository settings)
+{
+    private const byte Schema = 1;
+    private const int SessionIdBytes = 33;
+    private const int OpaqueBytes = 32;
+    private const int CanonicalBytes = 1 + (2 * SessionIdBytes) + (4 * OpaqueBytes) + 1;
+    private const int MaximumEncodedBytes = 384;
+    private const int MaximumAttempts = 4;
+    private readonly IAtomicBoundedSettingsRepository settings = settings ??
+        throw new ArgumentNullException(nameof(settings));
+
+    public async Task SaveAsync(
+        SessionId local,
+        SessionId peer,
+        MailboxCredentialSelector selector,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(selector);
+        if (local == peer || selector.Kind != MailboxCredentialScopeKind.Peer)
+            throw new ArgumentException(
+                "Only a peer selector for another account can be persisted.",
+                nameof(selector));
+        var encoded = Encode(local, peer, selector);
+        try
+        {
+            for (var attempt = 0; attempt < MaximumAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var current = await settings.ReadAtomicBoundedSettingAsync(
+                    Key(local, peer), MaximumEncodedBytes, cancellationToken)
+                    .ConfigureAwait(false);
+                AtomicBoundedSettingMutationResult result;
+                switch (current.Result)
+                {
+                    case AtomicBoundedSettingReadResult.Missing:
+                        result = await settings.CreateAtomicBoundedSettingAsync(
+                            Key(local, peer), encoded, MaximumEncodedBytes, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                    case AtomicBoundedSettingReadResult.Found when current.Revision is not null:
+                        if (Fixed(current.GetValueCopy(), encoded)) return;
+                        result = await settings.ReplaceAtomicBoundedSettingAsync(
+                            Key(local, peer), current.Revision, encoded, MaximumEncodedBytes,
+                            cancellationToken).ConfigureAwait(false);
+                        break;
+                    case AtomicBoundedSettingReadResult.Oversized:
+                        throw new InvalidDataException(
+                            "Persisted production peer selector is oversized.");
+                    default:
+                        throw new InvalidOperationException(
+                            "Production peer selector storage is unavailable.");
+                }
+
+                if (result == AtomicBoundedSettingMutationResult.Applied) return;
+                if (result is AtomicBoundedSettingMutationResult.Conflict or
+                    AtomicBoundedSettingMutationResult.Missing)
+                    continue;
+                if (result == AtomicBoundedSettingMutationResult.OutcomeUnknown)
+                {
+                    var observed = await settings.ReadAtomicBoundedSettingAsync(
+                        Key(local, peer), MaximumEncodedBytes, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    if (observed.Result == AtomicBoundedSettingReadResult.Found &&
+                        Fixed(observed.GetValueCopy(), encoded))
+                        return;
+                }
+                throw new InvalidOperationException(
+                    "Production peer selector did not persist atomically.");
+            }
+            throw new InvalidOperationException(
+                "Production peer selector changed concurrently.");
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(encoded);
+        }
+    }
+
+    public async Task<MailboxCredentialSelector?> LoadAsync(
+        SessionId local,
+        SessionId peer,
+        CancellationToken cancellationToken = default)
+    {
+        var outcome = await settings.ReadAtomicBoundedSettingAsync(
+            Key(local, peer), MaximumEncodedBytes, cancellationToken).ConfigureAwait(false);
+        return outcome.Result switch
+        {
+            AtomicBoundedSettingReadResult.Missing => null,
+            AtomicBoundedSettingReadResult.Found => Decode(
+                local, peer, outcome.GetValueCopy()),
+            AtomicBoundedSettingReadResult.Oversized => throw new InvalidDataException(
+                "Persisted production peer selector is oversized."),
+            _ => throw new InvalidOperationException(
+                "Production peer selector storage is unavailable.")
+        };
+    }
+
+    private static byte[] Encode(
+        SessionId local,
+        SessionId peer,
+        MailboxCredentialSelector selector)
+    {
+        var localBytes = Convert.FromHexString(local.Value);
+        var peerBytes = Convert.FromHexString(peer.Value);
+        var canonical = new byte[CanonicalBytes];
+        try
+        {
+            if (localBytes.Length != SessionIdBytes || peerBytes.Length != SessionIdBytes ||
+                selector.AccountScope.Value.Length != OpaqueBytes ||
+                selector.SubjectId.Length != OpaqueBytes ||
+                selector.IssuerContext.Length != OpaqueBytes ||
+                selector.ScopeId.Length != OpaqueBytes ||
+                !selector.GroupMembershipCommitment.IsEmpty)
+                throw new InvalidDataException(
+                    "Production peer selector has an invalid canonical shape.");
+            var offset = 0;
+            canonical[offset++] = Schema;
+            localBytes.CopyTo(canonical, offset);
+            offset += SessionIdBytes;
+            peerBytes.CopyTo(canonical, offset);
+            offset += SessionIdBytes;
+            selector.AccountScope.Value.CopyTo(canonical.AsSpan(offset));
+            offset += OpaqueBytes;
+            canonical[offset++] = (byte)selector.Kind;
+            selector.SubjectId.Span.CopyTo(canonical.AsSpan(offset));
+            offset += OpaqueBytes;
+            selector.IssuerContext.Span.CopyTo(canonical.AsSpan(offset));
+            offset += OpaqueBytes;
+            selector.ScopeId.Span.CopyTo(canonical.AsSpan(offset));
+            var output = JsonSerializer.SerializeToUtf8Bytes(
+                new StoredPeerSelector(Schema, Convert.ToBase64String(canonical)));
+            if (output.Length is 0 or > MaximumEncodedBytes)
+            {
+                CryptographicOperations.ZeroMemory(output);
+                throw new InvalidDataException(
+                    "Production peer selector encoding is oversized.");
+            }
+            return output;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(canonical);
+            CryptographicOperations.ZeroMemory(localBytes);
+            CryptographicOperations.ZeroMemory(peerBytes);
+        }
+    }
+
+    private static MailboxCredentialSelector Decode(
+        SessionId local,
+        SessionId peer,
+        byte[] encoded)
+    {
+        byte[]? canonical = null;
+        try
+        {
+            if (encoded.Length is 0 or > MaximumEncodedBytes)
+                throw new InvalidDataException(
+                    "Persisted production peer selector is invalid.");
+            using var document = JsonDocument.Parse(encoded, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = false,
+                CommentHandling = JsonCommentHandling.Disallow,
+                MaxDepth = 3
+            });
+            var root = document.RootElement;
+            var properties = root.EnumerateObject().Select(static value => value.Name).ToArray();
+            if (root.ValueKind != JsonValueKind.Object || properties.Length != 2 ||
+                !properties.Contains("Schema", StringComparer.Ordinal) ||
+                !properties.Contains("Selector", StringComparer.Ordinal) ||
+                root.GetProperty("Schema").GetByte() != Schema ||
+                root.GetProperty("Selector").ValueKind != JsonValueKind.String)
+                throw new InvalidDataException(
+                    "Persisted production peer selector is invalid.");
+            canonical = Convert.FromBase64String(
+                root.GetProperty("Selector").GetString() ?? string.Empty);
+            if (canonical.Length != CanonicalBytes || canonical[0] != Schema)
+                throw new InvalidDataException(
+                    "Persisted production peer selector is invalid.");
+            var offset = 1;
+            var encodedLocal = SessionId.Parse(Convert.ToHexStringLower(
+                canonical.AsSpan(offset, SessionIdBytes)));
+            offset += SessionIdBytes;
+            var encodedPeer = SessionId.Parse(Convert.ToHexStringLower(
+                canonical.AsSpan(offset, SessionIdBytes)));
+            offset += SessionIdBytes;
+            if (encodedLocal != local || encodedPeer != peer ||
+                canonical[offset + OpaqueBytes] != (byte)MailboxCredentialScopeKind.Peer)
+                throw new InvalidDataException(
+                    "Persisted production peer selector binding is invalid.");
+            var account = OutboxAccountScope.FromBytes(
+                canonical.AsSpan(offset, OpaqueBytes));
+            offset += OpaqueBytes + 1;
+            var selector = new MailboxCredentialSelector(
+                account,
+                MailboxCredentialScopeKind.Peer,
+                canonical.AsSpan(offset, OpaqueBytes),
+                canonical.AsSpan(offset + OpaqueBytes, OpaqueBytes));
+            offset += 2 * OpaqueBytes;
+            if (!Fixed(selector.ScopeId.Span, canonical.AsSpan(offset, OpaqueBytes)))
+                throw new InvalidDataException(
+                    "Persisted production peer selector scope is invalid.");
+            return selector;
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException or
+            JsonException or InvalidOperationException)
+        {
+            throw new InvalidDataException(
+                "Persisted production peer selector is invalid.", exception);
+        }
+        finally
+        {
+            if (canonical is not null)
+                CryptographicOperations.ZeroMemory(canonical);
+            CryptographicOperations.ZeroMemory(encoded);
+        }
+    }
+
+    private static string Key(SessionId local, SessionId peer) =>
+        "deep.mailbox.peer-selector.v1:" + local.Value + ":" + peer.Value;
+
+    private static bool Fixed(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right) =>
+        left.Length == right.Length && CryptographicOperations.FixedTimeEquals(left, right);
+
+    private sealed record StoredPeerSelector(byte Schema, string Selector);
 }
 
 /// <summary>Debug-only adapter for the exact local Android/Windows fixture bundle.</summary>
@@ -61,11 +302,13 @@ internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
             material.Activation,
             material.DecodePolicies,
             material.LocalSessionId,
-            recipient => recipient == material.LocalSessionId
-                ? material.SelfSelector
-                : recipient == material.PeerSessionId
-                    ? material.PeerSelector
-                    : null,
+            material.SelfSelector,
+            (recipient, _) => Task.FromResult<MailboxCredentialSelector?>(
+                recipient == material.LocalSessionId
+                    ? material.SelfSelector
+                    : recipient == material.PeerSessionId
+                        ? material.PeerSelector
+                        : null),
             transportFactory.CreatePrivacyRoutedMailboxIngress(
                 provisioning.PrivacyRoutes.Primary,
                 provisioning.PrivacyRoutes.Fallback,
@@ -158,6 +401,7 @@ internal sealed class StoreBoundNativeMau2Transport :
             throw new InvalidOperationException(
                 "Authenticated MAU2 requires the native adapter and metadata-private release gates.");
         }
+        provisioningSource.AttachRuntimeState(store, secureStore);
     }
 
     public int InboxNamespace => unchecked((int)0x4d415532);
@@ -182,8 +426,10 @@ internal sealed class StoreBoundNativeMau2Transport :
         var runtime = await EnsureBoundAsync(
             request.Envelope.Sender, holderPublicKey: null, cancellationToken)
             .ConfigureAwait(false);
-        var selector = runtime.Provisioned.ResolveRecipient(
-            request.Envelope.Recipient) ?? throw new NotSupportedException(
+        var selector = await runtime.Provisioned.ResolveRecipientAsync(
+            request.Envelope.Recipient,
+            cancellationToken).ConfigureAwait(false) ??
+            throw new NotSupportedException(
                 "No verified mailbox credential exists for this recipient.");
         var decision = new MailboxDeliveryDecision(
             MailboxTransportProtocol.AuthenticatedMau2,
@@ -452,6 +698,8 @@ internal sealed class StoreBoundNativeMau2Transport :
                 throw new InvalidOperationException(
                     "The stopped account differs from the bound MAU2 account.");
             }
+            await provisioningSource.ReleaseAsync(account, CancellationToken.None)
+                .ConfigureAwait(false);
             Interlocked.Exchange(ref bound, null)?.Transport.Dispose();
             lock (operationGate)
             {
@@ -567,9 +815,7 @@ internal sealed class StoreBoundNativeMau2Transport :
                 provisioned.DecodePolicies,
                 provisioned.Authority,
                 account => account == provisioned.LocalSessionId
-                    ? provisioned.ResolveRecipient(account) ??
-                        throw new InvalidOperationException(
-                            "MAU2 self selector is unavailable.")
+                    ? provisioned.SelfSelector
                     : throw new InvalidOperationException(
                         "MAU2 self selector was requested for another account."),
                 ownsIngress: true,

@@ -33,6 +33,10 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxBuildTrustFloor.cs" Link="Services\ProductionMailboxBuildTrustFloor.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxOwnerIdentityStore.cs" Link="Services\ProductionMailboxOwnerIdentityStore.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxRegistryJsonCodec.cs" Link="Services\ProductionMailboxRegistryJsonCodec.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxRegistryClient.cs" Link="Services\ProductionMailboxRegistryClient.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxCredentialAcquirer.cs" Link="Services\ProductionMailboxCredentialAcquirer.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxPrivacyRouteBootstrap.cs" Link="Services\ProductionMailboxPrivacyRouteBootstrap.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxContactStateStore.cs" Link="Services\ProductionMailboxContactStateStore.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxArtifactSetDigest.cs" Link="Services\ProductionMailboxArtifactSetDigest.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionAndroidCodeTransparency.cs" Link="Services\ProductionAndroidCodeTransparency.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\StoreBoundNativeMau2Transport.cs" Link="Services\StoreBoundNativeMau2Transport.cs" />

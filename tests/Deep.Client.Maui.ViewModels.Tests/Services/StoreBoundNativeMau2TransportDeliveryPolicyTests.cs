@@ -163,11 +163,13 @@ public sealed class StoreBoundNativeMau2TransportDeliveryPolicyTests
                         ingressConfigured: true),
                     Policies(clock),
                     identity.SessionId,
-                    sessionId => sessionId == identity.SessionId
-                        ? selfSelector
-                        : sessionId == recipient
-                            ? recipientSelector
-                            : null,
+                    selfSelector,
+                    (sessionId, _) => Task.FromResult<MailboxCredentialSelector?>(
+                        sessionId == identity.SessionId
+                            ? selfSelector
+                            : sessionId == recipient
+                                ? recipientSelector
+                                : null),
                     new RejectingIngress(),
                     clock);
                 var provisioningSource = new TestProvisioningSource(runtime);

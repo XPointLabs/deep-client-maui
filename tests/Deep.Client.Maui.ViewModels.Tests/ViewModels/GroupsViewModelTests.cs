@@ -105,6 +105,43 @@ public sealed class GroupsViewModelTests
     }
 
     [Fact]
+    public async Task AddDraftMemberOnboardsInvitationBeforeMutatingDraft()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var recipient = SessionId.Parse("05" + new string('d', 64));
+        var onboarding = new RecordingContactOnboarding("protected-invitation", recipient);
+        var viewModel = new GroupsViewModel(runtime, onboarding)
+        {
+            MemberSessionId = "protected-invitation"
+        };
+
+        await viewModel.AddDraftMemberAsync();
+
+        Assert.Equal(1, onboarding.PrepareCalls);
+        Assert.Equal(recipient, Assert.Single(viewModel.DraftMembers).SessionId);
+    }
+
+    [Fact]
+    public async Task AddDraftMemberOnboardingFailureDoesNotMutateDraft()
+    {
+        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        var onboarding = new RecordingContactOnboarding(
+            "expired-invitation",
+            SessionId.Parse("05" + new string('e', 64)),
+            fail: true);
+        var viewModel = new GroupsViewModel(runtime, onboarding)
+        {
+            MemberSessionId = "expired-invitation"
+        };
+
+        await viewModel.AddDraftMemberAsync();
+
+        Assert.Equal(1, onboarding.PrepareCalls);
+        Assert.Empty(viewModel.DraftMembers);
+        Assert.True(viewModel.HasError);
+    }
+
+    [Fact]
     public async Task DraftMembersUseKnownDisplayNameAndShortUnknownFallback()
     {
         var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
@@ -171,5 +208,30 @@ public sealed class GroupsViewModelTests
 
         Assert.Equal(0, changeCount);
         Assert.Single(viewModel.Groups);
+    }
+
+    private sealed class RecordingContactOnboarding(
+        string acceptedInput,
+        SessionId recipient,
+        bool fail = false) : IContactMailboxOnboarding
+    {
+        public int PrepareCalls { get; private set; }
+
+        public bool CanAccept(string contactInput) =>
+            string.Equals(contactInput, acceptedInput, StringComparison.Ordinal);
+
+        public Task<SessionId> PrepareAsync(
+            string contactInput,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PrepareCalls++;
+            if (!CanAccept(contactInput) || fail)
+            {
+                throw new InvalidDataException("unverified contact");
+            }
+
+            return Task.FromResult(recipient);
+        }
     }
 }

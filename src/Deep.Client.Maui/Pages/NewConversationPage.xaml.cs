@@ -35,7 +35,10 @@ public partial class NewConversationPage : ContentPage
         var conversation = await viewModel.StartConversationFromComposerAsync();
         if (conversation is null)
         {
-            await DisplayAlertAsync("Новое сообщение", "Введите корректный ID аккаунта.", "OK");
+            await DisplayAlertAsync(
+                "Новое сообщение",
+                viewModel.ErrorMessage ?? "Введите корректный ID аккаунта или защищённое приглашение.",
+                "OK");
             return;
         }
 

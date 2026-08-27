@@ -42,6 +42,54 @@ public sealed class ConversationsViewModelTests
     }
 
     [Fact]
+    public async Task ProtectedInvitationIsPreparedBeforeLocalContactIsCreated()
+    {
+        var runtime = ClientRuntime.CreateStubbed(
+            clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        await runtime.Accounts.RegisterAsync("Owner");
+        var recipient = SessionId.CreateNew();
+        var onboarding = new RecordingContactOnboarding("protected-invite", recipient);
+        var viewModel = new ConversationsViewModel(runtime, onboarding)
+        {
+            NewSessionId = "protected-invite",
+            NewDisplayName = "Verified"
+        };
+
+        var conversation = await viewModel.StartConversationFromComposerAsync();
+
+        Assert.NotNull(conversation);
+        Assert.Equal(recipient.Value, conversation.Id.Value);
+        Assert.Equal(1, onboarding.PrepareCalls);
+        Assert.Single(await runtime.Conversations.ListAsync());
+    }
+
+    [Fact]
+    public async Task FailedInvitationDoesNotCreateLocalContactOrConversation()
+    {
+        var runtime = ClientRuntime.CreateStubbed(
+            clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
+        await runtime.Accounts.RegisterAsync("Owner");
+        var onboarding = new RecordingContactOnboarding(
+            "protected-invite",
+            SessionId.CreateNew(),
+            fail: true);
+        var viewModel = new ConversationsViewModel(runtime, onboarding)
+        {
+            NewSessionId = "protected-invite"
+        };
+
+        var conversation = await viewModel.StartConversationFromComposerAsync();
+
+        Assert.Null(conversation);
+        Assert.NotNull(viewModel.ErrorMessage);
+        Assert.Empty(await runtime.Conversations.ListAsync());
+        var contacts = new List<Contact>();
+        await foreach (var contact in ((IContactRepository)runtime.Store).ListAsync())
+            contacts.Add(contact);
+        Assert.DoesNotContain(contacts, contact => contact.Id == onboarding.Recipient);
+    }
+
+    [Fact]
     public async Task SyncWithoutConversationChangesDoesNotResetCollection()
     {
         var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
@@ -171,5 +219,28 @@ public sealed class ConversationsViewModelTests
             SessionId recipient,
             CancellationToken cancellationToken = default) =>
             Task.FromException<IReadOnlyList<InboundMessageEnvelope>>(new InvalidOperationException("offline"));
+    }
+
+    private sealed class RecordingContactOnboarding(
+        string acceptedInput,
+        SessionId recipient,
+        bool fail = false) : IContactMailboxOnboarding
+    {
+        public SessionId Recipient => recipient;
+        public int PrepareCalls { get; private set; }
+
+        public bool CanAccept(string contactInput) =>
+            string.Equals(contactInput, acceptedInput, StringComparison.Ordinal);
+
+        public Task<SessionId> PrepareAsync(
+            string contactInput,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PrepareCalls++;
+            if (!CanAccept(contactInput) || fail)
+                throw new InvalidDataException("unverified contact");
+            return Task.FromResult(recipient);
+        }
     }
 }

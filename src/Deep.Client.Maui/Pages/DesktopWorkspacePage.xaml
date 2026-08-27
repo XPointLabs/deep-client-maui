@@ -435,7 +435,7 @@
                             <Button Grid.Column="1" Text="×" Style="{StaticResource ToolbarIconButton}" Clicked="OnCloseGroupMembersClicked" SemanticProperties.Description="Закрыть список участников" />
                         </Grid>
                         <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding GroupChat.CanManageMembers}">
-                            <Entry AutomationId="DesktopWorkspace.GroupMemberId" Placeholder="ID аккаунта" Text="{Binding GroupChat.MemberSessionId}" BackgroundColor="{StaticResource SearchBackground}" />
+                            <Entry AutomationId="DesktopWorkspace.GroupMemberId" Placeholder="ID аккаунта или защищённое приглашение" Text="{Binding GroupChat.MemberSessionId}" BackgroundColor="{StaticResource SearchBackground}" />
                             <Button Grid.Column="1" Text="Добавить" Command="{Binding GroupChat.AddMemberCommand}" />
                         </Grid>
                         <CollectionView

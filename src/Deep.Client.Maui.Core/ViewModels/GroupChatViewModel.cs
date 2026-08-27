@@ -281,6 +281,7 @@ public sealed class GroupChatViewModel : ViewModelBase
     private readonly IContactRepository contacts;
     private readonly IAttachmentPickerService? attachmentPicker;
     private readonly IVoiceMessageRecorder? voiceRecorder;
+    private readonly IContactMailboxOnboarding contactOnboarding;
     private readonly Dictionary<string, string> senderLabels = new(StringComparer.Ordinal);
     private readonly HashSet<MessageId> locallyQueuedMessageIds = [];
     private IReadOnlyDictionary<string, string> contactDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -305,12 +306,14 @@ public sealed class GroupChatViewModel : ViewModelBase
     public GroupChatViewModel(
         ClientRuntime runtime,
         IAttachmentPickerService? attachmentPicker = null,
-        IVoiceMessageRecorder? voiceRecorder = null)
+        IVoiceMessageRecorder? voiceRecorder = null,
+        IContactMailboxOnboarding? contactOnboarding = null)
     {
-        this.runtime = runtime;
+        this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         contacts = (IContactRepository)runtime.Store;
         this.attachmentPicker = attachmentPicker;
         this.voiceRecorder = voiceRecorder;
+        this.contactOnboarding = contactOnboarding ?? new SessionIdContactMailboxOnboarding();
         Messages = new ObservableRangeCollection<GroupChatMessageItem>();
         StagedAttachments = [];
         Members = [];
@@ -320,7 +323,7 @@ public sealed class GroupChatViewModel : ViewModelBase
         SendCommand = new AsyncCommand(SendAsync, CanSend);
         PickAttachmentsCommand = new AsyncCommand(PickAttachmentsAsync, () => attachmentPicker is not null);
         ClearAttachmentsCommand = new AsyncCommand(ClearAttachmentsAsync, () => StagedAttachments.Count > 0);
-        AddMemberCommand = new AsyncCommand(AddMemberAsync, () => CanManageMembers && CanParseMemberSessionId());
+        AddMemberCommand = new AsyncCommand(AddMemberAsync, () => CanManageMembers && CanAcceptMemberInput());
         PromoteMemberCommand = new AsyncCommand(PromoteMemberAsync, () => CanManageMembers && TryGetTargetMember(out _));
         DemoteMemberCommand = new AsyncCommand(DemoteMemberAsync, () => CanManageMembers && TryGetTargetMember(out _));
         RemoveMemberCommand = new AsyncCommand(RemoveMemberAsync, () => CanManageMembers && TryGetTargetMember(out _));
@@ -1083,7 +1086,7 @@ public sealed class GroupChatViewModel : ViewModelBase
         }, cancellationToken);
 
     public Task AddMemberAsync(CancellationToken cancellationToken = default) =>
-        RunMemberMutationAsync((groupId, requestor, member, ct) => runtime.Conversations.AddMemberAsync(groupId, requestor, member, ct), MemberAction.Add, cancellationToken);
+        RunAddMemberMutationAsync(cancellationToken);
 
     public Task PromoteMemberAsync(CancellationToken cancellationToken = default) =>
         RunMemberMutationAsync((groupId, requestor, member, ct) => runtime.Conversations.PromoteMemberAsync(groupId, requestor, member, ct), MemberAction.Promote, cancellationToken);
@@ -1099,6 +1102,55 @@ public sealed class GroupChatViewModel : ViewModelBase
 
     public Task UndoPendingRemovalAsync(CancellationToken cancellationToken = default) =>
         RunMemberMutationAsync((groupId, requestor, member, ct) => runtime.Conversations.MarkMemberPendingRemovalAsync(groupId, requestor, member, false, ct), MemberAction.UndoPending, cancellationToken);
+
+    private async Task RunAddMemberMutationAsync(CancellationToken cancellationToken)
+    {
+        await RunBusyAsync(async ct =>
+        {
+            if (group is null || account is null)
+            {
+                throw new InvalidOperationException("Откройте группу перед управлением участниками.");
+            }
+
+            if (!CanManageMembers)
+            {
+                SetStatus("Управлять участниками могут только администраторы.", isError: true);
+                return;
+            }
+
+            var contactInput = MemberSessionId.Trim();
+            if (!contactOnboarding.CanAccept(contactInput))
+            {
+                SetStatus("Введите корректный ID аккаунта или приглашение.", isError: true);
+                return;
+            }
+
+            var member = await contactOnboarding.PrepareAsync(contactInput, ct);
+            if (!ValidateMemberAction(MemberAction.Add, member))
+            {
+                return;
+            }
+
+            var updated = await runtime.Conversations.AddMemberAsync(
+                group.Id,
+                account.SessionId,
+                member,
+                ct);
+            if (updated is null)
+            {
+                SetStatus("Обновление участника было отклонено.", isError: true);
+                return;
+            }
+
+            group = updated;
+            MemberSessionId = string.Empty;
+            UpdateGroupSummary();
+            SyncMembers();
+            UpdateMemberPermissions();
+            RaiseMemberCommandCanExecuteChanged();
+            SetStatus("Состав группы обновлен.");
+        }, cancellationToken);
+    }
 
     private async Task RunMemberMutationAsync(
         Func<ConversationId, SessionId, SessionId, CancellationToken, Task<Group?>> operation,
@@ -1146,23 +1198,9 @@ public sealed class GroupChatViewModel : ViewModelBase
         }, cancellationToken);
     }
 
-    private bool CanParseMemberSessionId()
-    {
-        if (string.IsNullOrWhiteSpace(MemberSessionId))
-        {
-            return false;
-        }
-
-        try
-        {
-            SessionId.Parse(MemberSessionId);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private bool CanAcceptMemberInput() =>
+        !string.IsNullOrWhiteSpace(MemberSessionId)
+        && contactOnboarding.CanAccept(MemberSessionId.Trim());
 
     private bool TryGetTargetMember(out SessionId member)
     {

@@ -51,7 +51,7 @@
                     <Entry
                         x:Name="MemberSessionIdEntry"
                         AutomationId="Groups.MemberSessionId"
-                        Placeholder="ID участника"
+                        Placeholder="ID участника или защищённое приглашение"
                         Text="{Binding MemberSessionId}"
                         ReturnType="Done"
                         ReturnCommand="{Binding AddDraftMemberCommand}" />

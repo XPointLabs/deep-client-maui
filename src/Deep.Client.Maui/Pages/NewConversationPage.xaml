@@ -30,7 +30,7 @@
         <VerticalStackLayout Grid.Row="1" Spacing="16" Padding="16,20,16,0">
             <VerticalStackLayout Spacing="6">
                 <Label Text="Кому" FontSize="13" TextColor="{StaticResource TextSecondary}" />
-                <Entry x:Name="SessionIdEntry" AutomationId="NewConversation.SessionId" Placeholder="ID аккаунта" Text="{Binding NewSessionId}" />
+                <Entry x:Name="SessionIdEntry" AutomationId="NewConversation.SessionId" Placeholder="ID аккаунта или защищённое приглашение" Text="{Binding NewSessionId}" />
             </VerticalStackLayout>
 
             <VerticalStackLayout Spacing="6">

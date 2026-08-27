@@ -21,6 +21,7 @@ public sealed class StrictCrossPlatformUiTests
     // authenticated Store has a 15-second protocol deadline, so the rendered acceptance
     // window must also leave bounded room for cold route establishment and UIA sampling.
     private static readonly TimeSpan DirectMessageSentTimeout = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan GroupMessageSentTimeout = TimeSpan.FromSeconds(90);
 
     [StrictCrossPlatformUiFact]
     public void Physical_android_and_windows_exchange_persist_and_decrypt_an_attachment()
@@ -253,6 +254,9 @@ public sealed class StrictCrossPlatformUiTests
         var androidIdentity = ReadAndroidIdentity(android, options);
         var windowsToAndroid = StrictCrossPlatformContracts.NewMarker("windows-to-android");
         var androidToWindows = StrictCrossPlatformContracts.NewMarker("android-to-windows");
+        var groupName = StrictCrossPlatformContracts.NewMarker("android-windows-group");
+        var androidGroupMessage = StrictCrossPlatformContracts.NewMarker("android-group-to-windows");
+        var windowsGroupMessage = StrictCrossPlatformContracts.NewMarker("windows-group-to-android");
         var genericName = Path.GetFileName(options.GenericFixturePath);
         var documentName = Path.GetFileName(options.DocumentFixturePath);
         var androidGenericName = "android-to-windows-" + genericName;
@@ -266,13 +270,14 @@ public sealed class StrictCrossPlatformUiTests
         Exception? operationFailure = null;
         VoiceMatrixSnapshot? voiceSnapshot = null;
         PayloadPersistenceSnapshot? payloadSnapshot = null;
+        string? windowsIdentity = null;
 
         try
         {
             using (var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot))
             {
                 Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(45)), "Conversations.NewConversation");
-                var windowsIdentity = ReadWindowsIdentity(windows);
+                windowsIdentity = ReadWindowsIdentity(windows);
                 Assert.NotEqual(androidIdentity, windowsIdentity);
 
                 // Contacts are created from identities kept in this process only. They
@@ -333,26 +338,62 @@ public sealed class StrictCrossPlatformUiTests
             android.WaitForExactAccessibleTexts(options.App("Chat.ImageMetadata"),
                 persistedPayloads.AndroidImageMetadata, TimeSpan.FromSeconds(45));
 
-            using var restartedWindows = WindowsUiSmokeTests.WindowsUiTestSession
+            int groupWindowsPid;
+            using (var restartedWindows = WindowsUiSmokeTests.WindowsUiTestSession
+                .CreateStrictWithAppData(options.WindowsAppDataRoot))
+            {
+                restartedWindows.ActivateExact(Require(
+                    restartedWindows.WaitForAutomationId("DesktopWorkspace.ConversationRow", TimeSpan.FromSeconds(45)),
+                    "DesktopWorkspace.ConversationRow"));
+                restartedWindows.WaitForExactAutomationIdNameSet(
+                    "DesktopWorkspace.DirectVoicePlay",
+                    persistedVoice.WindowsExpectedAfterPhase,
+                    TimeSpan.FromSeconds(45));
+                restartedWindows.WaitForExactAutomationIdNameMultiset(
+                    "DesktopWorkspace.DirectMessageBody",
+                    persistedPayloads.WindowsMessageBodies,
+                    TimeSpan.FromSeconds(45));
+                restartedWindows.WaitForExactAutomationIdNameMultiset(
+                    "DesktopWorkspace.DirectAttachmentFilename",
+                    persistedPayloads.WindowsAttachmentNames,
+                    TimeSpan.FromSeconds(45));
+                restartedWindows.WaitForExactAutomationIdNameMultiset(
+                    "DesktopWorkspace.DirectImagePreview",
+                    persistedPayloads.WindowsImageMetadata,
+                    TimeSpan.FromSeconds(45));
+                ExerciseTwoMemberGroupRoundtrip(
+                    android,
+                    restartedWindows,
+                    options,
+                    windowsIdentity ?? throw new InvalidOperationException(
+                        "Windows identity was not loaded for the group roundtrip."),
+                    groupName,
+                    androidGroupMessage,
+                    windowsGroupMessage);
+                groupWindowsPid = restartedWindows.ProcessId;
+            }
+
+            android.ColdStart();
+            android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+            android.TapExactResourceIdWithExactAccessibleText(
+                options.App("Conversations.ConversationRow"), groupName);
+            android.WaitForExactResourceTextCount(
+                options.App("GroupChat.Title"), groupName, 1, TimeSpan.FromSeconds(45));
+
+            using var coldRestartedWindows = WindowsUiSmokeTests.WindowsUiTestSession
                 .CreateStrictWithAppData(options.WindowsAppDataRoot);
-            restartedWindows.ActivateExact(Require(
-                restartedWindows.WaitForAutomationId("DesktopWorkspace.ConversationRow", TimeSpan.FromSeconds(45)),
+            StrictCrossPlatformContracts.AssertDistinctProcessIds(
+                groupWindowsPid, coldRestartedWindows.ProcessId);
+            coldRestartedWindows.ActivateExact(Require(
+                coldRestartedWindows.WaitForAutomationIdWithName(
+                    "DesktopWorkspace.ConversationRow", groupName, TimeSpan.FromSeconds(45)),
                 "DesktopWorkspace.ConversationRow"));
-            restartedWindows.WaitForExactAutomationIdNameSet(
-                "DesktopWorkspace.DirectVoicePlay",
-                persistedVoice.WindowsExpectedAfterPhase,
-                TimeSpan.FromSeconds(45));
-            restartedWindows.WaitForExactAutomationIdNameMultiset(
-                "DesktopWorkspace.DirectMessageBody",
-                persistedPayloads.WindowsMessageBodies,
-                TimeSpan.FromSeconds(45));
-            restartedWindows.WaitForExactAutomationIdNameMultiset(
-                "DesktopWorkspace.DirectAttachmentFilename",
-                persistedPayloads.WindowsAttachmentNames,
-                TimeSpan.FromSeconds(45));
-            restartedWindows.WaitForExactAutomationIdNameMultiset(
-                "DesktopWorkspace.DirectImagePreview",
-                persistedPayloads.WindowsImageMetadata,
+            AssertGroupMessagesExactlyOnceOnBothClients(
+                android,
+                coldRestartedWindows,
+                options,
+                androidGroupMessage,
+                windowsGroupMessage,
                 TimeSpan.FromSeconds(45));
         }
         catch (Exception exception)
@@ -381,6 +422,9 @@ public sealed class StrictCrossPlatformUiTests
 
         evidence.AddHash("windowsToAndroidMarkerHash", windowsToAndroid);
         evidence.AddHash("androidToWindowsMarkerHash", androidToWindows);
+        evidence.AddHash("groupNameHash", groupName);
+        evidence.AddHash("androidGroupMessageHash", androidGroupMessage);
+        evidence.AddHash("windowsGroupMessageHash", windowsGroupMessage);
         evidence.AddBoolean("windowsToAndroidReceived", true);
         evidence.AddBoolean("androidToWindowsReceived", true);
         evidence.AddBoolean("windowsXpointRouteObserved", true);
@@ -398,6 +442,10 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddBoolean("voicePlaybackStartedAndCompletedBothDirections", true);
         evidence.AddBoolean("voiceMessagesPersistedAcrossRestart", true);
         evidence.AddBoolean("textDocumentGenericImageExactSetsPersistedAcrossRestart", true);
+        evidence.AddBoolean("groupStateReceivedByWindows", true);
+        evidence.AddBoolean("groupMessagesDeliveredExactlyOnceBothDirections", true);
+        evidence.AddBoolean("groupMessagesPersistedExactlyOnceAcrossColdRestart", true);
+        evidence.AddBoolean("groupSenderDeliveryStatusObservedBothDirections", true);
         // There is no self-copy AutomationId/action in the product contract. A test
         // must not synthesize one or make a false pass claim.
         evidence.AddBoolean("selfCopyUiSupported", false);
@@ -1126,6 +1174,116 @@ public sealed class StrictCrossPlatformUiTests
         android.WaitForResource(options.App("NewConversation.SessionId"), TimeSpan.FromSeconds(15));
     }
 
+    private static void ExerciseTwoMemberGroupRoundtrip(
+        AndroidUiautomatorClient android,
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        CrossPlatformOptions options,
+        string windowsIdentity,
+        string groupName,
+        string androidMessage,
+        string windowsMessage)
+    {
+        android.Tap(options.App("Chat.Back"));
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(20));
+        android.Tap(options.App("Conversations.NewConversationTop"));
+        android.Tap(options.App("StartConversation.CreateGroup"));
+        android.WaitForResource(options.App("Groups.GroupName"), TimeSpan.FromSeconds(20));
+        android.Type(options.App("Groups.GroupName"), groupName);
+        android.Type(options.App("Groups.MemberSessionId"), windowsIdentity);
+        android.Tap(options.App("Groups.AddMember"));
+        android.DismissKeyboard();
+        android.WaitForResource(options.App("Groups.DraftMembers"), TimeSpan.FromSeconds(30));
+        android.Tap(options.App("Groups.Create"));
+        android.WaitForExactResourceTextCount(
+            options.App("GroupChat.Title"), groupName, 1, TimeSpan.FromSeconds(45));
+        android.WaitForResource(options.App("GroupChat.Draft"), TimeSpan.FromSeconds(30));
+
+        var windowsGroupRow = Require(
+            windows.WaitForAutomationIdWithName(
+                "DesktopWorkspace.ConversationRow", groupName, TimeSpan.FromSeconds(90)),
+            "DesktopWorkspace.ConversationRow");
+        windows.ActivateExact(windowsGroupRow);
+        Require(
+            windows.WaitForAutomationId("DesktopWorkspace.GroupDraft", TimeSpan.FromSeconds(45)),
+            "DesktopWorkspace.GroupDraft");
+
+        SendAndroidGroupMessageAndAssertSent(android, options, androidMessage);
+        WaitForExactWindowsAutomationNameCount(
+            windows,
+            "DesktopWorkspace.GroupMessageBody",
+            androidMessage,
+            1,
+            TimeSpan.FromSeconds(60));
+
+        SendWindowsGroupMessageAndAssertSent(windows, windowsMessage);
+        AssertGroupMessagesExactlyOnceOnBothClients(
+            android,
+            windows,
+            options,
+            androidMessage,
+            windowsMessage,
+            TimeSpan.FromSeconds(60));
+    }
+
+    private static void AssertGroupMessagesExactlyOnceOnBothClients(
+        AndroidUiautomatorClient android,
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        CrossPlatformOptions options,
+        string androidMessage,
+        string windowsMessage,
+        TimeSpan timeout)
+    {
+        for (var sample = 0; sample < 2; sample++)
+        {
+            android.WaitForExactResourceTextCount(
+                options.App("GroupChat.MessageBody"), androidMessage, 1, timeout);
+            android.WaitForExactResourceTextCount(
+                options.App("GroupChat.MessageBody"), windowsMessage, 1, timeout);
+            WaitForExactWindowsAutomationNameCount(
+                windows,
+                "DesktopWorkspace.GroupMessageBody",
+                androidMessage,
+                1,
+                timeout);
+            WaitForExactWindowsAutomationNameCount(
+                windows,
+                "DesktopWorkspace.GroupMessageBody",
+                windowsMessage,
+                1,
+                timeout);
+            if (sample == 0)
+            {
+                // A second sample after a bounded quiet interval rejects delayed
+                // duplicate delivery instead of claiming exactly-once on first sight.
+                Thread.Sleep(TimeSpan.FromSeconds(3));
+            }
+        }
+    }
+
+    private static void WaitForExactWindowsAutomationNameCount(
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        string automationId,
+        string exactName,
+        int expected,
+        TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var count = windows.SnapshotAutomationIdNameMultiset(automationId)
+                .Count(name => string.Equals(name, exactName, StringComparison.Ordinal));
+            if (count == expected) return;
+            if (count > expected)
+            {
+                throw new InvalidOperationException(
+                    "Windows rendered a duplicate exact-name group message.");
+            }
+            Thread.Sleep(200);
+        }
+        throw new InvalidOperationException(
+            "Windows did not render the exact expected group-message count.");
+    }
+
     private static void AddWindowsContact(
         WindowsUiSmokeTests.WindowsUiTestSession windows,
         string androidIdentity,
@@ -1243,6 +1401,47 @@ public sealed class StrictCrossPlatformUiTests
             options.App("Chat.DeliveryStatus"), DirectMessageSentTimeout,
             targetText: "✓", targetContentDescription: "Отправлено");
         Assert.True(status.HasExactPresentation("✓", "Отправлено"));
+    }
+
+    private static void SendAndroidGroupMessageAndAssertSent(
+        AndroidUiautomatorClient android,
+        CrossPlatformOptions options,
+        string message)
+    {
+        android.Type(options.App("GroupChat.Draft"), message);
+        android.Tap(options.App("GroupChat.Send"));
+        var status = android.WaitForCorrelatedDescendant(
+            options.App("GroupChat.MessageBubble"),
+            options.App("GroupChat.MessageBody"),
+            message,
+            options.App("GroupChat.DeliveryStatus"),
+            GroupMessageSentTimeout,
+            targetText: "✓",
+            targetContentDescription: "Отправлено");
+        Assert.True(status.HasExactPresentation("✓", "Отправлено"));
+    }
+
+    private static void SendWindowsGroupMessageAndAssertSent(
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        string message)
+    {
+        Require(
+            windows.WaitForAutomationId("DesktopWorkspace.GroupDraft", TimeSpan.FromSeconds(15)),
+            "DesktopWorkspace.GroupDraft").AsTextBox().Text = message;
+        windows.ActivateExact(Require(
+            windows.WaitForAutomationId("DesktopWorkspace.GroupSend", TimeSpan.FromSeconds(10)),
+            "DesktopWorkspace.GroupSend"));
+        var status = Require(
+            windows.WaitForCorrelatedDescendantWithAnyName(
+                "DesktopWorkspace.GroupMessageBubble",
+                "DesktopWorkspace.GroupMessageBody",
+                message,
+                "DesktopWorkspace.GroupDeliveryStatus",
+                GroupMessageSentTimeout,
+                "Отправлено", "Доставлено", "Прочитано"),
+            "DesktopWorkspace.GroupDeliveryStatus");
+        Assert.True(status.Properties.Name.ValueOrDefault is
+            "Отправлено" or "Доставлено" or "Прочитано");
     }
 
     private static void ExchangeAndroidDocument(
@@ -1642,7 +1841,7 @@ internal sealed class CrossPlatformOptions
         "Startup.Status", "Startup.RuntimeFailureCode", "StartupResetLocalStateButton",
         "Welcome.DisplayName", "Welcome.Create", "Conversations.Root", "PhysicalE2E.RuntimeReadyMarker", "Conversations.ProfileSettings",
         "Conversations.NewConversationTop", "Conversations.ConversationRow", "Settings.SessionId", "Settings.Back",
-        "StartConversation.NewMessage", "NewConversation.SessionId", "NewConversation.DisplayName", "NewConversation.Start",
+        "StartConversation.NewMessage", "StartConversation.CreateGroup", "NewConversation.SessionId", "NewConversation.DisplayName", "NewConversation.Start",
         "NewConversation.Error", "NewConversation.Back", "Chat.Back", "Chat.Draft", "Chat.Send", "Chat.MessageBody", "Chat.MessageBubble",
         "Chat.Attach", "Chat.PickFile", "Chat.PickPhoto", "Chat.StagedAttachmentFilename",
         "Chat.StagedAttachmentMetadata",
@@ -1650,6 +1849,8 @@ internal sealed class CrossPlatformOptions
         "Chat.AttachmentSave", "Chat.MessageAttachmentOpen", "Chat.MessageAttachmentSave",
         "Chat.ImagePreview", "Chat.ImageMetadata",
         "Chat.DeliveryStatus", "Chat.Retry", "Chat.Voice", "Chat.VoicePlayButton",
+        "Groups.GroupName", "Groups.MemberSessionId", "Groups.AddMember", "Groups.DraftMembers", "Groups.Create",
+        "GroupChat.Title", "GroupChat.Draft", "GroupChat.Send", "GroupChat.MessageBubble", "GroupChat.MessageBody", "GroupChat.DeliveryStatus", "GroupChat.Error",
         "PhysicalE2E.VoicePlaybackState", "PhysicalE2E.AckCorrelation", "Call.Root", "Call.Status",
         "Call.MediaState", "Call.Microphone", "Call.MicrophoneState", "Call.Hangup"
     ];
@@ -2506,6 +2707,42 @@ internal sealed class AndroidUiautomatorClient
     }
     internal void Tap(string resourceId) { var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void Tap(StrictCrossPlatformContracts.AndroidNode node) { var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }
+    internal void TapExactResourceIdWithExactAccessibleText(string resourceId, string text)
+    {
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(45);
+        Exception? last = null;
+        while (DateTime.UtcNow < until)
+        {
+            StrictCrossPlatformContracts.AndroidNode[] matches;
+            try
+            {
+                matches = StrictCrossPlatformContracts.FindAllResourceIds(Dump(), resourceId)
+                    .Where(node => string.Equals(
+                        node.AccessibleText, text, StringComparison.Ordinal))
+                    .ToArray();
+            }
+            catch (Exception exception)
+            {
+                last = exception;
+                Thread.Sleep(250);
+                continue;
+            }
+            if (matches.Length > 1)
+            {
+                throw new InvalidOperationException(
+                    "Android exact accessible text matched duplicate resources.");
+            }
+            if (matches.Length == 1)
+            {
+                Tap(matches[0]);
+                return;
+            }
+            Thread.Sleep(250);
+        }
+        throw new InvalidOperationException(
+            $"Required Android resource-id/accessible-text pair did not reach its expected state: {resourceId}.",
+            last);
+    }
     internal void Hold(string resourceId, TimeSpan duration) { if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10)) throw new ArgumentOutOfRangeException(nameof(duration)); var node = WaitForResource(resourceId, TimeSpan.FromSeconds(15)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "swipe", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), ((int)duration.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void Hold(StrictCrossPlatformContracts.AndroidNode node, TimeSpan duration) { if (duration < TimeSpan.FromMilliseconds(700) || duration > TimeSpan.FromSeconds(10)) throw new ArgumentOutOfRangeException(nameof(duration)); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "swipe", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture), ((int)duration.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
     internal void TapExactResourceIdWithExactText(string resourceId, string text) { var node = WaitByText(resourceId, text, TimeSpan.FromSeconds(15)); Assert.Equal(text, node.Text); var point = node.Bounds.Center; RequireSuccess(Adb("shell", "input", "tap", point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture))); }

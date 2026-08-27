@@ -223,7 +223,7 @@
                     <Label Text="G" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="16" />
                 </Border>
                 <VerticalStackLayout Grid.Column="2" Spacing="0" VerticalOptions="Center" Margin="5,0,0,0">
-                    <Label Text="{Binding GroupTitle}" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                    <Label AutomationId="GroupChat.Title" Text="{Binding GroupTitle}" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" />
                     <Label Text="{Binding GroupSubtitle}" FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
                 </VerticalStackLayout>
                 <Button Grid.Column="3" AutomationId="GroupChat.Menu" Text="⋮" SemanticProperties.Description="Меню группы" Style="{StaticResource CircularIconButton}" Clicked="OnGroupMenuClicked" />
@@ -261,7 +261,7 @@
                     </Label>
                     <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                         <Border Background="{StaticResource SearchBackground}" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,0">
-                            <Entry AutomationId="GroupChat.MemberSessionId" Placeholder="ID участника" Text="{Binding MemberSessionId}" HeightRequest="42" BackgroundColor="Transparent" />
+                            <Entry AutomationId="GroupChat.MemberSessionId" Placeholder="ID участника или защищённое приглашение" Text="{Binding MemberSessionId}" HeightRequest="42" BackgroundColor="Transparent" />
                         </Border>
                         <Button Grid.Column="1" Text="Добавить" Command="{Binding AddMemberCommand}" WidthRequest="108" />
                     </Grid>

@@ -3,6 +3,7 @@ using System.Text;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
 using Deep.Protocol.DeepExtension.MailboxAuthority;
+using Deep.Protocol.DeepExtension.MailboxTopology;
 using Microsoft.Maui.Storage;
 using Sodium;
 
@@ -11,7 +12,7 @@ namespace Deep.Client.Maui.Services;
 /// <summary>
 /// Durable active-account-generation mailbox owner identity. Its key is distinct from the
 /// Session holder signing key, but it follows the same account replacement/purge lifecycle and
-/// exposes only the exact LocalOwner PHP1 signature.
+/// exposes only the exact LocalOwner PHP1 and PRA1 owner signatures.
 /// </summary>
 internal sealed class ProductionMailboxOwnerIdentity : IDisposable
 {
@@ -57,6 +58,30 @@ internal sealed class ProductionMailboxOwnerIdentity : IDisposable
         }
         return PublicKeyAuth.SignDetached(
             ProductionMailboxHolderProof.GetSigningBytes(input), privateKey);
+    }
+
+    public byte[] SignRouteAdvertisement(
+        ProductionMailboxRouteAdvertisement advertisement)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        ArgumentNullException.ThrowIfNull(advertisement);
+        if (advertisement.Certificate.MailboxOwnerEd25519PublicKey.Length !=
+                publicKey.Length ||
+            !CryptographicOperations.FixedTimeEquals(
+                advertisement.Certificate.MailboxOwnerEd25519PublicKey.Span,
+                publicKey) ||
+            advertisement.OwnerSignature.Length !=
+                ProductionMailboxRouteAdvertisementConstants.Ed25519SignatureLength ||
+            advertisement.OwnerSignature.Span.IndexOfAnyExcept((byte)0) >= 0)
+        {
+            throw new InvalidOperationException(
+                "Production mailbox owner identity signs only an unsigned PRA1 for its exact owner key.");
+        }
+
+        return PublicKeyAuth.SignDetached(
+            ProductionMailboxRouteAdvertisementCodec.GetAdvertisementSigningBytes(
+                advertisement),
+            privateKey);
     }
 
     public void Dispose()

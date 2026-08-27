@@ -28,6 +28,7 @@ public sealed record ConversationListItem(
 public sealed class ConversationsViewModel : ViewModelBase
 {
     private readonly ClientRuntime runtime;
+    private readonly IContactMailboxOnboarding contactOnboarding;
     private readonly SemaphoreSlim loadGate = new(1, 1);
     private readonly List<ConversationListItem> allConversations = [];
     private readonly Dictionary<ConversationId, DateTimeOffset?> readCursors = [];
@@ -41,8 +42,17 @@ public sealed class ConversationsViewModel : ViewModelBase
     internal string SyncFailureCode { get; private set; } = "none";
 
     public ConversationsViewModel(ClientRuntime runtime)
+        : this(runtime, new SessionIdContactMailboxOnboarding())
     {
-        this.runtime = runtime;
+    }
+
+    public ConversationsViewModel(
+        ClientRuntime runtime,
+        IContactMailboxOnboarding contactOnboarding)
+    {
+        this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        this.contactOnboarding = contactOnboarding ??
+            throw new ArgumentNullException(nameof(contactOnboarding));
         Conversations = new ObservableRangeCollection<ConversationListItem>();
         LoadCommand = new AsyncCommand(LoadAsync);
         ManualRefreshCommand = new AsyncCommand(ManualRefreshAsync);
@@ -116,9 +126,12 @@ public sealed class ConversationsViewModel : ViewModelBase
 
     public async Task<Conversation> StartOneToOneAsync(string sessionId, string? displayName = null, CancellationToken cancellationToken = default)
     {
+        var recipient = await contactOnboarding.PrepareAsync(
+            sessionId,
+            cancellationToken);
         var conversation = await runtime.Conversations
             .GetOrCreateOneToOneAsync(
-                SessionId.Parse(sessionId),
+                recipient,
                 displayName,
                 approve: true,
                 cancellationToken: cancellationToken);
@@ -134,15 +147,7 @@ public sealed class ConversationsViewModel : ViewModelBase
             return false;
         }
 
-        try
-        {
-            SessionId.Parse(NewSessionId);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        return contactOnboarding.CanAccept(NewSessionId);
     }
 
     public async Task<Conversation?> StartConversationFromComposerAsync(CancellationToken cancellationToken = default)
@@ -152,7 +157,20 @@ public sealed class ConversationsViewModel : ViewModelBase
             return null;
         }
 
-        var conversation = await StartOneToOneAsync(NewSessionId.Trim(), NewDisplayName.Trim(), cancellationToken);
+        ErrorMessage = null;
+        Conversation conversation;
+        try
+        {
+            conversation = await StartOneToOneAsync(
+                NewSessionId.Trim(),
+                NewDisplayName.Trim(),
+                cancellationToken);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            ErrorMessage = "Контакт не подтверждён. Используйте действующее защищённое приглашение.";
+            return null;
+        }
         var selected = Conversations.FirstOrDefault(item => item.Id == conversation.Id);
         if (selected is not null)
         {

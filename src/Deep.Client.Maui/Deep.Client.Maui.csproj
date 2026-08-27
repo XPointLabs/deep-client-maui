@@ -91,6 +91,28 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <ItemGroup Condition="'$(Configuration)' == 'Release' And '$(DeepProductionPrivacyRoutesJson)' != '' And '$(DeepProductionPrivacyRoutesSignature)' != '' And '$(DeepProductionPrivacyRoutesPublicKey)' != ''">
+    <EmbeddedResource Include="$(DeepProductionPrivacyRoutesJson)">
+      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(DeepProductionPrivacyRoutesSignature)">
+      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.sig</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(DeepProductionPrivacyRoutesPublicKey)">
+      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.pub</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <Target Name="ValidateProductionPrivacyRouteInputs" BeforeTargets="BeforeBuild"
+          Condition="'$(Configuration)' == 'Release'">
+    <Error Condition="'$(DeepProductionPrivacyRoutesJson)' == '' Or !Exists('$(DeepProductionPrivacyRoutesJson)')"
+           Text="Release requires a signed production privacy-route JSON artifact." />
+    <Error Condition="'$(DeepProductionPrivacyRoutesSignature)' == '' Or !Exists('$(DeepProductionPrivacyRoutesSignature)')"
+           Text="Release requires the detached production privacy-route signature." />
+    <Error Condition="'$(DeepProductionPrivacyRoutesPublicKey)' == '' Or !Exists('$(DeepProductionPrivacyRoutesPublicKey)')"
+           Text="Release requires the production privacy-route signer public key." />
+  </Target>
+
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.0" />
   </ItemGroup>
