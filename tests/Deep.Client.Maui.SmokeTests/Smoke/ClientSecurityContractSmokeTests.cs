@@ -381,9 +381,10 @@ public sealed class ClientSecurityContractSmokeTests
         var program = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
 
         Assert.Contains(
-            "return PersistentClientRuntimeComposer.Create(",
+            "var runtime = PersistentClientRuntimeComposer.Create(",
             program,
             StringComparison.Ordinal);
+        Assert.Contains("return runtime;", program, StringComparison.Ordinal);
         var composer = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "Services",
             "PersistentClientRuntimeComposer.cs");
