@@ -35,6 +35,7 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxRegistryJsonCodec.cs" Link="Services\ProductionMailboxRegistryJsonCodec.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxRegistryClient.cs" Link="Services\ProductionMailboxRegistryClient.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxCredentialAcquirer.cs" Link="Services\ProductionMailboxCredentialAcquirer.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxLocalOwnerLifecycle.cs" Link="Services\ProductionMailboxLocalOwnerLifecycle.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxPrivacyRouteBootstrap.cs" Link="Services\ProductionMailboxPrivacyRouteBootstrap.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxContactStateStore.cs" Link="Services\ProductionMailboxContactStateStore.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxArtifactSetDigest.cs" Link="Services\ProductionMailboxArtifactSetDigest.cs" />

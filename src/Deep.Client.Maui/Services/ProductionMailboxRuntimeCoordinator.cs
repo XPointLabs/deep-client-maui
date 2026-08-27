@@ -31,6 +31,7 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
     private readonly HttpServiceTransportFactory transportFactory;
     private readonly HttpServiceClientOptions clientOptions;
     private readonly TimeProvider timeProvider;
+    private readonly SemaphoreSlim provisionGate = new(1, 1);
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly object attachmentGate = new();
     private RuntimeAttachment? attachment;
@@ -313,17 +314,26 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
             throw new InvalidOperationException(
                 "Production mailbox acquisition requires official-managed ownership.");
 
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await provisionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (bound is not null)
+            ThrowIfDisposed();
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                if (bound.Material.LocalSessionId != holder.SessionId ||
-                    !string.Equals(bound.StoreIdentity, store.CanonicalStateIdentity,
-                        StringComparison.Ordinal))
-                    throw new InvalidOperationException(
-                        "Production mailbox coordinator is already bound to another account generation.");
-                return CreateProvisioned(bound);
+                if (bound is not null)
+                {
+                    if (bound.Material.LocalSessionId != holder.SessionId ||
+                        !string.Equals(bound.StoreIdentity, store.CanonicalStateIdentity,
+                            StringComparison.Ordinal))
+                        throw new InvalidOperationException(
+                            "Production mailbox coordinator is already bound to another account generation.");
+                    return CreateProvisioned(bound);
+                }
+            }
+            finally
+            {
+                gate.Release();
             }
 
             if (!ProductionMailboxBuildTrustFloor.TryLoad(out var anchor) || anchor is null)
@@ -394,47 +404,60 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
                         trust,
                         clientIdentity,
                         timeProvider);
-                    ImportedProductionMailboxRuntimeMaterial material;
-                    ProductionMailboxLocalOwnerPublicRoute publicRoute;
-                    if (active.Status is ProductionMailboxActiveBundleStatus.Valid or
-                        ProductionMailboxActiveBundleStatus.RefreshRecommended &&
-                        active.Material is not null && active.PublicRoute is not null)
-                    {
-                        material = active.Material;
-                        publicRoute = active.PublicRoute;
-                    }
-                    else if (active.Status == ProductionMailboxActiveBundleStatus.Absent)
-                    {
-                        var acquired = await acquirer.AcquireLocalOwnerAsync(cancellationToken)
-                            .ConfigureAwait(false);
-                        material = acquired.Material;
-                        var advertisement = ProductionMailboxRouteAdvertisementCodec
-                            .DecodeAdvertisement(acquired.CanonicalRouteAdvertisement.Span);
-                        publicRoute = new ProductionMailboxLocalOwnerPublicRoute(
-                            ownerKey.ToArray(),
-                            acquired.CanonicalRouteAdvertisement.ToArray(),
-                            advertisement.ExpiresAtUnixSeconds);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException(
-                            "Production mailbox credentials require an authenticated refresh.");
-                    }
+                    var routeState = new ProductionMailboxLocalOwnerRouteStateStore(store);
+                    ProductionMailboxLocalOwnerPublicRoute? predecessorRoute =
+                        active.Status switch
+                        {
+                            ProductionMailboxActiveBundleStatus.RefreshRecommended =>
+                                active.PublicRoute,
+                            ProductionMailboxActiveBundleStatus.Expired =>
+                                await routeState.LoadAsync(
+                                        holder.SessionId, cancellationToken)
+                                    .ConfigureAwait(false),
+                            _ => null
+                        };
+                    if (active.Status is
+                            ProductionMailboxActiveBundleStatus.RefreshRecommended or
+                            ProductionMailboxActiveBundleStatus.Expired &&
+                        predecessorRoute is null)
+                        throw new InvalidDataException(
+                            "Production mailbox route continuity is unavailable for authenticated refresh.");
+                    var activation = await ProductionMailboxLocalOwnerLifecycle.ResolveAsync(
+                            active,
+                            ownerKey,
+                            token => acquirer.AcquireLocalOwnerAsync(
+                                predecessorRoute, token),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    await routeState.SaveAsync(
+                            holder.SessionId,
+                            activation.PublicRoute,
+                            cancellationToken)
+                        .ConfigureAwait(false);
 
                     var state = new BoundState(
                         store.CanonicalStateIdentity,
-                        material,
-                        publicRoute,
+                        activation.Material,
+                        activation.PublicRoute,
                         sessionIdentity,
                         ownerIdentity,
                         acquirer,
                         new ProductionMailboxContactStateStore(store),
                         new PersistedMailboxPeerSelectorStore(store),
                         routes);
-                    bound = state;
-                    sessionIdentity = null!;
-                    ownerIdentity = null;
-                    return CreateProvisioned(state);
+                    await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        ThrowIfDisposed();
+                        bound = state;
+                        sessionIdentity = null!;
+                        ownerIdentity = null;
+                        return CreateProvisioned(state);
+                    }
+                    finally
+                    {
+                        gate.Release();
+                    }
                 }
                 finally
                 {
@@ -449,7 +472,7 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
         }
         finally
         {
-            gate.Release();
+            provisionGate.Release();
         }
     }
 
@@ -540,19 +563,28 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await provisionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (bound is null) return;
-            if (bound.Material.LocalSessionId != account)
-                throw new InvalidOperationException(
-                    "The released account differs from the bound production mailbox account.");
-            DisposeBoundState(bound);
-            bound = null;
+            ThrowIfDisposed();
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (bound is null) return;
+                if (bound.Material.LocalSessionId != account)
+                    throw new InvalidOperationException(
+                        "The released account differs from the bound production mailbox account.");
+                DisposeBoundState(bound);
+                bound = null;
+            }
+            finally
+            {
+                gate.Release();
+            }
         }
         finally
         {
-            gate.Release();
+            provisionGate.Release();
         }
     }
 
@@ -603,17 +635,26 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
-        gate.Wait();
+        provisionGate.Wait();
         try
         {
-            if (bound is not null) DisposeBoundState(bound);
-            bound = null;
-            registryHttpClient.Dispose();
+            gate.Wait();
+            try
+            {
+                if (bound is not null) DisposeBoundState(bound);
+                bound = null;
+                registryHttpClient.Dispose();
+            }
+            finally
+            {
+                gate.Release();
+                gate.Dispose();
+            }
         }
         finally
         {
-            gate.Release();
-            gate.Dispose();
+            provisionGate.Release();
+            provisionGate.Dispose();
         }
     }
 

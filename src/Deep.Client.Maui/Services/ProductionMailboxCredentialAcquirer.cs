@@ -59,6 +59,11 @@ internal sealed class ProductionMailboxCredentialAcquirer
 
     public async Task<AcquiredProductionMailboxLocalOwner> AcquireLocalOwnerAsync(
         CancellationToken cancellationToken = default)
+        => await AcquireLocalOwnerAsync(null, cancellationToken).ConfigureAwait(false);
+
+    public async Task<AcquiredProductionMailboxLocalOwner> AcquireLocalOwnerAsync(
+        ProductionMailboxLocalOwnerPublicRoute? predecessorRoute,
+        CancellationToken cancellationToken = default)
     {
         var holderKey = sessionIdentity.GetEd25519PublicKey();
         var ownerKey = ownerIdentity.GetPublicKey();
@@ -94,7 +99,8 @@ internal sealed class ProductionMailboxCredentialAcquirer
             var certificate = ValidateEnrollment(
                 enrollment, enrollmentChallenge, enrollmentAuthority,
                 holderKey, ownerKey, idempotency);
-            canonicalAdvertisement = CreateInitialAdvertisement(certificate, ownerKey);
+            canonicalAdvertisement = CreateAdvertisement(
+                certificate, ownerKey, predecessorRoute);
 
             var issuanceChallenge = await registry.CreateChallengeAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -432,12 +438,29 @@ internal sealed class ProductionMailboxCredentialAcquirer
         }
     }
 
-    private byte[] CreateInitialAdvertisement(
+    private byte[] CreateAdvertisement(
         ProductionMailboxRouteCertificate certificate,
-        ReadOnlySpan<byte> ownerKey)
+        ReadOnlySpan<byte> ownerKey,
+        ProductionMailboxLocalOwnerPublicRoute? predecessorRoute)
     {
         Equal(certificate.MailboxOwnerEd25519PublicKey.Span, ownerKey,
             "Registry route certificate owner changed before PRA1 authoring.");
+        var sequence = 1UL;
+        if (predecessorRoute is not null)
+        {
+            Equal(predecessorRoute.MailboxOwnerEd25519PublicKey.Span, ownerKey,
+                "Persisted predecessor route belongs to another mailbox owner.");
+            var predecessor = ProductionMailboxRouteAdvertisementCodec.DecodeAdvertisement(
+                predecessorRoute.CanonicalRouteAdvertisement.Span);
+            Equal(predecessor.Certificate.MailboxOwnerEd25519PublicKey.Span, ownerKey,
+                "Persisted predecessor PRA1 belongs to another mailbox owner.");
+            Equal(
+                ProductionMailboxRouteAdvertisementCodec.ComputeRouteDomainHash(
+                    predecessor.Certificate),
+                ProductionMailboxRouteAdvertisementCodec.ComputeRouteDomainHash(certificate),
+                "Registry route enrollment changed the durable mailbox route domain.");
+            sequence = checked(predecessor.Sequence + 1);
+        }
         var now = Now();
         var publishedAt = Math.Max(now, certificate.IssuedAtUnixSeconds);
         var expiresAt = Math.Min(
@@ -450,7 +473,7 @@ internal sealed class ProductionMailboxCredentialAcquirer
         var draft = new ProductionMailboxRouteAdvertisement
         {
             Certificate = certificate,
-            Sequence = 1,
+            Sequence = sequence,
             PublishedAtUnixSeconds = publishedAt,
             ExpiresAtUnixSeconds = expiresAt,
             OwnerSignature = new byte[

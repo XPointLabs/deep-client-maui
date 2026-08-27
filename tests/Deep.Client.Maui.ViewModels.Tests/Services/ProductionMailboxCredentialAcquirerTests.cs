@@ -60,6 +60,37 @@ public sealed class ProductionMailboxCredentialAcquirerTests
     }
 
     [Fact]
+    public async Task LocalOwnerRefresh_AuthorsNextMonotonicPra1Sequence()
+    {
+        using var fixture = new Fixture();
+        var requests = new List<byte[]>();
+        var calls = 0;
+        using var http = new HttpClient(new CallbackHandler(async (request, _) =>
+        {
+            calls++;
+            var body = await request.Content!.ReadAsByteArrayAsync();
+            requests.Add(body);
+            return calls switch
+            {
+                1 => fixture.ChallengeResponse(0x12),
+                2 => fixture.EnrollmentResponse(body),
+                3 => fixture.ChallengeResponse(0x32),
+                4 => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+                _ => throw new InvalidOperationException("Acquirer retried unexpectedly.")
+            };
+        }));
+
+        await Assert.ThrowsAsync<ProductionMailboxRegistryRequestException>(() =>
+            fixture.CreateAcquirer(http).AcquireLocalOwnerAsync(
+                fixture.PredecessorRoute(sequence: 7)));
+
+        using var issuance = JsonDocument.Parse(requests[3]);
+        var advertisement = ProductionMailboxRouteAdvertisementCodec.DecodeAdvertisement(
+            B64(issuance.RootElement, "routeAdvertisement"));
+        Assert.Equal(8UL, advertisement.Sequence);
+    }
+
+    [Fact]
     public async Task PeerDeposit_BindsVerifiedRoute_AndNeverAddsOwnerProofOrRetry()
     {
         using var fixture = new Fixture();
@@ -412,6 +443,39 @@ public sealed class ProductionMailboxCredentialAcquirerTests
                 1,
                 ProductionMailboxRouteAdvertisementCodec.ComputeRouteDomainHash(certificate),
                 SHA256.HashData(canonical));
+        }
+
+        public ProductionMailboxLocalOwnerPublicRoute PredecessorRoute(ulong sequence)
+        {
+            var ownerKey = ownerIdentity.GetPublicKey();
+            var placement = Bytes(0xb1, 32);
+            var certificate = new ProductionMailboxRouteCertificate
+            {
+                NetworkId = NetworkId,
+                AuthorityGeneration = authority.AuthorityGeneration,
+                CanonicalAuthorityHash = AuthorityHash,
+                IssuerEd25519PublicKey = authority.MailboxIssuerEd25519PublicKey,
+                MailboxOwnerEd25519PublicKey = ownerKey,
+                BlindedMailboxId = Bytes(0xa1, 32),
+                BlindedPlacementId = placement,
+                SelectionInputCommitment = ProductionMailboxReplicaSelection
+                    .ComputeSelectionInputCommitment(new BlindedPlacementId(placement)),
+                IssuedAtUnixSeconds = Now - 600,
+                ExpiresAtUnixSeconds = Now,
+                IssuerSignature = Bytes(0x91, 64)
+            };
+            var advertisement = new ProductionMailboxRouteAdvertisement
+            {
+                Certificate = certificate,
+                Sequence = sequence,
+                PublishedAtUnixSeconds = Now - 600,
+                ExpiresAtUnixSeconds = Now,
+                OwnerSignature = Bytes(0x92, 64)
+            };
+            return new ProductionMailboxLocalOwnerPublicRoute(
+                ownerKey,
+                ProductionMailboxRouteAdvertisementCodec.EncodeAdvertisement(advertisement),
+                advertisement.ExpiresAtUnixSeconds);
         }
 
         private ProductionMailboxRouteCertificate SignCertificate(
