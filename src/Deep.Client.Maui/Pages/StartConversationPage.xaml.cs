@@ -26,6 +26,16 @@ public partial class StartConversationPage : ContentPage
         {
             invitation = await invitationProvider.GetInvitationAsync() ?? string.Empty;
             AccountIdLabel.Text = string.IsNullOrWhiteSpace(invitation) ? "-" : invitation;
+#if DEEP_PHYSICAL_E2E
+            // Physical UAT exchanges the rendered CMI1 instead of reading app storage or
+            // reusing a pre-provisioned Session ID. The runner hashes this value before it
+            // writes sanitized evidence; no invitation is logged or persisted by automation.
+            AccountIdLabel.IsVisible = !string.IsNullOrWhiteSpace(invitation);
+            AccountIdLabel.Opacity = 0.01;
+            AccountIdLabel.HeightRequest = 1;
+#else
+            AccountIdLabel.IsVisible = false;
+#endif
             invitationQrBytes = string.IsNullOrWhiteSpace(invitation)
                 ? null
                 : PngByteQRCodeHelper.GetQRCode(
@@ -43,6 +53,7 @@ public partial class StartConversationPage : ContentPage
             invitation = string.Empty;
             invitationQrBytes = null;
             AccountIdLabel.Text = "-";
+            AccountIdLabel.IsVisible = false;
             AccountQrImage.IsVisible = false;
             AccountQrImage.Source = null;
             await DisplayAlertAsync(

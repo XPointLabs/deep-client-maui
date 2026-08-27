@@ -296,13 +296,19 @@ public sealed class E2eAutomationSelectorContractSmokeTests
             "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
         const string openConversation =
             "android.Tap(options.App(\"Conversations.ConversationRow\"));";
+        var restart = physical.IndexOf(
+            "private static void RestartAndAssertDeduplicatedReceive(",
+            StringComparison.Ordinal);
+        var restartOpen = physical.IndexOf(openConversation, restart,
+            StringComparison.Ordinal);
+        var exactCount = physical.IndexOf(
+            "android.WaitForExactResourceTextCount(", restartOpen,
+            StringComparison.Ordinal);
 
         Assert.Equal(3, physical.Split(openConversation, StringSplitOptions.None).Length - 1);
-        Assert.True(
-            physical.IndexOf(openConversation, StringComparison.Ordinal) <
-            physical.IndexOf(
-                "android.WaitForText(options.App(\"Chat.MessageBody\"), marker, TimeSpan.FromSeconds(60));",
-                StringComparison.Ordinal));
+        Assert.True(restart >= 0);
+        Assert.True(restartOpen > restart);
+        Assert.True(exactCount > restartOpen);
         Assert.Contains(
             "restartedWindows.WaitForAutomationIdWithDescendantNameContaining(",
             physical,

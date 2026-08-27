@@ -8,6 +8,7 @@ param(
     [string]$MrXPublicKeySha256 = $env:DEEP_MR_X_PUBLIC_KEY_SHA256,
     [string]$AndroidPickerFileId = 'android:id/title',
     [string]$AndroidPickerConfirmId,
+    [string]$WindowsUatApprovalTuplePath,
     [switch]$ResetAndroidE2eLocalState,
     [switch]$ResetWindowsUatLocalState,
     [switch]$Execute
@@ -756,6 +757,7 @@ function New-CanonicalAndroidSelectorsJson {
         'Conversations.ProfileSettings', 'Conversations.NewConversationTop',
         'Conversations.ConversationRow', 'Settings.SessionId', 'Settings.Back',
         'StartConversation.NewMessage', 'StartConversation.CreateGroup',
+        'StartConversation.AccountId', 'StartConversation.Close',
         'NewConversation.SessionId',
         'NewConversation.DisplayName', 'NewConversation.Start',
         'NewConversation.Error', 'NewConversation.Back', 'Chat.Back', 'Chat.Draft',
@@ -849,6 +851,52 @@ function Resolve-PolicyPinnedDirectory(
         throw "$Label does not resolve to the exact signed regular directory tree."
     }
     return $path
+}
+
+function Resolve-InstalledWindowsUatPackage([string]$ApprovalPath) {
+    $tuple = Get-Content -Raw -LiteralPath $ApprovalPath | ConvertFrom-Json
+    Assert-ExactJsonProperties $tuple @(
+        'schemaVersion', 'platform', 'applicationIdentity',
+        'installedPackageName', 'installedPackageFullName',
+        'installedPackageFamilyName', 'publisher',
+        'signingCertificateSha256', 'buildArtifactSha256') `
+        'Windows UAT approval tuple'
+    if ($tuple.schemaVersion -ne 1 -or $tuple.platform -cne 'windows' -or
+        $tuple.applicationIdentity -cne 'Deep.Client.Maui.exe' -or
+        $tuple.installedPackageName -cne $androidPackage -or
+        $tuple.installedPackageFullName -cnotmatch '^[A-Za-z0-9._-]{1,256}$' -or
+        $tuple.installedPackageFamilyName -cnotmatch '^[A-Za-z0-9._-]{1,256}$' -or
+        [string]::IsNullOrWhiteSpace([string]$tuple.publisher) -or
+        ([string]$tuple.publisher).Length -gt 512 -or
+        $tuple.signingCertificateSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $tuple.buildArtifactSha256 -cnotmatch '^[a-f0-9]{64}$') {
+        throw 'Windows UAT approval tuple values are invalid.'
+    }
+
+    $packages = @(Get-AppxPackage -Name ([string]$tuple.installedPackageName))
+    if ($packages.Count -ne 1) {
+        throw 'Windows UAT package discovery did not resolve exactly one installed package.'
+    }
+    $package = $packages[0]
+    if ($package.PackageFullName -cne [string]$tuple.installedPackageFullName -or
+        $package.PackageFamilyName -cne [string]$tuple.installedPackageFamilyName -or
+        $package.Publisher -cne [string]$tuple.publisher -or
+        [string]$package.Status -cne 'Ok') {
+        throw 'Installed Windows UAT package identity differs from its signed approval tuple.'
+    }
+    $installRoot = Assert-AbsoluteExisting ([string]$package.InstallLocation) `
+        'Installed Windows UAT package root' -Directory
+    $executable = Assert-AbsoluteExisting `
+        (Join-Path $installRoot ([string]$tuple.applicationIdentity)) `
+        'Installed Windows UAT executable'
+    Assert-AbsoluteExisting (Join-Path $installRoot 'AppxSignature.p7x') `
+        'Installed Windows UAT package signature' | Out-Null
+    return [pscustomobject]@{
+        Approval = $ApprovalPath
+        InstallRoot = $installRoot
+        Executable = $executable
+        ArtifactSha256 = [string]$tuple.buildArtifactSha256
+    }
 }
 
 function Set-ProtectedRunItem([string]$Path) {
@@ -1145,18 +1193,38 @@ $approvedAapt = Resolve-PolicyPinnedFile $policyObject.tools.aapt.relativePath `
     $policyObject.tools.aapt.sha256 'Approved AAPT'
 $approvedApksigner = Resolve-PolicyPinnedFile $policyObject.tools.apksigner.relativePath `
     $policyObject.tools.apksigner.sha256 'Approved APK signer'
-$approvedWindowsExe = Resolve-PolicyPinnedFile `
-    $policyObject.crossPlatform.windowsExecutableRelativePath `
-    $policyObject.crossPlatform.windowsExecutableSha256 `
-    'Approved Windows executable'
-$approvedWindowsOutputDirectory = Resolve-PolicyPinnedDirectory `
-    $policyObject.crossPlatform.windowsOutputDirectoryRelativePath `
-    $policyObject.crossPlatform.windowsOutputTreeSha256 `
-    'Approved Windows output directory'
-if (-not [StringComparer]::OrdinalIgnoreCase.Equals(
-        (Split-Path -Parent $approvedWindowsExe),
-        $approvedWindowsOutputDirectory)) {
-    throw 'Approved Windows executable must be an immediate child of the signed output tree.'
+$installedWindowsUat = $null
+if ([string]::IsNullOrWhiteSpace($WindowsUatApprovalTuplePath)) {
+    $approvedWindowsExe = Resolve-PolicyPinnedFile `
+        $policyObject.crossPlatform.windowsExecutableRelativePath `
+        $policyObject.crossPlatform.windowsExecutableSha256 `
+        'Approved Windows executable'
+    $approvedWindowsOutputDirectory = Resolve-PolicyPinnedDirectory `
+        $policyObject.crossPlatform.windowsOutputDirectoryRelativePath `
+        $policyObject.crossPlatform.windowsOutputTreeSha256 `
+        'Approved Windows output directory'
+    if (-not [StringComparer]::OrdinalIgnoreCase.Equals(
+            (Split-Path -Parent $approvedWindowsExe),
+            $approvedWindowsOutputDirectory)) {
+        throw 'Approved Windows executable must be an immediate child of the signed output tree.'
+    }
+} else {
+    if ($null -eq $policyObject.crossPlatform.windowsUatApprovalRelativePath -or
+        $null -eq $policyObject.crossPlatform.windowsUatApprovalSha256) {
+        throw 'Signed Android lab policy does not bind a Windows UAT approval tuple.'
+    }
+    $approvedWindowsUatTuple = Resolve-PolicyPinnedFile `
+        $policyObject.crossPlatform.windowsUatApprovalRelativePath `
+        $policyObject.crossPlatform.windowsUatApprovalSha256 `
+        'Approved Windows UAT tuple'
+    if (-not [StringComparer]::OrdinalIgnoreCase.Equals(
+            [IO.Path]::GetFullPath($WindowsUatApprovalTuplePath),
+            $approvedWindowsUatTuple)) {
+        throw 'Caller-selected Windows UAT tuple differs from the signed policy binding.'
+    }
+    $installedWindowsUat = Resolve-InstalledWindowsUatPackage $approvedWindowsUatTuple
+    $approvedWindowsExe = $installedWindowsUat.Executable
+    $approvedWindowsOutputDirectory = $installedWindowsUat.InstallRoot
 }
 $adb = $approvedAdb
 $policySha256 = Get-Sha256 $policy
@@ -1275,6 +1343,13 @@ try {
         $env:DEEP_E2E_ANDROID_PICKER_FILE_ID = $AndroidPickerFileId
         $env:DEEP_E2E_ANDROID_PICKER_CONFIRM_ID = $AndroidPickerConfirmId
         $env:DEEP_MAUI_EXE = $approvedWindowsExe
+        if ($null -ne $installedWindowsUat) {
+            $env:DEEP_E2E_WINDOWS_UAT_APPROVAL = $installedWindowsUat.Approval
+            $env:DEEP_E2E_WINDOWS_UAT_INSTALL_ROOT = $installedWindowsUat.InstallRoot
+        } else {
+            $env:DEEP_E2E_WINDOWS_UAT_APPROVAL = $null
+            $env:DEEP_E2E_WINDOWS_UAT_INSTALL_ROOT = $null
+        }
         $env:DEEP_E2E_APPDATA_ROOT = $windowsAppData
         $env:DEEP_E2E_BOOTSTRAP = 'live'
         $env:DEEP_RELEASE_INVOCATION_ID = $releaseInvocationId
@@ -1374,6 +1449,8 @@ try {
     $env:DEEP_MAU2_E2E_UAT_RESET_BINDING = $null
     $env:DEEP_MAU2_E2E_ANDROID_RESET_BINDING = $null
     $env:DEEP_E2E_UAT_CA_CERTIFICATE = $null
+    $env:DEEP_E2E_WINDOWS_UAT_APPROVAL = $null
+    $env:DEEP_E2E_WINDOWS_UAT_INSTALL_ROOT = $null
     $env:DEEP_PHYSICAL_E2E_HAPROXY_CONFIG_PATH = $null
 }
 

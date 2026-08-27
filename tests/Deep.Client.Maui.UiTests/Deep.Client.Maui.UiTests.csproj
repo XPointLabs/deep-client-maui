@@ -12,8 +12,15 @@
     <PackageReference Include="FlaUI.Core" Version="5.0.0" />
     <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.csproj" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxArtifactSetDigest.cs"
+             Link="ProductionMailboxArtifactSetDigest.cs" />
   </ItemGroup>
 
   <ItemGroup>

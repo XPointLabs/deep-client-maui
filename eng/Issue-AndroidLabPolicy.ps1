@@ -6,7 +6,8 @@ param(
     [Parameter(Mandatory)][string]$AndroidSerial,
     [Parameter(Mandatory)][string]$ApkPath,
     [Parameter(Mandatory)][string]$WindowsExecutablePath,
-    [Parameter(Mandatory)][string]$RunnerPath
+    [Parameter(Mandatory)][string]$RunnerPath,
+    [string]$WindowsUatApprovalTuplePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -286,6 +287,16 @@ try {
         -NotePropertyValue (Get-RelativeRepositoryPath $windowsOutputDirectory)
     $policy.crossPlatform | Add-Member -Force -NotePropertyName windowsOutputTreeSha256 `
         -NotePropertyValue (Get-TreeDigest $windowsOutputDirectory)
+    if (-not [string]::IsNullOrWhiteSpace($WindowsUatApprovalTuplePath)) {
+        $windowsUatApproval = Get-ExactFile $WindowsUatApprovalTuplePath `
+            'Windows UAT approval tuple' $null
+        $policy.crossPlatform | Add-Member -Force `
+            -NotePropertyName windowsUatApprovalRelativePath `
+            -NotePropertyValue (Get-RelativeRepositoryPath $windowsUatApproval)
+        $policy.crossPlatform | Add-Member -Force `
+            -NotePropertyName windowsUatApprovalSha256 `
+            -NotePropertyValue (Get-Sha256 $windowsUatApproval)
+    }
     foreach ($role in @('runner','adb','aapt','apksigner')) {
         $relative = ([string]$policy.tools.$role.relativePath).Substring(
             '.secrets/android-lab/'.Length).Replace('/', '\')

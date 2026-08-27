@@ -1313,11 +1313,28 @@ public sealed class WindowsUiSmokeTests
                 return;
             }
             var policy = ApprovedCrossPlatformPolicy.Current ?? throw new InvalidOperationException("Approved cross-platform policy was not loaded before Windows launch.");
-            var expectedHash = policy.WindowsExeSha256;
-            var actualHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(launchedPath)));
-            if (!string.Equals(actualHash, expectedHash, StringComparison.Ordinal) || !System.Text.RegularExpressions.Regex.IsMatch(policy.SourceCommit, "^[a-f0-9]{40}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+            if (!System.Text.RegularExpressions.Regex.IsMatch(policy.SourceCommit,
+                    "^[a-f0-9]{40}$",
+                    System.Text.RegularExpressions.RegexOptions.CultureInvariant))
             {
-                throw new InvalidOperationException("Launched Windows binary hash or source-commit binding is invalid.");
+                throw new InvalidOperationException(
+                    "Launched Windows source-commit binding is invalid.");
+            }
+            if (WindowsUatPackageApproval.Current is { } windowsUat)
+            {
+                windowsUat.VerifyInstalledPackage(
+                    RequireDirectorySetting(
+                        WindowsUatPackageApproval.InstallRootEnvironmentKey),
+                    launchedPath);
+                return;
+            }
+            var expectedHash = policy.WindowsExeSha256;
+            var actualHash = Convert.ToHexStringLower(
+                System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(launchedPath)));
+            if (!string.Equals(actualHash, expectedHash, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Launched unpackaged Windows binary hash binding is invalid.");
             }
         }
 

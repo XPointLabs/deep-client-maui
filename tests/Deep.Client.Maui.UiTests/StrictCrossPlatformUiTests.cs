@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Runtime.InteropServices;
 using System.Text;
+using Deep.Client.Shared.Services;
 using FlaUI.Core.AutomationElements;
 using Xunit.Sdk;
 
@@ -17,6 +18,7 @@ namespace Deep.Client.Maui.UiTests;
 /// </summary>
 public sealed class StrictCrossPlatformUiTests
 {
+    private const string Cmi1TextPrefix = "deep-contact-mailbox-invitation-v1:";
     // A privacy-routed MAU2 send durably writes recipient and sender copies sequentially. Each
     // authenticated Store has a 15-second protocol deadline, so the rendered acceptance
     // window must also leave bounded room for cold route establishment and UIA sampling.
@@ -251,7 +253,7 @@ public sealed class StrictCrossPlatformUiTests
         android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
         android.ColdStart();
         android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
-        var androidIdentity = ReadAndroidIdentity(android, options);
+        var androidInvitation = ReadAndroidInvitation(android, options);
         var windowsToAndroid = StrictCrossPlatformContracts.NewMarker("windows-to-android");
         var androidToWindows = StrictCrossPlatformContracts.NewMarker("android-to-windows");
         var groupName = StrictCrossPlatformContracts.NewMarker("android-windows-group");
@@ -270,20 +272,23 @@ public sealed class StrictCrossPlatformUiTests
         Exception? operationFailure = null;
         VoiceMatrixSnapshot? voiceSnapshot = null;
         PayloadPersistenceSnapshot? payloadSnapshot = null;
-        string? windowsIdentity = null;
+        CapturedContactInvitation? windowsInvitation = null;
 
         try
         {
             using (var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot))
             {
                 Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(45)), "Conversations.NewConversation");
-                windowsIdentity = ReadWindowsIdentity(windows);
-                Assert.NotEqual(androidIdentity, windowsIdentity);
+                windowsInvitation = ReadWindowsInvitation(windows);
+                if (string.Equals(androidInvitation.SessionId, windowsInvitation.SessionId,
+                        StringComparison.Ordinal))
+                    throw new InvalidOperationException(
+                        "Physical CMI1 invitations resolve to the same account.");
 
-                // Contacts are created from identities kept in this process only. They
-                // are deliberately never emitted into the run state or test evidence.
-                AddAndroidContact(android, options, windowsIdentity);
-                AddWindowsContact(windows, androidIdentity);
+                // Invitations remain process-local and are never emitted into run state,
+                // TRX, logs, or evidence. Only their hashes are published below.
+                AddAndroidContact(android, options, windowsInvitation.Text);
+                AddWindowsContact(windows, androidInvitation.Text);
                 var androidVoiceBaseline = android.SnapshotAccessibleTextSet(
                     options.App("Chat.VoicePlayButton"));
                 var windowsVoiceBaseline = windows.SnapshotAutomationIdNames(
@@ -295,7 +300,9 @@ public sealed class StrictCrossPlatformUiTests
                 android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
                     windowsToAndroid, 1, TimeSpan.FromSeconds(60));
                 SendAndroidMessageAndAssertSent(android, options, androidToWindows);
-                WaitForWindowsText(windows, "DesktopWorkspace.DirectMessageBody", androidToWindows);
+                AssertDirectMessagesExactlyOnceOnBothClients(
+                    android, windows, options, windowsToAndroid, androidToWindows,
+                    TimeSpan.FromSeconds(60));
 
                 ExchangeAndroidDocument(android, windows, options, options.GenericFixturePath,
                     androidGenericName, genericSha256, downloadsDirectory, createdDownloads,
@@ -365,8 +372,8 @@ public sealed class StrictCrossPlatformUiTests
                     android,
                     restartedWindows,
                     options,
-                    windowsIdentity ?? throw new InvalidOperationException(
-                        "Windows identity was not loaded for the group roundtrip."),
+                    windowsInvitation?.Text ?? throw new InvalidOperationException(
+                        "Windows CMI1 was not loaded for the group roundtrip."),
                     groupName,
                     androidGroupMessage,
                     windowsGroupMessage);
@@ -422,6 +429,11 @@ public sealed class StrictCrossPlatformUiTests
 
         evidence.AddHash("windowsToAndroidMarkerHash", windowsToAndroid);
         evidence.AddHash("androidToWindowsMarkerHash", androidToWindows);
+        evidence.AddHash("androidCmi1Hash", androidInvitation.Text);
+        evidence.AddHash("windowsCmi1Hash", windowsInvitation?.Text ?? throw new InvalidOperationException(
+            "Windows CMI1 was not retained through the payload matrix."));
+        evidence.AddBoolean("contactsAddedFromCryptographicallyVerifiedCmi1", true);
+        evidence.AddBoolean("groupMemberAddedFromCryptographicallyVerifiedCmi1", true);
         evidence.AddHash("groupNameHash", groupName);
         evidence.AddHash("androidGroupMessageHash", androidGroupMessage);
         evidence.AddHash("windowsGroupMessageHash", windowsGroupMessage);
@@ -867,16 +879,20 @@ public sealed class StrictCrossPlatformUiTests
         android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
         android.ColdStart();
         android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
-        var androidIdentity = ReadAndroidIdentity(android, options);
+        var androidInvitation = ReadAndroidInvitation(android, options);
         var marker = StrictCrossPlatformContracts.NewMarker("restart-resend");
         int firstWindowsPid;
         using (var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot))
         {
             firstWindowsPid = windows.ProcessId;
-            AddWindowsContact(windows, androidIdentity);
+            AddWindowsContact(windows, androidInvitation.Text);
             SendWindowsMessage(windows, marker);
             android.Tap(options.App("Conversations.ConversationRow"));
-            android.WaitForText(options.App("Chat.MessageBody"), marker, TimeSpan.FromSeconds(60));
+            android.WaitForExactResourceTextCount(
+                options.App("Chat.MessageBody"), marker, 1, TimeSpan.FromSeconds(60));
+            WaitForExactWindowsAutomationNameCount(
+                windows, "DesktopWorkspace.DirectMessageBody", marker, 1,
+                TimeSpan.FromSeconds(60));
         }
 
         android.ColdStart();
@@ -884,7 +900,8 @@ public sealed class StrictCrossPlatformUiTests
         android.Tap(options.App("Conversations.ConversationRow"));
         // FindExactlyOneResourceIdContainingText is intentionally an exact-once
         // assertion. A duplicate after restart is a failure, not a best-effort poll.
-        android.WaitForText(options.App("Chat.MessageBody"), marker, TimeSpan.FromSeconds(45));
+        android.WaitForExactResourceTextCount(
+            options.App("Chat.MessageBody"), marker, 1, TimeSpan.FromSeconds(45));
 
         using (var restartedWindows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot))
         {
@@ -896,10 +913,14 @@ public sealed class StrictCrossPlatformUiTests
                     TimeSpan.FromSeconds(45)),
                 "DesktopWorkspace.ConversationRow"));
             Require(restartedWindows.WaitForAutomationId("DesktopWorkspace.DirectDraft", TimeSpan.FromSeconds(45)), "DesktopWorkspace.DirectDraft");
-            WaitForWindowsText(restartedWindows, "DesktopWorkspace.DirectMessageBody", marker);
+            WaitForExactWindowsAutomationNameCount(
+                restartedWindows, "DesktopWorkspace.DirectMessageBody", marker, 1,
+                TimeSpan.FromSeconds(45));
         }
 
         evidence.AddHash("markerHash", marker);
+        evidence.AddHash("androidCmi1Hash", androidInvitation.Text);
+        evidence.AddBoolean("contactAddedFromCryptographicallyVerifiedCmi1", true);
         evidence.AddBoolean("androidRestarted", true);
         evidence.AddBoolean("windowsRestartedWithDistinctPid", true);
         evidence.AddBoolean("receivedExactlyOnceAfterRestart", true);
@@ -1053,7 +1074,13 @@ public sealed class StrictCrossPlatformUiTests
     private static void CompletePhaseEvidence(CrossPlatformOptions options, StrictCrossPlatformContracts.SanitizedEvidence evidence)
     {
         evidence.AddBoolean("productionPackageUntouched", true);
-        evidence.AddSafeValue("windowsOutputTreeSha256", options.WindowsOutputTreeSha256);
+        evidence.AddSafeValue(
+            WindowsUatPackageApproval.Current is null
+                ? "windowsOutputTreeSha256"
+                : "windowsUatArtifactSetSha256",
+            options.WindowsOutputTreeSha256);
+        evidence.AddBoolean("installedWindowsUatPackageValidated",
+            WindowsUatPackageApproval.Current is not null);
         evidence.AddSafeValue("status", "passed");
         evidence.Write(options.ResultPath);
     }
@@ -1073,6 +1100,50 @@ public sealed class StrictCrossPlatformUiTests
         var identity = WaitForWindowsSessionId(windows);
         CloseWindowsSettings(windows);
         return identity;
+    }
+
+    private static CapturedContactInvitation ReadAndroidInvitation(
+        AndroidUiautomatorClient android,
+        CrossPlatformOptions options)
+    {
+        android.Tap(options.App("Conversations.NewConversationTop"));
+        var value = android.WaitForAccessibleTextPrefix(
+            options.App("StartConversation.AccountId"), Cmi1TextPrefix,
+            TimeSpan.FromSeconds(45));
+        var captured = VerifyCmi1(value);
+        android.Tap(options.App("StartConversation.Close"));
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(20));
+        return captured;
+    }
+
+    private static CapturedContactInvitation ReadWindowsInvitation(
+        WindowsUiSmokeTests.WindowsUiTestSession windows)
+    {
+        windows.ActivateExact(Require(
+            windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(20)),
+            "Conversations.NewConversation"));
+        var marker = Require(
+            windows.WaitForAutomationIdWithNameContaining(
+                "StartConversation.AccountId", Cmi1TextPrefix, TimeSpan.FromSeconds(45)),
+            "StartConversation.AccountId");
+        var captured = VerifyCmi1(marker.Properties.Name.ValueOrDefault ?? string.Empty);
+        windows.ActivateExact(Require(
+            windows.WaitForAutomationId("StartConversation.Close", TimeSpan.FromSeconds(15)),
+            "StartConversation.Close"));
+        Require(windows.WaitForAutomationId(
+            "Conversations.NewConversation", TimeSpan.FromSeconds(20)),
+            "Conversations.NewConversation");
+        return captured;
+    }
+
+    private static CapturedContactInvitation VerifyCmi1(string value)
+    {
+        if (!value.StartsWith(Cmi1TextPrefix, StringComparison.Ordinal))
+            throw new InvalidDataException(
+                "Physical contact invitation is not a canonical CMI1 value.");
+        var verified = ContactMailboxInvitationService.ParseAndVerify(
+            value, TimeProvider.System);
+        return new CapturedContactInvitation(value, verified.SessionId.Value);
     }
 
     private static string CreateAndroidIdentity(AndroidUiautomatorClient android, CrossPlatformOptions options)
@@ -1156,11 +1227,11 @@ public sealed class StrictCrossPlatformUiTests
     private static void AddAndroidContact(
         AndroidUiautomatorClient android,
         CrossPlatformOptions options,
-        string windowsIdentity,
+        string contactInput,
         string? displayName = null)
     {
         OpenAndroidNewConversation(android, options);
-        android.Type(options.App("NewConversation.SessionId"), windowsIdentity);
+        android.Type(options.App("NewConversation.SessionId"), contactInput);
         android.Type(options.App("NewConversation.DisplayName"),
             displayName ?? StrictCrossPlatformContracts.NewMarker("windows-contact"));
         android.Tap(options.App("NewConversation.Start"));
@@ -1178,7 +1249,7 @@ public sealed class StrictCrossPlatformUiTests
         AndroidUiautomatorClient android,
         WindowsUiSmokeTests.WindowsUiTestSession windows,
         CrossPlatformOptions options,
-        string windowsIdentity,
+        string windowsInvitation,
         string groupName,
         string androidMessage,
         string windowsMessage)
@@ -1189,7 +1260,7 @@ public sealed class StrictCrossPlatformUiTests
         android.Tap(options.App("StartConversation.CreateGroup"));
         android.WaitForResource(options.App("Groups.GroupName"), TimeSpan.FromSeconds(20));
         android.Type(options.App("Groups.GroupName"), groupName);
-        android.Type(options.App("Groups.MemberSessionId"), windowsIdentity);
+        android.Type(options.App("Groups.MemberSessionId"), windowsInvitation);
         android.Tap(options.App("Groups.AddMember"));
         android.DismissKeyboard();
         android.WaitForResource(options.App("Groups.DraftMembers"), TimeSpan.FromSeconds(30));
@@ -1223,6 +1294,28 @@ public sealed class StrictCrossPlatformUiTests
             androidMessage,
             windowsMessage,
             TimeSpan.FromSeconds(60));
+    }
+
+    private static void AssertDirectMessagesExactlyOnceOnBothClients(
+        AndroidUiautomatorClient android,
+        WindowsUiSmokeTests.WindowsUiTestSession windows,
+        CrossPlatformOptions options,
+        string windowsMessage,
+        string androidMessage,
+        TimeSpan timeout)
+    {
+        for (var sample = 0; sample < 2; sample++)
+        {
+            android.WaitForExactResourceTextCount(
+                options.App("Chat.MessageBody"), windowsMessage, 1, timeout);
+            android.WaitForExactResourceTextCount(
+                options.App("Chat.MessageBody"), androidMessage, 1, timeout);
+            WaitForExactWindowsAutomationNameCount(
+                windows, "DesktopWorkspace.DirectMessageBody", windowsMessage, 1, timeout);
+            WaitForExactWindowsAutomationNameCount(
+                windows, "DesktopWorkspace.DirectMessageBody", androidMessage, 1, timeout);
+            if (sample == 0) Thread.Sleep(TimeSpan.FromSeconds(3));
+        }
     }
 
     private static void AssertGroupMessagesExactlyOnceOnBothClients(
@@ -1286,12 +1379,12 @@ public sealed class StrictCrossPlatformUiTests
 
     private static void AddWindowsContact(
         WindowsUiSmokeTests.WindowsUiTestSession windows,
-        string androidIdentity,
+        string contactInput,
         string? displayName = null)
     {
         windows.ActivateExact(Require(windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(20)), "Conversations.NewConversation"));
         windows.ActivateExact(Require(windows.WaitForAutomationId("StartConversation.NewMessage", TimeSpan.FromSeconds(15)), "StartConversation.NewMessage"));
-        Require(windows.WaitForAutomationId("NewConversation.SessionId", TimeSpan.FromSeconds(15)), "NewConversation.SessionId").AsTextBox().Text = androidIdentity;
+        Require(windows.WaitForAutomationId("NewConversation.SessionId", TimeSpan.FromSeconds(15)), "NewConversation.SessionId").AsTextBox().Text = contactInput;
         Require(windows.WaitForAutomationId("NewConversation.DisplayName", TimeSpan.FromSeconds(10)), "NewConversation.DisplayName").AsTextBox().Text =
             displayName ?? StrictCrossPlatformContracts.NewMarker("android-contact");
         windows.ActivateExact(Require(windows.WaitForAutomationId("NewConversation.Start", TimeSpan.FromSeconds(10)), "NewConversation.Start"));
@@ -1713,6 +1806,8 @@ public sealed class StrictCrossPlatformUiTests
         IReadOnlySet<string> AndroidExpectedAfterPhase,
         IReadOnlySet<string> WindowsExpectedAfterPhase);
 
+    private sealed record CapturedContactInvitation(string Text, string SessionId);
+
     private sealed record PayloadPersistenceSnapshot(
         IReadOnlyList<string> AndroidMessageBodies,
         IReadOnlyList<string> WindowsMessageBodies,
@@ -1942,12 +2037,51 @@ internal sealed class CrossPlatformOptions
         var apk = RequirePinnedPath("DEEP_E2E_ANDROID_APK", policy.Apk.Path); var genericFixture = RequireAbsoluteFile("DEEP_E2E_GENERIC_FIXTURE"); var documentFixture = RequireAbsoluteFile("DEEP_E2E_DOCUMENT_FIXTURE"); var imageFixture = RequireAbsoluteFile("DEEP_E2E_IMAGE_FIXTURE"); var adb = RequirePinnedPath("DEEP_E2E_ADB", policy.Adb.Path); var aapt = RequirePinnedPath("DEEP_E2E_AAPT", policy.Aapt.Path); var apksigner = RequirePinnedPath("DEEP_E2E_APKSIGNER", policy.Apksigner.Path); var artifacts = Path.GetFullPath(Environment.GetEnvironmentVariable("DEEP_E2E_ARTIFACTS")!);
         var windowsExe = Environment.GetEnvironmentVariable("DEEP_MAUI_EXE")!;
         var appDataRoot = Environment.GetEnvironmentVariable("DEEP_E2E_APPDATA_ROOT")!;
-        if (!Path.IsPathFullyQualified(windowsExe) || !File.Exists(windowsExe) || !Path.IsPathFullyQualified(appDataRoot) || !string.Equals(Path.GetFullPath(windowsExe), policy.WindowsExePath, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Configured Windows executable or app-data root is invalid.");
-        StrictCrossPlatformContracts.RequirePinnedFile(windowsExe, policy.WindowsExeSha256, "Windows executable");
-        if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(windowsExe)), policy.WindowsOutputDirectoryPath, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Configured Windows executable is outside the signed output tree.");
-        StrictCrossPlatformContracts.RequirePinnedTree(policy.WindowsOutputDirectoryPath, policy.WindowsOutputTreeSha256, "Windows output tree");
-        var windowsHash = StrictCrossPlatformContracts.Sha256File(windowsExe);
-        var windowsOutputTreeHash = StrictCrossPlatformContracts.Sha256Tree(policy.WindowsOutputDirectoryPath);
+        if (!Path.IsPathFullyQualified(windowsExe) || !File.Exists(windowsExe) ||
+            !Path.IsPathFullyQualified(appDataRoot))
+            throw new InvalidOperationException(
+                "Configured Windows executable or app-data root is invalid.");
+        var windowsUatApprovalPath = Environment.GetEnvironmentVariable(
+            WindowsUatPackageApproval.EnvironmentKey);
+        string windowsHash;
+        string windowsOutputTreeHash;
+        if (string.IsNullOrWhiteSpace(windowsUatApprovalPath))
+        {
+            if (!string.Equals(Path.GetFullPath(windowsExe), policy.WindowsExePath,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Configured Windows executable differs from the signed unpackaged policy.");
+            StrictCrossPlatformContracts.RequirePinnedFile(
+                windowsExe, policy.WindowsExeSha256, "Windows executable");
+            if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(windowsExe)),
+                    policy.WindowsOutputDirectoryPath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Configured Windows executable is outside the signed output tree.");
+            StrictCrossPlatformContracts.RequirePinnedTree(policy.WindowsOutputDirectoryPath,
+                policy.WindowsOutputTreeSha256, "Windows output tree");
+            windowsHash = StrictCrossPlatformContracts.Sha256File(windowsExe);
+            windowsOutputTreeHash = StrictCrossPlatformContracts.Sha256Tree(
+                policy.WindowsOutputDirectoryPath);
+        }
+        else
+        {
+            var pin = policy.WindowsUat ?? throw new InvalidOperationException(
+                "Installed Windows UAT mode is not bound by the signed policy.");
+            var approvalPath = RequirePinnedPath(
+                WindowsUatPackageApproval.EnvironmentKey, pin.ApprovalPath);
+            StrictCrossPlatformContracts.RequirePinnedFile(
+                approvalPath, pin.ApprovalSha256, "Windows UAT approval tuple");
+            var installRoot = Environment.GetEnvironmentVariable(
+                WindowsUatPackageApproval.InstallRootEnvironmentKey);
+            if (string.IsNullOrWhiteSpace(installRoot) ||
+                !Path.IsPathFullyQualified(installRoot))
+                throw new InvalidOperationException(
+                    "Installed Windows UAT root is unavailable.");
+            var approval = WindowsUatPackageApproval.LoadAndVerify(
+                approvalPath, installRoot, windowsExe);
+            windowsHash = StrictCrossPlatformContracts.Sha256File(windowsExe);
+            windowsOutputTreeHash = approval.BuildArtifactSha256;
+        }
         Directory.CreateDirectory(artifacts);
         var commit = StrictCrossPlatformContracts.RequireCurrentCommit(repositoryRoot, policy.SourceCommit);
         policy.ValidateTool(adb, "adb");
@@ -2041,10 +2175,11 @@ internal sealed class ApprovedCrossPlatformPolicy
     internal sealed record ToolPin(string Path, string Sha256, string Version, string[] VersionArguments);
     internal sealed record ApkPin(string Path, long SizeBytes, string Sha256, string VersionCode, string VersionName, string SigningDigest);
     internal sealed record DevicePin(string Serial, string Fingerprint, string Model, string Product, string Hardware, int Sdk, string Characteristics);
+    internal sealed record WindowsUatPin(string ApprovalPath, string ApprovalSha256);
 
-    private ApprovedCrossPlatformPolicy(string sourceCommit, string policyId, string approvalReceiptSha256, string mrXPublicKeySha256, string windowsExePath, string windowsExeSha256, string windowsOutputDirectoryPath, string windowsOutputTreeSha256, string policySha256, ToolPin adb, ToolPin aapt, ToolPin apksigner, ApkPin apk, DevicePin device)
+    private ApprovedCrossPlatformPolicy(string sourceCommit, string policyId, string approvalReceiptSha256, string mrXPublicKeySha256, string windowsExePath, string windowsExeSha256, string windowsOutputDirectoryPath, string windowsOutputTreeSha256, WindowsUatPin? windowsUat, string policySha256, ToolPin adb, ToolPin aapt, ToolPin apksigner, ApkPin apk, DevicePin device)
     {
-        SourceCommit = sourceCommit; PolicyId = policyId; ApprovalReceiptSha256 = approvalReceiptSha256; MrXPublicKeySha256 = mrXPublicKeySha256; WindowsExePath = windowsExePath; WindowsExeSha256 = windowsExeSha256; WindowsOutputDirectoryPath = windowsOutputDirectoryPath; WindowsOutputTreeSha256 = windowsOutputTreeSha256; PolicySha256 = policySha256; Adb = adb; Aapt = aapt; Apksigner = apksigner; Apk = apk; Device = device;
+        SourceCommit = sourceCommit; PolicyId = policyId; ApprovalReceiptSha256 = approvalReceiptSha256; MrXPublicKeySha256 = mrXPublicKeySha256; WindowsExePath = windowsExePath; WindowsExeSha256 = windowsExeSha256; WindowsOutputDirectoryPath = windowsOutputDirectoryPath; WindowsOutputTreeSha256 = windowsOutputTreeSha256; WindowsUat = windowsUat; PolicySha256 = policySha256; Adb = adb; Aapt = aapt; Apksigner = apksigner; Apk = apk; Device = device;
     }
 
     internal static ApprovedCrossPlatformPolicy? Current { get; private set; }
@@ -2056,6 +2191,7 @@ internal sealed class ApprovedCrossPlatformPolicy
     internal string WindowsExeSha256 { get; }
     internal string WindowsOutputDirectoryPath { get; }
     internal string WindowsOutputTreeSha256 { get; }
+    internal WindowsUatPin? WindowsUat { get; }
     internal string PolicySha256 { get; }
     internal ToolPin Adb { get; }
     internal ToolPin Aapt { get; }
@@ -2128,6 +2264,18 @@ internal sealed class ApprovedCrossPlatformPolicy
         var apk = root.GetProperty("application");
         var device = root.GetProperty("device");
         var crossPlatform = root.GetProperty("crossPlatform");
+        var hasWindowsUatPath = crossPlatform.TryGetProperty(
+            "windowsUatApprovalRelativePath", out var windowsUatPath);
+        var hasWindowsUatSha = crossPlatform.TryGetProperty(
+            "windowsUatApprovalSha256", out var windowsUatSha);
+        if (hasWindowsUatPath != hasWindowsUatSha)
+            throw new InvalidOperationException(
+                "Signed Windows UAT approval binding is incomplete.");
+        var windowsUat = hasWindowsUatPath
+            ? new WindowsUatPin(
+                ResolveRepositoryPath(repositoryRoot, windowsUatPath.GetString()!),
+                windowsUatSha.GetString()!)
+            : null;
         if (apk.GetProperty("packageId").GetString() != StrictCrossPlatformContracts.AndroidPackage ||
             device.GetProperty("kernelQemu").GetString() != "0" ||
             device.GetProperty("class").GetString() != "physical-managed-dedicated" ||
@@ -2147,6 +2295,7 @@ internal sealed class ApprovedCrossPlatformPolicy
             crossPlatform.GetProperty("windowsExecutableSha256").GetString()!,
             ResolveRepositoryPath(repositoryRoot, crossPlatform.GetProperty("windowsOutputDirectoryRelativePath").GetString()!),
             crossPlatform.GetProperty("windowsOutputTreeSha256").GetString()!,
+            windowsUat,
             StrictCrossPlatformContracts.Sha256File(path),
             ReadTool("adb"),
             ReadTool("aapt"),
@@ -2188,7 +2337,7 @@ internal sealed class ApprovedCrossPlatformPolicy
         {
             if (!System.Text.RegularExpressions.Regex.IsMatch(value, $"^[a-f0-9]{{{length}}}$") || value.All(character => character == '0')) throw new InvalidOperationException($"{role} is malformed.");
         }
-        Hex(SourceCommit, 40, "source commit"); Hex(PolicyId, 64, "policy ID"); Hex(ApprovalReceiptSha256, 64, "approval receipt"); Hex(MrXPublicKeySha256, 64, "Mr. X key"); Hex(WindowsExeSha256, 64, "Windows hash"); Hex(WindowsOutputTreeSha256, 64, "Windows output tree hash"); Hex(Apk.Sha256, 64, "APK hash"); Hex(Apk.SigningDigest, 64, "APK signer");
+        Hex(SourceCommit, 40, "source commit"); Hex(PolicyId, 64, "policy ID"); Hex(ApprovalReceiptSha256, 64, "approval receipt"); Hex(MrXPublicKeySha256, 64, "Mr. X key"); Hex(WindowsExeSha256, 64, "Windows hash"); Hex(WindowsOutputTreeSha256, 64, "Windows output tree hash"); if (WindowsUat is not null) Hex(WindowsUat.ApprovalSha256, 64, "Windows UAT approval hash"); Hex(Apk.Sha256, 64, "APK hash"); Hex(Apk.SigningDigest, 64, "APK signer");
         foreach (var tool in new[] { Adb, Aapt, Apksigner })
         {
             Hex(tool.Sha256, 64, "tool hash");
@@ -2452,6 +2601,25 @@ internal sealed class AndroidUiautomatorClient
     }
 
     internal StrictCrossPlatformContracts.AndroidNode WaitForResource(string resourceId, TimeSpan timeout) => Wait(resourceId, null, timeout);
+    internal string WaitForAccessibleTextPrefix(
+        string resourceId,
+        string prefix,
+        TimeSpan timeout)
+    {
+        if (string.IsNullOrEmpty(prefix))
+            throw new ArgumentException("An accessibility prefix is required.", nameof(prefix));
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var node = StrictCrossPlatformContracts.FindOptionalResourceId(Dump(), resourceId);
+            if (node is not null &&
+                node.AccessibleText.StartsWith(prefix, StringComparison.Ordinal))
+                return node.AccessibleText;
+            Thread.Sleep(200);
+        }
+        throw new InvalidOperationException(
+            "Android automation value did not reach its required canonical prefix.");
+    }
     internal int CountResourceId(string resourceId) =>
         StrictCrossPlatformContracts.FindAllResourceIds(Dump(), resourceId).Length;
     internal IReadOnlySet<string> SnapshotAccessibleTextSet(string resourceId)
