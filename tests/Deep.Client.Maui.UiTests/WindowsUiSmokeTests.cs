@@ -815,7 +815,8 @@ public sealed class WindowsUiSmokeTests
                 var mainHandle = mainWindow.Properties.NativeWindowHandle.ValueOrDefault;
                 if (mainHandle != IntPtr.Zero)
                 {
-                    RestoreExactForegroundWindow(mainHandle);
+                    _ = ShowWindowAsync(mainHandle, ShowWindowRestore);
+                    _ = SetForegroundWindow(mainHandle);
                 }
                 mainWindow.Focus();
                 Thread.Sleep(TimeSpan.FromMilliseconds(200));
@@ -859,35 +860,6 @@ public sealed class WindowsUiSmokeTests
                 $"nativeVisible={facts.IsNativeVisible}, nativeEnabled={facts.IsNativeEnabled}, " +
                 $"uiaEnabled={facts.IsUiaEnabled}, uiaOffscreen={facts.IsUiaOffscreen}, " +
                 $"ownedPopups={facts.VisibleOwnedPopupCount}).");
-        }
-
-        private static void RestoreExactForegroundWindow(IntPtr mainHandle)
-        {
-            var callerThread = GetCurrentThreadId();
-            var foregroundThread = GetWindowThreadProcessId(
-                GetForegroundWindow(), out _);
-            var targetThread = GetWindowThreadProcessId(mainHandle, out _);
-            var callerAttachedToForeground = foregroundThread != 0 &&
-                foregroundThread != callerThread &&
-                AttachThreadInput(callerThread, foregroundThread, true);
-            var callerAttachedToTarget = targetThread != 0 &&
-                targetThread != callerThread &&
-                AttachThreadInput(callerThread, targetThread, true);
-            try
-            {
-                _ = ShowWindowAsync(mainHandle, ShowWindowRestore);
-                _ = BringWindowToTop(mainHandle);
-                _ = SetActiveWindow(mainHandle);
-                _ = SetFocus(mainHandle);
-                _ = SetForegroundWindow(mainHandle);
-            }
-            finally
-            {
-                if (callerAttachedToTarget)
-                    _ = AttachThreadInput(callerThread, targetThread, false);
-                if (callerAttachedToForeground)
-                    _ = AttachThreadInput(callerThread, foregroundThread, false);
-            }
         }
 
         internal void ChooseSingleFileFromOwnedForegroundPicker(
@@ -1302,26 +1274,6 @@ public sealed class WindowsUiSmokeTests
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool ShowWindowAsync(IntPtr windowHandle, int command);
-
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool BringWindowToTop(IntPtr windowHandle);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr SetActiveWindow(IntPtr windowHandle);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr SetFocus(IntPtr windowHandle);
-
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool AttachThreadInput(
-            uint attachThreadId,
-            uint attachToThreadId,
-            [MarshalAs(UnmanagedType.Bool)] bool attach);
-
-        [DllImport("kernel32.dll")]
-        private static extern uint GetCurrentThreadId();
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetWindow(IntPtr windowHandle, uint command);
