@@ -171,10 +171,12 @@ internal sealed class StoreBoundNativeMau2Transport :
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Envelope);
-        if (request.Kind != MailboxDeliveryKind.Direct)
+        if (request.Kind is not (MailboxDeliveryKind.Direct or
+            MailboxDeliveryKind.GroupState or
+            MailboxDeliveryKind.GroupMessage))
         {
             throw new NotSupportedException(
-                "DEV-local mailbox schema v1 provisions only the Android/Windows direct pair.");
+                "Authenticated MAU2 does not support this mailbox delivery kind.");
         }
 
         var runtime = await EnsureBoundAsync(
