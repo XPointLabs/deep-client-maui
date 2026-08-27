@@ -220,7 +220,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("Set-ProtectedRunItem $Path", runner,
             StringComparison.Ordinal);
-        Assert.Contains("[IO.DirectoryInfo]::new($Path).SetAccessControl", runner,
+        Assert.Contains("[IO.FileSystemAclExtensions]::SetAccessControl(", runner,
             StringComparison.Ordinal);
         Assert.DoesNotContain("Set-Acl -LiteralPath $Path", runner,
             StringComparison.Ordinal);

@@ -8,6 +8,7 @@ $root = Join-Path $sandbox 'artifacts'
 $sibling = Join-Path $sandbox 'artifacts-escape'
 $outside = Join-Path $sandbox 'outside'
 New-Item -ItemType Directory -Force -Path $root, $sibling, $outside | Out-Null
+$junction = $null
 $payloadJunction = $null
 try {
     $siblingRejected = $false
@@ -136,7 +137,7 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($payloadJunction) -and (Test-Path -LiteralPath $payloadJunction)) {
         Remove-Item -LiteralPath $payloadJunction -Force
     }
-    if (Test-Path -LiteralPath $junction) {
+    if (-not [string]::IsNullOrWhiteSpace($junction) -and (Test-Path -LiteralPath $junction)) {
         Remove-Item -LiteralPath $junction -Force
     }
     Remove-Item -LiteralPath $sandbox -Recurse -Force

@@ -75,8 +75,11 @@ function Get-CanonicalContainedPath {
     # CI/release uses pwsh/.NET; the compatibility branch in this helper keeps local
     # negative tests meaningful without returning to prefix comparisons.
     $relative = Get-RelativePathCompat -Root $canonicalRoot -Candidate $canonicalCandidate
+    $pathSeparators = [char[]]@(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar)
     $segments = @($relative.Split(
-        @([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar),
+        $pathSeparators,
         [StringSplitOptions]::RemoveEmptyEntries))
     $escapesRoot = (Test-FullyQualifiedPath $relative) -or
         $segments.Count -eq 0 -or

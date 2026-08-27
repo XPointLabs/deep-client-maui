@@ -186,8 +186,25 @@ public static class SyntheticAndroidTool
 }
 '@
     $compiledFixture = Join-Path $tools 'synthetic-android-tool.exe'
-    Add-Type -TypeDefinition $fixtureSource -Language CSharp -OutputAssembly $compiledFixture `
-        -OutputType ConsoleApplication -ErrorAction Stop
+    $fixtureSourcePath = Join-Path $tools 'synthetic-android-tool.cs'
+    [IO.File]::WriteAllText(
+        $fixtureSourcePath,
+        $fixtureSource,
+        [Text.UTF8Encoding]::new($false))
+    $compilerCandidates = @(
+        (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'),
+        (Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'))
+    $compiler = $compilerCandidates |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($compiler)) {
+        throw 'The Windows .NET Framework C# compiler was not found.'
+    }
+    & $compiler /nologo /target:exe "/out:$compiledFixture" $fixtureSourcePath
+    if ($LASTEXITCODE -ne 0 -or
+        -not (Test-Path -LiteralPath $compiledFixture -PathType Leaf)) {
+        throw 'The synthetic Android tool fixture did not compile.'
+    }
     $runner = Join-Path $tools 'fake runner.exe'
     $adb = Join-Path $tools 'fake adb.exe'
     $aapt = Join-Path $tools 'fake aapt.exe'

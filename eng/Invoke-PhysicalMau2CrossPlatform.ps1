@@ -867,11 +867,25 @@ function Set-ProtectedRunItem([string]$Path) {
         $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]::None, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow))
     }
     if ($item.PSIsContainer) {
-        [IO.DirectoryInfo]::new($Path).SetAccessControl(
-            [Security.AccessControl.DirectorySecurity]$acl)
+        $directory = [IO.DirectoryInfo]::new($Path)
+        if ($null -ne $directory.PSObject.Methods['SetAccessControl']) {
+            $directory.SetAccessControl(
+                [Security.AccessControl.DirectorySecurity]$acl)
+        } else {
+            [IO.FileSystemAclExtensions]::SetAccessControl(
+                $directory,
+                [Security.AccessControl.DirectorySecurity]$acl)
+        }
     } else {
-        [IO.FileInfo]::new($Path).SetAccessControl(
-            [Security.AccessControl.FileSecurity]$acl)
+        $file = [IO.FileInfo]::new($Path)
+        if ($null -ne $file.PSObject.Methods['SetAccessControl']) {
+            $file.SetAccessControl(
+                [Security.AccessControl.FileSecurity]$acl)
+        } else {
+            [IO.FileSystemAclExtensions]::SetAccessControl(
+                $file,
+                [Security.AccessControl.FileSecurity]$acl)
+        }
     }
 }
 
