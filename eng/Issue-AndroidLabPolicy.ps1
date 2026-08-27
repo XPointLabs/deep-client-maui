@@ -299,6 +299,7 @@ try {
         $policy.tools.$role.version = Get-ExactToolVersion $toolPath `
             @($policy.tools.$role.versionArguments) $role
     }
+    $policy.tools.runner.version = Get-ExactToolVersion $stageRunner @('--version') 'runner'
 
     $payload = [ordered]@{
         schema = $policy.schema

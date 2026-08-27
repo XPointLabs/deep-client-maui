@@ -433,6 +433,10 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("foreach ($role in @('adb','aapt','apksigner'))", script,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "$policy.tools.runner.version = Get-ExactToolVersion $stageRunner @('--version') 'runner'",
+            script,
+            StringComparison.Ordinal);
         Assert.Contains("$process.WaitForExit(15000)", script, StringComparison.Ordinal);
         Assert.Contains("[int]$props['ro.build.version.sdk'] -lt 28", script,
             StringComparison.Ordinal);
