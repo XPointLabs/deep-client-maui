@@ -18,8 +18,65 @@ internal sealed record ProvisionedMailboxRuntime(
     IClientMailboxBinaryIngress Ingress,
     TimeProvider TimeProvider);
 
+internal interface IReactiveMau2ReadRuntime
+{
+    Task<IReadOnlyList<InboundMessageEnvelope>> ReceiveAuthenticatedAsync(
+        SessionIdentityProvider identity,
+        CancellationToken cancellationToken);
+
+    Task<AuthenticatedInboxBatch> RetrieveAuthenticatedAsync(
+        SessionIdentityProvider identity,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken);
+
+    Task<OpaqueMailboxInboxPage> RetrieveOpaqueMailboxInboxAsync(
+        IMailboxOperationSigner signer,
+        OpaqueMailboxContinuation continuation,
+        CancellationToken cancellationToken);
+
+    Task RetireTerminallyRejectedRetrieveAsync(
+        SessionId account,
+        ClientMailboxTransportException terminalFailure,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class NativeReactiveMau2ReadRuntime(
+    NativeMau2MailboxTransport transport) : IReactiveMau2ReadRuntime
+{
+    private readonly NativeMau2MailboxTransport transport = transport ??
+        throw new ArgumentNullException(nameof(transport));
+
+    public Task<IReadOnlyList<InboundMessageEnvelope>> ReceiveAuthenticatedAsync(
+        SessionIdentityProvider identity,
+        CancellationToken cancellationToken) =>
+        transport.ReceiveAuthenticatedAsync(identity, cancellationToken);
+
+    public Task<AuthenticatedInboxBatch> RetrieveAuthenticatedAsync(
+        SessionIdentityProvider identity,
+        string? cursor,
+        int limit,
+        CancellationToken cancellationToken) =>
+        transport.RetrieveAuthenticatedAsync(identity, cursor, limit, cancellationToken);
+
+    public Task<OpaqueMailboxInboxPage> RetrieveOpaqueMailboxInboxAsync(
+        IMailboxOperationSigner signer,
+        OpaqueMailboxContinuation continuation,
+        CancellationToken cancellationToken) =>
+        transport.RetrieveOpaqueMailboxInboxAsync(signer, continuation, cancellationToken);
+
+    public Task RetireTerminallyRejectedRetrieveAsync(
+        SessionId account,
+        ClientMailboxTransportException terminalFailure,
+        CancellationToken cancellationToken) =>
+        transport.RetireTerminallyRejectedRetrieveAsync(
+            account, terminalFailure, cancellationToken);
+}
+
 internal interface IMailboxRuntimeProvisioningSource
 {
+    bool SupportsReactiveRejectedRetrieveRefresh => false;
+
     void AttachRuntimeState(
         SqliteSessionStore store,
         SecureRecoverySessionStore secureStore)
@@ -31,6 +88,14 @@ internal interface IMailboxRuntimeProvisioningSource
         MailboxHolderIdentity holder,
         MailboxInfrastructureOwnership ownership,
         CancellationToken cancellationToken = default);
+
+    Task<ProvisionedMailboxRuntime?> RefreshAfterRejectedRetrieveAsync(
+        SqliteSessionStore store,
+        MailboxHolderIdentity holder,
+        MailboxInfrastructureOwnership ownership,
+        ulong failedRuntimeGeneration,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<ProvisionedMailboxRuntime?>(null);
 
     Task ReleaseAsync(
         SessionId account,
@@ -343,9 +408,12 @@ internal sealed class StoreBoundNativeMau2Transport :
     private readonly MailboxInfrastructureOwnership ownership;
     private readonly ClientFeatureFlags featureFlags;
     private readonly IMailboxDispatchRouteUsageObserver? routeUsageObserver;
+    private readonly Func<NativeMau2MailboxTransport, IReactiveMau2ReadRuntime>
+        reactiveReadRuntimeFactory;
     private readonly SemaphoreSlim bindGate = new(1, 1);
     private readonly object operationGate = new();
     private BoundRuntime? bound;
+    private Task<BoundRuntime?>? refreshTransition;
     private TaskCompletionSource? operationsDrained;
     private int activeOperations;
     private LifecycleState lifecycleState = LifecycleState.Active;
@@ -383,7 +451,9 @@ internal sealed class StoreBoundNativeMau2Transport :
         IMailboxRuntimeProvisioningSource provisioningSource,
         MailboxInfrastructureOwnership ownership,
         ClientFeatureFlags featureFlags,
-        IMailboxDispatchRouteUsageObserver? routeUsageObserver = null)
+        IMailboxDispatchRouteUsageObserver? routeUsageObserver = null,
+        Func<NativeMau2MailboxTransport, IReactiveMau2ReadRuntime>?
+            reactiveReadRuntimeFactory = null)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         this.secureStore = secureStore ?? throw new ArgumentNullException(nameof(secureStore));
@@ -395,6 +465,8 @@ internal sealed class StoreBoundNativeMau2Transport :
         this.ownership = ownership;
         this.featureFlags = featureFlags ?? throw new ArgumentNullException(nameof(featureFlags));
         this.routeUsageObserver = routeUsageObserver;
+        this.reactiveReadRuntimeFactory = reactiveReadRuntimeFactory ??
+            (static transport => new NativeReactiveMau2ReadRuntime(transport));
         if (!featureFlags.ClientMailboxAdapterEnabled ||
             !featureFlags.MetadataPrivateTransportRequired)
         {
@@ -554,14 +626,14 @@ internal sealed class StoreBoundNativeMau2Transport :
         SessionIdentityProvider identity,
         CancellationToken cancellationToken = default)
     {
-        using var operation = EnterOperation();
         var publicKey = identity.GetEd25519PublicKey();
         try
         {
-            var runtime = await EnsureBoundAsync(
-                identity.SessionId, publicKey, cancellationToken).ConfigureAwait(false);
-            return await runtime.Transport.ReceiveAuthenticatedAsync(identity, cancellationToken)
-                .ConfigureAwait(false);
+            return await ExecuteReadOnlyRetrieveWithReactiveRefreshAsync(
+                identity.SessionId,
+                publicKey,
+                (runtime, token) => runtime.ReceiveAuthenticatedAsync(identity, token),
+                cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -575,14 +647,15 @@ internal sealed class StoreBoundNativeMau2Transport :
         int limit,
         CancellationToken cancellationToken = default)
     {
-        using var operation = EnterOperation();
         var publicKey = identity.GetEd25519PublicKey();
         try
         {
-            var runtime = await EnsureBoundAsync(
-                identity.SessionId, publicKey, cancellationToken).ConfigureAwait(false);
-            return await runtime.Transport.RetrieveAuthenticatedAsync(
-                identity, cursor, limit, cancellationToken).ConfigureAwait(false);
+            return await ExecuteReadOnlyRetrieveWithReactiveRefreshAsync(
+                identity.SessionId,
+                publicKey,
+                (runtime, token) => runtime.RetrieveAuthenticatedAsync(
+                    identity, cursor, limit, token),
+                cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -604,20 +677,76 @@ internal sealed class StoreBoundNativeMau2Transport :
         OpaqueMailboxContinuation continuation,
         CancellationToken cancellationToken = default)
     {
-        using var operation = EnterOperation();
         var publicKey = signer.GetEd25519PublicKey();
         try
         {
-            var runtime = await EnsureBoundAsync(
-                signer.SessionId, publicKey, cancellationToken).ConfigureAwait(false);
-            return await runtime.Transport.RetrieveOpaqueMailboxInboxAsync(
-                signer, continuation, cancellationToken).ConfigureAwait(false);
+            return await ExecuteReadOnlyRetrieveWithReactiveRefreshAsync(
+                signer.SessionId,
+                publicKey,
+                (runtime, token) => runtime.RetrieveOpaqueMailboxInboxAsync(
+                    signer, continuation, token),
+                cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             System.Security.Cryptography.CryptographicOperations.ZeroMemory(publicKey);
         }
     }
+
+    private async Task<TResult> ExecuteReadOnlyRetrieveWithReactiveRefreshAsync<TResult>(
+        SessionId account,
+        byte[] holderPublicKey,
+        Func<IReactiveMau2ReadRuntime, CancellationToken, Task<TResult>> retrieve,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(retrieve);
+        BoundRuntime? failedRuntime = null;
+        ClientMailboxTransportException? terminalFailure = null;
+        using (var operation = EnterOperation())
+        {
+            var runtime = await EnsureBoundAsync(
+                account, holderPublicKey, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await retrieve(runtime.ReactiveReads, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (ClientMailboxTransportException exception) when (
+                ownership == MailboxInfrastructureOwnership.OfficialManaged &&
+                provisioningSource.SupportsReactiveRejectedRetrieveRefresh &&
+                IsReactiveRefreshTerminal(exception))
+            {
+                failedRuntime = runtime;
+                terminalFailure = exception;
+            }
+        }
+
+        var refreshed = await RefreshAfterRejectedRetrieveAsync(
+                failedRuntime!, terminalFailure!, account, holderPublicKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (refreshed is null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                .Capture(terminalFailure!).Throw();
+            throw new InvalidOperationException("Unreachable terminal retrieve path.");
+        }
+
+        using var retryOperation = EnterOperation();
+        var retryRuntime = RequireBound();
+        RequireSession(retryRuntime, account);
+        if (!ReferenceEquals(retryRuntime, refreshed))
+            throw new OperationCanceledException(
+                "The refreshed MAU2 runtime changed before the one-shot retrieve retry.");
+        return await retrieve(retryRuntime.ReactiveReads, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static bool IsReactiveRefreshTerminal(
+        ClientMailboxTransportException exception) =>
+        !exception.Retryable &&
+        exception.Failure is ClientMailboxTransportFailure.AuthorizationRejected or
+            ClientMailboxTransportFailure.ConflictOrExpired;
 
     public async Task AcknowledgeOpaqueMailboxInboxAsync(
         IMailboxOperationSigner signer,
@@ -646,15 +775,38 @@ internal sealed class StoreBoundNativeMau2Transport :
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
         Task drain;
-        lock (operationGate)
+        while (true)
         {
-            lifecycleState = LifecycleState.Disposed;
-            drain = activeOperations == 0
-                ? Task.CompletedTask
-                : (operationsDrained ??= new TaskCompletionSource(
-                    TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            Task<BoundRuntime?>? pendingRefresh = null;
+            lock (operationGate)
+            {
+                if (Volatile.Read(ref disposed) != 0) return;
+                if (lifecycleState == LifecycleState.Refreshing)
+                {
+                    pendingRefresh = refreshTransition ?? throw new InvalidOperationException(
+                        "The MAU2 refresh transition is unavailable.");
+                }
+                else
+                {
+                    if (Interlocked.CompareExchange(ref disposed, 1, 0) != 0) return;
+                    lifecycleState = LifecycleState.Disposed;
+                    drain = activeOperations == 0
+                        ? Task.CompletedTask
+                        : (operationsDrained ??= new TaskCompletionSource(
+                            TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+                    break;
+                }
+            }
+
+            try
+            {
+                pendingRefresh.GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // Refresh failure restores Active before completing the transition.
+            }
         }
         drain.GetAwaiter().GetResult();
         bindGate.Wait();
@@ -675,17 +827,43 @@ internal sealed class StoreBoundNativeMau2Transport :
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
         Task drain;
-        lock (operationGate)
+        while (true)
         {
-            ThrowIfDisposed();
-            if (lifecycleState != LifecycleState.Active)
-                throw new InvalidOperationException(
-                    "The MAU2 account generation is not active.");
-            lifecycleState = LifecycleState.Stopping;
-            drain = activeOperations == 0
-                ? Task.CompletedTask
-                : (operationsDrained ??= new TaskCompletionSource(
-                    TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            Task<BoundRuntime?>? pendingRefresh = null;
+            lock (operationGate)
+            {
+                ThrowIfDisposed();
+                if (lifecycleState == LifecycleState.Refreshing)
+                {
+                    pendingRefresh = refreshTransition ?? throw new InvalidOperationException(
+                        "The MAU2 refresh transition is unavailable.");
+                }
+                else
+                {
+                    if (lifecycleState != LifecycleState.Active)
+                        throw new InvalidOperationException(
+                            "The MAU2 account generation is not active.");
+                    lifecycleState = LifecycleState.Stopping;
+                    drain = activeOperations == 0
+                        ? Task.CompletedTask
+                        : (operationsDrained ??= new TaskCompletionSource(
+                            TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+                    break;
+                }
+            }
+
+            try
+            {
+                await pendingRefresh.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // Refresh failure restores Active before completing the transition.
+            }
         }
         await drain.ConfigureAwait(false);
         await bindGate.WaitAsync().ConfigureAwait(false);
@@ -740,6 +918,200 @@ internal sealed class StoreBoundNativeMau2Transport :
             operationsDrained = null;
             lifecycleState = LifecycleState.Active;
         }
+    }
+
+    private async Task<BoundRuntime?> RefreshAfterRejectedRetrieveAsync(
+        BoundRuntime failedRuntime,
+        ClientMailboxTransportException terminalFailure,
+        SessionId account,
+        byte[] holderPublicKey,
+        CancellationToken cancellationToken)
+    {
+        Task<BoundRuntime?> transition;
+        TaskCompletionSource<BoundRuntime?>? completion = null;
+        Task drain = Task.CompletedTask;
+        lock (operationGate)
+        {
+            ThrowIfDisposed();
+            var current = Volatile.Read(ref bound);
+            if (!ReferenceEquals(current, failedRuntime))
+            {
+                if (current is null)
+                    throw new OperationCanceledException(
+                        "The rejected MAU2 runtime was released before refresh.");
+                RequireSession(current, account);
+                if (current.Provisioned.Authority.MinimumGeneration <=
+                    failedRuntime.Provisioned.Authority.MinimumGeneration)
+                    throw new InvalidOperationException(
+                        "The replacement MAU2 runtime did not advance authority generation.");
+                return current;
+            }
+
+            if (lifecycleState == LifecycleState.Active)
+            {
+                lifecycleState = LifecycleState.Refreshing;
+                drain = activeOperations == 0
+                    ? Task.CompletedTask
+                    : (operationsDrained ??= new TaskCompletionSource(
+                        TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+                completion = new TaskCompletionSource<BoundRuntime?>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                refreshTransition = completion.Task;
+            }
+            else if (lifecycleState != LifecycleState.Refreshing ||
+                     refreshTransition is null)
+            {
+                throw new OperationCanceledException(
+                    "The MAU2 account generation no longer permits reactive refresh.");
+            }
+            transition = refreshTransition;
+        }
+
+        if (completion is not null)
+        {
+            var refreshHolderPublicKey = holderPublicKey.ToArray();
+            _ = RunRefreshTransitionAsync(
+                completion,
+                drain,
+                failedRuntime,
+                terminalFailure,
+                account,
+                refreshHolderPublicKey);
+        }
+
+        return await transition.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RunRefreshTransitionAsync(
+        TaskCompletionSource<BoundRuntime?> completion,
+        Task drain,
+        BoundRuntime failedRuntime,
+        ClientMailboxTransportException terminalFailure,
+        SessionId account,
+        byte[] holderPublicKey)
+    {
+        try
+        {
+            await drain.ConfigureAwait(false);
+            var replacement = await ReplaceRejectedRuntimeAsync(
+                    failedRuntime,
+                    terminalFailure,
+                    account,
+                    holderPublicKey,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            CompleteRefreshTransition(completion, replacement, exception: null);
+        }
+        catch (OperationCanceledException exception)
+        {
+            CompleteRefreshTransition(completion, replacement: null, exception);
+        }
+        catch (Exception exception)
+        {
+            CompleteRefreshTransition(completion, replacement: null, exception);
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(
+                holderPublicKey);
+        }
+    }
+
+    private async Task<BoundRuntime?> ReplaceRejectedRuntimeAsync(
+        BoundRuntime failedRuntime,
+        ClientMailboxTransportException terminalFailure,
+        SessionId account,
+        byte[] holderPublicKey,
+        CancellationToken cancellationToken)
+    {
+        await bindGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            lock (operationGate)
+            {
+                ThrowIfDisposed();
+                if (lifecycleState != LifecycleState.Refreshing ||
+                    !ReferenceEquals(Volatile.Read(ref bound), failedRuntime))
+                    throw new OperationCanceledException(
+                        "The rejected MAU2 runtime changed before refresh acquisition.");
+            }
+
+            await failedRuntime.ReactiveReads.RetireTerminallyRejectedRetrieveAsync(
+                    account, terminalFailure, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            var provisioned = await provisioningSource.RefreshAfterRejectedRetrieveAsync(
+                    store,
+                    new MailboxHolderIdentity(account, holderPublicKey),
+                    ownership,
+                    failedRuntime.Provisioned.Authority.MinimumGeneration,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (provisioned is null) return null;
+
+            NativeMau2MailboxTransport? replacementTransport = null;
+            var published = false;
+            try
+            {
+                if (provisioned.LocalSessionId != account ||
+                    provisioned.Authority.MinimumGeneration <=
+                    failedRuntime.Provisioned.Authority.MinimumGeneration)
+                    throw new InvalidDataException(
+                        "Reactive MAU2 refresh did not produce a strict authority successor.");
+                replacementTransport = CreateNativeTransport(provisioned);
+                var replacement = new BoundRuntime(
+                    provisioned,
+                    replacementTransport,
+                    reactiveReadRuntimeFactory(replacementTransport));
+                lock (operationGate)
+                {
+                    ThrowIfDisposed();
+                    if (lifecycleState != LifecycleState.Refreshing ||
+                        !ReferenceEquals(Volatile.Read(ref bound), failedRuntime))
+                        throw new OperationCanceledException(
+                            "The rejected MAU2 runtime changed before atomic publication.");
+                    Volatile.Write(ref bound, replacement);
+                    published = true;
+                }
+                failedRuntime.Transport.Dispose();
+                return replacement;
+            }
+            finally
+            {
+                if (!published)
+                {
+                    if (replacementTransport is not null)
+                        replacementTransport.Dispose();
+                    else
+                        (provisioned.Ingress as IDisposable)?.Dispose();
+                }
+            }
+        }
+        finally
+        {
+            bindGate.Release();
+        }
+    }
+
+    private void CompleteRefreshTransition(
+        TaskCompletionSource<BoundRuntime?> completion,
+        BoundRuntime? replacement,
+        Exception? exception)
+    {
+        lock (operationGate)
+        {
+            if (lifecycleState == LifecycleState.Refreshing)
+                lifecycleState = LifecycleState.Active;
+            if (ReferenceEquals(refreshTransition, completion.Task))
+                refreshTransition = null;
+        }
+
+        if (exception is OperationCanceledException canceled)
+            completion.TrySetCanceled(canceled.CancellationToken);
+        else if (exception is not null)
+            completion.TrySetException(exception);
+        else
+            completion.TrySetResult(replacement);
     }
 
     private async Task<BoundRuntime> EnsureBoundAsync(
@@ -805,23 +1177,19 @@ internal sealed class StoreBoundNativeMau2Transport :
                 }
             }
 
-            var transport = new NativeMau2MailboxTransport(
-                featureFlags,
-                provisioned.Activation,
-                provisioned.Ingress,
-                store,
-                new PinnedClientMailboxReceiptVerifier(
-                    new SodiumClientMailboxReceiptCrypto()),
-                provisioned.DecodePolicies,
-                provisioned.Authority,
-                account => account == provisioned.LocalSessionId
-                    ? provisioned.SelfSelector
-                    : throw new InvalidOperationException(
-                        "MAU2 self selector was requested for another account."),
-                ownsIngress: true,
-                timeProvider: provisioned.TimeProvider,
-                routeUsageObserver: routeUsageObserver);
-            current = new BoundRuntime(provisioned, transport);
+            var transport = CreateNativeTransport(provisioned);
+            try
+            {
+                current = new BoundRuntime(
+                    provisioned,
+                    transport,
+                    reactiveReadRuntimeFactory(transport));
+            }
+            catch
+            {
+                transport.Dispose();
+                throw;
+            }
             Volatile.Write(ref bound, current);
             return current;
         }
@@ -830,6 +1198,24 @@ internal sealed class StoreBoundNativeMau2Transport :
             bindGate.Release();
         }
     }
+
+    private NativeMau2MailboxTransport CreateNativeTransport(
+        ProvisionedMailboxRuntime provisioned) => new(
+        featureFlags,
+        provisioned.Activation,
+        provisioned.Ingress,
+        store,
+        new PinnedClientMailboxReceiptVerifier(
+            new SodiumClientMailboxReceiptCrypto()),
+        provisioned.DecodePolicies,
+        provisioned.Authority,
+        account => account == provisioned.LocalSessionId
+            ? provisioned.SelfSelector
+            : throw new InvalidOperationException(
+                "MAU2 self selector was requested for another account."),
+        ownsIngress: true,
+        timeProvider: provisioned.TimeProvider,
+        routeUsageObserver: routeUsageObserver);
 
     private BoundRuntime RequireBound()
     {
@@ -878,7 +1264,8 @@ internal sealed class StoreBoundNativeMau2Transport :
 
     private sealed record BoundRuntime(
         ProvisionedMailboxRuntime Provisioned,
-        NativeMau2MailboxTransport Transport);
+        NativeMau2MailboxTransport Transport,
+        IReactiveMau2ReadRuntime ReactiveReads);
 
     private sealed class OperationLease(StoreBoundNativeMau2Transport owner) : IDisposable
     {
@@ -890,8 +1277,9 @@ internal sealed class StoreBoundNativeMau2Transport :
     private enum LifecycleState
     {
         Active = 0,
-        Stopping = 1,
-        Stopped = 2,
-        Disposed = 3
+        Refreshing = 1,
+        Stopping = 2,
+        Stopped = 3,
+        Disposed = 4
     }
 }

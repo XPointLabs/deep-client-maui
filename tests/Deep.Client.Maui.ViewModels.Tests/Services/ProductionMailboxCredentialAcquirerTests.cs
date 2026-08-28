@@ -91,6 +91,25 @@ public sealed class ProductionMailboxCredentialAcquirerTests
     }
 
     [Fact]
+    public async Task ReactiveSuccessorRejectsNonAdvancingVerifiedServerGenerationBeforeEnrollment()
+    {
+        using var fixture = new Fixture();
+        var calls = 0;
+        using var http = new HttpClient(new CallbackHandler((_, _) =>
+        {
+            calls++;
+            return Task.FromResult(fixture.ChallengeResponse(0x42));
+        }));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            fixture.CreateAcquirer(http).AcquireSuccessorLocalOwnerAsync(
+                fixture.PredecessorRoute(sequence: 7),
+                failedRuntimeGeneration: 70));
+
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
     public async Task PeerDeposit_BindsVerifiedRoute_AndNeverAddsOwnerProofOrRetry()
     {
         using var fixture = new Fixture();

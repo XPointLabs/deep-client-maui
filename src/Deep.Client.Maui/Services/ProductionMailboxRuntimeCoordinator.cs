@@ -18,6 +18,8 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
     IGroupMailboxRouteExchange,
     IDisposable
 {
+    public bool SupportsReactiveRejectedRetrieveRefresh => true;
+
     internal const string RoutesResource =
         "Deep.Client.Maui.production-mailbox-privacy-routes.v1.json";
     internal const string RoutesSignatureResource =
@@ -468,6 +470,133 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
             {
                 ownerIdentity?.Dispose();
                 sessionIdentity?.Dispose();
+            }
+        }
+        finally
+        {
+            provisionGate.Release();
+        }
+    }
+
+    public async Task<ProvisionedMailboxRuntime?> RefreshAfterRejectedRetrieveAsync(
+        SqliteSessionStore store,
+        MailboxHolderIdentity holder,
+        MailboxInfrastructureOwnership ownership,
+        ulong failedRuntimeGeneration,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(holder);
+        if (ownership != MailboxInfrastructureOwnership.OfficialManaged)
+            return null;
+        if (failedRuntimeGeneration == 0)
+            throw new ArgumentOutOfRangeException(nameof(failedRuntimeGeneration));
+
+        await provisionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            BoundState state;
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                state = RequireBound();
+                if (state.Material.LocalSessionId != holder.SessionId ||
+                    !string.Equals(state.StoreIdentity, store.CanonicalStateIdentity,
+                        StringComparison.Ordinal))
+                    throw new InvalidOperationException(
+                        "Reactive mailbox refresh targets another account generation.");
+                var currentGeneration = state.Material.Authority.MinimumGeneration;
+                if (currentGeneration > failedRuntimeGeneration)
+                    return CreateProvisioned(state);
+                if (currentGeneration != failedRuntimeGeneration)
+                    throw new InvalidOperationException(
+                        "Reactive mailbox refresh rejected a mismatched failed generation.");
+            }
+            finally
+            {
+                gate.Release();
+            }
+
+            var sessionKey = state.SessionIdentity.GetEd25519PublicKey();
+            try
+            {
+                if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                        sessionKey, holder.Ed25519PublicKey.Span))
+                    throw new InvalidOperationException(
+                        "Reactive mailbox refresh holder differs from the active account.");
+            }
+            finally
+            {
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(sessionKey);
+            }
+
+            var ownerKey = state.OwnerIdentity.GetPublicKey();
+            try
+            {
+                var acquired = await state.Acquirer.AcquireSuccessorLocalOwnerAsync(
+                        state.PublicRoute,
+                        failedRuntimeGeneration,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                var activation = await ProductionMailboxLocalOwnerLifecycle.ResolveAsync(
+                        new ProductionMailboxActiveBundleLoadResult(
+                            ProductionMailboxActiveBundleStatus.Expired,
+                            state.Material,
+                            state.PublicRoute),
+                        ownerKey,
+                        _ => Task.FromResult(acquired),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (activation.Material.Authority.MinimumGeneration <=
+                    failedRuntimeGeneration)
+                    throw new InvalidDataException(
+                        "Reactive mailbox refresh imported a non-successor authority.");
+                await new ProductionMailboxLocalOwnerRouteStateStore(store).SaveAsync(
+                        holder.SessionId,
+                        activation.PublicRoute,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    ThrowIfDisposed();
+                    if (!ReferenceEquals(bound, state))
+                    {
+                        var current = RequireBound();
+                        if (current.Material.LocalSessionId == holder.SessionId &&
+                            current.Material.Authority.MinimumGeneration >
+                            failedRuntimeGeneration)
+                            return CreateProvisioned(current);
+                        throw new OperationCanceledException(
+                            "Production mailbox binding changed during reactive refresh.");
+                    }
+
+                    var replacement = new BoundState(
+                        state.StoreIdentity,
+                        activation.Material,
+                        activation.PublicRoute,
+                        state.SessionIdentity,
+                        state.OwnerIdentity,
+                        state.Acquirer,
+                        state.ContactState,
+                        state.PeerSelectorState,
+                        state.Routes);
+                    foreach (var selector in state.PeerSelectors)
+                        replacement.PeerSelectors.Add(selector.Key, selector.Value);
+                    bound = replacement;
+                    return CreateProvisioned(replacement);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            }
+            finally
+            {
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(ownerKey);
             }
         }
         finally

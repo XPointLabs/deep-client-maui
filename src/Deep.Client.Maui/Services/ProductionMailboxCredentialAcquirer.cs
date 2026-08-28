@@ -59,11 +59,37 @@ internal sealed class ProductionMailboxCredentialAcquirer
 
     public async Task<AcquiredProductionMailboxLocalOwner> AcquireLocalOwnerAsync(
         CancellationToken cancellationToken = default)
-        => await AcquireLocalOwnerAsync(null, cancellationToken).ConfigureAwait(false);
+        => await AcquireLocalOwnerCoreAsync(
+            predecessorRoute: null,
+            minimumExclusiveServerGeneration: null,
+            cancellationToken).ConfigureAwait(false);
 
     public async Task<AcquiredProductionMailboxLocalOwner> AcquireLocalOwnerAsync(
         ProductionMailboxLocalOwnerPublicRoute? predecessorRoute,
         CancellationToken cancellationToken = default)
+        => await AcquireLocalOwnerCoreAsync(
+            predecessorRoute,
+            minimumExclusiveServerGeneration: null,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<AcquiredProductionMailboxLocalOwner> AcquireSuccessorLocalOwnerAsync(
+        ProductionMailboxLocalOwnerPublicRoute predecessorRoute,
+        ulong failedRuntimeGeneration,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(predecessorRoute);
+        if (failedRuntimeGeneration == 0)
+            throw new ArgumentOutOfRangeException(nameof(failedRuntimeGeneration));
+        return await AcquireLocalOwnerCoreAsync(
+            predecessorRoute,
+            failedRuntimeGeneration,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<AcquiredProductionMailboxLocalOwner> AcquireLocalOwnerCoreAsync(
+        ProductionMailboxLocalOwnerPublicRoute? predecessorRoute,
+        ulong? minimumExclusiveServerGeneration,
+        CancellationToken cancellationToken)
     {
         var holderKey = sessionIdentity.GetEd25519PublicKey();
         var ownerKey = ownerIdentity.GetPublicKey();
@@ -74,6 +100,10 @@ internal sealed class ProductionMailboxCredentialAcquirer
             var enrollmentChallenge = await registry.CreateChallengeAsync(cancellationToken)
                 .ConfigureAwait(false);
             var enrollmentAuthority = ValidateChallenge(enrollmentChallenge);
+            if (minimumExclusiveServerGeneration is { } failedGeneration &&
+                enrollmentAuthority.CurrentEpoch.Generation <= failedGeneration)
+                throw new InvalidDataException(
+                    "Registry server generation did not advance beyond the rejected runtime.");
             idempotency = ComputeIdempotency(
                 enrollmentChallenge, holderKey, ownerKey,
                 ProductionMailboxIssuanceIntent.LocalOwner,

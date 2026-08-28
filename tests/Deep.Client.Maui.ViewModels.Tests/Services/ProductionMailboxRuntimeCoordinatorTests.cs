@@ -16,6 +16,28 @@ public sealed class ProductionMailboxRuntimeCoordinatorTests
         "update vague zinger boxes ornament renting glass gained island nabbing afield calamity nabbing";
 
     [Fact]
+    public void ProductionCoordinatorExplicitlyAdvertisesReactiveRejectedRetrieveRefresh()
+    {
+        var root = Root();
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var coordinator = new ProductionMailboxRuntimeCoordinator(
+                new Uri("https://registry.example.net/"),
+                root,
+                new HttpServiceTransportFactory(HttpServiceEndpointPolicy.Production),
+                new HttpServiceClientOptions());
+
+            Assert.True(((IMailboxRuntimeProvisioningSource)coordinator)
+                .SupportsReactiveRejectedRetrieveRefresh);
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+        }
+    }
+
+    [Fact]
     public async Task PersistedPeerSelectorSurvivesStoreRestartWithoutNetworkAcquisition()
     {
         var root = Root();
