@@ -13,6 +13,12 @@ public sealed class PhysicalUatAndroidArtifactPipelineContractSmokeTests
         Assert.Contains("sign-uat-seed", script, StringComparison.Ordinal);
         Assert.Contains("duplicate-password-source", script, StringComparison.Ordinal);
         Assert.Contains("'explicit candidate APK signing'", script, StringComparison.Ordinal);
+        Assert.Contains("$badgingOutput = @(& $aapt dump badging $candidateApk)", script,
+            StringComparison.Ordinal);
+        Assert.True(script.IndexOf("$candidateBadgingExitCode = $LASTEXITCODE",
+                StringComparison.Ordinal) <
+            script.IndexOf("$badging = $badgingOutput | Select-Object -First 1",
+                StringComparison.Ordinal));
         Assert.Contains("$apkSigner @('sign'", script, StringComparison.Ordinal);
         Assert.Contains("'explicit final APK signing'", script, StringComparison.Ordinal);
         Assert.Contains("Final APK signer does not match the UAT trust-floor lineage.", script,

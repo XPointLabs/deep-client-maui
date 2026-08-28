@@ -229,8 +229,9 @@ try {
         '--ks-pass', "file:$passwordLease", '--key-pass', "file:$passwordLease",
         $builtApk) 'explicit candidate APK signing'
 } finally { $env:JAVA_HOME = $previousJavaHome }
-$badging = (& $aapt dump badging $candidateApk | Select-Object -First 1)
+$badgingOutput = @(& $aapt dump badging $candidateApk)
 $candidateBadgingExitCode = $LASTEXITCODE
+$badging = $badgingOutput | Select-Object -First 1
 if ($candidateBadgingExitCode -ne 0 -or
     $badging -notmatch "name='$([regex]::Escape($applicationId))'" -or
     $badging -notmatch "versionCode='$versionCode'") { throw 'Candidate APK package/version is invalid.' }
