@@ -8,9 +8,9 @@ namespace Deep.Client.Maui.UiTests;
 
 internal sealed class PhysicalChaosController
 {
-    internal const string DevOpsCommit = "4f152690305993d08f28a547175299fd41186147";
+    internal const string DevOpsCommit = "5ec53b943e5ffd45bacce7df650a36ac8c73eca0";
     internal const string DependencyManifestSha256 =
-        "fd94cc3810b7ea27256aa9922d415e809f6a7d821a1ae49608f1d6f7156a781a";
+        "3ed3b0e3df77e673265db18f8a98b8aa6be6253e9e001da046a711b050c475d8";
     internal const int TtlSeconds = 300;
     private const int CleanupAttempts = 3;
     private readonly string launcher;
