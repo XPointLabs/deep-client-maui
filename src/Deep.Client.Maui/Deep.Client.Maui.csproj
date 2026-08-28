@@ -15,7 +15,7 @@
     <ApplicationId Condition="'$(DeepPhysicalE2E)' != 'true' Or '$(Configuration)' == 'Release'">network.xpoint.deep</ApplicationId>
     <ApplicationId Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">network.xpoint.deep.e2e</ApplicationId>
     <ApplicationDisplayVersion>0.2.9</ApplicationDisplayVersion>
-    <ApplicationVersion>15</ApplicationVersion>
+    <ApplicationVersion>16</ApplicationVersion>
     <WindowsPackageType>None</WindowsPackageType>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
