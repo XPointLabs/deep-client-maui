@@ -361,18 +361,10 @@ public static class MauiProgram
             CreateFileTransportClientOptions(),
             CreateServiceTransportClientOptions());
         Func<IServiceProvider, ClientRuntimeBootstrapper> runtimeBootstrapperFactory =
-            serviceProvider => new ClientRuntimeBootstrapper(async cancellationToken =>
-            {
-                if (realityTransportRuntime.EndpointSource == RealityTransportEndpointSource.Embedded
-                    && routerBaseUrls.Count > 0)
-                {
-                    await realityTransportRuntime.EnsureStartedAsync(cancellationToken)
-                        .ConfigureAwait(false);
-                }
-
-                return await CreateClientRuntimeAsync(serviceProvider, cancellationToken)
-                    .ConfigureAwait(false);
-            });
+            serviceProvider => new ClientRuntimeBootstrapper(
+                cancellationToken => CreateClientRuntimeAsync(
+                    serviceProvider,
+                    cancellationToken));
         Func<IServiceProvider, ClientRuntime> runtimeFactory =
             serviceProvider => serviceProvider
                 .GetRequiredService<ClientRuntimeBootstrapper>()
@@ -655,28 +647,6 @@ public static class MauiProgram
                     outboxActivation.EffectiveFeatureFlags),
                 outboxActivation.Executor,
                 services.GetService<IGroupMailboxRouteExchange>());
-#if DEBUG && DEEP_PHYSICAL_E2E
-            try
-            {
-                var activeAccount = await runtime.Accounts
-                    .GetActiveAccountAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                if (activeAccount is not null)
-                {
-                    await runtime.Inbox.SynchronizeAsync(cancellationToken)
-                        .ConfigureAwait(false);
-                }
-            }
-            catch (Exception exception) when (
-                IsPhysicalMailboxCredentialStateConflict(exception))
-            {
-                runtime.Dispose();
-                throw new LocalStateResetRequiredException(
-                    LocalStateResetRequiredReason.InvalidCurrentSchema,
-                    "The physical UAT mailbox credential state requires an explicit local reset.",
-                    exception);
-            }
-#endif
             return runtime;
         }
         catch
@@ -685,29 +655,6 @@ public static class MauiProgram
             throw;
         }
     }
-
-#if DEBUG && DEEP_PHYSICAL_E2E
-    private static bool IsPhysicalMailboxCredentialStateConflict(Exception exception)
-    {
-        for (Exception? current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is not (InvalidDataException or InvalidOperationException))
-            {
-                continue;
-            }
-
-            if (current.Message is
-                "Mailbox bundle checkpoint is not an exact replay or forward rotation."
-                or "Mailbox credential import conflicts with the exact persisted scope."
-                or "Mailbox rotation E+1 is not byte-identical to the installed overlap.")
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-#endif
 
     private static StoreBoundRuntimeTransportComposition
         CreateStoreBoundTransportComposition(

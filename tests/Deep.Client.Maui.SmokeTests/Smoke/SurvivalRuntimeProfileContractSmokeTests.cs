@@ -415,11 +415,9 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.DoesNotContain("MrXPublicKeySha256Env", program, StringComparison.Ordinal);
         Assert.DoesNotContain("ResolveRuntimeSetting(\"DEEP_MR_X_PUBLIC_KEY_SHA256\")",
             program, StringComparison.Ordinal);
-        Assert.Contains("IsPhysicalMailboxCredentialStateConflict", program,
+        Assert.DoesNotContain("IsPhysicalMailboxCredentialStateConflict", program,
             StringComparison.Ordinal);
-        Assert.Contains("runtime.Inbox.SynchronizeAsync", program,
-            StringComparison.Ordinal);
-        Assert.Contains("LocalStateResetRequiredReason.InvalidCurrentSchema", program,
+        Assert.DoesNotContain("runtime.Inbox.SynchronizeAsync", program,
             StringComparison.Ordinal);
     }
 
