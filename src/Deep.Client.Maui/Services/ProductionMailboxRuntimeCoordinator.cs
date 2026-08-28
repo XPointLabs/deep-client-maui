@@ -54,7 +54,7 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
         this.timeProvider = timeProvider ?? TimeProvider.System;
         protectedRoot = Path.Combine(
             Path.GetFullPath(appDataDirectory), "production-mailbox-runtime-v1");
-        var handler = HttpServiceTransportFactory.CreateHttpHandler(clientOptions, null);
+        var handler = transportFactory.CreateBoundHttpHandler(clientOptions);
         handler.AutomaticDecompression = System.Net.DecompressionMethods.None;
         handler.SslOptions.CertificateRevocationCheckMode = X509RevocationMode.Online;
         registryHttpClient = new HttpClient(handler, disposeHandler: true)

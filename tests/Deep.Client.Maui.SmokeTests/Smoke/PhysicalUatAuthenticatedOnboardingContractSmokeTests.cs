@@ -20,6 +20,11 @@ public sealed class PhysicalUatAuthenticatedOnboardingContractSmokeTests
         Assert.True(sessionOnboarding > onboardingGuard);
         Assert.True(productionCoordinator > sessionOnboarding);
         Assert.Contains(
+            "transportFactory.CreateBoundHttpHandler(clientOptions)",
+            Read("src", "Deep.Client.Maui", "Services",
+                "ProductionMailboxRuntimeCoordinator.cs"),
+            StringComparison.Ordinal);
+        Assert.Contains(
             "services.GetRequiredService<ProductionMailboxRuntimeCoordinator>()",
             program,
             StringComparison.Ordinal);
