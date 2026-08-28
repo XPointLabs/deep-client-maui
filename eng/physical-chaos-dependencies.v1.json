@@ -1,7 +1,7 @@
 {
   "schema": "deep.physical-chaos-dependencies.v1",
-  "reviewedDevOpsCommit": "8d3dd5114cd447d05d6256482f4436f0c7259cce",
-  "dependencyTreeSha256": "11a720fc90c90f9bd47f35758b5facf284c71646e794b07d8534c9beb5bcf2eb",
+  "reviewedDevOpsCommit": "4f152690305993d08f28a547175299fd41186147",
+  "dependencyTreeSha256": "26535a5d2167f5df6ab55f227268f3052b8c75f1993ded7a18c64f80fedaeb31",
   "files": [
     { "path": "config/survival-uat-tls/haproxy.cfg", "sha256": "799a9ff575d6298ad7782d99b084cf315460dcb30765ad8073e5be7cbc8da7cf" },
     { "path": "docker-compose.survival-resend-chaos.dev.yml", "sha256": "c0c2daeb778174636f2ce4926f1696292cf11f1dbb0fd03b1627272b344fc1ec" },
@@ -9,7 +9,7 @@
     { "path": "docker-compose.survival.dev.yml", "sha256": "754c7264614d696b8d63821095966c7d5cff1ae086bc51c30b8cf15b4fc81a0f" },
     { "path": "scripts/survival-dev-mailbox-build-inputs.ps1", "sha256": "db657dc0a596a197bc0258c00f1a81f4fe84978efe3d2535c8fc44dd31f22bc3" },
     { "path": "scripts/survival-dev-private-secrets.ps1", "sha256": "c2db46d258501aa54b263ca8731817c1e2020e4a88e7c0e66e5558dd991c380e" },
-    { "path": "scripts/survival-dev.ps1", "sha256": "230595ff1f05ffd3640f2c9d295f59a447c9efd3fed2e8223763d612ede2fe3e" },
+    { "path": "scripts/survival-dev.ps1", "sha256": "5d02abf359daff9f4f4f453e4f4a55f7a16f121404c6222e2cb25e751b88bb30" },
     { "path": "tools/survival-resend-chaos/control-client.mjs", "sha256": "59ab1782fbf63bf44aaa1980f98ab1574d794125ea63c549df322ab54294404f" },
     { "path": "tools/survival-resend-chaos/resend-chaos-proxy.mjs", "sha256": "4c94789b95352d97932154e8ffa1ca3e0b838c862fb76beb042da8a867078744" },
     { "path": "tools/survival-resend-chaos/resend-chaos-proxy.test.mjs", "sha256": "8dd17afb9f0a922ed57ed84d8a8e7d01b698e783b798fd2605911e6ea75b29e6" }
