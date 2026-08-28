@@ -318,9 +318,9 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("Uri.UriSchemeHttps", chaosController, StringComparison.Ordinal);
         Assert.Contains("origin.Port != 41801", chaosController, StringComparison.Ordinal);
         Assert.DoesNotContain("http://", chaosController, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("5ec53b943e5ffd45bacce7df650a36ac8c73eca0", runner,
+        Assert.Contains("9feb7fa2416025b672748c4e0ee512d5ba571803", runner,
             StringComparison.Ordinal);
-        Assert.Contains("5ec53b943e5ffd45bacce7df650a36ac8c73eca0", chaosController,
+        Assert.Contains("9feb7fa2416025b672748c4e0ee512d5ba571803", chaosController,
             StringComparison.Ordinal);
         Assert.Contains("survival-dev-mailbox-negative-runtime.ps1", runner,
             StringComparison.Ordinal);
