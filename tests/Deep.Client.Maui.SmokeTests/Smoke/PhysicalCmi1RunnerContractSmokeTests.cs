@@ -49,6 +49,84 @@ public sealed class PhysicalCmi1RunnerContractSmokeTests
     }
 
     [Fact]
+    public void GroupTextIsASeparatePrePayloadPhaseWithColdRestartAndSanitizedEvidence()
+    {
+        var runner = Read("tests", "Deep.Client.Maui.UiTests",
+            "StrictCrossPlatformUiTests.cs");
+        var phases = Read("tests", "Deep.Client.Maui.UiTests",
+            "Mau2PhysicalPhase.cs");
+
+        var groupEnum = phases.IndexOf("GroupText,", StringComparison.Ordinal);
+        var payloadEnum = phases.IndexOf("PayloadMatrix,", StringComparison.Ordinal);
+        var groupCase = runner.IndexOf(
+            "case Mau2PhysicalPhase.GroupText:", StringComparison.Ordinal);
+        var payloadCase = runner.IndexOf(
+            "case Mau2PhysicalPhase.PayloadMatrix:", StringComparison.Ordinal);
+        Assert.True(groupEnum >= 0 && payloadEnum > groupEnum,
+            "GroupText must remain ordered before PayloadMatrix.");
+        Assert.True(groupCase >= 0 && payloadCase > groupCase,
+            "The independently selectable GroupText dispatch must precede PayloadMatrix.");
+
+        var start = runner.IndexOf(
+            "private static void ExerciseGroupTextOnExistingProvisionedClients(",
+            StringComparison.Ordinal);
+        var end = runner.IndexOf(
+            "private static void ExercisePrivacyFallbackOnExistingProvisionedClients(",
+            start,
+            StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start,
+            "The bounded GroupText phase body was not found.");
+        var groupBody = runner[start..end];
+
+        Assert.Contains("ReadAndroidInvitation(android, options)", groupBody,
+            StringComparison.Ordinal);
+        Assert.Contains("ReadWindowsInvitation(windows)", groupBody,
+            StringComparison.Ordinal);
+        Assert.Contains("AddAndroidContact(", groupBody, StringComparison.Ordinal);
+        Assert.Contains("AddWindowsContact(", groupBody, StringComparison.Ordinal);
+        Assert.Contains("ExerciseTwoMemberGroupRoundtrip(", groupBody,
+            StringComparison.Ordinal);
+        Assert.Contains("AssertGroupMessagesExactlyOnceOnBothClients(", groupBody,
+            StringComparison.Ordinal);
+        Assert.Contains("AssertDistinctProcessIds(", groupBody,
+            StringComparison.Ordinal);
+        Assert.Contains("android.RequireRunningProcessId()", groupBody,
+            StringComparison.Ordinal);
+        Assert.Contains("groupMessagesPersistedExactlyOnceAcrossColdRestart", groupBody,
+            StringComparison.Ordinal);
+        Assert.Contains("payloadAndFilePickerStepsNotInvoked", groupBody,
+            StringComparison.Ordinal);
+
+        Assert.DoesNotContain("CaptureFilePickerInvocationContext", groupBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ExchangeAndroidDocument(", groupBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ExchangeWindowsDocument(", groupBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ExchangeInlineImagesBothDirections(", groupBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ExchangeVoiceMessagesBothDirections(", groupBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("evidence.AddSafeValue(\"androidCmi1", groupBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("evidence.AddSafeValue(\"windowsCmi1", groupBody,
+            StringComparison.Ordinal);
+
+        var payloadStart = runner.IndexOf(
+            "private static void ExercisePayloadMatrixOnExistingProvisionedClients(",
+            StringComparison.Ordinal);
+        Assert.True(payloadStart >= 0 && start > payloadStart,
+            "PayloadMatrix must remain independently implemented.");
+        var payloadBody = runner[payloadStart..start];
+        Assert.Contains("ExchangeAndroidDocument(", payloadBody,
+            StringComparison.Ordinal);
+        Assert.Contains("ExchangeWindowsDocument(", payloadBody,
+            StringComparison.Ordinal);
+        Assert.Contains("ExerciseTwoMemberGroupRoundtrip(", payloadBody,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InstalledMsixApprovalIsSignedPolicyBoundAndLegacyModeRemainsAvailable()
     {
         var issuer = Read("eng", "Issue-AndroidLabPolicy.ps1");

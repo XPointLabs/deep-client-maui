@@ -8,6 +8,7 @@ public sealed class Mau2PhysicalPhaseTests
     [Theory]
     [InlineData("ProvisionIdentity", Mau2PhysicalPhase.ProvisionIdentity)]
     [InlineData("Attach", Mau2PhysicalPhase.Attach)]
+    [InlineData("GroupText", Mau2PhysicalPhase.GroupText)]
     [InlineData("PayloadMatrix", Mau2PhysicalPhase.PayloadMatrix)]
     [InlineData("PrivacyFallback", Mau2PhysicalPhase.PrivacyFallback)]
     [InlineData("Call", Mau2PhysicalPhase.Call)]
@@ -42,6 +43,9 @@ public sealed class Mau2PhysicalPhaseTests
         Assert.Throws<InvalidOperationException>(() =>
             Mau2PhysicalPhaseContract.RequireChaosPhase(
                 Mau2PhysicalPhase.PayloadMatrix));
+        Assert.Throws<InvalidOperationException>(() =>
+            Mau2PhysicalPhaseContract.RequireChaosPhase(
+                Mau2PhysicalPhase.GroupText));
     }
 
     [Fact]

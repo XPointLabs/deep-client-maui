@@ -37,6 +37,9 @@ public sealed class StrictCrossPlatformUiTests
             case Mau2PhysicalPhase.Attach:
                 AttachToExistingProvisionedClients(options);
                 return;
+            case Mau2PhysicalPhase.GroupText:
+                ExerciseGroupTextOnExistingProvisionedClients(options);
+                return;
             case Mau2PhysicalPhase.PayloadMatrix:
                 ExercisePayloadMatrixOnExistingProvisionedClients(options);
                 return;
@@ -469,6 +472,128 @@ public sealed class StrictCrossPlatformUiTests
             try { cleanup(); }
             catch (Exception exception) { cleanupFailures.Add(exception); }
         }
+    }
+
+    private static void ExerciseGroupTextOnExistingProvisionedClients(
+        CrossPlatformOptions options)
+    {
+        var evidence = CreatePhaseEvidence(options);
+        var android = new AndroidUiautomatorClient(options);
+        android.AssertPhysicalConnectedDevice();
+        android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
+        android.ColdStart();
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+        android.WaitForRuntimeReady(
+            options.App("PhysicalE2E.RuntimeReadyMarker"), TimeSpan.FromSeconds(45));
+
+        var androidInvitation = ReadAndroidInvitation(android, options);
+        var groupName = StrictCrossPlatformContracts.NewMarker("group-text");
+        var androidMessage = StrictCrossPlatformContracts.NewMarker("android-group-text");
+        var windowsMessage = StrictCrossPlatformContracts.NewMarker("windows-group-text");
+        var androidContactName = StrictCrossPlatformContracts.NewMarker("group-windows-contact");
+        var windowsContactName = StrictCrossPlatformContracts.NewMarker("group-android-contact");
+        CapturedContactInvitation windowsInvitation;
+        int firstAndroidPid;
+        int firstWindowsPid;
+
+        using (var windows = WindowsUiSmokeTests.WindowsUiTestSession
+                   .CreateStrictWithAppData(options.WindowsAppDataRoot))
+        {
+            Require(windows.WaitForAutomationId(
+                "Conversations.NewConversation", TimeSpan.FromSeconds(45)),
+                "Conversations.NewConversation");
+            var windowsRuntimeReady = windows.WaitForAutomationIdWithName(
+                "PhysicalE2E.RuntimeReadyMarker", "ready", TimeSpan.FromSeconds(45));
+            if (windowsRuntimeReady is null)
+            {
+                var terminal = windows.FindAutomationId(
+                    "PhysicalE2E.RuntimeReadyMarker")?.Name ?? "missing";
+                throw new InvalidOperationException(
+                    $"Windows group-text mailbox sync did not become ready; state={terminal}.");
+            }
+
+            windowsInvitation = ReadWindowsInvitation(windows);
+            if (string.Equals(androidInvitation.SessionId, windowsInvitation.SessionId,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Physical group-text invitations resolve to the same account.");
+            }
+
+            // Keep this phase self-contained: it proves arbitrary signed-contact
+            // onboarding before creating the group, without invoking any payload,
+            // attachment, media, voice, or platform picker helper.
+            AddAndroidContact(
+                android, options, windowsInvitation.Text, androidContactName);
+            AddWindowsContact(windows, androidInvitation.Text, windowsContactName);
+            ExerciseTwoMemberGroupRoundtrip(
+                android,
+                windows,
+                options,
+                windowsInvitation.Text,
+                groupName,
+                androidMessage,
+                windowsMessage);
+
+            firstAndroidPid = android.RequireRunningProcessId();
+            firstWindowsPid = windows.ProcessId;
+        }
+
+        android.ColdStart();
+        android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
+        android.WaitForRuntimeReady(
+            options.App("PhysicalE2E.RuntimeReadyMarker"), TimeSpan.FromSeconds(45));
+        StrictCrossPlatformContracts.AssertDistinctProcessIds(
+            firstAndroidPid, android.RequireRunningProcessId());
+        android.TapExactResourceIdWithExactAccessibleText(
+            options.App("Conversations.ConversationRow"), groupName);
+        android.WaitForExactResourceTextCount(
+            options.App("GroupChat.Title"), groupName, 1, TimeSpan.FromSeconds(45));
+
+        using var restartedWindows = WindowsUiSmokeTests.WindowsUiTestSession
+            .CreateStrictWithAppData(options.WindowsAppDataRoot);
+        StrictCrossPlatformContracts.AssertDistinctProcessIds(
+            firstWindowsPid, restartedWindows.ProcessId);
+        Require(restartedWindows.WaitForAutomationId(
+            "Conversations.NewConversation", TimeSpan.FromSeconds(45)),
+            "Conversations.NewConversation");
+        var restartedWindowsRuntimeReady = restartedWindows.WaitForAutomationIdWithName(
+            "PhysicalE2E.RuntimeReadyMarker", "ready", TimeSpan.FromSeconds(45));
+        if (restartedWindowsRuntimeReady is null)
+        {
+            var terminal = restartedWindows.FindAutomationId(
+                "PhysicalE2E.RuntimeReadyMarker")?.Name ?? "missing";
+            throw new InvalidOperationException(
+                $"Cold-restarted Windows group-text sync did not become ready; state={terminal}.");
+        }
+        restartedWindows.ActivateExact(Require(
+            restartedWindows.WaitForAutomationIdWithName(
+                "DesktopWorkspace.ConversationRow", groupName, TimeSpan.FromSeconds(45)),
+            "DesktopWorkspace.ConversationRow"));
+        AssertGroupMessagesExactlyOnceOnBothClients(
+            android,
+            restartedWindows,
+            options,
+            androidMessage,
+            windowsMessage,
+            TimeSpan.FromSeconds(45));
+
+        evidence.AddHash("androidCmi1Hash", androidInvitation.Text);
+        evidence.AddHash("windowsCmi1Hash", windowsInvitation.Text);
+        evidence.AddHash("groupNameHash", groupName);
+        evidence.AddHash("androidGroupMessageHash", androidMessage);
+        evidence.AddHash("windowsGroupMessageHash", windowsMessage);
+        evidence.AddBoolean("contactsAddedFromCryptographicallyVerifiedCmi1", true);
+        evidence.AddBoolean("groupMemberAddedFromCryptographicallyVerifiedCmi1", true);
+        evidence.AddBoolean("groupStateReceivedByWindows", true);
+        evidence.AddBoolean("groupMessagesDeliveredExactlyOnceBothDirections", true);
+        evidence.AddBoolean("groupSenderDeliveryStatusObservedBothDirections", true);
+        evidence.AddBoolean("androidRestartedWithDistinctPid", true);
+        evidence.AddBoolean("windowsRestartedWithDistinctPid", true);
+        evidence.AddBoolean("groupMessagesPersistedExactlyOnceAcrossColdRestart", true);
+        evidence.AddBoolean("payloadAndFilePickerStepsNotInvoked", true);
+        evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
+        CompletePhaseEvidence(options, evidence);
     }
 
     private static void ExercisePrivacyFallbackOnExistingProvisionedClients(
@@ -2443,6 +2568,26 @@ internal sealed class AndroidUiautomatorClient
         ForceStop();
         DismissStaleDocumentPicker();
         RequireSuccess(Adb("shell", "monkey", "-p", StrictCrossPlatformContracts.AndroidPackage, "1"));
+    }
+    internal int RequireRunningProcessId()
+    {
+        var result = Adb("shell", "pidof", StrictCrossPlatformContracts.AndroidPackage);
+        RequireSuccess(result);
+        var tokens = result.Output.Split(
+            (char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length != 1 ||
+            !int.TryParse(
+                tokens[0],
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var processId) ||
+            processId <= 0)
+        {
+            throw new InvalidOperationException(
+                "Android E2E package does not have exactly one canonical running PID.");
+        }
+
+        return processId;
     }
     private void DismissStaleDocumentPicker()
     {

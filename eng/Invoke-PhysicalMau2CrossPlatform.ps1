@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('ProvisionIdentity', 'Attach', 'PayloadMatrix', 'PrivacyFallback', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')]
+    [ValidateSet('ProvisionIdentity', 'Attach', 'GroupText', 'PayloadMatrix', 'PrivacyFallback', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')]
     [string]$Phase,
     [string]$AndroidSerial = '192.168.1.45:43337',
     [string]$MailboxBootstrapRoot = 'C:\Work\DeepSession\secrets\mailbox-bootstrap',

@@ -183,7 +183,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         var startConversation = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Pages", "StartConversationPage.xaml"));
 
-        Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'PayloadMatrix', 'PrivacyFallback', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')", runner,
+        Assert.Contains("ValidateSet('ProvisionIdentity', 'Attach', 'GroupText', 'PayloadMatrix', 'PrivacyFallback', 'Call', 'RestartDurability', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow', 'NegativeRuntime')", runner,
             StringComparison.Ordinal);
         Assert.Contains("DEEP_MAU2_E2E_PHASE", runner, StringComparison.Ordinal);
         Assert.Contains("[switch]$ResetWindowsUatLocalState", runner,
@@ -287,6 +287,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.ProvisionIdentity", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.Attach", ui, StringComparison.Ordinal);
+        Assert.Contains("case Mau2PhysicalPhase.GroupText", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.PayloadMatrix", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.RestartDurability", ui, StringComparison.Ordinal);
         Assert.Contains("case Mau2PhysicalPhase.ManualResendAfterRestart", ui, StringComparison.Ordinal);
