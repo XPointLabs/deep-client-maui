@@ -3,6 +3,40 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class PhysicalUatAndroidArtifactPipelineContractSmokeTests
 {
     [Fact]
+    public void PipelineResolvesDefaultPathsAfterParameterBindingWithoutExecutingBuild()
+    {
+        var script = Read("eng", "Invoke-PhysicalUatAndroidBuild.ps1");
+
+        Assert.Contains("[AllowNull()][AllowEmptyString()][string]$DevOpsRoot,", script,
+            StringComparison.Ordinal);
+        Assert.Contains("[AllowNull()][AllowEmptyString()][string]$RuntimeEnvironmentPath,", script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("$DevOpsRoot = (Join-Path $PSScriptRoot", script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("$RuntimeEnvironmentPath = (Join-Path $PSScriptRoot", script,
+            StringComparison.Ordinal);
+
+        const string devOpsDefault = """
+            if ([string]::IsNullOrWhiteSpace($DevOpsRoot)) {
+                $DevOpsRoot = Join-Path $PSScriptRoot '..\..\deep-devops'
+            }
+            """;
+        const string runtimeDefault = """
+            if ([string]::IsNullOrWhiteSpace($RuntimeEnvironmentPath)) {
+                $RuntimeEnvironmentPath = Join-Path $PSScriptRoot 'survival.dev.env'
+            }
+            """;
+        Assert.Contains(devOpsDefault, script, StringComparison.Ordinal);
+        Assert.Contains(runtimeDefault, script, StringComparison.Ordinal);
+        Assert.True(script.IndexOf(devOpsDefault, StringComparison.Ordinal) <
+            script.IndexOf("$devops = [IO.Path]::GetFullPath($DevOpsRoot)",
+                StringComparison.Ordinal));
+        Assert.True(script.IndexOf(runtimeDefault, StringComparison.Ordinal) <
+            script.IndexOf("$runtime = Resolve-ExactFile $RuntimeEnvironmentPath",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void PipelineBuildsAndValidatesARealAndroidTrustBundleWithoutDeviceAccess()
     {
         var script = Read("eng", "Invoke-PhysicalUatAndroidBuild.ps1");

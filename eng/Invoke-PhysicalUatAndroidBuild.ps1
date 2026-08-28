@@ -4,13 +4,13 @@ param(
     [string]$LanHost,
     [Parameter(Mandatory)][ValidatePattern('^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$')]
     [string]$PublicHost,
-    [string]$DevOpsRoot = (Join-Path $PSScriptRoot '..\..\deep-devops'),
+    [AllowNull()][AllowEmptyString()][string]$DevOpsRoot,
     [string]$MailboxSecretRoot = 'C:\Work\DeepSession\secrets\survival-uat-production-mailbox',
     [string]$TlsSecretRoot = 'C:\Work\DeepSession\secrets\survival-uat-tls',
     [string]$Keystore = $env:XPOINT_ANDROID_KEYSTORE,
     [string]$PasswordFile = $env:XPOINT_ANDROID_SIGNING_PASSWORD_FILE,
     [string]$Alias = $(if ($env:XPOINT_ANDROID_KEY_ALIAS) { $env:XPOINT_ANDROID_KEY_ALIAS } else { 'xpoint-upload' }),
-    [string]$RuntimeEnvironmentPath = (Join-Path $PSScriptRoot 'survival.dev.env'),
+    [AllowNull()][AllowEmptyString()][string]$RuntimeEnvironmentPath,
     [string]$ApkSignerPath = $env:DEEP_APKSIGNER,
     [string]$AaptPath,
     [string]$ZipAlignPath,
@@ -20,6 +20,13 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($DevOpsRoot)) {
+    $DevOpsRoot = Join-Path $PSScriptRoot '..\..\deep-devops'
+}
+if ([string]::IsNullOrWhiteSpace($RuntimeEnvironmentPath)) {
+    $RuntimeEnvironmentPath = Join-Path $PSScriptRoot 'survival.dev.env'
+}
 
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $devops = [IO.Path]::GetFullPath($DevOpsRoot)
