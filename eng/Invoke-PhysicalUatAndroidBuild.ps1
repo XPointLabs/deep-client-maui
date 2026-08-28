@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$')]
     [string]$PublicHost,
     [AllowNull()][AllowEmptyString()][string]$DevOpsRoot,
+    [AllowNull()][AllowEmptyString()][string]$ClientTrustFloorBundle,
     [string]$MailboxSecretRoot = 'C:\Work\DeepSession\secrets\survival-uat-production-mailbox',
     [string]$TlsSecretRoot = 'C:\Work\DeepSession\secrets\survival-uat-tls',
     [string]$Keystore = $env:XPOINT_ANDROID_KEYSTORE,
@@ -123,6 +124,14 @@ foreach ($path in @($authorityState, (Join-Path $uatArtifacts 'trust-floor.json'
         (Join-Path $uatArtifacts 'authority.pma1'), (Join-Path $mailboxSecrets 'mrx.seed'))) {
     [void](Resolve-ExactFile $path 'UAT predecessor input')
 }
+$serverPredecessorTrustSource = Resolve-ExactFile (Join-Path $uatArtifacts 'trust-floor.json') `
+    'server predecessor trust floor'
+$serverPredecessorAuthoritySource = Resolve-ExactFile (Join-Path $uatArtifacts 'authority.pma1') `
+    'server predecessor authority'
+if ([string]::IsNullOrWhiteSpace($ClientTrustFloorBundle)) {
+    $ClientTrustFloorBundle = $serverPredecessorTrustSource
+}
+$clientTrustFloorSource = Resolve-ExactFile $ClientTrustFloorBundle 'client trust-floor bundle'
 $keystoreFile = Resolve-ExactFile $Keystore 'Android keystore'
 $password = Resolve-ExactFile $PasswordFile 'Android signing password file'
 $runtime = Resolve-ExactFile $RuntimeEnvironmentPath 'physical runtime environment'
@@ -175,12 +184,32 @@ Invoke-Checked dotnet @('run', '--project', $transparencyTool, '-c', 'Release', 
     'duplicate-password-source', '--source', $password, '--output', $passwordLease) `
     'temporary Android signing source preparation'
 
-$previousTrustPath = Join-Path $output 'predecessor-trust-floor.json'
-$previousAuthorityPath = Join-Path $output 'predecessor-authority.pma1'
-Copy-Item -LiteralPath (Join-Path $uatArtifacts 'trust-floor.json') -Destination $previousTrustPath
-Copy-Item -LiteralPath (Join-Path $uatArtifacts 'authority.pma1') -Destination $previousAuthorityPath
+$clientTrustFloorSourcePath = Join-Path $output 'client-trust-floor-source.json'
+$serverPredecessorTrustPath = Join-Path $output 'predecessor-trust-floor.json'
+$serverPredecessorAuthorityPath = Join-Path $output 'predecessor-authority.pma1'
+Copy-Item -LiteralPath $clientTrustFloorSource -Destination $clientTrustFloorSourcePath
+Copy-Item -LiteralPath $serverPredecessorTrustSource -Destination $serverPredecessorTrustPath
+Copy-Item -LiteralPath $serverPredecessorAuthoritySource -Destination $serverPredecessorAuthorityPath
 . (Join-Path $PSScriptRoot 'Read-ProductionTrustBundle.ps1')
-$previousTrust = Import-ProductionTrustBundle -Path $previousTrustPath
+$clientFloorTrust = Import-ProductionTrustBundle -Path $clientTrustFloorSourcePath
+$serverPredecessorTrust = Import-ProductionTrustBundle -Path $serverPredecessorTrustPath
+
+if ([string]$clientFloorTrust.DeepProductionMrXPublicKeySha256 -cne
+        [string]$serverPredecessorTrust.DeepProductionMrXPublicKeySha256 -or
+    [string]$clientFloorTrust.DeepProductionNetworkId -cne
+        [string]$serverPredecessorTrust.DeepProductionNetworkId) {
+    throw 'Client trust floor and server predecessor belong to different trust domains.'
+}
+$clientFloorGeneration = [uint64]$clientFloorTrust.DeepProductionAuthorityGeneration
+$serverPredecessorGeneration = [uint64]$serverPredecessorTrust.DeepProductionAuthorityGeneration
+if ($clientFloorGeneration -gt $serverPredecessorGeneration) {
+    throw 'Client trust-floor generation cannot be newer than the server predecessor.'
+}
+if ($clientFloorGeneration -eq $serverPredecessorGeneration -and
+    [string]$clientFloorTrust.DeepProductionAuthorityHash -cne
+        [string]$serverPredecessorTrust.DeepProductionAuthorityHash) {
+    throw 'Client trust floor and server predecessor contain an equal-generation authority fork.'
+}
 
 $routes = Join-Path $output 'privacy-routes'
 [void][IO.Directory]::CreateDirectory($routes)
@@ -194,20 +223,20 @@ $routesJson = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-r
 $routesSignature = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v1.sig') 'UAT privacy-route signature'
 $routesPublicKey = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v1.pub') 'UAT privacy-route public key'
 $mrXPublicKeySha256 = (Get-FileHash -LiteralPath $routesPublicKey -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($mrXPublicKeySha256 -cne [string]$previousTrust.DeepProductionMrXPublicKeySha256) {
+if ($mrXPublicKeySha256 -cne [string]$serverPredecessorTrust.DeepProductionMrXPublicKeySha256) {
     throw 'UAT privacy-route Mr. X root differs from the predecessor trust floor.'
 }
 
 $uatProperties = @(
-    "-p:DeepPhysicalUatMrXPublicKeySha256=$($previousTrust.DeepProductionMrXPublicKeySha256)",
-    "-p:DeepPhysicalUatNetworkId=$($previousTrust.DeepProductionNetworkId)",
-    "-p:DeepPhysicalUatAuthorityGeneration=$($previousTrust.DeepProductionAuthorityGeneration)",
-    "-p:DeepPhysicalUatAuthorityHash=$($previousTrust.DeepProductionAuthorityHash)",
-    "-p:DeepPhysicalUatRevocationGeneration=$($previousTrust.DeepProductionRevocationGeneration)",
-    "-p:DeepPhysicalUatRevocationHeadHash=$($previousTrust.DeepProductionRevocationHeadHash)",
-    "-p:DeepPhysicalUatRevocationSnapshotHash=$($previousTrust.DeepProductionRevocationSnapshotHash)",
-    "-p:DeepPhysicalUatTopologyGeneration=$($previousTrust.DeepProductionTopologyGeneration)",
-    "-p:DeepPhysicalUatTopologyHash=$($previousTrust.DeepProductionTopologyHash)",
+    "-p:DeepPhysicalUatMrXPublicKeySha256=$($clientFloorTrust.DeepProductionMrXPublicKeySha256)",
+    "-p:DeepPhysicalUatNetworkId=$($clientFloorTrust.DeepProductionNetworkId)",
+    "-p:DeepPhysicalUatAuthorityGeneration=$($clientFloorTrust.DeepProductionAuthorityGeneration)",
+    "-p:DeepPhysicalUatAuthorityHash=$($clientFloorTrust.DeepProductionAuthorityHash)",
+    "-p:DeepPhysicalUatRevocationGeneration=$($clientFloorTrust.DeepProductionRevocationGeneration)",
+    "-p:DeepPhysicalUatRevocationHeadHash=$($clientFloorTrust.DeepProductionRevocationHeadHash)",
+    "-p:DeepPhysicalUatRevocationSnapshotHash=$($clientFloorTrust.DeepProductionRevocationSnapshotHash)",
+    "-p:DeepPhysicalUatTopologyGeneration=$($clientFloorTrust.DeepProductionTopologyGeneration)",
+    "-p:DeepPhysicalUatTopologyHash=$($clientFloorTrust.DeepProductionTopologyHash)",
     "-p:DeepPhysicalUatAndroidApplicationId=$applicationId",
     "-p:DeepPhysicalUatAndroidVersionCode=$versionCode",
     "-p:DeepPhysicalUatAndroidSignerLineageSha256=$signerLineage",
@@ -285,15 +314,15 @@ $clientTrustPath = Join-Path $output 'physical-client-trust-floor.json'
 $clientTrust = [ordered]@{
     schemaVersion = 1
     trustFloor = [ordered]@{
-        mrXPublicKeySha256 = $previousTrust.DeepProductionMrXPublicKeySha256
-        networkId = $previousTrust.DeepProductionNetworkId
-        authorityGeneration = $previousTrust.DeepProductionAuthorityGeneration
-        authorityHash = $previousTrust.DeepProductionAuthorityHash
-        revocationGeneration = $previousTrust.DeepProductionRevocationGeneration
-        revocationHeadHash = $previousTrust.DeepProductionRevocationHeadHash
-        revocationSnapshotHash = $previousTrust.DeepProductionRevocationSnapshotHash
-        topologyGeneration = $previousTrust.DeepProductionTopologyGeneration
-        topologyHash = $previousTrust.DeepProductionTopologyHash
+        mrXPublicKeySha256 = $clientFloorTrust.DeepProductionMrXPublicKeySha256
+        networkId = $clientFloorTrust.DeepProductionNetworkId
+        authorityGeneration = $clientFloorTrust.DeepProductionAuthorityGeneration
+        authorityHash = $clientFloorTrust.DeepProductionAuthorityHash
+        revocationGeneration = $clientFloorTrust.DeepProductionRevocationGeneration
+        revocationHeadHash = $clientFloorTrust.DeepProductionRevocationHeadHash
+        revocationSnapshotHash = $clientFloorTrust.DeepProductionRevocationSnapshotHash
+        topologyGeneration = $clientFloorTrust.DeepProductionTopologyGeneration
+        topologyHash = $clientFloorTrust.DeepProductionTopologyHash
     }
     android = [ordered]@{
         buildIdSha256 = $act1Sha256
@@ -423,7 +452,7 @@ if ($finalSemanticExitCode -ne 0) {
         '--version-code', $versionCode, '--signer-lineage', $signerLineage,
         '--inventory', $finalInventory) 'restart final physical UAT ACT1 verification'
 }
-$predecessorGeneration = [uint64]$previousTrust.DeepProductionAuthorityGeneration
+$predecessorGeneration = $serverPredecessorGeneration
 if ($predecessorGeneration -eq [uint64]::MaxValue) {
     throw 'Physical UAT predecessor generation cannot advance.'
 }
@@ -432,7 +461,8 @@ $expectedServerGeneration = $predecessorGeneration + 1
     -MailboxSecretRoot $mailboxSecrets -AndroidSigningCertificateSha256 $signerLineage `
     -AndroidBuildArtifactSha256 $act1Sha256 -AndroidApplicationId $applicationId `
     -AndroidVersionCode $versionCode -AndroidSignerLineageSha256 $signerLineage `
-    -PreviousTrustFloorBundle $previousTrustPath -PreviousAuthorityArtifact $previousAuthorityPath `
+    -PreviousTrustFloorBundle $serverPredecessorTrustPath `
+    -PreviousAuthorityArtifact $serverPredecessorAuthorityPath `
     -XNodeRepository $xnode -OutputDirectory $uatArtifacts | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'UAT successor bootstrap failed.' }
 $serverTrustPath = Resolve-ExactFile (Join-Path $uatArtifacts 'trust-floor.json') `
@@ -469,7 +499,14 @@ $finalApkSha256 = (Get-FileHash -LiteralPath $finalApk -Algorithm SHA256).Hash.T
     act1Sha256 = $act1Sha256
     apk = $finalApk
     apkSha256 = $finalApkSha256
+    clientTrustFloorSource = $clientTrustFloorSourcePath
     clientTrustFloor = $clientTrustPath
+    clientTrustFloorGeneration = $clientFloorGeneration
+    serverPredecessorTrustFloor = $serverPredecessorTrustPath
+    serverPredecessorAuthority = $serverPredecessorAuthorityPath
+    serverPredecessorGeneration = $serverPredecessorGeneration
+    serverSuccessorTrustFloor = $serverTrustOutputPath
+    serverSuccessorGeneration = $expectedServerGeneration
     serverTrustFloor = $serverTrustOutputPath
     installed = $false
 } | Format-List

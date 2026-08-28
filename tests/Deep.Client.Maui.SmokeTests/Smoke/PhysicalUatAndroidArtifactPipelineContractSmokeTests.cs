@@ -79,7 +79,7 @@ public sealed class PhysicalUatAndroidArtifactPipelineContractSmokeTests
             @"(?m)^& \$bootstrap ",
             System.Text.RegularExpressions.RegexOptions.CultureInvariant).Cast<
                 System.Text.RegularExpressions.Match>());
-        Assert.Contains("[uint64]$previousTrust.DeepProductionAuthorityGeneration",
+        Assert.Contains("$predecessorGeneration = $serverPredecessorGeneration",
             script, StringComparison.Ordinal);
         Assert.Contains("$expectedServerGeneration = $predecessorGeneration + 1", script,
             StringComparison.Ordinal);
@@ -118,6 +118,85 @@ public sealed class PhysicalUatAndroidArtifactPipelineContractSmokeTests
         Assert.Contains("PublicKeyAuth.SignDetached", uatSigner, StringComparison.Ordinal);
         Assert.Contains("CryptographicOperations.ZeroMemory", uatSigner,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PipelineSeparatesClientFloorFromServerSuccessorBootstrap()
+    {
+        var script = Read("eng", "Invoke-PhysicalUatAndroidBuild.ps1");
+
+        Assert.Contains("[AllowNull()][AllowEmptyString()][string]$ClientTrustFloorBundle,",
+            script, StringComparison.Ordinal);
+        Assert.Contains("$ClientTrustFloorBundle = $serverPredecessorTrustSource", script,
+            StringComparison.Ordinal);
+        Assert.Contains("Resolve-ExactFile $ClientTrustFloorBundle 'client trust-floor bundle'",
+            script, StringComparison.Ordinal);
+        Assert.Contains("Copy-Item -LiteralPath $clientTrustFloorSource -Destination " +
+            "$clientTrustFloorSourcePath", script, StringComparison.Ordinal);
+        Assert.Contains("Import-ProductionTrustBundle -Path $clientTrustFloorSourcePath",
+            script, StringComparison.Ordinal);
+        Assert.Contains("Import-ProductionTrustBundle -Path $serverPredecessorTrustPath",
+            script, StringComparison.Ordinal);
+
+        Assert.Contains("DeepPhysicalUatAuthorityGeneration=" +
+            "$($clientFloorTrust.DeepProductionAuthorityGeneration)", script,
+            StringComparison.Ordinal);
+        Assert.Contains("authorityGeneration = " +
+            "$clientFloorTrust.DeepProductionAuthorityGeneration", script,
+            StringComparison.Ordinal);
+        Assert.Contains("-PreviousTrustFloorBundle $serverPredecessorTrustPath", script,
+            StringComparison.Ordinal);
+        Assert.Contains("-PreviousAuthorityArtifact $serverPredecessorAuthorityPath", script,
+            StringComparison.Ordinal);
+        Assert.Contains("$expectedServerGeneration = $predecessorGeneration + 1", script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("$expectedServerGeneration = $clientFloorGeneration + 1", script,
+            StringComparison.Ordinal);
+
+        const ulong clientGeneration = 18;
+        const ulong serverPredecessorGeneration = 21;
+        Assert.True(clientGeneration <= serverPredecessorGeneration);
+        Assert.Equal(22UL, serverPredecessorGeneration + 1UL);
+
+        Assert.Contains("clientTrustFloorSource = $clientTrustFloorSourcePath", script,
+            StringComparison.Ordinal);
+        Assert.Contains("clientTrustFloorGeneration = $clientFloorGeneration", script,
+            StringComparison.Ordinal);
+        Assert.Contains("serverPredecessorTrustFloor = $serverPredecessorTrustPath", script,
+            StringComparison.Ordinal);
+        Assert.Contains("serverPredecessorGeneration = $serverPredecessorGeneration", script,
+            StringComparison.Ordinal);
+        Assert.Contains("serverSuccessorTrustFloor = $serverTrustOutputPath", script,
+            StringComparison.Ordinal);
+        Assert.Contains("serverSuccessorGeneration = $expectedServerGeneration", script,
+            StringComparison.Ordinal);
+        Assert.Contains("serverTrustFloor = $serverTrustOutputPath", script,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PipelineRejectsForeignFutureAndEqualGenerationForkClientFloors()
+    {
+        var script = Read("eng", "Invoke-PhysicalUatAndroidBuild.ps1");
+
+        Assert.Contains("DeepProductionMrXPublicKeySha256 -cne", script,
+            StringComparison.Ordinal);
+        Assert.Contains("DeepProductionNetworkId -cne", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "Client trust floor and server predecessor belong to different trust domains.",
+            script, StringComparison.Ordinal);
+        Assert.Contains("$clientFloorGeneration -gt $serverPredecessorGeneration", script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Client trust-floor generation cannot be newer than the server predecessor.",
+            script, StringComparison.Ordinal);
+        Assert.Contains("$clientFloorGeneration -eq $serverPredecessorGeneration", script,
+            StringComparison.Ordinal);
+        Assert.Contains("DeepProductionAuthorityHash -cne", script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Client trust floor and server predecessor contain an equal-generation authority fork.",
+            script, StringComparison.Ordinal);
     }
 
     private static string Read(params string[] parts) =>
