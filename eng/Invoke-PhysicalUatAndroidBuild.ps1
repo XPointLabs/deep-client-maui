@@ -396,8 +396,8 @@ if ($finalSemanticExitCode -ne 0) {
     if ([string]$restartPredecessor.DeepProductionAndroidBuildIdSha256 -cne $act1Sha256) {
         throw 'Restart predecessor does not approve the first ACT1.'
     }
-    $restartPredecessorGeneration = [ulong]$restartPredecessor.DeepProductionAuthorityGeneration
-    if ($restartPredecessorGeneration -eq [ulong]::MaxValue) {
+    $restartPredecessorGeneration = [uint64]$restartPredecessor.DeepProductionAuthorityGeneration
+    if ($restartPredecessorGeneration -eq [uint64]::MaxValue) {
         throw 'Restart predecessor generation cannot advance.'
     }
     $restartExpectedGeneration = $restartPredecessorGeneration + 1
@@ -411,7 +411,7 @@ if ($finalSemanticExitCode -ne 0) {
     if ($LASTEXITCODE -ne 0) { throw 'Restart UAT successor bootstrap failed.' }
     $restartServer = Import-ProductionTrustBundle -Path $serverTrustPath -RequireAndroid `
         -ExpectedAndroidApplicationId $applicationId
-    if ([ulong]$restartServer.DeepProductionAuthorityGeneration -ne $restartExpectedGeneration -or
+    if ([uint64]$restartServer.DeepProductionAuthorityGeneration -ne $restartExpectedGeneration -or
         [string]$restartServer.DeepProductionAndroidBuildIdSha256 -cne $restartAct1Sha256 -or
         [string]$restartServer.DeepProductionAndroidVersionCode -cne $versionCode -or
         [string]$restartServer.DeepProductionAndroidSignerLineageSha256 -cne $signerLineage) {

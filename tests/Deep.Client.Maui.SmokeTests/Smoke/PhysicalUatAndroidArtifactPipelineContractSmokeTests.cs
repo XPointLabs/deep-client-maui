@@ -28,6 +28,9 @@ public sealed class PhysicalUatAndroidArtifactPipelineContractSmokeTests
         Assert.Contains("'restart final physical UAT ACT1 verification'", script,
             StringComparison.Ordinal);
         Assert.Contains("restart-predecessor-authority.pma1", script, StringComparison.Ordinal);
+        Assert.Contains("[uint64]$restartPredecessor.DeepProductionAuthorityGeneration",
+            script, StringComparison.Ordinal);
+        Assert.DoesNotContain("[ulong]", script, StringComparison.Ordinal);
         Assert.Contains("'--force-recreate', '--no-deps'", script, StringComparison.Ordinal);
         Assert.Contains("'production-like UAT monotonic state transition'", script,
             StringComparison.Ordinal);
