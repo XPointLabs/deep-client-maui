@@ -64,7 +64,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("DEEP_CALL_SIGNALING_BASE_URL=https://192.168.1.43:41823", environment, StringComparison.Ordinal);
         Assert.DoesNotContain("http://192.168.1.43", environment, StringComparison.Ordinal);
         Assert.Contains("SURVIVAL_ENV=Development", environment, StringComparison.Ordinal);
-        Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=user-managed", environment, StringComparison.Ordinal);
+        Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=official-managed", environment, StringComparison.Ordinal);
         Assert.DoesNotContain("DEEP_STORAGE_URL", environment, StringComparison.Ordinal);
     }
 
@@ -239,7 +239,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("shared-dev-storage-non-replicated", runner, StringComparison.Ordinal);
         Assert.Contains("DEEP_TRANSPORT_PROTOCOL=authenticated-mau2", runner, StringComparison.Ordinal);
-        Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=user-managed", runner, StringComparison.Ordinal);
+        Assert.Contains("DEEP_TRANSPORT_OWNERSHIP=official-managed", runner, StringComparison.Ordinal);
         Assert.DoesNotContain("[string]$AdbPath", runner, StringComparison.Ordinal);
         Assert.Contains("$adb = $approvedAdb", runner, StringComparison.Ordinal);
         Assert.Contains("$env:DEEP_E2E_REPOSITORY_ROOT = $repoRoot", runner,

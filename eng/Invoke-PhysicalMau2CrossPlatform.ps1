@@ -1137,8 +1137,8 @@ if ($MrXPublicKeySha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Mr. X public key h
 $runtimeEnvironment = Assert-AbsoluteExisting (Join-Path $repoRoot 'eng\survival.dev.env') 'MAU2 runtime environment'
 $runtimeEnvironmentText = Get-Content -Raw -LiteralPath $runtimeEnvironment
 if ($runtimeEnvironmentText -cnotmatch '(?m)^DEEP_TRANSPORT_PROTOCOL=authenticated-mau2$' -or
-    $runtimeEnvironmentText -cnotmatch '(?m)^DEEP_TRANSPORT_OWNERSHIP=user-managed$') {
-    throw 'The physical lane requires the checked-in authenticated MAU2 user-managed runtime profile.'
+    $runtimeEnvironmentText -cnotmatch '(?m)^DEEP_TRANSPORT_OWNERSHIP=official-managed$') {
+    throw 'The physical lane requires the checked-in authenticated MAU2 official-managed runtime profile.'
 }
 $chaosPhase = $Phase -cin @(
     'PrivacyFallback', 'ManualResendAfterRestart', 'AutomaticRetryAfterRestart', 'AckCrashWindow')
@@ -1292,7 +1292,7 @@ try {
         chaosDependencyTreeSha256 = $chaosDependencyTreeSha256
         chaosExecutionSnapshotSha256 = $chaosExecutionSnapshotSha256
         transportProtocol = 'authenticated-mau2'
-        transportOwnership = 'user-managed'
+        transportOwnership = 'official-managed'
         androidRuntimeTreeSha256 = (Get-Sha256 (Join-Path $androidRuntime 'activation.v1.json'))
         windowsRuntimeTreeSha256 = (Get-Sha256 (Join-Path $windowsRuntime 'activation.v1.json'))
         windowsRootPresent = $true
@@ -1354,7 +1354,7 @@ try {
         $env:DEEP_E2E_BOOTSTRAP = 'live'
         $env:DEEP_RELEASE_INVOCATION_ID = $releaseInvocationId
         $env:DEEP_TRANSPORT_PROTOCOL = 'authenticated-mau2'
-        $env:DEEP_TRANSPORT_OWNERSHIP = 'user-managed'
+        $env:DEEP_TRANSPORT_OWNERSHIP = 'official-managed'
         $env:DEEP_STORAGE_URL = $null
         if ($chaosPhase) {
             $env:DEEP_E2E_CHAOS_DEVOPS_ROOT = $devOpsRoot

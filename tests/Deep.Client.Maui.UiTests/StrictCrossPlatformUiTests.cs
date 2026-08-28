@@ -1024,7 +1024,7 @@ public sealed class StrictCrossPlatformUiTests
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_PROTOCOL"),
                 "authenticated-mau2", StringComparison.Ordinal) ||
             !string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_OWNERSHIP"),
-                "user-managed", StringComparison.Ordinal) ||
+                "official-managed", StringComparison.Ordinal) ||
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DEEP_STORAGE_URL")))
         {
             throw new InvalidOperationException(
@@ -2011,9 +2011,9 @@ internal sealed class CrossPlatformOptions
         var phase = Mau2PhysicalPhaseContract.LoadRequired();
         Mau2PhysicalPhaseContract.RequireSanitizedRunStatePath();
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_PROTOCOL"), "authenticated-mau2", StringComparison.Ordinal) ||
-            !string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_OWNERSHIP"), "user-managed", StringComparison.Ordinal))
+            !string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_OWNERSHIP"), "official-managed", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Physical MAU2 E2E requires the exact authenticated-mau2/user-managed runtime environment.");
+            throw new InvalidOperationException("Physical MAU2 E2E requires the exact authenticated-mau2/official-managed runtime environment.");
         }
         if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_E2E_BOOTSTRAP"), "live", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Physical cross-platform UI requires DEEP_E2E_BOOTSTRAP=live; stub is not evidence.");
         var selectors = ParseSelectors(Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_SELECTORS_JSON")!);
