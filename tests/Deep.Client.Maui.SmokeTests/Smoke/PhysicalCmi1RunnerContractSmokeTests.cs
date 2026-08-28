@@ -35,6 +35,8 @@ public sealed class PhysicalCmi1RunnerContractSmokeTests
             runner, StringComparison.Ordinal);
         Assert.Contains("AddWindowsContact(windows, androidInvitation.Text)", runner,
             StringComparison.Ordinal);
+        Assert.Contains("\"StartConversation.AccountId\", \"StartConversation.Close\"",
+            runner, StringComparison.Ordinal);
         Assert.Contains("windowsInvitation?.Text", runner, StringComparison.Ordinal);
         Assert.Contains("AssertDirectMessagesExactlyOnceOnBothClients(", runner,
             StringComparison.Ordinal);
