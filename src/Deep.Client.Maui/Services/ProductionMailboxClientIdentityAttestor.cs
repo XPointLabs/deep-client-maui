@@ -83,16 +83,39 @@ internal static class ProductionMailboxClientIdentityAttestor
         }
         catch (InvalidOperationException exception)
         {
+#if DEBUG && DEEP_PHYSICAL_E2E
+            throw new InvalidDataException(
+                "Physical Windows UAT requires the isolated signed MSIX to be installed; unpackaged folder copies are not trusted.",
+                exception);
+#else
             throw new InvalidDataException(
                 "Production Windows release requires an installed MSIX identity.", exception);
+#endif
         }
+#if DEBUG && DEEP_PHYSICAL_E2E
+        if (!ProductionMailboxBuildTrustFloor.TryLoadPhysicalUatWindowsIdentity(
+                out var physicalUatIdentity) || physicalUatIdentity is null)
+            throw new InvalidOperationException("production-credentials-unavailable");
+        if (string.IsNullOrWhiteSpace(package.Id.FullName) ||
+            string.IsNullOrWhiteSpace(package.Id.FamilyName) ||
+            !string.Equals(package.Id.Name, physicalUatIdentity.InstalledPackageName,
+                StringComparison.Ordinal) ||
+            !string.Equals(package.Id.Publisher, physicalUatIdentity.Publisher,
+                StringComparison.Ordinal))
+            throw new InvalidDataException(
+                "Physical Windows UAT installed package identity is not approved.");
+#endif
         var root = package.InstalledLocation.Path;
         var processPath = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root) ||
             string.IsNullOrWhiteSpace(processPath) || !File.Exists(processPath) ||
             !string.Equals(
                 Path.GetFileName(processPath),
+#if DEBUG && DEEP_PHYSICAL_E2E
+                physicalUatIdentity.ApplicationIdentity,
+#else
                 ProductionMailboxControlPlaneVerifier.WindowsApplicationIdentity,
+#endif
                 StringComparison.OrdinalIgnoreCase) ||
             !Path.GetFullPath(processPath).StartsWith(
                 Path.GetFullPath(root) + Path.DirectorySeparatorChar,
@@ -141,6 +164,14 @@ internal static class ProductionMailboxClientIdentityAttestor
         using (signer)
         {
             var signerHash = SHA256.HashData(signer.RawData);
+#if DEBUG && DEEP_PHYSICAL_E2E
+            ProductionMailboxBuildTrustFloor.VerifyInstalledPhysicalUatWindowsTuple(
+                physicalUatIdentity,
+                package.Id.Name,
+                package.Id.Publisher,
+                Path.GetFileName(processPath),
+                signerHash);
+#endif
             var beforeFiles = CaptureWindowsInventory(root);
             var beforeHash = await ProductionMailboxArtifactSetDigest.ComputeAsync(
                 package.Id.FullName,
@@ -161,7 +192,11 @@ internal static class ProductionMailboxClientIdentityAttestor
                     "Production Windows package changed during attestation.");
             return new ProductionMailboxClientApprovalIdentity(
                 MailboxClientPlatform.Windows,
+#if DEBUG && DEEP_PHYSICAL_E2E
+                physicalUatIdentity.ApplicationIdentity,
+#else
                 ProductionMailboxControlPlaneVerifier.WindowsApplicationIdentity,
+#endif
                 signerHash,
                 beforeHash);
         }

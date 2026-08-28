@@ -14,8 +14,14 @@ param(
     [string]$PhysicalUatPrivacyRoutesPublicKey = $env:DEEP_PHYSICAL_UAT_PRIVACY_ROUTES_PUBLIC_KEY,
     [string]$PhysicalUatAndroidTransparencyManifest =
         $env:DEEP_PHYSICAL_UAT_ANDROID_TRANSPARENCY_MANIFEST,
+    [string]$AndroidKeystore = $env:XPOINT_ANDROID_KEYSTORE,
+    [string]$AndroidSigningPasswordFile = $env:XPOINT_ANDROID_SIGNING_PASSWORD_FILE,
+    [string]$AndroidSigningKeyAlias = $(if ($env:XPOINT_ANDROID_KEY_ALIAS) {
+        $env:XPOINT_ANDROID_KEY_ALIAS
+    } else { 'xpoint-upload' }),
     [switch]$NoBuild,
-    [switch]$NoInstall
+    [switch]$NoInstall,
+    [switch]$BuildOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -139,6 +145,30 @@ if ($requireAndroidUatIdentity) {
         "-p:DeepPhysicalUatAndroidSignerLineageSha256=$($physicalUatTrust.DeepProductionAndroidSignerLineageSha256)",
         "-p:DeepPhysicalUatAndroidCodeTransparencyManifest=$physicalUatAndroidTransparencyManifest"
     )
+}
+$androidSigningProperties = @()
+$androidBuildStabilityProperties = @(
+    '-m:1',
+    '-p:BuildInParallel=false',
+    '-p:UseSharedCompilation=false',
+    '-p:Aapt2DaemonMaxInstanceCount=1',
+    '-nodeReuse:false')
+if ($requireAndroidUatIdentity -and
+    (-not [string]::IsNullOrWhiteSpace($AndroidKeystore) -or
+     -not [string]::IsNullOrWhiteSpace($AndroidSigningPasswordFile))) {
+    $androidKeystore = Resolve-CanonicalPhysicalUatFile `
+        -Path $AndroidKeystore -Label 'Android keystore'
+    $androidSigningPasswordFile = Resolve-CanonicalPhysicalUatFile `
+        -Path $AndroidSigningPasswordFile -Label 'Android signing password file'
+    if ($AndroidSigningKeyAlias -cnotmatch '^[A-Za-z0-9_.-]{1,128}$') {
+        throw 'Android signing key alias is non-canonical.'
+    }
+    $androidSigningProperties = @(
+        '-p:AndroidKeyStore=true',
+        "-p:AndroidSigningKeyStore=$androidKeystore",
+        "-p:AndroidSigningKeyAlias=$AndroidSigningKeyAlias",
+        "-p:AndroidSigningKeyPass=file:$androidSigningPasswordFile",
+        "-p:AndroidSigningStorePass=file:$androidSigningPasswordFile")
 }
 
 function Resolve-Adb {
@@ -266,6 +296,36 @@ function Get-ApkSignerSha256 {
     return $signers[0].digest
 }
 
+function Invoke-ExplicitApkSigning {
+    param(
+        [Parameter(Mandatory)][string]$ApkSigner,
+        [Parameter(Mandatory)][string]$Apk,
+        [Parameter(Mandatory)][string]$Keystore,
+        [Parameter(Mandatory)][string]$PasswordFile,
+        [Parameter(Mandatory)][string]$KeyAlias
+    )
+    $temporary = "$Apk.explicit-sign-$([Guid]::NewGuid().ToString('N')).apk"
+    $resolvedJavaHome = $JavaHome
+    if ([string]::IsNullOrWhiteSpace($resolvedJavaHome)) {
+        $resolvedJavaHome = @('C:\Program Files\Android\openjdk\jdk-21.0.8',
+            'C:\Program Files\Microsoft\jdk-21.0.8.9-hotspot') |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_ 'bin\java.exe') -PathType Leaf } |
+            Select-Object -First 1
+    }
+    $previousJavaHome = $env:JAVA_HOME
+    try {
+        $env:JAVA_HOME = $resolvedJavaHome
+        & $ApkSigner sign --out $temporary --ks $Keystore --ks-type PKCS12 `
+            --ks-key-alias $KeyAlias --ks-pass "file:$PasswordFile" `
+            --key-pass "file:$PasswordFile" $Apk
+        if ($LASTEXITCODE -ne 0) { throw 'Explicit SDK APK signing failed.' }
+        Move-Item -LiteralPath $temporary -Destination $Apk -Force
+    } finally {
+        Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+        $env:JAVA_HOME = $previousJavaHome
+    }
+}
+
 if ($Target -in @('Windows', 'All')) {
     if (-not $NoBuild) {
         & dotnet build $project -f net10.0-windows10.0.19041.0 -c Debug $physicalE2eProperty $runtimeEnvironmentProperty $mrXTrustRootProperty @physicalUatBuildProperties
@@ -276,28 +336,36 @@ if ($Target -in @('Windows', 'All')) {
 }
 
 if ($Target -in @('Android', 'All')) {
-    $adb = Resolve-Adb
-    Invoke-AdbChecked -Adb $adb -Arguments @('start-server') | Out-Host
-
-    $wifiDevices = @(& $adb devices | Select-Object -Skip 1 | ForEach-Object {
-        if ($_ -match '^(?<serial>\S+:\d+)\s+device(?:\s|$)') { $Matches.serial }
-    })
-    if ([string]::IsNullOrWhiteSpace($AndroidSerial)) {
-        if ($wifiDevices.Count -ne 1) {
-            throw "Expected exactly one connected Wi-Fi ADB device; found $($wifiDevices.Count). Pass -AndroidSerial explicitly."
-        }
-        $AndroidSerial = $wifiDevices[0]
-    } elseif ($AndroidSerial -notin $wifiDevices) {
-        throw 'The selected Android serial is not a connected Wi-Fi ADB device.'
+    if ($BuildOnly -and (-not $NoInstall -or $NoBuild -or $Target -ne 'Android')) {
+        throw 'BuildOnly requires Target Android, NoInstall, and an enabled build.'
     }
+    $adb = $null
+    $wifiDevices = @()
+    $productionBefore = ''
+    if (-not $BuildOnly) {
+        $adb = Resolve-Adb
+        Invoke-AdbChecked -Adb $adb -Arguments @('start-server') | Out-Host
 
-    $productionBefore = Get-PackagePath -Adb $adb -Serial $AndroidSerial -Package $productionPackage
-    foreach ($port in $reversePorts) {
-        Invoke-AdbChecked -Adb $adb -Arguments @('-s', $AndroidSerial, 'reverse', "tcp:$port", "tcp:$port") | Out-Null
+        $wifiDevices = @(& $adb devices | Select-Object -Skip 1 | ForEach-Object {
+            if ($_ -match '^(?<serial>\S+:\d+)\s+device(?:\s|$)') { $Matches.serial }
+        })
+        if ([string]::IsNullOrWhiteSpace($AndroidSerial)) {
+            if ($wifiDevices.Count -ne 1) {
+                throw "Expected exactly one connected Wi-Fi ADB device; found $($wifiDevices.Count). Pass -AndroidSerial explicitly."
+            }
+            $AndroidSerial = $wifiDevices[0]
+        } elseif ($AndroidSerial -notin $wifiDevices) {
+            throw 'The selected Android serial is not a connected Wi-Fi ADB device.'
+        }
+
+        $productionBefore = Get-PackagePath -Adb $adb -Serial $AndroidSerial -Package $productionPackage
+        foreach ($port in $reversePorts) {
+            Invoke-AdbChecked -Adb $adb -Arguments @('-s', $AndroidSerial, 'reverse', "tcp:$port", "tcp:$port") | Out-Null
+        }
     }
 
     if (-not $NoBuild) {
-        & dotnet build $project -f net10.0-android -c Debug $physicalE2eProperty $runtimeEnvironmentProperty $mrXTrustRootProperty @physicalUatBuildProperties
+        & dotnet build $project -f net10.0-android -c Debug $physicalE2eProperty $runtimeEnvironmentProperty $mrXTrustRootProperty @physicalUatBuildProperties @androidSigningProperties @androidBuildStabilityProperties
         if ($LASTEXITCODE -ne 0) {
             throw 'Survival Android Debug build failed.'
         }
@@ -308,9 +376,19 @@ if ($Target -in @('Android', 'All')) {
         throw "Expected E2E APK was not produced: $apk"
     }
 
+    $apkSigner = Resolve-ApkSigner
+    if ($androidSigningProperties.Count -ne 0) {
+        Invoke-ExplicitApkSigning -ApkSigner $apkSigner -Apk $apk `
+            -Keystore $androidKeystore -PasswordFile $androidSigningPasswordFile `
+            -KeyAlias $AndroidSigningKeyAlias
+    }
+    $candidateSigner = Get-ApkSignerSha256 -ApkSigner $apkSigner -Apk $apk
+    $approvedCurrentSigner = ([string]$physicalUatTrust.DeepProductionAndroidSignerLineageSha256).Split('|')[-1]
+    if ($candidateSigner -cne $approvedCurrentSigner) {
+        throw 'Candidate APK signer differs from the UAT trust-floor lineage.'
+    }
+
     if (-not $NoInstall) {
-        $apkSigner = Resolve-ApkSigner
-        $candidateSigner = Get-ApkSignerSha256 -ApkSigner $apkSigner -Apk $apk
         $installedPath = Get-PackagePath -Adb $adb -Serial $AndroidSerial -Package $androidPackage
         if (-not [string]::IsNullOrWhiteSpace($installedPath)) {
             if ($installedPath.Contains("`n") -or
@@ -340,9 +418,11 @@ if ($Target -in @('Android', 'All')) {
         }
     }
 
-    $productionAfter = Get-PackagePath -Adb $adb -Serial $AndroidSerial -Package $productionPackage
-    if ($productionAfter -cne $productionBefore) {
-        throw 'The production package state changed during survival E2E setup.'
+    if (-not $BuildOnly) {
+        $productionAfter = Get-PackagePath -Adb $adb -Serial $AndroidSerial -Package $productionPackage
+        if ($productionAfter -cne $productionBefore) {
+            throw 'The production package state changed during survival E2E setup.'
+        }
     }
 
     [pscustomobject]@{
@@ -350,7 +430,7 @@ if ($Target -in @('Android', 'All')) {
         package = $androidPackage
         apk = $apk
         installed = -not $NoInstall
-        reversedPorts = $reversePorts
+        reversedPorts = $(if ($BuildOnly) { @() } else { $reversePorts })
         productionPackageUntouched = $true
     } | Format-List | Out-Host
 }

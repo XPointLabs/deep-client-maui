@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+    <DefineConstants>$(DefineConstants);WINDOWS;DEEP_PHYSICAL_E2E</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,6 +37,8 @@
              Link="Services\RealityTransportRuntime.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxArtifactSetDigest.cs"
              Link="Services\ProductionMailboxArtifactSetDigest.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxBuildTrustFloor.cs"
+             Link="Services\ProductionMailboxBuildTrustFloor.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxClientIdentityAttestor.cs"
              Link="Services\ProductionMailboxClientIdentityAttestor.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Platforms\Windows\WindowsAppLockService.cs"

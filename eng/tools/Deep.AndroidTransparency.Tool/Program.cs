@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.IO.Compression;
 using Deep.Client.Maui.Services;
 using Sodium;
 
@@ -22,6 +23,14 @@ try
         ])),
         "assemble" => Assemble(Parse(args, "assemble",
             ["unsigned-manifest", "signature", "output"])),
+        "sign-uat-seed" => SignUatSeed(Parse(args, "sign-uat-seed",
+            ["seed", "signing-bytes", "signature", "public-key"])),
+        "duplicate-password-source" => DuplicatePasswordSource(Parse(args,
+            "duplicate-password-source", ["source", "output"])),
+        "replace-act1" => ReplaceAct1(Parse(args, "replace-act1",
+            ["apk", "manifest", "output"])),
+        "dispose-password-source" => DisposePasswordSource(Parse(args,
+            "dispose-password-source", ["path"])),
         _ => throw new ArgumentException("Unknown Android transparency command.")
     };
 }
@@ -102,6 +111,164 @@ static int Assemble(Dictionary<string, string> options)
     WriteNew(options["output"], encoded,
         ProductionAndroidTransparencyManifestCodec.MaximumEncodedBytes);
     Console.WriteLine(Convert.ToHexStringLower(SHA256.HashData(encoded)));
+    return 0;
+}
+
+static int SignUatSeed(Dictionary<string, string> options)
+{
+    var seed = ReadBounded(options["seed"], 32);
+    byte[]? privateKey = null;
+    byte[]? publicKey = null;
+    byte[]? signingBytes = null;
+    byte[]? signature = null;
+    try
+    {
+        if (seed.Length != 32)
+            throw new InvalidDataException("UAT Mr. X seed must be exactly 32 bytes.");
+        var pair = PublicKeyAuth.GenerateKeyPair(seed);
+        privateKey = pair.PrivateKey;
+        publicKey = pair.PublicKey;
+        signingBytes = ReadBounded(options["signing-bytes"],
+            ProductionAndroidTransparencyManifestCodec.MaximumEncodedBytes + 64);
+        signature = PublicKeyAuth.SignDetached(signingBytes, privateKey);
+        if (signature.Length != 64 || publicKey.Length != 32 ||
+            !PublicKeyAuth.VerifyDetached(signature, signingBytes, publicKey))
+            throw new CryptographicException("UAT ACT1 signature verification failed.");
+        WriteNew(options["signature"], signature, 64);
+        WriteNew(options["public-key"], publicKey, 32);
+        return 0;
+    }
+    finally
+    {
+        CryptographicOperations.ZeroMemory(seed);
+        if (privateKey is not null) CryptographicOperations.ZeroMemory(privateKey);
+        if (publicKey is not null) CryptographicOperations.ZeroMemory(publicKey);
+        if (signingBytes is not null) CryptographicOperations.ZeroMemory(signingBytes);
+        if (signature is not null) CryptographicOperations.ZeroMemory(signature);
+    }
+}
+
+static int DuplicatePasswordSource(Dictionary<string, string> options)
+{
+    var source = ReadBounded(options["source"], 4096);
+    byte[]? output = null;
+    try
+    {
+        var length = source.Length;
+        if (source[length - 1] == (byte)'\n') length--;
+        if (length > 0 && source[length - 1] == (byte)'\r') length--;
+        if (length == 0 || source.AsSpan(0, length).IndexOfAny((byte)'\r', (byte)'\n') >= 0)
+            throw new InvalidDataException("Android signing password source must contain exactly one non-empty line.");
+        output = new byte[checked(length * 2 + 2)];
+        source.AsSpan(0, length).CopyTo(output);
+        output[length] = (byte)'\n';
+        source.AsSpan(0, length).CopyTo(output.AsSpan(length + 1));
+        output[^1] = (byte)'\n';
+        WriteNew(options["output"], output, 8194);
+        return 0;
+    }
+    finally
+    {
+        CryptographicOperations.ZeroMemory(source);
+        if (output is not null) CryptographicOperations.ZeroMemory(output);
+    }
+}
+
+static int ReplaceAct1(Dictionary<string, string> options)
+{
+    const string entryName = "assets/" + ProductionAndroidCodeTransparencyVerifier.AssetPath;
+    var input = Path.GetFullPath(options["apk"]);
+    var output = Path.GetFullPath(options["output"]);
+    if (string.Equals(input, output, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidDataException("ACT1 replacement input and output must differ.");
+    var inputInfo = new FileInfo(input);
+    EnsureNoReparse(Path.GetDirectoryName(input) ?? throw new InvalidDataException());
+    if (!inputInfo.Exists || inputInfo.Length is <= 0 or > 512L * 1024 * 1024 ||
+        (inputInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+        throw new InvalidDataException("ACT1 replacement APK is unavailable or oversized.");
+    var outputParent = Path.GetDirectoryName(output) ?? throw new InvalidDataException(
+        "ACT1 replacement output directory is unavailable.");
+    EnsureNoReparse(outputParent);
+    if (File.Exists(output))
+        throw new InvalidDataException("ACT1 replacement output already exists.");
+    var manifest = ReadBounded(options["manifest"],
+        ProductionAndroidTransparencyManifestCodec.MaximumEncodedBytes);
+    try
+    {
+        File.Copy(input, output, overwrite: false);
+        try
+        {
+            using (var archive = ZipFile.Open(output, ZipArchiveMode.Update))
+            {
+                var matches = archive.Entries.Where(entry => string.Equals(
+                    entry.FullName, entryName, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (matches.Length != 1 || !string.Equals(matches[0].FullName, entryName,
+                        StringComparison.Ordinal))
+                    throw new InvalidDataException(
+                        "APK must contain exactly one canonical ACT1 asset.");
+                matches[0].Delete();
+                var replacement = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+                using var stream = replacement.Open();
+                stream.Write(manifest);
+            }
+            using var verified = ZipFile.OpenRead(output);
+            var exact = verified.Entries.Where(entry => string.Equals(
+                entry.FullName, entryName, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (exact.Length != 1 || exact[0].FullName != entryName ||
+                exact[0].Length != manifest.Length)
+                throw new InvalidDataException("ACT1 replacement postcondition failed.");
+            using var asset = exact[0].Open();
+            var frozen = new byte[manifest.Length];
+            asset.ReadExactly(frozen);
+            try
+            {
+                if (!CryptographicOperations.FixedTimeEquals(frozen, manifest) ||
+                    asset.ReadByte() != -1)
+                    throw new InvalidDataException("ACT1 replacement content differs.");
+            }
+            finally { CryptographicOperations.ZeroMemory(frozen); }
+            return 0;
+        }
+        catch
+        {
+            File.Delete(output);
+            throw;
+        }
+    }
+    finally { CryptographicOperations.ZeroMemory(manifest); }
+}
+
+static int DisposePasswordSource(Dictionary<string, string> options)
+{
+    var path = Path.GetFullPath(options["path"]);
+    var parent = Path.GetDirectoryName(path) ?? throw new InvalidDataException(
+        "Android signing password lease directory is unavailable.");
+    var parentInfo = new DirectoryInfo(parent);
+    var temporaryRoot = Path.GetFullPath(Path.GetTempPath())
+        .TrimEnd(Path.DirectorySeparatorChar);
+    if (!string.Equals(Path.GetFileName(path), "password-source", StringComparison.Ordinal) ||
+        !parentInfo.Name.StartsWith("deep-android-signing-", StringComparison.Ordinal) ||
+        !string.Equals(parentInfo.Parent?.FullName.TrimEnd(Path.DirectorySeparatorChar),
+            temporaryRoot, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidDataException("Android signing password lease path is invalid.");
+    EnsureNoReparse(parent);
+    var info = new FileInfo(path);
+    info.Refresh();
+    if (!info.Exists || info.Length is <= 0 or > 8194 ||
+        (info.Attributes & FileAttributes.ReparsePoint) != 0)
+        throw new InvalidDataException("Android signing password lease is invalid.");
+    using (var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None,
+               4096, FileOptions.WriteThrough))
+    {
+        var zeros = new byte[checked((int)stream.Length)];
+        stream.Write(zeros);
+        stream.Flush(flushToDisk: true);
+        CryptographicOperations.ZeroMemory(zeros);
+    }
+    File.Delete(path);
+    if (Directory.EnumerateFileSystemEntries(parent).Any())
+        throw new InvalidDataException("Android signing password lease directory is not empty.");
+    Directory.Delete(parent);
     return 0;
 }
 

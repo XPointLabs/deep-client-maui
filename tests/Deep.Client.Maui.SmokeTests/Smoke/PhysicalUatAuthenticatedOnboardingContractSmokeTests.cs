@@ -82,9 +82,34 @@ public sealed class PhysicalUatAuthenticatedOnboardingContractSmokeTests
     }
 
     [Fact]
+    public void WindowsPhysicalUatRequiresInstalledIsolatedMsixAndBuildPinnedSigner()
+    {
+        var project = Read("src", "Deep.Client.Maui", "Deep.Client.Maui.csproj");
+        var trust = Read("src", "Deep.Client.Maui", "Services",
+            "ProductionMailboxBuildTrustFloor.cs");
+        var attestor = Read("src", "Deep.Client.Maui", "Services",
+            "ProductionMailboxClientIdentityAttestor.cs");
+
+        Assert.Contains("DeepPhysicalUatWindowsPackageName", project,
+            StringComparison.Ordinal);
+        Assert.Contains("DeepPhysicalUatWindowsSigningCertificateSha256", project,
+            StringComparison.Ordinal);
+        Assert.Contains("network.xpoint.deep.e2e", trust, StringComparison.Ordinal);
+        Assert.Contains("VerifyInstalledPhysicalUatWindowsTuple", attestor,
+            StringComparison.Ordinal);
+        Assert.Contains("unpackaged folder copies are not trusted", attestor,
+            StringComparison.Ordinal);
+        Assert.Contains("package.Id.FullName", attestor, StringComparison.Ordinal);
+        Assert.Contains("package.Id.FamilyName", attestor, StringComparison.Ordinal);
+        Assert.Contains("ProductionMailboxControlPlaneVerifier.WindowsApplicationIdentity",
+            trust, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PhysicalLauncherRequiresSignedUatArtifactsAndPassesOnlyUatProperties()
     {
         var script = Read("eng", "Invoke-SurvivalDevClient.ps1");
+        var windowsScript = Read("eng", "Invoke-PhysicalUatWindowsMsix.ps1");
 
         Assert.Contains("DEEP_PHYSICAL_UAT_TRUST_FLOOR_BUNDLE", script,
             StringComparison.Ordinal);
@@ -97,6 +122,17 @@ public sealed class PhysicalUatAuthenticatedOnboardingContractSmokeTests
         Assert.Contains("DeepPhysicalUatAndroidCodeTransparencyManifest", script,
             StringComparison.Ordinal);
         Assert.Contains("ACT1 SHA-256 differs from the UAT trust-floor approval", script,
+            StringComparison.Ordinal);
+        Assert.Contains("DeepPhysicalUatWindowsSigningCertificateSha256", windowsScript,
+            StringComparison.Ordinal);
+        Assert.Contains("WindowsBuildArtifactSha256", windowsScript,
+            StringComparison.Ordinal);
+        Assert.Contains("shell:AppsFolder", windowsScript, StringComparison.Ordinal);
+        Assert.Contains("ProductionPackageUntouched = $true", windowsScript,
+            StringComparison.Ordinal);
+        Assert.Contains("UnpackagedCopySupported = $false", windowsScript,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("-p:DeepProductionMrXPublicKeySha256", windowsScript,
             StringComparison.Ordinal);
         Assert.DoesNotContain("-p:DeepProductionMrXPublicKeySha256", script,
             StringComparison.Ordinal);

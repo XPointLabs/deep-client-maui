@@ -44,6 +44,14 @@ internal static class ProductionMailboxBuildTrustFloor
         "DeepPhysicalUatAndroidVersionCode";
     internal const string PhysicalUatAndroidSignerLineageKey =
         "DeepPhysicalUatAndroidSignerLineageSha256";
+#if DEBUG && DEEP_PHYSICAL_E2E
+    internal const string PhysicalUatWindowsPackageNameKey =
+        "DeepPhysicalUatWindowsPackageName";
+    internal const string PhysicalUatWindowsPublisherKey =
+        "DeepPhysicalUatWindowsPublisher";
+    internal const string PhysicalUatWindowsSignerKey =
+        "DeepPhysicalUatWindowsSigningCertificateSha256";
+#endif
 
     private static readonly string[] Keys =
     [
@@ -84,6 +92,15 @@ internal static class ProductionMailboxBuildTrustFloor
         PhysicalUatAndroidVersionCodeKey,
         PhysicalUatAndroidSignerLineageKey
     ];
+
+#if DEBUG && DEEP_PHYSICAL_E2E
+    private static readonly string[] PhysicalUatWindowsIdentityKeys =
+    [
+        PhysicalUatWindowsPackageNameKey,
+        PhysicalUatWindowsPublisherKey,
+        PhysicalUatWindowsSignerKey
+    ];
+#endif
 
     public static bool TryLoad(out ProductionMailboxTrustAnchor? anchor)
     {
@@ -235,6 +252,75 @@ internal static class ProductionMailboxBuildTrustFloor
                 "Production Android package/version/Play signer tuple is not approved.");
     }
 
+#if DEBUG && DEEP_PHYSICAL_E2E
+    public static bool TryLoadPhysicalUatWindowsIdentity(
+        out PhysicalUatWindowsBuildIdentity? identity) =>
+        TryParsePhysicalUatWindowsIdentity(
+            ReadActiveMetadata(
+                PhysicalUatWindowsIdentityKeys,
+                PhysicalUatWindowsIdentityKeys),
+            out identity);
+
+    internal static bool TryParsePhysicalUatWindowsIdentity(
+        IReadOnlyDictionary<string, string?> values,
+        out PhysicalUatWindowsBuildIdentity? identity)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        identity = null;
+        if (PhysicalUatWindowsIdentityKeys.All(key =>
+                !values.TryGetValue(key, out var value) || string.IsNullOrEmpty(value)))
+            return false;
+        if (PhysicalUatWindowsIdentityKeys.Any(key =>
+                !values.TryGetValue(key, out var value) || string.IsNullOrEmpty(value)))
+            throw Unavailable();
+
+        try
+        {
+            var packageName = values[PhysicalUatWindowsPackageNameKey]!;
+            var publisher = values[PhysicalUatWindowsPublisherKey]!;
+            if (!string.Equals(packageName, "network.xpoint.deep.e2e",
+                    StringComparison.Ordinal) ||
+                packageName.Length is < 3 or > 50 ||
+                publisher.Length is < 3 or > 256 ||
+                string.IsNullOrWhiteSpace(publisher) ||
+                publisher.Any(static character => char.IsControl(character)))
+                throw new FormatException();
+            identity = new PhysicalUatWindowsBuildIdentity(
+                packageName,
+                publisher,
+                ProductionMailboxControlPlaneVerifier.WindowsApplicationIdentity,
+                Hex(values[PhysicalUatWindowsSignerKey]!, 32));
+            return true;
+        }
+        catch (Exception exception) when (exception is FormatException or OverflowException)
+        {
+            identity = null;
+            throw Unavailable();
+        }
+    }
+
+    internal static void VerifyInstalledPhysicalUatWindowsTuple(
+        PhysicalUatWindowsBuildIdentity expected,
+        string? packageName,
+        string? publisher,
+        string? executableName,
+        ReadOnlySpan<byte> signerCertificateSha256)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        if (!string.Equals(packageName, expected.InstalledPackageName,
+                StringComparison.Ordinal) ||
+            !string.Equals(publisher, expected.Publisher, StringComparison.Ordinal) ||
+            !string.Equals(executableName, expected.ApplicationIdentity,
+                StringComparison.OrdinalIgnoreCase) ||
+            signerCertificateSha256.Length != 32 ||
+            !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                signerCertificateSha256,
+                expected.SigningCertificateSha256.Span))
+            throw new InvalidDataException(
+                "Physical Windows UAT package, publisher, executable or signer is not approved.");
+    }
+#endif
+
     private static IReadOnlyDictionary<string, string?> ReadActiveMetadata(
         IReadOnlyList<string> canonicalKeys,
         IReadOnlyList<string> activeKeys)
@@ -316,3 +402,28 @@ internal sealed class ProductionAndroidBuildIdentity
         signerLineageSha256.Select(static hash => (ReadOnlyMemory<byte>)hash.ToArray())
             .ToArray();
 }
+
+#if DEBUG && DEEP_PHYSICAL_E2E
+internal sealed class PhysicalUatWindowsBuildIdentity
+{
+    private readonly byte[] signingCertificateSha256;
+
+    public PhysicalUatWindowsBuildIdentity(
+        string installedPackageName,
+        string publisher,
+        string applicationIdentity,
+        ReadOnlySpan<byte> signingCertificateSha256)
+    {
+        InstalledPackageName = installedPackageName;
+        Publisher = publisher;
+        ApplicationIdentity = applicationIdentity;
+        this.signingCertificateSha256 = signingCertificateSha256.ToArray();
+    }
+
+    public string InstalledPackageName { get; }
+    public string Publisher { get; }
+    public string ApplicationIdentity { get; }
+    public ReadOnlyMemory<byte> SigningCertificateSha256 =>
+        signingCertificateSha256.ToArray();
+}
+#endif
