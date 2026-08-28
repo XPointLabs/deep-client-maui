@@ -336,7 +336,7 @@ namespace Deep.PhysicalE2E
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $devOpsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot '..\deep-devops'))
 $chaosManifestPath = Join-Path $repoRoot 'eng\physical-chaos-dependencies.v1.json'
-$chaosManifestSha256 = '2aefb240ae023e15aa73f1f591724317c0d5b5d01a97d81bd14994bc9f0caafc'
+$chaosManifestSha256 = '473162dcc7037e61d84668ba12e192e4ddf09981d01966379b23e8503d992c54'
 $androidPackage = 'network.xpoint.deep.e2e'
 $productionPackage = 'network.xpoint.deep'
 $policyPath = Join-Path $repoRoot '.secrets\android-lab\approved-policy.json'
@@ -480,7 +480,7 @@ function Assert-ChaosDependencyAuthority {
         'schema', 'reviewedDevOpsCommit', 'dependencyTreeSha256',
         'files', 'closedDirectories', 'systemExecutables') 'Chaos dependency manifest'
     if ($manifest.schema -cne 'deep.physical-chaos-dependencies.v1' -or
-        $manifest.reviewedDevOpsCommit -cne '096e8776bfb4cadd126f2c20504bd305e085d3bf' -or
+        $manifest.reviewedDevOpsCommit -cne '8d3dd5114cd447d05d6256482f4436f0c7259cce' -or
         $manifest.dependencyTreeSha256 -cnotmatch '^[a-f0-9]{64}$') {
         throw 'Chaos dependency manifest identity is invalid.'
     }
