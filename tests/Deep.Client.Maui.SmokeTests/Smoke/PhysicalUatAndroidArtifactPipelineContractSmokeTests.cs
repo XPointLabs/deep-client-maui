@@ -11,6 +11,10 @@ public sealed class PhysicalUatAndroidArtifactPipelineContractSmokeTests
         Assert.Contains("DeepPhysicalUatAndroidTransparencyPreparation=true", script,
             StringComparison.Ordinal);
         Assert.Contains("sign-uat-seed", script, StringComparison.Ordinal);
+        Assert.Contains("Deep.AndroidTransparency.UatSigner", script, StringComparison.Ordinal);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(script,
+            @"\$uatTransparencySigner, '-c', 'Release', '--',\s*'sign-uat-seed'",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant).Count);
         Assert.Contains("duplicate-password-source", script, StringComparison.Ordinal);
         Assert.Contains("'explicit candidate APK signing'", script, StringComparison.Ordinal);
         Assert.Contains("$badgingOutput = @(& $aapt dump badging $candidateApk)", script,
@@ -19,6 +23,14 @@ public sealed class PhysicalUatAndroidArtifactPipelineContractSmokeTests
                 StringComparison.Ordinal) <
             script.IndexOf("$badging = $badgingOutput | Select-Object -First 1",
                 StringComparison.Ordinal));
+        var finalBadgingCaptureIndex = script.IndexOf(
+            "$finalBadgingOutput = @(& $aapt dump badging $finalApk)",
+            StringComparison.Ordinal);
+        Assert.True(finalBadgingCaptureIndex >= 0);
+        Assert.True(script.IndexOf("$finalBadgingExitCode = $LASTEXITCODE",
+                StringComparison.Ordinal) > finalBadgingCaptureIndex);
+        Assert.True(script.IndexOf("$finalBadging = $finalBadgingOutput | Select-Object -First 1",
+                StringComparison.Ordinal) > finalBadgingCaptureIndex);
         Assert.Contains("$apkSigner @('sign'", script, StringComparison.Ordinal);
         Assert.Contains("'explicit final APK signing'", script, StringComparison.Ordinal);
         Assert.Contains("Final APK signer does not match the UAT trust-floor lineage.", script,
@@ -51,9 +63,16 @@ public sealed class PhysicalUatAndroidArtifactPipelineContractSmokeTests
         Assert.DoesNotContain("'install', '-r'", script, StringComparison.OrdinalIgnoreCase);
 
         var tool = Read("eng", "tools", "Deep.AndroidTransparency.Tool", "Program.cs");
+        var uatSigner = Read("eng", "tools", "Deep.AndroidTransparency.UatSigner", "Program.cs");
         Assert.Contains("APK must contain exactly one canonical ACT1 asset.", tool,
             StringComparison.Ordinal);
         Assert.Contains("CryptographicOperations.FixedTimeEquals(frozen, manifest)", tool,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("sign-uat-seed", tool, StringComparison.Ordinal);
+        Assert.DoesNotContain("SignDetached", tool, StringComparison.Ordinal);
+        Assert.Contains("sign-uat-seed", uatSigner, StringComparison.Ordinal);
+        Assert.Contains("PublicKeyAuth.SignDetached", uatSigner, StringComparison.Ordinal);
+        Assert.Contains("CryptographicOperations.ZeroMemory", uatSigner,
             StringComparison.Ordinal);
     }
 

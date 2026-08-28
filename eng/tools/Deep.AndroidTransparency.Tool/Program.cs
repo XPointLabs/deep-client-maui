@@ -23,8 +23,6 @@ try
         ])),
         "assemble" => Assemble(Parse(args, "assemble",
             ["unsigned-manifest", "signature", "output"])),
-        "sign-uat-seed" => SignUatSeed(Parse(args, "sign-uat-seed",
-            ["seed", "signing-bytes", "signature", "public-key"])),
         "duplicate-password-source" => DuplicatePasswordSource(Parse(args,
             "duplicate-password-source", ["source", "output"])),
         "replace-act1" => ReplaceAct1(Parse(args, "replace-act1",
@@ -112,40 +110,6 @@ static int Assemble(Dictionary<string, string> options)
         ProductionAndroidTransparencyManifestCodec.MaximumEncodedBytes);
     Console.WriteLine(Convert.ToHexStringLower(SHA256.HashData(encoded)));
     return 0;
-}
-
-static int SignUatSeed(Dictionary<string, string> options)
-{
-    var seed = ReadBounded(options["seed"], 32);
-    byte[]? privateKey = null;
-    byte[]? publicKey = null;
-    byte[]? signingBytes = null;
-    byte[]? signature = null;
-    try
-    {
-        if (seed.Length != 32)
-            throw new InvalidDataException("UAT Mr. X seed must be exactly 32 bytes.");
-        var pair = PublicKeyAuth.GenerateKeyPair(seed);
-        privateKey = pair.PrivateKey;
-        publicKey = pair.PublicKey;
-        signingBytes = ReadBounded(options["signing-bytes"],
-            ProductionAndroidTransparencyManifestCodec.MaximumEncodedBytes + 64);
-        signature = PublicKeyAuth.SignDetached(signingBytes, privateKey);
-        if (signature.Length != 64 || publicKey.Length != 32 ||
-            !PublicKeyAuth.VerifyDetached(signature, signingBytes, publicKey))
-            throw new CryptographicException("UAT ACT1 signature verification failed.");
-        WriteNew(options["signature"], signature, 64);
-        WriteNew(options["public-key"], publicKey, 32);
-        return 0;
-    }
-    finally
-    {
-        CryptographicOperations.ZeroMemory(seed);
-        if (privateKey is not null) CryptographicOperations.ZeroMemory(privateKey);
-        if (publicKey is not null) CryptographicOperations.ZeroMemory(publicKey);
-        if (signingBytes is not null) CryptographicOperations.ZeroMemory(signingBytes);
-        if (signature is not null) CryptographicOperations.ZeroMemory(signature);
-    }
 }
 
 static int DuplicatePasswordSource(Dictionary<string, string> options)

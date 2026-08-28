@@ -31,6 +31,7 @@ $xnode = [IO.Path]::GetFullPath((Join-Path $devops '..\xnode'))
 $authorityState = Join-Path $xnodeSecrets 'mailbox-authority-state.v1.json'
 $project = Join-Path $repo 'src\Deep.Client.Maui\Deep.Client.Maui.csproj'
 $transparencyTool = Join-Path $PSScriptRoot 'tools\Deep.AndroidTransparency.Tool\Deep.AndroidTransparency.Tool.csproj'
+$uatTransparencySigner = Join-Path $PSScriptRoot 'tools\Deep.AndroidTransparency.UatSigner\Deep.AndroidTransparency.UatSigner.csproj'
 $bootstrap = Join-Path $devops 'scripts\Initialize-SurvivalUatProductionMailbox.ps1'
 $launcher = Join-Path $PSScriptRoot 'Invoke-SurvivalDevClient.ps1'
 $applicationId = 'network.xpoint.deep.e2e'
@@ -261,7 +262,7 @@ Invoke-Checked dotnet @('run', '--project', $transparencyTool, '-c', 'Release', 
     '--unsigned-manifest', $unsignedAct1, '--signing-bytes', $signingBytes) 'ACT1 preparation'
 $act1Signature = Join-Path $output 'android-code-transparency.signature.bin'
 $act1PublicKey = Join-Path $output 'android-code-transparency.mrx.pub'
-Invoke-Checked dotnet @('run', '--project', $transparencyTool, '-c', 'Release', '--',
+Invoke-Checked dotnet @('run', '--project', $uatTransparencySigner, '-c', 'Release', '--',
     'sign-uat-seed', '--seed', (Join-Path $mailboxSecrets 'mrx.seed'),
     '--signing-bytes', $signingBytes, '--signature', $act1Signature,
     '--public-key', $act1PublicKey) 'UAT ACT1 signing'
@@ -372,7 +373,7 @@ if ($finalSemanticExitCode -ne 0) {
         '--signing-bytes', $restartSigningBytes) 'restart ACT1 preparation'
     $restartSignature = Join-Path $output 'android-code-transparency.restart.signature.bin'
     $restartPublicKey = Join-Path $output 'android-code-transparency.restart.mrx.pub'
-    Invoke-Checked dotnet @('run', '--project', $transparencyTool, '-c', 'Release', '--',
+    Invoke-Checked dotnet @('run', '--project', $uatTransparencySigner, '-c', 'Release', '--',
         'sign-uat-seed', '--seed', (Join-Path $mailboxSecrets 'mrx.seed'),
         '--signing-bytes', $restartSigningBytes, '--signature', $restartSignature,
         '--public-key', $restartPublicKey) 'restart UAT ACT1 signing'
@@ -467,8 +468,9 @@ if ($finalSemanticExitCode -ne 0) {
         '--version-code', $versionCode, '--signer-lineage', $signerLineage,
         '--inventory', $finalInventory) 'restart final physical UAT ACT1 verification'
 }
-$finalBadging = (& $aapt dump badging $finalApk | Select-Object -First 1)
+$finalBadgingOutput = @(& $aapt dump badging $finalApk)
 $finalBadgingExitCode = $LASTEXITCODE
+$finalBadging = $finalBadgingOutput | Select-Object -First 1
 if ($finalBadgingExitCode -ne 0 -or
     $finalBadging -notmatch "name='$([regex]::Escape($applicationId))'" -or
     $finalBadging -notmatch "versionCode='$versionCode'") {
