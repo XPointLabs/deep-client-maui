@@ -39,9 +39,19 @@ public sealed class PhysicalUatAndroidArtifactPipelineContractSmokeTests
         Assert.Contains("'restart APK zipalign'", script, StringComparison.Ordinal);
         Assert.Contains("'restart final physical UAT ACT1 verification'", script,
             StringComparison.Ordinal);
-        Assert.Contains("restart-predecessor-authority.pma1", script, StringComparison.Ordinal);
-        Assert.Contains("[uint64]$restartPredecessor.DeepProductionAuthorityGeneration",
+        Assert.DoesNotContain("restart-predecessor-authority.pma1", script,
+            StringComparison.Ordinal);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(script,
+            @"(?m)^& \$bootstrap ",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant).Cast<
+                System.Text.RegularExpressions.Match>());
+        Assert.Contains("[uint64]$previousTrust.DeepProductionAuthorityGeneration",
             script, StringComparison.Ordinal);
+        Assert.Contains("$expectedServerGeneration = $predecessorGeneration + 1", script,
+            StringComparison.Ordinal);
+        Assert.True(script.IndexOf("& $bootstrap ", StringComparison.Ordinal) >
+            script.IndexOf("if ($finalSemanticExitCode -ne 0)",
+                StringComparison.Ordinal));
         Assert.DoesNotContain("[ulong]", script, StringComparison.Ordinal);
         Assert.Contains("'--force-recreate', '--no-deps'", script, StringComparison.Ordinal);
         Assert.Contains("'production-like UAT monotonic state transition'", script,
@@ -52,7 +62,7 @@ public sealed class PhysicalUatAndroidArtifactPipelineContractSmokeTests
         Assert.Contains("publish-production-uat-routes", script, StringComparison.Ordinal);
         Assert.Contains("PreviousTrustFloorBundle", script, StringComparison.Ordinal);
         Assert.Contains("-RequireAndroid", script, StringComparison.Ordinal);
-        Assert.Contains("Successor UAT trust floor does not bind the exact ACT1/package/signer tuple.",
+        Assert.Contains("Successor UAT trust floor does not bind one exact generation and ACT1/package/signer tuple.",
             script, StringComparison.Ordinal);
         Assert.Contains("'verify'", script, StringComparison.Ordinal);
         Assert.Contains("-BuildOnly -NoInstall", script, StringComparison.Ordinal);

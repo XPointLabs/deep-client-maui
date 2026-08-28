@@ -303,25 +303,6 @@ if ([string]$validatedClientTrust.DeepProductionAndroidBuildIdSha256 -cne $act1S
     throw 'Physical client trust-floor ACT1 binding failed validation.'
 }
 
-& $bootstrap -LanHost $LanHost -PublicHost $PublicHost -TlsSecretRoot $tlsSecrets `
-    -MailboxSecretRoot $mailboxSecrets -AndroidSigningCertificateSha256 $signerLineage `
-    -AndroidBuildArtifactSha256 $act1Sha256 -AndroidApplicationId $applicationId `
-    -AndroidVersionCode $versionCode -AndroidSignerLineageSha256 $signerLineage `
-    -PreviousTrustFloorBundle $previousTrustPath -PreviousAuthorityArtifact $previousAuthorityPath `
-    -XNodeRepository $xnode -OutputDirectory $uatArtifacts | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'UAT successor bootstrap failed.' }
-$serverTrustPath = Resolve-ExactFile (Join-Path $uatArtifacts 'trust-floor.json') 'successor UAT trust floor'
-$validatedServerTrust = Import-ProductionTrustBundle -Path $serverTrustPath -RequireAndroid `
-    -ExpectedAndroidApplicationId $applicationId
-if ([string]$validatedServerTrust.DeepProductionAndroidBuildIdSha256 -cne $act1Sha256 -or
-    [string]$validatedServerTrust.DeepProductionAndroidVersionCode -cne $versionCode -or
-    [string]$validatedServerTrust.DeepProductionAndroidSignerLineageSha256 -cne $signerLineage) {
-    throw 'Successor UAT trust floor does not bind the exact ACT1/package/signer tuple.'
-}
-$serverTrustOutputPath = Join-Path $output 'server-trust-floor.json'
-Copy-Item -LiteralPath $serverTrustPath -Destination $serverTrustOutputPath
-Restart-ProductionLikeUat
-
 & $launcher -Target Android -BuildOnly -NoInstall -RuntimeEnvironmentPath $runtime `
     -MrXPublicKeySha256 $mrXPublicKeySha256 -PhysicalUatTrustFloorBundle $clientTrustPath `
     -PhysicalUatPrivacyRoutesJson $routesJson -PhysicalUatPrivacyRoutesSignature $routesSignature `
@@ -387,38 +368,6 @@ if ($finalSemanticExitCode -ne 0) {
     $restartAct1Sha256 = (Get-FileHash -LiteralPath $restartAct1 -Algorithm SHA256).
         Hash.ToLowerInvariant()
 
-    $restartPreviousTrust = Join-Path $output 'restart-predecessor-trust-floor.json'
-    $restartPreviousAuthority = Join-Path $output 'restart-predecessor-authority.pma1'
-    Copy-Item -LiteralPath $serverTrustPath -Destination $restartPreviousTrust
-    Copy-Item -LiteralPath (Join-Path $uatArtifacts 'authority.pma1') `
-        -Destination $restartPreviousAuthority
-    $restartPredecessor = Import-ProductionTrustBundle -Path $restartPreviousTrust `
-        -RequireAndroid -ExpectedAndroidApplicationId $applicationId
-    if ([string]$restartPredecessor.DeepProductionAndroidBuildIdSha256 -cne $act1Sha256) {
-        throw 'Restart predecessor does not approve the first ACT1.'
-    }
-    $restartPredecessorGeneration = [uint64]$restartPredecessor.DeepProductionAuthorityGeneration
-    if ($restartPredecessorGeneration -eq [uint64]::MaxValue) {
-        throw 'Restart predecessor generation cannot advance.'
-    }
-    $restartExpectedGeneration = $restartPredecessorGeneration + 1
-    & $bootstrap -LanHost $LanHost -PublicHost $PublicHost -TlsSecretRoot $tlsSecrets `
-        -MailboxSecretRoot $mailboxSecrets -AndroidSigningCertificateSha256 $signerLineage `
-        -AndroidBuildArtifactSha256 $restartAct1Sha256 -AndroidApplicationId $applicationId `
-        -AndroidVersionCode $versionCode -AndroidSignerLineageSha256 $signerLineage `
-        -PreviousTrustFloorBundle $restartPreviousTrust `
-        -PreviousAuthorityArtifact $restartPreviousAuthority -XNodeRepository $xnode `
-        -OutputDirectory $uatArtifacts | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw 'Restart UAT successor bootstrap failed.' }
-    $restartServer = Import-ProductionTrustBundle -Path $serverTrustPath -RequireAndroid `
-        -ExpectedAndroidApplicationId $applicationId
-    if ([uint64]$restartServer.DeepProductionAuthorityGeneration -ne $restartExpectedGeneration -or
-        [string]$restartServer.DeepProductionAndroidBuildIdSha256 -cne $restartAct1Sha256 -or
-        [string]$restartServer.DeepProductionAndroidVersionCode -cne $versionCode -or
-        [string]$restartServer.DeepProductionAndroidSignerLineageSha256 -cne $signerLineage) {
-        throw 'Restart successor does not bind the exact ACT1/package/signer tuple.'
-    }
-    Copy-Item -LiteralPath $serverTrustPath -Destination $serverTrustOutputPath -Force
     $clientTrust['android']['buildIdSha256'] = $restartAct1Sha256
     $restartClientTrustPath = Join-Path $output 'physical-client-trust-floor.restart.json'
     [IO.File]::WriteAllText($restartClientTrustPath,
@@ -428,7 +377,6 @@ if ($finalSemanticExitCode -ne 0) {
     if ([string]$validatedRestartClient.DeepProductionAndroidBuildIdSha256 -cne
             $restartAct1Sha256) { throw 'Restart client trust-floor ACT1 binding failed.' }
     $clientTrustPath = $restartClientTrustPath
-    Restart-ProductionLikeUat
 
     $mismatchCandidate = Join-Path $output 'semantic-mismatch-candidate.apk'
     Move-Item -LiteralPath $finalApk -Destination $mismatchCandidate
@@ -468,6 +416,33 @@ if ($finalSemanticExitCode -ne 0) {
         '--version-code', $versionCode, '--signer-lineage', $signerLineage,
         '--inventory', $finalInventory) 'restart final physical UAT ACT1 verification'
 }
+$predecessorGeneration = [uint64]$previousTrust.DeepProductionAuthorityGeneration
+if ($predecessorGeneration -eq [uint64]::MaxValue) {
+    throw 'Physical UAT predecessor generation cannot advance.'
+}
+$expectedServerGeneration = $predecessorGeneration + 1
+& $bootstrap -LanHost $LanHost -PublicHost $PublicHost -TlsSecretRoot $tlsSecrets `
+    -MailboxSecretRoot $mailboxSecrets -AndroidSigningCertificateSha256 $signerLineage `
+    -AndroidBuildArtifactSha256 $act1Sha256 -AndroidApplicationId $applicationId `
+    -AndroidVersionCode $versionCode -AndroidSignerLineageSha256 $signerLineage `
+    -PreviousTrustFloorBundle $previousTrustPath -PreviousAuthorityArtifact $previousAuthorityPath `
+    -XNodeRepository $xnode -OutputDirectory $uatArtifacts | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'UAT successor bootstrap failed.' }
+$serverTrustPath = Resolve-ExactFile (Join-Path $uatArtifacts 'trust-floor.json') `
+    'successor UAT trust floor'
+$validatedServerTrust = Import-ProductionTrustBundle -Path $serverTrustPath -RequireAndroid `
+    -ExpectedAndroidApplicationId $applicationId
+if ([uint64]$validatedServerTrust.DeepProductionAuthorityGeneration -ne
+        $expectedServerGeneration -or
+    [string]$validatedServerTrust.DeepProductionAndroidBuildIdSha256 -cne $act1Sha256 -or
+    [string]$validatedServerTrust.DeepProductionAndroidVersionCode -cne $versionCode -or
+    [string]$validatedServerTrust.DeepProductionAndroidSignerLineageSha256 -cne $signerLineage) {
+    throw 'Successor UAT trust floor does not bind one exact generation and ACT1/package/signer tuple.'
+}
+$serverTrustOutputPath = Join-Path $output 'server-trust-floor.json'
+Copy-Item -LiteralPath $serverTrustPath -Destination $serverTrustOutputPath
+Restart-ProductionLikeUat
+
 $finalBadgingOutput = @(& $aapt dump badging $finalApk)
 $finalBadgingExitCode = $LASTEXITCODE
 $finalBadging = $finalBadgingOutput | Select-Object -First 1
