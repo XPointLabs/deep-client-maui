@@ -323,6 +323,10 @@ public sealed class PlatformIngressContractSmokeTests
         Assert.Contains("SetPeriodic", regular, StringComparison.Ordinal);
         Assert.Contains("RegularRetryJobId", regular, StringComparison.Ordinal);
         Assert.Contains("MauiBackgroundSyncRunner.SynchronizeDeferredCompletionAsync", job, StringComparison.Ordinal);
+        Assert.Contains("SyncFailureCodeClassifier.Classify(exception)", job, StringComparison.Ordinal);
+        Assert.Contains("Background synchronization failed; code={failureCode}; retrying.", job,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Log.Warn(\"DeepPush\", exception", job, StringComparison.Ordinal);
     }
 
     private static string ReadWorkspaceFile(params string[] parts)

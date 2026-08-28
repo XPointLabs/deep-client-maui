@@ -165,8 +165,15 @@ public sealed class E2eAutomationSelectorContractSmokeTests
 
         Assert.Contains("AutomationId = \"PhysicalE2E.RuntimeReadyMarker\"", conversations,
             StringComparison.Ordinal);
+        Assert.Contains("Text = \"pending\"", conversations, StringComparison.Ordinal);
+        Assert.Contains("SetPhysicalRuntimePending();", conversations, StringComparison.Ordinal);
         Assert.Contains("SetPhysicalRuntimeReady(true);", conversations, StringComparison.Ordinal);
-        Assert.Contains("SetPhysicalRuntimeReady(false);", conversations, StringComparison.Ordinal);
+        Assert.Contains("SetPhysicalRuntimeReady(false, viewModel.SyncFailureCode);", conversations,
+            StringComparison.Ordinal);
+        Assert.Contains("SetPhysicalRuntimeReady(false, SyncFailureCodeClassifier.Classify(ex));", conversations,
+            StringComparison.Ordinal);
+        Assert.Contains("physicalRuntimeReadyMarker.Text = ready ? \"ready\" : $\"failed:{failureCode}\"",
+            conversations, StringComparison.Ordinal);
         Assert.Contains("AutomationId = \"PhysicalE2E.RuntimeReadyMarker\"", desktop,
             StringComparison.Ordinal);
         Assert.Contains("AutomationId = \"PhysicalE2E.MailboxQuiescence\"", desktop,
@@ -198,6 +205,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.Contains("SetPhysicalRuntimeReady(false, \"page\");", desktop, StringComparison.Ordinal);
         Assert.Contains("options.App(\"PhysicalE2E.RuntimeReadyMarker\")", physical,
             StringComparison.Ordinal);
+        Assert.Contains("android.WaitForRuntimeReady(options.App(\"PhysicalE2E.RuntimeReadyMarker\")",
+            physical, StringComparison.Ordinal);
         Assert.Contains("windows.WaitForAutomationIdWithName(\n            \"PhysicalE2E.RuntimeReadyMarker\",\n            \"ready\"",
             physical, StringComparison.Ordinal);
         var addWindowsContact = physical.IndexOf(

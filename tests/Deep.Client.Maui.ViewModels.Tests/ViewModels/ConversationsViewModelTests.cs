@@ -1,4 +1,5 @@
 ﻿using Deep.Client.Maui.Core.ViewModels;
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Features;
 using Deep.Client.Shared.Persistence;
@@ -194,20 +195,42 @@ public sealed class ConversationsViewModelTests
     public void SyncFailureClassifierReturnsClosedSanitizedCodes(int status, string expected)
     {
         var http = new HttpRequestException("sensitive endpoint", null, (System.Net.HttpStatusCode)status);
-        Assert.Equal(expected, ConversationsViewModel.ClassifySyncFailure(http));
-        Assert.Equal("tls", ConversationsViewModel.ClassifySyncFailure(
+        Assert.Equal(expected, SyncFailureCodeClassifier.Classify(http));
+        Assert.Equal("tls", SyncFailureCodeClassifier.Classify(
             new HttpRequestException("outer", new System.Security.Authentication.AuthenticationException("secret"))));
-        Assert.Equal("runtime-policy", ConversationsViewModel.ClassifySyncFailure(
+        Assert.Equal("runtime-policy", SyncFailureCodeClassifier.Classify(
             new InvalidDataException("secret policy detail")));
-        Assert.Equal("local-access", ConversationsViewModel.ClassifySyncFailure(
+        Assert.Equal("local-access", SyncFailureCodeClassifier.Classify(
             new UnauthorizedAccessException("secret path")));
-        Assert.Equal("invalid-state", ConversationsViewModel.ClassifySyncFailure(
+        Assert.Equal("invalid-state", SyncFailureCodeClassifier.Classify(
             new InvalidOperationException("secret")));
-        Assert.Equal("mailbox-8", ConversationsViewModel.ClassifySyncFailure(
+        Assert.Equal("mailbox-8", SyncFailureCodeClassifier.Classify(
             new ClientMailboxTransportException(
                 ClientMailboxTransportFailure.DependencyUnavailable,
                 retryable: true,
                 "secret upstream")));
+    }
+
+    [Fact]
+    public void SyncFailureClassifierNeverIncludesExceptionDetails()
+    {
+        const string sensitive = "https://private.example/users/alice?message=secret";
+        var exceptions = new Exception[]
+        {
+            new HttpRequestException(sensitive),
+            new InvalidDataException(sensitive),
+            new IOException(sensitive),
+            new Exception(sensitive)
+        };
+
+        foreach (var exception in exceptions)
+        {
+            var code = SyncFailureCodeClassifier.Classify(exception);
+            Assert.DoesNotContain("private", code, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("alice", code, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("secret", code, StringComparison.OrdinalIgnoreCase);
+            Assert.Matches("^[a-z]+(?:-[a-z]+|-[0-9]{1,3})?$", code);
+        }
     }
 
     private sealed class FailingInboxTransport : ISessionMessageTransport

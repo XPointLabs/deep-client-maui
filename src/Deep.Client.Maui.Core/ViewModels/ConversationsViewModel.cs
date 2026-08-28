@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Deep.Client.Maui.Core.Commands;
 using Deep.Client.Maui.Core.Presentation;
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
@@ -232,7 +233,7 @@ public sealed class ConversationsViewModel : ViewModelBase
             {
                 // Keep the cached conversation list usable while the network is unavailable.
                 synchronized = false;
-                SyncFailureCode = ClassifySyncFailure(ex);
+                SyncFailureCode = SyncFailureCodeClassifier.Classify(ex);
                 ErrorMessage = ex.Message;
             }
 
@@ -241,7 +242,7 @@ public sealed class ConversationsViewModel : ViewModelBase
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            SyncFailureCode = ClassifySyncFailure(ex);
+            SyncFailureCode = SyncFailureCodeClassifier.Classify(ex);
             ErrorMessage = ex.Message;
             return false;
         }
@@ -250,43 +251,6 @@ public sealed class ConversationsViewModel : ViewModelBase
             IsBusy = false;
             loadGate.Release();
         }
-    }
-
-    internal static string ClassifySyncFailure(Exception exception)
-    {
-        ArgumentNullException.ThrowIfNull(exception);
-
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is ClientMailboxTransportException mailbox)
-                return $"mailbox-{(int)mailbox.Failure}";
-            if (current is DurableInboxDigestMismatchException)
-                return "inbox-corrupt";
-            if (current is TransportOutboxCorruptException)
-                return "outbox-corrupt";
-            if (current is TransportOutboxCommitOutcomeUnknownException)
-                return "outbox-unknown";
-            if (current is System.Security.Authentication.AuthenticationException)
-                return "tls";
-            if (current is InvalidDataException or System.Security.Cryptography.CryptographicException)
-                return "runtime-policy";
-            if (current is UnauthorizedAccessException)
-                return "local-access";
-            if (current is InvalidOperationException)
-                return "invalid-state";
-            if (current is IOException)
-                return "io";
-        }
-
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is System.Net.Http.HttpRequestException { StatusCode: { } statusCode })
-                return $"http-{(int)statusCode}";
-            if (current is System.Net.Http.HttpRequestException)
-                return "transport";
-        }
-
-        return "unknown";
     }
 
     private async Task LoadLocalSnapshotAsync(bool forceMessageSummaries, CancellationToken cancellationToken)

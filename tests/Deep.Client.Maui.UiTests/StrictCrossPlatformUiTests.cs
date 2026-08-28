@@ -221,7 +221,7 @@ public sealed class StrictCrossPlatformUiTests
         android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
         android.ColdStart();
         android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
-        android.WaitForResource(options.App("PhysicalE2E.RuntimeReadyMarker"), TimeSpan.FromSeconds(45));
+        android.WaitForRuntimeReady(options.App("PhysicalE2E.RuntimeReadyMarker"), TimeSpan.FromSeconds(45));
         var androidIdentity = ReadAndroidIdentity(android, options);
 
         using var windows = WindowsUiSmokeTests.WindowsUiTestSession.CreateStrictWithAppData(options.WindowsAppDataRoot);
@@ -515,7 +515,7 @@ public sealed class StrictCrossPlatformUiTests
             android.ColdStart();
             android.WaitForResource(options.App("Conversations.Root"),
                 TimeSpan.FromSeconds(45));
-            android.WaitForResource(options.App("PhysicalE2E.RuntimeReadyMarker"),
+            android.WaitForRuntimeReady(options.App("PhysicalE2E.RuntimeReadyMarker"),
                 TimeSpan.FromSeconds(60));
             AddAndroidContact(android, options, windowsIdentity, androidContact);
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
@@ -818,7 +818,7 @@ public sealed class StrictCrossPlatformUiTests
 
             android.ColdStart();
             android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(45));
-            android.WaitForResource(options.App("PhysicalE2E.RuntimeReadyMarker"),
+            android.WaitForRuntimeReady(options.App("PhysicalE2E.RuntimeReadyMarker"),
                 TimeSpan.FromSeconds(60));
             AddAndroidContact(android, options, windowsIdentity, androidContact);
             android.WaitForExactResourceTextCount(options.App("Chat.MessageBody"),
@@ -951,7 +951,7 @@ public sealed class StrictCrossPlatformUiTests
         AddAndroidContact(android, options, windowsIdentity);
         android.Tap(options.App("Chat.Back"));
         android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(20));
-        android.WaitForResource(
+        android.WaitForRuntimeReady(
             options.App("PhysicalE2E.RuntimeReadyMarker"),
             TimeSpan.FromSeconds(45));
         AddWindowsContact(windows, androidIdentity);
@@ -2603,6 +2603,24 @@ internal sealed class AndroidUiautomatorClient
     }
 
     internal StrictCrossPlatformContracts.AndroidNode WaitForResource(string resourceId, TimeSpan timeout) => Wait(resourceId, null, timeout);
+    internal void WaitForRuntimeReady(string resourceId, TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            var node = StrictCrossPlatformContracts.FindOptionalResourceId(Dump(), resourceId);
+            if (node is not null)
+            {
+                if (string.Equals(node.AccessibleText, "ready", StringComparison.Ordinal))
+                    return;
+                if (node.AccessibleText.StartsWith("failed:", StringComparison.Ordinal))
+                    throw new InvalidOperationException(
+                        $"Android runtime sync did not become ready; state={node.AccessibleText}.");
+            }
+            Thread.Sleep(200);
+        }
+        throw new TimeoutException("Android runtime sync remained pending.");
+    }
     internal string WaitForAccessibleTextPrefix(
         string resourceId,
         string prefix,

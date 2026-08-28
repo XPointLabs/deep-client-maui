@@ -67,7 +67,7 @@ public partial class ConversationsPage : ContentPage
     {
         base.OnAppearing();
 #if DEBUG && DEEP_PHYSICAL_E2E
-        SetPhysicalRuntimeReady(false);
+        SetPhysicalRuntimePending();
 #endif
         pageActivityCancellation?.Cancel();
         pageActivityCancellation?.Dispose();
@@ -217,7 +217,7 @@ public partial class ConversationsPage : ContentPage
                     if (!synchronized)
                     {
 #if DEBUG && DEEP_PHYSICAL_E2E
-                        SetPhysicalRuntimeReady(false);
+                        SetPhysicalRuntimeReady(false, viewModel.SyncFailureCode);
 #endif
                         CrashDiagnostics.LogInfo("Sync", "Foreground synchronization failed; pending work remains queued.");
                         return;
@@ -238,7 +238,7 @@ public partial class ConversationsPage : ContentPage
                 catch (Exception ex)
                 {
 #if DEBUG && DEEP_PHYSICAL_E2E
-                    SetPhysicalRuntimeReady(false);
+                    SetPhysicalRuntimeReady(false, SyncFailureCodeClassifier.Classify(ex));
 #endif
                     CrashDiagnostics.LogException("ConversationsPage.BackgroundSync", ex);
                     return;
@@ -354,8 +354,8 @@ public partial class ConversationsPage : ContentPage
         physicalRuntimeReadyMarker = new Label
         {
             AutomationId = "PhysicalE2E.RuntimeReadyMarker",
-            Text = "ready",
-            IsVisible = false,
+            Text = "pending",
+            IsVisible = true,
             FontSize = 1,
             Opacity = 0.01,
             InputTransparent = true,
@@ -365,11 +365,30 @@ public partial class ConversationsPage : ContentPage
         Grid.SetRow(physicalRuntimeReadyMarker, 3);
     }
 
-    private void SetPhysicalRuntimeReady(bool ready)
+    private void SetPhysicalRuntimePending()
     {
         if (physicalRuntimeReadyMarker is null)
             return;
-        void Apply() => physicalRuntimeReadyMarker.IsVisible = ready;
+        void Apply()
+        {
+            physicalRuntimeReadyMarker.Text = "pending";
+            physicalRuntimeReadyMarker.IsVisible = true;
+        }
+        if (MainThread.IsMainThread)
+            Apply();
+        else
+            MainThread.BeginInvokeOnMainThread(Apply);
+    }
+
+    private void SetPhysicalRuntimeReady(bool ready, string failureCode = "unknown")
+    {
+        if (physicalRuntimeReadyMarker is null)
+            return;
+        void Apply()
+        {
+            physicalRuntimeReadyMarker.Text = ready ? "ready" : $"failed:{failureCode}";
+            physicalRuntimeReadyMarker.IsVisible = true;
+        }
         if (MainThread.IsMainThread)
             Apply();
         else

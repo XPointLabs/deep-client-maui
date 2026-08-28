@@ -111,7 +111,10 @@ public sealed class DeepSyncJobService : JobService
         catch (Exception exception)
         {
             CrashDiagnostics.LogException("Android.BackgroundSync", exception);
-            Android.Util.Log.Warn("DeepPush", "Background synchronization failed and will be retried.");
+            var failureCode = SyncFailureCodeClassifier.Classify(exception);
+            Android.Util.Log.Warn(
+                "DeepPush",
+                $"Background synchronization failed; code={failureCode}; retrying.");
             retry = true;
         }
         finally
