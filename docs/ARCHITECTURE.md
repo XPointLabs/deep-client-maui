@@ -13,7 +13,7 @@ the sibling `deep-client-shared` repository.
 - canonical 13-word checksummed recovery phrase identity derivation;
 - end-to-end encrypted envelopes and replay protection;
 - three-hop binary Deep-native privacy routing for canonical MAU2;
-- SQLCipher repositories with exact v13 baseline attestation, durable
+- SQLCipher repositories with exact v16 baseline attestation, durable
   inbox/outbox, and account purge;
 - one-to-one and group conversation services;
 - encrypted attachment and avatar transports;
@@ -68,19 +68,23 @@ credential material. No failure path enables a direct or unpinned fallback.
 
 Release builds require real transports, between three and sixteen unique pinned Reality
 bootstrap nodes, encrypted local persistence, and E2EE. The Reality bootstrap
-does not register a Session message transport. Mailbox delivery is available
-only through the separately provisioned Deep-native privacy routes.
+does not register a Session message transport. Today mailbox delivery uses the
+separately provisioned Deep-native privacy routes, but its entry connection is
+still direct HTTPS. The Reality runtime is not the
+`IPrivacyManagedIngressTransport` used by MAU2, so anti-blocking message
+delivery remains a pre-release integration blocker.
 
 ## Startup
 
 1. `MauiProgram` validates immutable embedded settings and composes narrow
    platform services.
-2. `ClientRuntimeBootstrapper` brings the DI-owned Reality runtime to readiness
-   before any routed client network I/O, then initializes encrypted persistence off the UI
-   thread. Fresh state receives the single v13 baseline; existing state is
+2. `ClientRuntimeBootstrapper` initializes encrypted persistence off the UI
+   thread without requiring network readiness. Fresh state receives the current
+   clean-break baseline; existing state is
    exactly attested and incompatible state raises an actionable reset-required
-   error. Operational failures remain retryable and are not classified as
-   reset authorization.
+   error. Account/recovery creation is local and remains available offline.
+   Operational failures remain retryable and are not classified as reset
+   authorization.
 3. `AuthNavigationState` selects onboarding or conversations from local state.
 4. Conversation and message pages render cached snapshots first; sync runs in
    a cancellable background path.
@@ -96,6 +100,13 @@ per-attempt client key; only then does the existing mailbox adapter verify MQR3,
 MRP1, or MAR1 evidence and advance durable state. The fallback route is eligible
 only when the primary proves forwarding did not start. Direct MAU2 HTTPS,
 Session RPC, and routed-storage fallback are absent.
+
+The phrase “public HTTPS ingress” is literal for the current implementation:
+`PrivacyManagedIngressHttpTransport` does not dial through
+`IRealityTransportRuntime`. The target release path must send that same opaque
+frame through an attested local/embedded Xray connection to the XNode
+VLESS/Reality ingress and must fail closed instead of bypassing it with direct
+HTTPS.
 
 The Survival primary topology is `xnode3 -> xnode4 -> xnode1`; `xnode1` is the
 sole authoritative mailbox coordinator. The disjoint fallback topology is
@@ -130,7 +141,7 @@ helper able to receive the builder, service collection, or an opaque object
 derived from them. The guard verifies entrypoint dominance and adjacency in
 compiled control flow, scans the reachable Release call graph for direct/stub
 tokens, executes the exact entrypoint against a real final DI container, and
-binds the complete 64-descriptor Windows Release manifest. It also checks
+binds the complete current Windows Release service manifest. It also checks
 resolved factory instances, the configured pinned set, and the absence of direct/stub
 descriptors or concretes. Conditional/dead entrypoint, pre-entrypoint
 `RegisterExtra(builder.Services)`, environment-conditional direct/stub,
@@ -206,12 +217,13 @@ continues with persistent transport outbox disabled.
 
 ## Development transport diagnostics
 
-The optional Reality/VLESS runtime is adjacent transport diagnostics only. It
-does not implement, select, or forward the privacy mailbox message path, and no
+The optional Reality/VLESS runtime is currently adjacent transport diagnostics only. It
+does not yet implement, select, or forward the privacy mailbox message path, and no
 Session RPC client or membership-route provider is registered. Privacy mailbox
 hops come only from the separately signed and activation-bound
 `privacy-routes.v1.json`; Settings projects a read-only diagnostic view from
-that active route.
+that active route. Connecting these two paths without introducing an unmasked
+fallback is the highest-priority transport change before release.
 
 Android cleartext is broadened only in non-Release
 `DeepPhysicalE2E=true` packages. The normal and Release network-security
@@ -229,6 +241,33 @@ there is no legacy-group read-only conversation kind. Attachments are encrypted
 before upload using the current authenticated chunked `DEEPATT2` format, and
 downloads fail closed for every other encrypted format. Ordinary images are
 compressed for inline media while document mode preserves the source file.
+
+Local tests and the isolated `GroupText` physical harness cover this
+composition, but a successful current Android ↔ Windows device run has not
+been retained. Arbitrary contacts, direct text and groups therefore remain
+release-unproven.
+
+## Direct P2P and user-managed status
+
+`RuntimeTransportMode` and the portable delivery policy reserve an isolated
+`direct-p2p` profile. Release composition deliberately rejects it unless an
+explicit `IDirectP2pSessionMessageTransport` is registered; no such production
+adapter exists. Android Wi-Fi/BLE code is disabled review scaffolding, Windows
+Nearby is unsupported, and there is no message rendezvous, authenticated
+handshake or NAT traversal. Direct P2P is therefore a pre-release blocker, not
+an available hidden mode.
+
+The protocol also reserves `authenticated-mau2/user-managed` and SHR1
+self-hosted activation, but MAUI currently composes the official Registry
+coordinator only. Future on-prem support requires a distinct profile-scoped
+authority/acquisition provider and profile-scoped file, signaling and TURN
+services. It must not be implemented by weakening official authority or TLS
+validation.
+
+When a feature is disabled by the selected transport, its control must be
+hidden or report an exact unavailable state. In particular, calls must not
+appear available in `direct-p2p` while `CallsEnabled` is false or fall back
+to process-local signaling.
 
 ## Push
 
@@ -304,7 +343,7 @@ No production trusted root or update key is embedded and no update verifier is
 registered in the Release service graph. The Settings row therefore shows an
 explicit fail-closed unavailable state until Mr. X provisions a separately
 reviewed non-production trust configuration. This preserves the exact
-64-descriptor privacy-routed Release composition. Verification failure has no override,
+privacy-routed Release composition. Verification failure has no override,
 and the ViewModel requires an exact visible version confirmation after success.
 
 iOS, iPadOS, and Mac Catalyst remain subject to Apple signing, provisioning,
