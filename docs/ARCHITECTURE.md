@@ -254,8 +254,10 @@ release-unproven.
 explicit `IDirectP2pSessionMessageTransport` is registered; no such production
 adapter exists. Android Wi-Fi/BLE code is disabled review scaffolding, Windows
 Nearby is unsupported, and there is no message rendezvous, authenticated
-handshake or NAT traversal. Direct P2P is therefore a pre-release blocker, not
-an available hidden mode.
+handshake or NAT traversal. Product scope defers Direct P2P to the first
+post-production sprint. It is not a blocker for the initial XPoint-only
+production release and remains safely unavailable rather than acting as a
+hidden fallback.
 
 The protocol also reserves `authenticated-mau2/user-managed` and SHR1
 self-hosted activation, but MAUI currently composes the official Registry
