@@ -10,7 +10,9 @@ the sibling `deep-client-shared` repository.
 
 `Deep.Client.Shared` owns:
 
-- canonical 13-word checksummed recovery phrase identity derivation;
+- the currently active legacy 13-word recovery implementation, which is
+  disposable pre-production evidence and must be replaced by 24-word
+  `DeepRecoveryV1` plus device-scoped keys before a public release;
 - end-to-end encrypted envelopes and replay protection;
 - three-hop binary Deep-native privacy routing for canonical MAU2;
 - SQLCipher repositories with exact v16 baseline attestation, durable
@@ -66,8 +68,9 @@ any native startup attempt and deletes generated configuration. Native startup
 errors are reduced to a static diagnostic and never persist endpoint or
 credential material. No failure path enables a direct or unpinned fallback.
 
-Release builds require real transports, between three and sixteen unique pinned Reality
-bootstrap nodes, encrypted local persistence, and E2EE. The Reality bootstrap
+Release builds require real transports, at least three unique signed access
+seeds, encrypted local persistence, and the new ratcheted Deep E2EE generation.
+More access bridges may be learned from signed rotating catalogs. The Reality bootstrap
 does not register a Session message transport. Today mailbox delivery uses the
 separately provisioned Deep-native privacy routes, but its entry connection is
 still direct HTTPS. The Reality runtime is not the
@@ -92,7 +95,7 @@ delivery remains a pre-release integration blocker.
 ## Messaging
 
 Outgoing messages are persisted to the durable MAU2 outbox before dispatch.
-The physical Debug composition loads two hash-bound, fully disjoint three-hop
+The existing six-node physical Debug composition loads two hash-bound, fully disjoint three-hop
 privacy routes from app-private `mailbox-runtime-v1/privacy-routes.v1.json`.
 Canonical MAU2 is wrapped in a padded binary privacy frame and sent to the first
 route's public HTTPS ingress. The exit returns a reply encrypted to the
@@ -117,8 +120,10 @@ identify the terminal fallback hop (`xnode2`) as the coordinator.
 
 The raw route artifact SHA-256 must equal both the activation
 `privacyRoutesSha256` and the same field in the verified Mr. X-signed policy.
-Its exact schema binds the platform, two clean HTTPS root origins, three hops
-per route, independent X25519 keys, and six distinct router identities/keys.
+Its current lab schema binds the platform, two clean HTTPS root origins, three
+hops per route, independent X25519 keys, and six distinct router
+identities/keys. This is stronger than the initial three-node release minimum;
+production v1 does not claim a failure-domain-disjoint fallback.
 
 The routed runtime accepts between three and sixteen distinct lowercase pinned identities
 and canonical router URLs. Router bases have a root path and no

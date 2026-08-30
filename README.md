@@ -78,7 +78,8 @@ Otherwise the effective feature remains disabled and normal message transport
 continues. No production worker is packaged yet, and Android intentionally has
 no executor registration; see `docs/ARCHITECTURE.md`.
 
-Optional call signaling endpoint (used when calls are enabled):
+Legacy pre-cutover call signaling endpoint (UAT evidence only; deleted by the
+clean-break release and never a target fallback):
 
 ```powershell
 $env:DEEP_CALL_SIGNALING_BASE_URL = "http://127.0.0.1:18103"
