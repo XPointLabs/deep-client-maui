@@ -254,10 +254,17 @@ release-unproven.
 explicit `IDirectP2pSessionMessageTransport` is registered; no such production
 adapter exists. Android Wi-Fi/BLE code is disabled review scaffolding, Windows
 Nearby is unsupported, and there is no message rendezvous, authenticated
-handshake or NAT traversal. Product scope defers Direct P2P to the first
-post-production sprint. It is not a blocker for the initial XPoint-only
-production release and remains safely unavailable rather than acting as a
+handshake, mesh routing or NAT traversal. Product scope keeps Direct P2P as a
+future architecture requirement, not a blocker for the initial XPoint-only
+production release. It remains safely unavailable rather than acting as a
 hidden fallback.
+
+The future mode is a peer mesh: `Direct` means no mandatory central mailbox,
+not necessarily one hop. Composition must permit authenticated direct and
+multi-hop store-and-forward links while preserving the existing E2EE/outbox
+boundary. UI and telemetry must distinguish direct, mesh-relayed and
+partitioned states; an intermediate device never becomes message origin,
+destination or plaintext holder.
 
 The protocol also reserves `authenticated-mau2/user-managed` and SHR1
 self-hosted activation, but MAUI currently composes the official Registry
