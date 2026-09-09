@@ -2,6 +2,10 @@ using System.Collections.Concurrent;
 
 namespace Deep.Client.Maui.SmokeTests.Smoke;
 
+[CollectionDefinition("Reality startup coordinator", DisableParallelization = true)]
+public sealed class RealityStartupCoordinatorCollection;
+
+[Collection("Reality startup coordinator")]
 public sealed class AndroidRealityStartupCoordinatorTests
 {
     [Fact]

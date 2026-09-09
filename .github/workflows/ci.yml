@@ -187,7 +187,7 @@ jobs:
       - working-directory: deep-client-maui
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
       - working-directory: deep-client-maui
-        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android --configuration Release
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android --configuration Release -p:DeepGoogleServicesJson=src/Deep.Client.Maui/Platforms/Android/google-services.json
       - name: Android device integration test build
         working-directory: deep-client-maui
         run: dotnet build tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj -f net10.0-android --configuration Release
