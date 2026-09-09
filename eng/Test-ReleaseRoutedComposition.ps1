@@ -65,6 +65,9 @@ try {
         (Join-Path $repoRoot 'src\Deep.Client.Maui\Deep.Client.Maui.csproj'),
         '--framework', 'net10.0-windows10.0.19041.0',
         '--configuration', 'Release',
+        '-m:1',
+        '--disable-build-servers',
+        '-p:UseSharedCompilation=false',
         "-p:RuntimeIdentifierOverride=$RuntimeIdentifier"
     ) + $candidateArguments
     & dotnet @buildArguments
@@ -85,7 +88,10 @@ try {
     try {
         dotnet build `
             (Join-Path $repoRoot 'eng\Deep.ReleaseCompositionVerifier\Deep.ReleaseCompositionVerifier.csproj') `
-            --configuration Release
+            --configuration Release `
+            -m:1 `
+            --disable-build-servers `
+            -p:UseSharedCompilation=false
         if ($LASTEXITCODE -ne 0) {
             throw 'Release DI verifier build failed.'
         }

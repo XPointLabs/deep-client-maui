@@ -188,10 +188,10 @@ jobs:
       - working-directory: deep-client-maui
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
       - working-directory: deep-client-maui
-        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android --configuration Release -p:DeepGoogleServicesJson=src/Deep.Client.Maui/Platforms/Android/google-services.json -p:DeepCiReleaseCandidate=true
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android --configuration Release -m:1 --disable-build-servers -p:UseSharedCompilation=false -p:DeepGoogleServicesJson=Platforms/Android/google-services.json -p:DeepCiReleaseCandidate=true
       - name: Android device integration test build
         working-directory: deep-client-maui
-        run: dotnet build tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj -f net10.0-android --configuration Release -p:DeepCiReleaseCandidate=true
+        run: dotnet build tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj -f net10.0-android --configuration Release -m:1 --disable-build-servers -p:UseSharedCompilation=false -p:DeepCiReleaseCandidate=true
       - name: Write Android build evidence
         working-directory: deep-client-maui
         run: |
@@ -247,7 +247,7 @@ jobs:
       - working-directory: deep-client-maui
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
       - working-directory: deep-client-maui
-        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 --configuration Release -p:RuntimeIdentifierOverride=win-x64 -p:DeepCiReleaseCandidate=true
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 --configuration Release -m:1 --disable-build-servers -p:UseSharedCompilation=false -p:RuntimeIdentifierOverride=win-x64 -p:DeepCiReleaseCandidate=true
       - name: Write Windows build evidence
         shell: pwsh
         working-directory: deep-client-maui
