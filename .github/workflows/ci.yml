@@ -156,6 +156,14 @@ jobs:
           DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
         with:
           dotnet-version: 10.0.301
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+        env:
+          ANDROID_HOME: ${{ runner.temp }}/android-sdk
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
       - name: Materialize production Firebase configuration
         working-directory: deep-client-maui
         shell: bash
