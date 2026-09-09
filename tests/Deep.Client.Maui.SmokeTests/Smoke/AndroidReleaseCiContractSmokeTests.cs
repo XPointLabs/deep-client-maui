@@ -14,13 +14,15 @@ public sealed class AndroidReleaseCiContractSmokeTests
     }
 
     [Fact]
-    public void AppleBuildRunsOnlyWhenExplicitlyDispatched()
+    public void CurrentSprintExcludesAppleBuildsFromTheClientMatrix()
     {
         var workflow = ReadWorkspaceFile(".github", "workflows", "ci.yml");
 
-        Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
-        Assert.Contains("if: github.event_name == 'workflow_dispatch'", workflow, StringComparison.Ordinal);
-        Assert.Contains("$requiredJobs += 'apple-build'", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("macos-latest", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("apple-build:", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("net10.0-maccatalyst", workflow, StringComparison.Ordinal);
+        Assert.Contains("android-build", workflow, StringComparison.Ordinal);
+        Assert.Contains("windows-build", workflow, StringComparison.Ordinal);
     }
 
     private static string ReadWorkspaceFile(params string[] parts)

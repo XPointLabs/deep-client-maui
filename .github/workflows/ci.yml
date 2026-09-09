@@ -31,7 +31,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Apple client validation is intentionally deferred until the operator
+        # explicitly re-enables the Apple platform sprint.
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -193,79 +195,6 @@ jobs:
         shell: bash
         run: rm -f src/Deep.Client.Maui/Platforms/Android/google-services.json
 
-  apple-build:
-    name: build-ios-maccatalyst
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-26
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: deep-client-maui
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/deep-client-shared
-          ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
-          path: deep-client-shared
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/deep-protocol
-          ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
-          path: deep-protocol
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.301
-      - name: Select Xcode 26.5
-        shell: bash
-        run: |
-          set -euo pipefail
-          for xcode in /Applications/Xcode_26.5.app /Applications/Xcode_26.5_beta_2.app /Applications/Xcode_26.5_beta.app /Applications/Xcode_26.5.0.app; do
-            if [ -d "$xcode" ]; then
-              developer_dir="$xcode/Contents/Developer"
-              if [ -d "$developer_dir/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" ]; then
-                sudo xcode-select -s "$developer_dir"
-                xcodebuild -version
-                xcrun --sdk macosx --find install_name_tool
-                exit 0
-              fi
-            fi
-          done
-          ls -1 /Applications | grep '^Xcode' || true
-          xcode-select -p || true
-          exit 1
-      - working-directory: deep-client-maui
-        run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
-      - working-directory: deep-client-maui
-        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-ios --configuration Release -p:RuntimeIdentifier=ios-arm64 -p:BuildIpa=false -p:EnableCodeSigning=false -p:CodesignRequireProvisioningProfile=false -p:TrimMode=copy -p:UseInterpreter=true -p:MtouchUseLlvm=false
-      - working-directory: deep-client-maui
-        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-maccatalyst --configuration Release
-      - name: iOS device integration test build
-        working-directory: deep-client-maui
-        run: dotnet build tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj -f net10.0-ios --configuration Release -p:RuntimeIdentifier=ios-arm64 -p:EnableCodeSigning=false -p:CodesignRequireProvisioningProfile=false -p:TrimMode=copy -p:UseInterpreter=true -p:MtouchUseLlvm=false
-      - name: Write Apple build evidence
-        working-directory: deep-client-maui
-        run: |
-          mkdir -p artifacts/platform-matrix
-          cat > artifacts/platform-matrix/apple.json <<'JSON'
-          {
-            "platform": "apple",
-            "runner": "${{ runner.os }}",
-            "commit": "${{ github.sha }}",
-            "targetFrameworks": ["net10.0-ios", "net10.0-maccatalyst"],
-            "appBuild": "passed",
-            "deviceIntegrationBuild": "passed"
-          }
-          JSON
-      - name: Upload Apple build evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: maui-platform-apple
-          path: deep-client-maui/artifacts/platform-matrix/apple.json
-          if-no-files-found: error
-
   windows-build:
     name: build-windows
     runs-on: windows-latest
@@ -315,7 +244,7 @@ jobs:
   platform-matrix-gate:
     name: platform-matrix-gate
     runs-on: ubuntu-latest
-    needs: [unit-tests, release-transport-guard, android-build, apple-build, windows-build]
+    needs: [unit-tests, release-transport-guard, android-build, windows-build]
     if: always()
     steps:
       - name: Validate release-blocking platform matrix
@@ -330,16 +259,7 @@ jobs:
             'android-build',
             'windows-build'
           )
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch')
-          {
-            $requiredJobs += 'apple-build'
-          }
-          $reportedJobs = @($requiredJobs)
-          if ($reportedJobs -notcontains 'apple-build')
-          {
-            $reportedJobs += 'apple-build'
-          }
-          $legs = foreach ($job in $reportedJobs)
+          $legs = foreach ($job in $requiredJobs)
           {
             $result = $needs.PSObject.Properties[$job].Value.result
             [pscustomobject]@{
@@ -358,8 +278,6 @@ jobs:
               'unit-viewmodel-and-route-smoke-tests',
               'release-transport-no-stub-guard',
               'android-release-build',
-              'ios-release-build',
-              'maccatalyst-release-build',
               'windows-release-build'
             )
             requiredLegs = $legs
