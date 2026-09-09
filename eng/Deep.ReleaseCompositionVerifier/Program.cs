@@ -13,7 +13,7 @@ const string routerOne = "111111111111111111111111111111111111111111111111111111
 const string routerTwo = "2222222222222222222222222222222222222222222222222222222222222222";
 const string routerThree = "3333333333333333333333333333333333333333333333333333333333333333";
 const string expectedDescriptorFingerprint =
-    "5a2669fb3452ab36804e1772f6ecb345f34828f61d4e60264e8a903541e218a0";
+    "b5172175e3fb59718477f1e240ed1586540d1c5d5909da154e219bf1f5f45792";
 var pinnedRouters = new[]
 {
     new RealityRouterEndpoint("http://127.0.0.1:29281/", routerOne),
@@ -35,21 +35,33 @@ try
         mauiProgram,
         "CreateMauiApp",
         BindingFlags.Public | BindingFlags.Static);
-    var configureApplicationServices = RequiredMethod(
-        mauiProgram,
-        "ConfigureApplicationServices",
-        BindingFlags.NonPublic | BindingFlags.Static);
+    var configureApplicationServices = mauiProgram
+        .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+        .Single(method =>
+            method.Name == "ConfigureApplicationServices"
+            && method.GetParameters() is var parameters
+            && parameters.Length == 3
+            && parameters[1].ParameterType.IsGenericType
+            && parameters[1].ParameterType.GetGenericTypeDefinition() == typeof(Func<>));
+    var deterministicApplicationServices = mauiProgram
+        .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+        .Single(method =>
+            method.Name == "ConfigureApplicationServices"
+            && method.GetParameters() is var parameters
+            && parameters.Length == 3
+            && parameters[1].ParameterType.FullName
+                == "Deep.Client.Maui.ApplicationServiceInputs");
 
     VerifyCompiledCompositionControlFlow(createMauiApp, configureApplicationServices);
     VerifyCreateMauiAppCallAllowlist(createMauiApp, configureApplicationServices);
-    VerifyDeterministicCompositionEntrypoint(configureApplicationServices);
+    VerifyDeterministicCompositionEntrypoint(deterministicApplicationServices);
     VerifyNoReachableForbiddenTransportTokens(createMauiApp);
     AssertCompiledNegativeFixturesAreRejected();
     AssertNameBoundConstructorBindingIsOrderIndependent();
 
     var inputs = CreateSyntheticInputs(appAssembly);
     var services = new ServiceCollection();
-    configureApplicationServices.Invoke(null, [services, inputs]);
+    deterministicApplicationServices.Invoke(null, [services, inputs, null]);
     using var provider = services.BuildServiceProvider(
         new ServiceProviderOptions
         {
@@ -62,7 +74,7 @@ try
         pinnedRouters,
         expectedDescriptorFingerprint);
     AssertPostEntrypointMutationIsRejected(
-        configureApplicationServices,
+        deterministicApplicationServices,
         inputs,
         pinnedRouters);
 
@@ -220,7 +232,7 @@ static void ValidateFinalApplicationComposition(
     string expectedFingerprint)
 {
     Require(
-        descriptors.Count == 69,
+        descriptors.Count == 81,
         $"Final Windows Release app-owned descriptor count changed: {descriptors.Count}.");
     var descriptorFingerprint = DescriptorFingerprint(descriptors);
     Require(
@@ -278,7 +290,7 @@ static void AssertPostEntrypointMutationIsRejected(
     IReadOnlyList<RealityRouterEndpoint> expectedRouters)
 {
     var mutated = new ServiceCollection();
-    configureApplicationServices.Invoke(null, [mutated, inputs]);
+    configureApplicationServices.Invoke(null, [mutated, inputs, null]);
     mutated.AddSingleton<ISessionMessageTransport>(new StubSessionBackend());
     using var provider = mutated.BuildServiceProvider();
 
@@ -405,7 +417,13 @@ static void VerifyCreateMauiAppCallAllowlist(MethodInfo source, MethodInfo entry
             (declaring == "Microsoft.Maui.Hosting.MauiAppBuilder" &&
              called.Name is "get_Services" or "Build") ||
             (declaring == "Microsoft.Maui.Controls.Hosting.AppHostBuilderExtensions" &&
-             called.Name.StartsWith("UseMaui", StringComparison.Ordinal));
+             called.Name.StartsWith("UseMaui", StringComparison.Ordinal)) ||
+            (called is ConstructorInfo &&
+             called.DeclaringType?.IsGenericType == true &&
+             called.DeclaringType.GetGenericTypeDefinition() == typeof(Func<>) &&
+             called.DeclaringType.GetGenericArguments() is var arguments &&
+             arguments.Length == 1 &&
+             arguments[0].FullName == "Deep.Client.Maui.ApplicationServiceInputs");
         Require(
             allowedFrameworkCall,
             $"Unexpected CreateMauiApp call target: {declaring}.{called.Name}.");

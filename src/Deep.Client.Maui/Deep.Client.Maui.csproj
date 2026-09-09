@@ -50,6 +50,7 @@
     <AssemblyMetadata Include="DeepProductionAndroidApplicationId" Value="$(DeepProductionAndroidApplicationId)" />
     <AssemblyMetadata Include="DeepProductionAndroidVersionCode" Value="$(DeepProductionAndroidVersionCode)" />
     <AssemblyMetadata Include="DeepProductionAndroidSignerLineageSha256" Value="$(DeepProductionAndroidSignerLineageSha256)" />
+    <AssemblyMetadata Include="DeepCiReleaseCandidate" Value="$(DeepCiReleaseCandidate)" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
@@ -272,8 +273,14 @@
            Text="Production mailbox trust-floor generations must be positive decimal integers." />
   </Target>
 
+  <Target Name="ValidateCiReleaseCandidate" BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepCiReleaseCandidate)' != ''">
+    <Error Condition="'$(DeepCiReleaseCandidate)' != 'true' Or '$(CI)' != 'true'"
+           Text="DeepCiReleaseCandidate is restricted to the CI compilation gate and cannot authorize production packaging." />
+  </Target>
+
   <Target Name="RequireProductionMailboxTrustFloor" BeforeTargets="PrepareForBuild"
-          Condition="'$(Configuration)' == 'Release' And ($([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows')">
+          Condition="'$(Configuration)' == 'Release' And '$(DeepCiReleaseCandidate)' != 'true' And ($([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows')">
     <Error Condition="'$(ProductionMailboxTrustFloorSupplied)' != 'true'"
            Text="Release Android and Windows builds require the complete production mailbox trust floor." />
   </Target>
@@ -291,13 +298,13 @@
   </Target>
 
   <Target Name="RequireProductionAndroidBuildIdentity" BeforeTargets="PrepareForBuild"
-          Condition="'$(Configuration)' == 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+          Condition="'$(Configuration)' == 'Release' And '$(DeepCiReleaseCandidate)' != 'true' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
     <Error Condition="'$(ProductionAndroidBuildIdentitySupplied)' != 'true'"
            Text="Android Release builds require exact applicationId/versionCode and Play app-signing lineage." />
   </Target>
 
   <Target Name="RequireProductionAndroidCodeTransparency" BeforeTargets="PrepareForBuild"
-          Condition="'$(Configuration)' == 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(DeepProductionAndroidTransparencyPreparation)' != 'true'">
+          Condition="'$(Configuration)' == 'Release' And '$(DeepCiReleaseCandidate)' != 'true' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(DeepProductionAndroidTransparencyPreparation)' != 'true'">
     <Error Condition="'$(ProductionAndroidTransparencySupplied)' != 'true' Or !Exists('$(DeepProductionAndroidCodeTransparencyManifest)')"
            Text="Android Release builds require an external Mr. X-signed ACT1 code-transparency manifest." />
   </Target>

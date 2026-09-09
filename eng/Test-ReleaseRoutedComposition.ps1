@@ -3,6 +3,7 @@ param(
     [ValidateSet('win-x64')]
     [string]$RuntimeIdentifier = 'win-x64',
     [string]$ArtifactDirectory,
+    [switch]$CiReleaseCandidate,
     [switch]$ContractOnlyVerifierFailure
 )
 
@@ -50,11 +51,23 @@ if ($contractModes -gt 0) {
 }
 
 try {
-    dotnet build `
-        (Join-Path $repoRoot 'src\Deep.Client.Maui\Deep.Client.Maui.csproj') `
-        --framework 'net10.0-windows10.0.19041.0' `
-        --configuration Release `
+    $candidateArguments = if ($CiReleaseCandidate) {
+        if ([Environment]::GetEnvironmentVariable('CI') -cne 'true') {
+            throw 'CiReleaseCandidate is restricted to CI=true.'
+        }
+        @('-p:DeepCiReleaseCandidate=true')
+    }
+    else {
+        @()
+    }
+    $buildArguments = @(
+        'build',
+        (Join-Path $repoRoot 'src\Deep.Client.Maui\Deep.Client.Maui.csproj'),
+        '--framework', 'net10.0-windows10.0.19041.0',
+        '--configuration', 'Release',
         "-p:RuntimeIdentifierOverride=$RuntimeIdentifier"
+    ) + $candidateArguments
+    & dotnet @buildArguments
     if ($LASTEXITCODE -ne 0) {
         throw 'Windows Release composition build failed.'
     }

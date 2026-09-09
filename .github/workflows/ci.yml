@@ -121,6 +121,7 @@ jobs:
         run: |
           ./eng/Test-ReleaseRoutedComposition.ps1 `
             -RuntimeIdentifier win-x64 `
+            -CiReleaseCandidate `
             -ArtifactDirectory artifacts/release-gates
       - name: Upload release transport guard evidence
         if: always()
@@ -187,10 +188,10 @@ jobs:
       - working-directory: deep-client-maui
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
       - working-directory: deep-client-maui
-        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android --configuration Release -p:DeepGoogleServicesJson=src/Deep.Client.Maui/Platforms/Android/google-services.json
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android --configuration Release -p:DeepGoogleServicesJson=src/Deep.Client.Maui/Platforms/Android/google-services.json -p:DeepCiReleaseCandidate=true
       - name: Android device integration test build
         working-directory: deep-client-maui
-        run: dotnet build tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj -f net10.0-android --configuration Release
+        run: dotnet build tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj -f net10.0-android --configuration Release -p:DeepCiReleaseCandidate=true
       - name: Write Android build evidence
         working-directory: deep-client-maui
         run: |
@@ -202,6 +203,7 @@ jobs:
             "commit": "${{ github.sha }}",
             "targetFrameworks": ["net10.0-android"],
             "appBuild": "passed",
+            "buildMode": "ci-release-candidate",
             "deviceIntegrationBuild": "passed"
           }
           JSON
@@ -245,7 +247,7 @@ jobs:
       - working-directory: deep-client-maui
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
       - working-directory: deep-client-maui
-        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 --configuration Release -p:RuntimeIdentifierOverride=win-x64
+        run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 --configuration Release -p:RuntimeIdentifierOverride=win-x64 -p:DeepCiReleaseCandidate=true
       - name: Write Windows build evidence
         shell: pwsh
         working-directory: deep-client-maui
@@ -257,6 +259,7 @@ jobs:
             commit = '${{ github.sha }}'
             targetFrameworks = @('net10.0-windows10.0.19041.0')
             appBuild = 'passed'
+            buildMode = 'ci-release-candidate'
           } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 artifacts/platform-matrix/windows.json
       - name: Upload Windows build evidence
         if: always()
