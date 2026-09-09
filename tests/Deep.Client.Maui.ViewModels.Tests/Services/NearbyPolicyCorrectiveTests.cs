@@ -242,6 +242,7 @@ public sealed class NearbyPolicyCorrectiveTests
         var stopping = coordinator.StopAsync();
         environment.IntentStore.ReleaseSave();
         await Task.WhenAll(starting, stopping);
+        await coordinator.DrainAsync().WaitAsync(TimeSpan.FromSeconds(2));
 
         Assert.Equal(
             new NearbyModeIntent(NearbyUserMode.Off, null),

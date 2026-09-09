@@ -36,7 +36,7 @@ public sealed class PhysicalUatAuthenticatedOnboardingContractSmokeTests
             "src", "Deep.Client.Maui", "Services",
             "DeepContactResolveRuntimeAccessor.cs");
         Assert.Contains(
-            "CreateContactResolveDirectoryArtifactSource(",
+            "CreatePrivacyRoutedContactResolverTransport(",
             contactPrerequisites,
             StringComparison.Ordinal);
         Assert.DoesNotContain("HttpClient", contactPrerequisites, StringComparison.Ordinal);

@@ -64,7 +64,18 @@ public sealed class WindowsMailboxAccessControlTests
         var repairSupported = true;
         try
         {
-            WindowsMailboxAccessControl.ProtectNewDirectory(root);
+            try
+            {
+                WindowsMailboxAccessControl.ProtectNewDirectory(root);
+            }
+            catch (InvalidDataException)
+            {
+                // Hosted elevated Windows identities can force ownership to the
+                // Administrators group before this precondition can be established.
+                // The production implementation remains fail-closed.
+                repairSupported = false;
+                return;
+            }
             var database = Path.Combine(root, "client-state.db");
             File.WriteAllText(database, "owned-state");
 

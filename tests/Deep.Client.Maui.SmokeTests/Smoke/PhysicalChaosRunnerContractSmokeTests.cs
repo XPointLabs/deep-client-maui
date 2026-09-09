@@ -14,7 +14,7 @@ public sealed class PhysicalChaosRunnerContractSmokeTests
             "Scripts", "Test-PhysicalChaosRunnerSafety.ps1");
         var start = new ProcessStartInfo
         {
-            FileName = @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            FileName = FindPowerShell(),
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true
@@ -101,5 +101,18 @@ public sealed class PhysicalChaosRunnerContractSmokeTests
             directory = directory.Parent;
         return directory?.FullName
             ?? throw new DirectoryNotFoundException("MAUI repository root was not found.");
+    }
+
+    private static string FindPowerShell()
+    {
+        var candidates = OperatingSystem.IsWindows()
+            ? new[] { "pwsh.exe", "powershell.exe" }
+            : new[] { "pwsh" };
+        return (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .SelectMany(path => candidates.Select(executable =>
+                Path.Combine(path.Trim('"'), executable)))
+            .FirstOrDefault(File.Exists)
+            ?? throw new FileNotFoundException("PowerShell was not found.");
     }
 }

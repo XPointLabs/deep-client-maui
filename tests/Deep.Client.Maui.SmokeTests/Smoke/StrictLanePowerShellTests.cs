@@ -185,7 +185,9 @@ public sealed class StrictLanePowerShellTests
     {
         var pathEntries = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
-        foreach (var executable in new[] { "pwsh.exe", "powershell.exe" })
+        foreach (var executable in OperatingSystem.IsWindows()
+                     ? new[] { "pwsh.exe", "powershell.exe" }
+                     : new[] { "pwsh" })
         {
             var found = pathEntries
                 .Select(path => Path.Combine(path.Trim('"'), executable))

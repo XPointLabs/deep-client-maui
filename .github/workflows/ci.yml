@@ -48,6 +48,12 @@ jobs:
           ref: ${{ github.ref_name }}
           token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
           path: deep-protocol
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/deep-devops
+          ref: ${{ github.ref_name }}
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          path: deep-devops
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.301
