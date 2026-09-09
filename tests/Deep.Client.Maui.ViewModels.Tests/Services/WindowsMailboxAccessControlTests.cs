@@ -61,7 +61,6 @@ public sealed class WindowsMailboxAccessControlTests
     {
         if (!OperatingSystem.IsWindows()) return;
         var root = NewRoot();
-        var repairSupported = true;
         try
         {
             try
@@ -73,7 +72,6 @@ public sealed class WindowsMailboxAccessControlTests
                 // Hosted elevated Windows identities can force ownership to the
                 // Administrators group before this precondition can be established.
                 // The production implementation remains fail-closed.
-                repairSupported = false;
                 return;
             }
             var database = Path.Combine(root, "client-state.db");
@@ -90,7 +88,6 @@ public sealed class WindowsMailboxAccessControlTests
             {
                 // Elevated CI identities can be normalized to the Administrators
                 // group by Windows and cannot exercise the current-user repair path.
-                repairSupported = false;
                 return;
             }
 
@@ -103,7 +100,6 @@ public sealed class WindowsMailboxAccessControlTests
                 // Some hosted elevated identities normalize the file owner only
                 // when the parent ACL changes. That environment cannot exercise
                 // the current-user repair path; production remains fail-closed.
-                repairSupported = false;
                 return;
             }
 
@@ -129,10 +125,6 @@ public sealed class WindowsMailboxAccessControlTests
         }
         finally
         {
-            if (repairSupported)
-            {
-                WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(root);
-            }
             TryDelete(root);
         }
     }
