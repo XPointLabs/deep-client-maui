@@ -53,10 +53,14 @@ jobs:
           dotnet-version: 10.0.301
       - name: ViewModel tests
         working-directory: deep-client-maui
-        run: dotnet test tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj --configuration Release --logger "trx;LogFileName=viewmodels-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/viewmodels
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: dotnet test tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj --configuration Release -m:1 --logger "trx;LogFileName=viewmodels-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/viewmodels
       - name: Smoke UI route tests
         working-directory: deep-client-maui
-        run: dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj --configuration Release --logger "trx;LogFileName=route-smoke-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/route-smoke
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj --configuration Release -m:1 --logger "trx;LogFileName=route-smoke-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/route-smoke
       - name: Upload unit test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -141,7 +145,7 @@ jobs:
           target="src/Deep.Client.Maui/Platforms/Android/google-services.json"
           mkdir -p "$(dirname "${target}")"
           printf '%s' "${GOOGLE_SERVICES_JSON_BASE64}" | base64 --decode > "${target}"
-          jq -e '.client[]?.client_info.android_client_info.package_name == "network.xpoint.deep"' "${target}" >/dev/null
+          jq -e 'any(.client[]?; .client_info.android_client_info.package_name == "network.xpoint.deep")' "${target}" >/dev/null
       - working-directory: deep-client-maui
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
       - working-directory: deep-client-maui

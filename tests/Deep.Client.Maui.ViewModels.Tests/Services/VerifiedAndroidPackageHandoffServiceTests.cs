@@ -411,6 +411,7 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
     [Fact]
     public async Task AdapterReceivesOnlyHeldReadStreamAndMustReturnExactCopyReceipt()
     {
+        if (!OperatingSystem.IsWindows()) return;
         using var fixture = new UpdateTrustTestFixture();
         using var sandbox = new TemporaryDirectory();
         var parentRoot = Path.Combine(sandbox.Path, "handoff");
@@ -480,6 +481,7 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
     [Fact]
     public async Task CleanupFailure_IsReportedPendingAndRetriedBeforeNextPreserve()
     {
+        if (!OperatingSystem.IsWindows()) return;
         using var fixture = new UpdateTrustTestFixture();
         using var sandbox = new TemporaryDirectory();
         var parentRoot = Path.Combine(sandbox.Path, "handoff");
@@ -517,6 +519,7 @@ public sealed class VerifiedAndroidPackageHandoffServiceTests
     [Fact]
     public async Task ExpiredHandle_WithLockedDeletion_ReturnsCleanupPendingAndRetriesLater()
     {
+        if (!OperatingSystem.IsWindows()) return;
         using var fixture = new UpdateTrustTestFixture();
         using var sandbox = new TemporaryDirectory();
         var parentRoot = Path.Combine(sandbox.Path, "handoff");
