@@ -1,5 +1,5 @@
+using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
-using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Core.Services;
 
@@ -30,6 +30,7 @@ public static class ApplicationHttpTransportComposition
             fileClientOptions,
             serviceClientOptions);
 
+#if DEEP_TEST_INTERNALS
     internal static ApplicationHttpTransportFactories CreateBoundNetwork(
         HttpServiceTransportFactory transportFactory,
         HttpServiceNetworkHooks fileNetworkHooks,
@@ -50,6 +51,7 @@ public static class ApplicationHttpTransportComposition
             fileClientOptions,
             serviceClientOptions);
     }
+#endif
 
     private static ApplicationHttpTransportFactories CreateCore(
         HttpServiceTransportFactory fileTransportFactory,
@@ -86,10 +88,7 @@ public static class ApplicationHttpTransportComposition
         Func<IServiceProvider, ICallSignalingTransport> calls =
             string.IsNullOrWhiteSpace(callSignalingBaseUrl)
                 ? _ => new InMemoryCallSignalingTransport()
-                : services => serviceTransportFactory.CreateCallSignaling(
-                    new HttpCallSignalingTransportOptions(callSignalingBaseUrl),
-                    new ServiceProviderCallRecoveryPhraseProvider(services),
-                    clientOptions: serviceClientOptions);
+                : _ => CreateUnavailableCallSignaling(callSignalingBaseUrl);
         return new(
             avatar,
             attachment,
@@ -99,17 +98,47 @@ public static class ApplicationHttpTransportComposition
             serviceClientOptions);
     }
 
-    private sealed class ServiceProviderCallRecoveryPhraseProvider(
-        IServiceProvider services) : ICallRecoveryPhraseProvider
+    private static ICallSignalingTransport CreateUnavailableCallSignaling(
+        string configuredOrigin)
     {
-        public Task<string?> GetRecoveryPhraseAsync(
-            CancellationToken cancellationToken = default)
+        if (!Uri.TryCreate(configuredOrigin, UriKind.Absolute, out var origin)
+            || origin.Scheme != Uri.UriSchemeHttps
+            || !string.IsNullOrEmpty(origin.UserInfo)
+            || !string.IsNullOrEmpty(origin.Query)
+            || !string.IsNullOrEmpty(origin.Fragment)
+            || origin.AbsolutePath != "/")
         {
-            var runtime = services.GetService(typeof(ClientRuntime))
-                as ClientRuntime
-                ?? throw new InvalidOperationException(
-                    "Client runtime is required for call signaling.");
-            return runtime.Accounts.GetRecoveryPhraseAsync(cancellationToken);
+            throw new ArgumentException(
+                "Call signaling base URL must be an absolute HTTPS service origin.",
+                nameof(configuredOrigin));
         }
+
+        return new CleanBreakCallSignalingTransportUnavailable();
+    }
+
+    private sealed class CleanBreakCallSignalingTransportUnavailable :
+        ICallSignalingTransport,
+        ICallIceConfigurationProvider
+    {
+        private const string Message =
+            "Legacy recovery-phrase call signaling is disabled. " +
+            "Typed ratcheted Deep call signaling is not composed yet.";
+
+        public Task SendAsync(
+            CallSignalEnvelope envelope,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException(new NotSupportedException(Message));
+
+        public Task<IReadOnlyList<CallSignalEnvelope>> ReceiveAsync(
+            SessionId recipient,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<IReadOnlyList<CallSignalEnvelope>>(
+                new NotSupportedException(Message));
+
+        public Task<CallIceConfiguration> GetAsync(
+            SessionId recipient,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<CallIceConfiguration>(
+                new NotSupportedException(Message));
     }
 }

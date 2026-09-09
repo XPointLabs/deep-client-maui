@@ -26,17 +26,17 @@
                 <Editor
                     x:Name="RecoveryPhraseEditor"
                     AutomationId="Onboarding.RecoveryPhrase"
-                    Placeholder="Фраза восстановления (12 или 13 слов)"
+                    Placeholder="Фраза восстановления (ровно 24 слова)"
                     Text="{Binding RecoveryPhrase}"
                     AutoSize="TextChanges"
                     HeightRequest="120"
-                    MaxLength="256"
+                    MaxLength="512"
                     Keyboard="Plain"
                     IsSpellCheckEnabled="False"
                     IsTextPredictionEnabled="False" />
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                     <Button AutomationId="Onboarding.Back" Text="Назад" Clicked="OnBackClicked" Style="{StaticResource SecondaryButton}" WidthRequest="110" />
-                    <Button AutomationId="Onboarding.Restore" Grid.Column="1" Text="Восстановить" Command="{Binding LoginCommand}" />
+                    <Button AutomationId="Onboarding.Restore" Grid.Column="1" Text="Восстановить" Command="{Binding RestoreCommand}" />
                 </Grid>
             </VerticalStackLayout>
 

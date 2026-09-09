@@ -918,7 +918,8 @@ internal static class StrictCrossPlatformContracts
                 all.Any(static id => !Regex.IsMatch(
                     id, "^[a-f0-9]{64}$", RegexOptions.CultureInvariant) ||
                     id.All(static character => character == '0')) ||
-                all.Distinct(StringComparer.Ordinal).Count() != 6 ||
+                primary.Distinct(StringComparer.Ordinal).Count() != 3 ||
+                fallback.Distinct(StringComparer.Ordinal).Count() != 3 ||
                 selected is not ("primary" or "fallback") ||
                 !Regex.IsMatch(coordinator, "^[a-f0-9]{64}$",
                     RegexOptions.CultureInvariant) ||
@@ -930,7 +931,7 @@ internal static class StrictCrossPlatformContracts
                     StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
-                    "Physical privacy-route proof is not exact-three, disjoint, or selected-entry bound.");
+                    "Physical privacy-route proof is not exact-three per route or selected-entry bound.");
             }
 
             return new PrivacyRouteProof(

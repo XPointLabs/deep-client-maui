@@ -1,26 +1,27 @@
-﻿using Deep.Client.Maui.Core.Commands;
+using System.Security.Cryptography;
+using System.Text;
+using Deep.Client.Maui.Core.Commands;
 using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Shared.Domain;
-using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Core.ViewModels;
 
 public sealed class OnboardingViewModel : ViewModelBase
 {
-    private readonly ClientRuntime runtime;
+    private readonly IDeepAccountRuntimeAccessor accountRuntime;
     private readonly AuthNavigationState? authNavigationState;
     private string displayName = string.Empty;
     private string recoveryPhrase = string.Empty;
-    private string? generatedRecoveryPhrase;
-    private string? sessionId;
-    private bool isLoggedIn;
+    private bool isRestored;
 
-    public OnboardingViewModel(ClientRuntime runtime, AuthNavigationState? authNavigationState = null)
+    public OnboardingViewModel(
+        IDeepAccountRuntimeAccessor accountRuntime,
+        AuthNavigationState? authNavigationState = null)
     {
-        this.runtime = runtime;
+        this.accountRuntime = accountRuntime;
         this.authNavigationState = authNavigationState;
-        RegisterCommand = new AsyncCommand(RegisterAsync, () => !string.IsNullOrWhiteSpace(DisplayName));
-        LoginCommand = new AsyncCommand(LoginAsync, () => !string.IsNullOrWhiteSpace(RecoveryPhrase));
+        RestoreCommand = new AsyncCommand(RestoreAsync, CanRestore);
     }
 
     public string DisplayName
@@ -30,7 +31,7 @@ public sealed class OnboardingViewModel : ViewModelBase
         {
             if (SetProperty(ref displayName, value))
             {
-                RegisterCommand.RaiseCanExecuteChanged();
+                RestoreCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -42,98 +43,57 @@ public sealed class OnboardingViewModel : ViewModelBase
         {
             if (SetProperty(ref recoveryPhrase, value))
             {
-                LoginCommand.RaiseCanExecuteChanged();
+                RestoreCommand.RaiseCanExecuteChanged();
             }
         }
     }
 
-    public string? GeneratedRecoveryPhrase
+    public bool IsRestored
     {
-        get => generatedRecoveryPhrase;
-        private set
-        {
-            if (SetProperty(ref generatedRecoveryPhrase, value))
-            {
-                RaisePropertyChanged(nameof(GeneratedRecoveryPhraseMultiline));
-            }
-        }
+        get => isRestored;
+        private set => SetProperty(ref isRestored, value);
     }
 
-    public string? GeneratedRecoveryPhraseMultiline => FormatRecoveryPhrase(GeneratedRecoveryPhrase);
+    public DeepAccount? Account { get; private set; }
 
-    public string? SessionId
-    {
-        get => sessionId;
-        private set => SetProperty(ref sessionId, value);
-    }
+    public AsyncCommand RestoreCommand { get; }
 
-    public bool IsLoggedIn
-    {
-        get => isLoggedIn;
-        private set => SetProperty(ref isLoggedIn, value);
-    }
-
-    public SessionAccount? Account { get; private set; }
-
-    public AsyncCommand RegisterCommand { get; }
-
-    public AsyncCommand LoginCommand { get; }
-
-    public Task RegisterAsync(CancellationToken cancellationToken = default) =>
-        RunBusyAsync(async ct =>
-        {
-            Account = await runtime.Accounts.RegisterAsync(DisplayName, ct);
-            GeneratedRecoveryPhrase = await runtime.Accounts.GetRecoveryPhraseAsync(ct);
-            SessionId = Account.SessionId.Value;
-            IsLoggedIn = true;
-            authNavigationState?.MarkAuthenticated();
-        }, cancellationToken);
-
-    public async Task LoginAsync(CancellationToken cancellationToken = default)
+    public async Task RestoreAsync(CancellationToken cancellationToken = default)
     {
         var phraseForAttempt = RecoveryPhrase;
+        byte[]? phraseUtf8 = null;
         try
         {
             await RunBusyAsync(async ct =>
             {
-                Account = await runtime.Accounts.LoginAsync(phraseForAttempt, DisplayName, ct);
+                phraseUtf8 = Encoding.UTF8.GetBytes(phraseForAttempt);
+                using var ownedPhrase = DeepOwnedRecoveryPhraseUtf8.CopyFrom(phraseUtf8);
+                var accounts = await accountRuntime.GetAccountsAsync(ct).ConfigureAwait(false);
+                var result = await accounts
+                    .RestoreAsNewDeviceAsync(ownedPhrase, DisplayName, ct)
+                    .ConfigureAwait(false);
+                Account = result.Identity.Account;
                 DisplayName = Account.DisplayName;
-                SessionId = Account.SessionId.Value;
-                IsLoggedIn = true;
-                authNavigationState?.MarkAuthenticated();
+                IsRestored = true;
+                if (authNavigationState is not null)
+                {
+                    await authNavigationState.RefreshAsync(ct).ConfigureAwait(false);
+                }
             }, cancellationToken);
         }
         finally
         {
+            if (phraseUtf8 is not null)
+            {
+                CryptographicOperations.ZeroMemory(phraseUtf8);
+            }
             ClearRecoveryPhrase();
         }
     }
 
     public void ClearRecoveryPhrase() => RecoveryPhrase = string.Empty;
 
-    private static string? FormatRecoveryPhrase(string? phrase)
-    {
-        if (string.IsNullOrWhiteSpace(phrase))
-        {
-            return phrase;
-        }
-
-        var words = phrase
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToArray();
-
-        if (words.Length <= 3)
-        {
-            return string.Join(' ', words);
-        }
-
-        var lines = new List<string>();
-        for (var i = 0; i < words.Length; i += 3)
-        {
-            var chunk = words.Skip(i).Take(3);
-            lines.Add(string.Join(' ', chunk));
-        }
-
-        return string.Join(Environment.NewLine, lines);
-    }
+    private bool CanRestore() =>
+        !string.IsNullOrWhiteSpace(DisplayName)
+        && !string.IsNullOrWhiteSpace(RecoveryPhrase);
 }

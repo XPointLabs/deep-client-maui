@@ -5,7 +5,7 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:Deep.Client.Maui.Core.ViewModels;assembly=Deep.Client.Maui.Core"
-    x:DataType="vm:ConversationsViewModel"
+    x:DataType="vm:NewConversationViewModel"
     BackgroundColor="{StaticResource PageBackground}"
     Shell.NavBarIsVisible="False"
     Title="Новое сообщение">
@@ -30,16 +30,61 @@
         <VerticalStackLayout Grid.Row="1" Spacing="16" Padding="16,20,16,0">
             <VerticalStackLayout Spacing="6">
                 <Label Text="Кому" FontSize="13" TextColor="{StaticResource TextSecondary}" />
-                <Entry x:Name="SessionIdEntry" AutomationId="NewConversation.SessionId" Placeholder="ID аккаунта или защищённое приглашение" Text="{Binding NewSessionId}" />
+                <Entry
+                    x:Name="DeepIdEntry"
+                    AutomationId="NewConversation.SessionId"
+                    Placeholder="deep1… или deepinvite:…"
+                    IsEnabled="{Binding CanEditAddress}"
+                    Text="{Binding AddressInput, Mode=TwoWay}" />
             </VerticalStackLayout>
 
-            <VerticalStackLayout Spacing="6">
-                <Label Text="Имя" FontSize="13" TextColor="{StaticResource TextSecondary}" />
-                <Entry x:Name="DisplayNameEntry" AutomationId="NewConversation.DisplayName" Placeholder="Имя контакта (необязательно)" Text="{Binding NewDisplayName}" />
-            </VerticalStackLayout>
+            <Button
+                x:Name="ImportButton"
+                AutomationId="NewConversation.Start"
+                Text="Добавить контакт"
+                IsVisible="{Binding ShowResolveAction}"
+                IsEnabled="{Binding CanResolve}"
+                Clicked="OnResolveClicked" />
 
-            <Button AutomationId="NewConversation.Start" Text="Далее" IsEnabled="{Binding CanStartNewConversation}" Clicked="OnStartClicked" />
-            <Label AutomationId="NewConversation.Error" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="13" />
+            <ActivityIndicator
+                AutomationId="NewConversation.Resolving"
+                IsVisible="{Binding IsBusy}"
+                IsRunning="{Binding IsBusy}"
+                Color="{StaticResource PrimaryColor}" />
+
+            <Border
+                AutomationId="NewConversation.Status"
+                IsVisible="{Binding HasStatus}"
+                Padding="12"
+                Background="{StaticResource PanelBackground}"
+                Stroke="{StaticResource DividerColor}"
+                StrokeShape="RoundRectangle 10">
+                <VerticalStackLayout Spacing="6">
+                    <Label
+                        AutomationId="NewConversation.StatusTitle"
+                        Text="{Binding StatusTitle}"
+                        FontAttributes="Bold" />
+                    <Label
+                        AutomationId="NewConversation.StatusMessage"
+                        Text="{Binding StatusMessage}"
+                        FontSize="13"
+                        TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <Button
+                AutomationId="NewConversation.Retry"
+                Text="Повторить проверку"
+                IsVisible="{Binding CanRetry}"
+                IsEnabled="{Binding CanRetry}"
+                Clicked="OnResolveClicked" />
+
+            <Label
+                AutomationId="NewConversation.Error"
+                IsVisible="{Binding HasError}"
+                Text="{Binding ErrorMessage}"
+                TextColor="{StaticResource DangerColor}"
+                FontSize="13" />
         </VerticalStackLayout>
     </Grid>
 </ContentPage>

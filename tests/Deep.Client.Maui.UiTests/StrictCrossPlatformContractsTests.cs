@@ -474,7 +474,7 @@ public sealed class StrictCrossPlatformContractsTests
     }
 
     [Fact]
-    public void Privacy_route_proof_requires_exact_three_disjoint_hops_and_selected_entry()
+    public void Privacy_route_proof_requires_exact_three_hops_per_route_and_selected_entry()
     {
         var ids = Enumerable.Range(1, 6)
             .Select(value => value.ToString("x2") + new string('a', 62))
@@ -492,9 +492,12 @@ public sealed class StrictCrossPlatformContractsTests
         Assert.NotEqual(proof.Fallback[^1], proof.Coordinator);
         Assert.Equal(3, proof.Primary.Count);
         Assert.Equal(3, proof.Fallback.Count);
+        var overlapping = StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
+            canonical.Replace(ids[5], ids[0], StringComparison.Ordinal));
+        Assert.Equal(ids[0], overlapping.Fallback[^1]);
         Assert.Throws<InvalidOperationException>(() =>
             StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
-                canonical.Replace(ids[5], ids[0], StringComparison.Ordinal)));
+                canonical.Replace(ids[5], ids[3], StringComparison.Ordinal)));
         Assert.Throws<InvalidOperationException>(() =>
             StrictCrossPlatformContracts.PrivacyRouteProof.ParseExact(
                 canonical.Replace($"entry={ids[3]}", $"entry={ids[4]}",

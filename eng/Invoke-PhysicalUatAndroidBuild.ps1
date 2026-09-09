@@ -219,9 +219,9 @@ Invoke-Checked dotnet @(
     'publish-production-uat-routes', '--secrets-dir', $xnodeSecrets,
     '--private-dir', $mailboxSecrets, '--output-dir', $routes,
     '--authority-state', $authorityState, '--public-host', $PublicHost) 'UAT privacy-route publication'
-$routesJson = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v1.json') 'UAT privacy-route JSON'
-$routesSignature = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v1.sig') 'UAT privacy-route signature'
-$routesPublicKey = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v1.pub') 'UAT privacy-route public key'
+$routesJson = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v2.json') 'UAT privacy-route JSON'
+$routesSignature = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v2.sig') 'UAT privacy-route signature'
+$routesPublicKey = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v2.pub') 'UAT privacy-route public key'
 $mrXPublicKeySha256 = (Get-FileHash -LiteralPath $routesPublicKey -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($mrXPublicKeySha256 -cne [string]$serverPredecessorTrust.DeepProductionMrXPublicKeySha256) {
     throw 'UAT privacy-route Mr. X root differs from the predecessor trust floor.'

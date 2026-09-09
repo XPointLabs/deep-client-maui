@@ -445,7 +445,7 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddBoolean("windowsXpointRouteObserved", true);
         evidence.AddBoolean("privacyIngressFramePathObserved", true);
         evidence.AddBoolean("primaryRouteExactThreeObserved", true);
-        evidence.AddBoolean("fallbackRouteExactThreeAndDisjointObserved", true);
+        evidence.AddBoolean("fallbackRouteExactThreeObserved", true);
         evidence.AddBoolean("senderDeliveryStatusObserved", true);
         evidence.AddSafeValue("genericPlaintextSha256", genericSha256);
         evidence.AddSafeValue("documentPlaintextSha256", documentSha256);
@@ -661,7 +661,7 @@ public sealed class StrictCrossPlatformUiTests
                 "authoritativeCoordinatorRouterHash", routeProof.Coordinator);
             evidence.AddBoolean("managedIngressFramePathObserved", true);
             evidence.AddBoolean("primaryRouteContainsExactlyThreeHops", true);
-            evidence.AddBoolean("fallbackRouteContainsExactlyThreeDisjointHops", true);
+            evidence.AddBoolean("fallbackRouteContainsExactlyThreeHops", true);
             evidence.AddBoolean("primaryRejectedCanonicallyBeforeForward", true);
             evidence.AddBoolean("fallbackRouteSelectedAndDelivered", true);
             evidence.AddBoolean("recipientRenderedExactlyOnce", true);
@@ -1385,7 +1385,7 @@ public sealed class StrictCrossPlatformUiTests
         android.Tap(options.App("StartConversation.CreateGroup"));
         android.WaitForResource(options.App("Groups.GroupName"), TimeSpan.FromSeconds(20));
         android.Type(options.App("Groups.GroupName"), groupName);
-        android.Type(options.App("Groups.MemberSessionId"), windowsInvitation);
+        android.Type(options.App("Groups.MemberAddress"), windowsInvitation);
         android.Tap(options.App("Groups.AddMember"));
         android.DismissKeyboard();
         android.WaitForResource(options.App("Groups.DraftMembers"), TimeSpan.FromSeconds(30));
@@ -2071,7 +2071,7 @@ internal sealed class CrossPlatformOptions
         "Chat.AttachmentSave", "Chat.MessageAttachmentOpen", "Chat.MessageAttachmentSave",
         "Chat.ImagePreview", "Chat.ImageMetadata",
         "Chat.DeliveryStatus", "Chat.Retry", "Chat.Voice", "Chat.VoicePlayButton",
-        "Groups.GroupName", "Groups.MemberSessionId", "Groups.AddMember", "Groups.DraftMembers", "Groups.Create",
+        "Groups.GroupName", "Groups.MemberAddress", "Groups.AddMember", "Groups.DraftMembers", "Groups.Create",
         "GroupChat.Title", "GroupChat.Draft", "GroupChat.Send", "GroupChat.MessageBubble", "GroupChat.MessageBody", "GroupChat.DeliveryStatus", "GroupChat.Error",
         "PhysicalE2E.VoicePlaybackState", "PhysicalE2E.AckCorrelation", "Call.Root", "Call.Status",
         "Call.MediaState", "Call.Microphone", "Call.MicrophoneState", "Call.Hangup"

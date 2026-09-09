@@ -425,7 +425,7 @@ foreach ($required in @(
     $activationPath,
     (Join-Path $root 'authority.public.json'),
     (Join-Path $root 'revocations.v1.json'),
-    (Join-Path $root 'privacy-routes.v1.json'),
+    (Join-Path $root 'privacy-routes.v2.json'),
     (Join-Path $root 'mr-x-mailbox-policy.payload.json'),
     (Join-Path $root 'mr-x-mailbox-policy.signature'),
     (Join-Path $root 'mr-x-mailbox-policy.public-key'),
@@ -449,7 +449,7 @@ $relativeFiles = @(
     'activation.v1.json',
     'authority.public.json',
     'revocations.v1.json',
-    'privacy-routes.v1.json',
+    'privacy-routes.v2.json',
     'mr-x-mailbox-policy.payload.json',
     'mr-x-mailbox-policy.signature',
     'mr-x-mailbox-policy.public-key',
@@ -467,7 +467,7 @@ $signaturePath = Join-Path $root 'mr-x-mailbox-policy.signature'
 $signedPayloadPath = Join-Path $root 'mr-x-mailbox-policy.payload.json'
 $authorityPath = Join-Path $root 'authority.public.json'
 $revocationsPath = Join-Path $root 'revocations.v1.json'
-$privacyRoutesPath = Join-Path $root 'privacy-routes.v1.json'
+$privacyRoutesPath = Join-Path $root 'privacy-routes.v2.json'
 $manifestPath = Join-Path $generationRoot 'pair-manifest.v1.json'
 if ((Get-Item -LiteralPath $publicKeyPath).Length -ne 32 -or
     (Get-FileHash -Algorithm SHA256 -LiteralPath $publicKeyPath).Hash.ToLowerInvariant() -cne

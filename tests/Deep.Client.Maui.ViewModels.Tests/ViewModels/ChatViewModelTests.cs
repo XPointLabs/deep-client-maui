@@ -480,7 +480,7 @@ public sealed class ChatViewModelTests
         var transport = new BlockingMessageTransport();
         var runtime = new ClientRuntime(
             new InMemorySessionStore(),
-            Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults,
+            Deep.Client.Shared.Features.ClientFeatureFlags.Defaults,
             new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")),
             transport,
             mailboxDeliveryPolicy: new DirectP2pMailboxDeliveryPolicy());
@@ -511,7 +511,7 @@ public sealed class ChatViewModelTests
         var transport = new BlockingMessageTransport();
         var runtime = new ClientRuntime(
             new InMemorySessionStore(),
-            Deep.Client.Shared.Features.ClientFeatureFlags.ReleaseDefaults,
+            Deep.Client.Shared.Features.ClientFeatureFlags.Defaults,
             new FrozenClock(DateTimeOffset.Parse("2026-08-25T00:00:00Z")),
             transport,
             mailboxDeliveryPolicy: new DirectP2pMailboxDeliveryPolicy());

@@ -1,47 +1,65 @@
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Core.ViewModels;
-using Deep.Client.Shared.Services;
-using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.ViewModels.Tests.ViewModels;
 
 public sealed class SettingsViewModelTests
 {
     [Fact]
+    public async Task Load_UsesPermanentDeepIdFromOfflineAccountRuntime()
+    {
+        await using var localAccounts = new DeepAccountTestRuntime();
+        var created = await localAccounts.CreateAsync("Alice");
+        var navigation = new AuthNavigationState(localAccounts);
+        await navigation.InitializeAsync();
+        var viewModel = new SettingsViewModel(
+            localAccounts,
+            navigation,
+            new TestNetworkStatusService(),
+            new RecordingLogoutCoordinator(() => Task.CompletedTask));
+
+        await viewModel.LoadAsync();
+
+        Assert.Equal(created.Result.Identity.Account.PermanentId.CanonicalText, viewModel.DeepId);
+        Assert.StartsWith("deep1", viewModel.DeepId, StringComparison.Ordinal);
+        Assert.Equal("Alice", viewModel.AccountDisplayName);
+    }
+
+    [Fact]
     public async Task Logout_UsesCoordinatorBeforeMarkingTheSessionSignedOut()
     {
-        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
-        await runtime.Accounts.RegisterAsync("Alice");
-        var navigation = new AuthNavigationState(runtime);
+        await using var localAccounts = new DeepAccountTestRuntime();
+        _ = await localAccounts.CreateAsync("Alice");
+        var navigation = new AuthNavigationState(localAccounts);
         await navigation.InitializeAsync();
-        var coordinator = new RecordingLogoutCoordinator(() => runtime.Accounts.SignOutAsync());
-        var viewModel = new SettingsViewModel(runtime, navigation, new TestNetworkStatusService(), coordinator);
+        var coordinator = new RecordingLogoutCoordinator(() => localAccounts.ResetLocalStateAsync());
+        var viewModel = new SettingsViewModel(localAccounts, navigation, new TestNetworkStatusService(), coordinator);
 
         await viewModel.LogoutAsync();
 
         Assert.Equal(1, coordinator.Calls);
         Assert.False(navigation.IsAuthenticated);
-        Assert.Null(await runtime.Accounts.GetActiveAccountAsync());
+        Assert.Null(await (await localAccounts.GetAccountsAsync()).GetLocalIdentityAsync());
         Assert.False(viewModel.HasError);
     }
 
     [Fact]
     public async Task Logout_CoordinatorFailureKeepsTheAccountAuthenticatedAndSurfacesTheError()
     {
-        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
-        await runtime.Accounts.RegisterAsync("Alice");
-        var navigation = new AuthNavigationState(runtime);
+        await using var localAccounts = new DeepAccountTestRuntime();
+        _ = await localAccounts.CreateAsync("Alice");
+        var navigation = new AuthNavigationState(localAccounts);
         await navigation.InitializeAsync();
         var coordinator = new RecordingLogoutCoordinator(() =>
             Task.FromException(new InvalidOperationException("Platform account purge failed.")));
-        var viewModel = new SettingsViewModel(runtime, navigation, new TestNetworkStatusService(), coordinator);
+        var viewModel = new SettingsViewModel(localAccounts, navigation, new TestNetworkStatusService(), coordinator);
 
         await viewModel.LogoutAsync();
 
         Assert.Equal(1, coordinator.Calls);
         Assert.True(navigation.IsAuthenticated);
-        Assert.NotNull(await runtime.Accounts.GetActiveAccountAsync());
+        Assert.NotNull(await (await localAccounts.GetAccountsAsync()).GetLocalIdentityAsync());
         Assert.Contains("purge failed", viewModel.ErrorMessage, StringComparison.Ordinal);
     }
 

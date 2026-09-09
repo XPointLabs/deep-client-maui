@@ -59,23 +59,29 @@ public sealed class DesktopWorkspaceContractSmokeTests
     }
 
     [Fact]
-    public void WindowsOverridesTheRootThroughDiWhileMobileTemplateStaysUnchanged()
+    public void MessagingRootsStayRegisteredButShellFailsClosedUntilMsg01Composition()
     {
         var shellXaml = ReadWorkspaceFile("src", "Deep.Client.Maui", "AppShell.xaml");
         var shellCode = ReadWorkspaceFile("src", "Deep.Client.Maui", "AppShell.xaml.cs");
         var mauiProgram = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
 
-        Assert.Contains("ContentTemplate=\"{DataTemplate pages:ConversationsPage}\"", shellXaml, StringComparison.Ordinal);
-        Assert.Contains("#if WINDOWS", shellCode, StringComparison.Ordinal);
-        Assert.Contains("services.GetRequiredService<DesktopWorkspacePage>()", shellCode, StringComparison.Ordinal);
+        Assert.Contains("ContentTemplate=\"{DataTemplate pages:NetworkUnavailablePage}\"", shellXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ContentTemplate=\"{DataTemplate pages:ConversationsPage}\"", shellXaml, StringComparison.Ordinal);
+        Assert.Contains("TryGetAuthenticatedMessagingRuntime() => null", shellCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("services.GetRequiredService<DesktopWorkspacePage>()", shellCode, StringComparison.Ordinal);
         Assert.Contains("IConversationActivationTarget", shellCode, StringComparison.Ordinal);
         Assert.Contains("IActiveComposerProvider", shellCode, StringComparison.Ordinal);
+        Assert.Contains("AddTransient<ConversationsPage>()", mauiProgram, StringComparison.Ordinal);
         Assert.Contains("new DesktopWorkspaceViewModel(", mauiProgram, StringComparison.Ordinal);
         Assert.Contains("AddSingleton<DesktopWorkspacePage>()", mauiProgram, StringComparison.Ordinal);
 
         var newConversation = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "Pages", "NewConversationPage.xaml.cs");
-        Assert.Contains("await shell.ActivateConversationAsync(conversation.Id)", newConversation, StringComparison.Ordinal);
+        Assert.Contains("IVerifiedDirectConversationActivationTarget", newConversation,
+            StringComparison.Ordinal);
+        Assert.Contains("viewModel.VerifiedConversation", newConversation,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("SessionId.Parse", newConversation, StringComparison.Ordinal);
         Assert.Contains(
             "internal Task<bool> ActivateConversationAsync(ConversationId conversationId)",
             shellCode,

@@ -19,7 +19,7 @@
     <ShellContent
         x:Name="ConversationsTab"
         AutomationId="Root.Conversations"
-        Title="Диалоги"
+        Title="Аккаунт"
         Route="conversations"
-        ContentTemplate="{DataTemplate pages:ConversationsPage}" />
+        ContentTemplate="{DataTemplate pages:NetworkUnavailablePage}" />
 </Shell>

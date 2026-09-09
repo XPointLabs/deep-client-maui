@@ -23,13 +23,16 @@ function Write-Utf8NoBom([string]$Path, [string]$Value) {
 function New-CanonicalCandidate([long]$NotBefore, [long]$Expires, [string]$PrimaryOrigin) {
     $network = '71' * 16
     $routerMarkers = @(0x10, 0x11, 0x12, 0x30, 0x31, 0x32)
+    $keyIdMarkers = @(0x60, 0x61, 0x62, 0x70, 0x71, 0x72)
     $keyMarkers = @(0x20, 0x21, 0x22, 0x40, 0x41, 0x42)
     $hop = for ($index = 0; $index -lt 6; $index++) {
         $router = ('{0:x2}' -f $routerMarkers[$index]) * 32
+        $keyId = ('{0:x2}' -f $keyIdMarkers[$index]) * 32
         $key = ('{0:x2}' -f $keyMarkers[$index]) * 32
-        '{"routerId":"' + $router + '","x25519PublicKey":"' + $key + '"}'
+        '{"routerOwnerId":"' + $router + '","keyId":"' + $keyId +
+            '","epoch":7,"x25519PublicKey":"' + $key + '"}'
     }
-    return '{"schemaVersion":1,"developmentOnly":false,"networkId":"' + $network +
+    return '{"schemaVersion":2,"developmentOnly":false,"networkId":"' + $network +
         '","notBeforeUnixSeconds":' + $NotBefore + ',"expiresUnixSeconds":' + $Expires +
         ',"primary":{"entryOrigin":"' + $PrimaryOrigin + '","hops":[' +
         ($hop[0..2] -join ',') + ']},"fallback":{"entryOrigin":"https://privacy-b.example/","hops":[' +
@@ -38,9 +41,9 @@ function New-CanonicalCandidate([long]$NotBefore, [long]$Expires, [string]$Prima
 
 function Get-TreeDigest([string]$Path) {
     $lines = foreach ($name in @(
-        'production-mailbox-privacy-routes.v1.json',
-        'production-mailbox-privacy-routes.v1.sig',
-        'production-mailbox-privacy-routes.v1.pub')) {
+        'production-mailbox-privacy-routes.v2.json',
+        'production-mailbox-privacy-routes.v2.sig',
+        'production-mailbox-privacy-routes.v2.pub')) {
         $file = Get-Item -Force -LiteralPath (Join-Path $Path $name)
         "$name`t$($file.Length)`t$((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
     }
@@ -113,9 +116,9 @@ try {
     $names = @(Get-ChildItem -Force -LiteralPath $output | Sort-Object Name |
         ForEach-Object Name)
     $expectedNames = @(
-        'production-mailbox-privacy-routes.v1.json',
-        'production-mailbox-privacy-routes.v1.pub',
-        'production-mailbox-privacy-routes.v1.sig')
+        'production-mailbox-privacy-routes.v2.json',
+        'production-mailbox-privacy-routes.v2.pub',
+        'production-mailbox-privacy-routes.v2.sig')
     if ($names.Count -ne 3 -or (Compare-Object $expectedNames $names)) {
         throw 'Issuer did not publish the exact three-artifact set.'
     }
@@ -141,8 +144,8 @@ try {
     Write-Utf8NoBom $invalid (New-CanonicalCandidate ($now - 7200) ($now - 301) `
         'https://privacy-a.example/')
     Invoke-ExpectedFailure $invalid
-    $overlap = $first.Replace(('30' * 32), ('10' * 32))
-    Write-Utf8NoBom $invalid $overlap
+    $duplicate = $first.Replace(('11' * 32), ('10' * 32))
+    Write-Utf8NoBom $invalid $duplicate
     Invoke-ExpectedFailure $invalid
 
     (Get-Item -Force -LiteralPath $privateKey).IsReadOnly = $false
@@ -156,7 +159,7 @@ try {
         -OutputDirectory $output | Out-Null
     if ((Get-TreeDigest $output) -ceq $firstDigest -or
         [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes(
-            (Join-Path $output 'production-mailbox-privacy-routes.v1.json'))) -cne $second) {
+            (Join-Path $output 'production-mailbox-privacy-routes.v2.json'))) -cne $second) {
         throw 'Atomic rotation did not publish the complete second candidate.'
     }
     if ((Test-Path -LiteralPath (Join-Path $sandbox '.published.stage')) -or

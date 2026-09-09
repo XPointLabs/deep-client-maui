@@ -1,85 +1,52 @@
 using Deep.Client.Maui.Core.Navigation;
-using Deep.Client.Shared.Services;
-using Deep.Client.Shared.State;
+using Deep.Client.Shared.Domain;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Navigation;
 
 public sealed class AuthNavigationStateTests
 {
     [Fact]
-    public async Task MissingActiveAccountOpensOnboarding()
+    public async Task MissingLocalDeepAccountOpensOnboardingWithoutNetworkRuntime()
     {
-        using var runtime = ClientRuntime.CreateStubbed();
-        var navigation = new AuthNavigationState(runtime);
+        await using var accounts = new DeepAccountTestRuntime();
+        var navigation = new AuthNavigationState(accounts);
 
         await navigation.InitializeAsync();
 
         Assert.False(navigation.IsAuthenticated);
         Assert.True(navigation.IsInitialized);
+        Assert.Null(navigation.Account);
+        Assert.Equal(1, accounts.AccessCalls);
     }
 
     [Fact]
-    public async Task CanonicalCredentialBoundToActiveAccountAuthenticates()
+    public async Task CommittedLocalDeepAccountAuthenticatesFromDurableIdentity()
     {
-        using var runtime = ClientRuntime.CreateStubbed();
-        await runtime.Accounts.RegisterAsync("Alice");
-        var navigation = new AuthNavigationState(runtime);
+        await using var accounts = new DeepAccountTestRuntime();
+        var created = await accounts.CreateAsync();
+        var navigation = new AuthNavigationState(accounts);
 
         await navigation.InitializeAsync();
 
         Assert.True(navigation.IsAuthenticated);
         Assert.True(navigation.IsInitialized);
+        Assert.Equal(created.Result.Identity.Account, navigation.Account);
+        Assert.Equal(DeepAccountActivationState.ActiveLocal, navigation.Account!.ActivationState);
     }
 
     [Fact]
-    public async Task ActiveAccountWithoutSecureCredentialRequiresExplicitReset()
+    public async Task RefreshObservesAccountOnlyAfterCommit()
     {
-        using var runtime = ClientRuntime.CreateStubbed();
-        await runtime.Accounts.RegisterAsync("Alice");
-        await runtime.Store.DeleteAsync(SessionAccountService.ActiveRecoveryPhraseKey);
-        var navigation = new AuthNavigationState(runtime);
+        await using var accounts = new DeepAccountTestRuntime();
+        var navigation = new AuthNavigationState(accounts);
+        using var draft = accounts.Accounts.PrepareCreate("Alice");
 
-        var exception = await Assert.ThrowsAsync<ProtectedIdentityResetRequiredException>(
-            () => navigation.InitializeAsync());
+        await navigation.InitializeAsync();
 
-        Assert.Equal(ProtectedIdentityResetRequiredReason.Missing, exception.Reason);
-        Assert.False(navigation.IsInitialized);
-    }
-
-    [Fact]
-    public async Task ActiveAccountWithLegacyTwelveWordCredentialRequiresExplicitReset()
-    {
-        using var runtime = ClientRuntime.CreateStubbed();
-        await runtime.Accounts.RegisterAsync("Alice");
-        await runtime.Store.SetAsync(
-            SessionAccountService.ActiveRecoveryPhraseKey,
-            "amber anchor april arrow atom aurora autumn badge bamboo beacon berry blade");
-        var navigation = new AuthNavigationState(runtime);
-
-        var exception = await Assert.ThrowsAsync<ProtectedIdentityResetRequiredException>(
-            () => navigation.InitializeAsync());
-
-        Assert.Equal(ProtectedIdentityResetRequiredReason.Incompatible, exception.Reason);
-        Assert.False(navigation.IsInitialized);
-    }
-
-    [Fact]
-    public async Task CanonicalCredentialForAnotherAccountRequiresExplicitReset()
-    {
-        using var runtime = ClientRuntime.CreateStubbed();
-        await runtime.Accounts.RegisterAsync("Alice");
-        using var other = ClientRuntime.CreateStubbed();
-        await other.Accounts.RegisterAsync("Bob");
-        var otherPhrase = await other.Accounts.GetRecoveryPhraseAsync();
-        await runtime.Store.SetAsync(
-            SessionAccountService.ActiveRecoveryPhraseKey,
-            otherPhrase);
-        var navigation = new AuthNavigationState(runtime);
-
-        var exception = await Assert.ThrowsAsync<ProtectedIdentityResetRequiredException>(
-            () => navigation.InitializeAsync());
-
-        Assert.Equal(ProtectedIdentityResetRequiredReason.AccountMismatch, exception.Reason);
-        Assert.False(navigation.IsInitialized);
+        Assert.False(navigation.IsAuthenticated);
+        _ = await accounts.CreateAsync("Bob");
+        await navigation.RefreshAsync();
+        Assert.True(navigation.IsAuthenticated);
+        Assert.Equal("Bob", navigation.Account!.DisplayName);
     }
 }

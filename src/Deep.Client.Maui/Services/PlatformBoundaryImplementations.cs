@@ -383,15 +383,14 @@ public static class MauiBackgroundSyncRunner
             .ConfigureAwait(false);
     }
 
-    private static async Task<ClientRuntime?> InitializeRuntimeAsync(
+    private static Task<ClientRuntime?> InitializeRuntimeAsync(
         IServiceProvider? services,
         CancellationToken cancellationToken)
     {
-        services ??= IPlatformApplication.Current?.Services ?? App.Services;
-        var bootstrapper = services?.GetService<ClientRuntimeBootstrapper>();
-        return bootstrapper is null
-            ? null
-            : await bootstrapper.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        // OFFLINE-START-01 has no authenticated Deep-account messaging runtime.
+        // Headless ingress must not activate the legacy Session runtime.
+        return Task.FromResult<ClientRuntime?>(null);
     }
 }
 

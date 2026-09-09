@@ -1,56 +1,52 @@
-﻿using Deep.Client.Maui.Core.ViewModels;
-using Deep.Client.Shared.Platform;
+using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Core.Services;
+using Deep.Client.Maui.Core.ViewModels;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
-using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.DeviceTests;
 
 public sealed class DeviceIntegrationSmokeTests
 {
     [Fact]
-    public async Task DeviceTargetCanCreateSessionAndRegisterPushBoundary()
+    public async Task DeviceTargetCanCreateLocalDeepAccountWithoutClientRuntime()
     {
-        var runtime = ClientRuntime.CreateStubbed(clock: new FrozenClock(DateTimeOffset.Parse("2026-05-28T00:00:00Z")));
-        var onboarding = new OnboardingViewModel(runtime) { DisplayName = "Device" };
-        var notifications = new NotificationRegistrationViewModel(new PushRegistrationCoordinator(
-            runtime,
-            new DevicePushProbe(),
-            new DisabledPushSubscriptionTransport(),
-            runtime.Clock));
+        await using var store = new InMemoryDeepAccountStore();
+        using var secureStorage = new InMemoryDeepSecureStorage();
+        var service = new DeepAccountService(
+            store,
+            secureStorage,
+            new FrozenClock(DateTimeOffset.Parse("2026-09-07T00:00:00Z")),
+            Enumerable.Range(1, 16).Select(static value => (byte)value).ToArray());
+        await using var accessor = new TestAccountRuntimeAccessor(service);
+        var navigation = new AuthNavigationState(accessor);
+        using var onboarding = new WelcomeViewModel(accessor, navigation)
+        {
+            DisplayName = "Device"
+        };
 
-        await onboarding.RegisterAsync();
-        await notifications.RegisterAsync();
+        await onboarding.PrepareAccountAsync();
+        onboarding.RecoveryPhraseConfirmation = onboarding.GeneratedRecoveryPhrase;
+        await onboarding.ConfirmAccountAsync();
 
-        Assert.True(onboarding.IsLoggedIn);
-        Assert.NotNull(notifications.Token);
+        Assert.NotNull(onboarding.Account);
+        Assert.True(navigation.IsAuthenticated);
+        Assert.NotNull(await service.GetLocalIdentityAsync());
     }
 
-    private sealed class DevicePushProbe : IPushNotificationService
+    private sealed class TestAccountRuntimeAccessor(DeepAccountService accounts) :
+        IDeepAccountRuntimeAccessor
     {
-        private PushRegistration? cachedRegistration;
-
-        public Task<PushRegistration?> RegisterAsync(CancellationToken cancellationToken = default)
+        public Task<DeepAccountService> GetAccountsAsync(
+            CancellationToken cancellationToken = default)
         {
-#if ANDROID
-            const string provider = "android-device-probe";
-#elif IOS
-            const string provider = "ios-device-probe";
-#else
-            const string provider = "device-probe";
-#endif
-            cachedRegistration = new PushRegistration("device-token", provider, DateTimeOffset.UtcNow);
-            return Task.FromResult<PushRegistration?>(cachedRegistration);
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(accounts);
         }
 
-        public Task<PushRegistration?> GetCachedRegistrationAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(cachedRegistration);
-        }
+        public Task ResetLocalStateAsync(CancellationToken cancellationToken = default) =>
+            accounts.ResetLocalAccountAsync(cancellationToken);
 
-        public Task UnregisterAsync(CancellationToken cancellationToken = default)
-        {
-            cachedRegistration = null;
-            return Task.CompletedTask;
-        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

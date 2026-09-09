@@ -189,7 +189,7 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("editor.IsTextPredictionEnabled = false", codeBehind, StringComparison.Ordinal);
         Assert.Contains("protected override void OnDisappearing()", codeBehind, StringComparison.Ordinal);
         Assert.Contains("viewModel.ClearRecoveryPhrase();", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("Placeholder=\"Фраза восстановления (12 или 13 слов)\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Placeholder=\"Фраза восстановления (ровно 24 слова)\"", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -211,6 +211,20 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.True(script.IndexOf("Generated default APK set does not match", StringComparison.Ordinal) <
             script.IndexOf("Copy-Item -LiteralPath $bundle.FullName -Destination $finalBundle", StringComparison.Ordinal));
         Assert.DoesNotContain("jarsigner -strict", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("build-android-play.ps1")]
+    [InlineData("prepare-android-code-transparency.ps1")]
+    [InlineData("Invoke-SurvivalDevClient.ps1")]
+    public void AndroidPkcs12SigningConsumesTheOneLinePasswordSourceOnlyOnce(string scriptName)
+    {
+        var script = ReadWorkspaceFile("eng", scriptName);
+
+        Assert.Contains("AndroidSigningStorePass", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("SigningKeyPass=file:$PasswordFile", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("--key-pass \"file:$PasswordFile\"", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("--key-pass=file:$PasswordFile", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -274,23 +288,33 @@ public sealed class ClientSecurityContractSmokeTests
     public void ProductionPublicHttpTransportsUseOnlySystemTlsValidation()
     {
         var program = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
+        var sharedHttp = ReadWorkspaceFile("..", "deep-client-shared", "src",
+            "Deep.Client.Shared", "Services", "HttpServiceEndpointPolicy.cs");
+        var appProject = ReadWorkspaceFile("src", "Deep.Client.Maui", "Deep.Client.Maui.csproj");
+        var coreProject = ReadWorkspaceFile("src", "Deep.Client.Maui.Core", "Deep.Client.Maui.Core.csproj");
         var releaseEnvironment = ReadWorkspaceFile("src", "Deep.Client.Maui", "deep.release.env");
 
         Assert.Contains("DEEP_FILE_CONNECT_IPS=111.235.151.150", releaseEnvironment, StringComparison.Ordinal);
         Assert.DoesNotContain("TLS_PUBLIC_KEY_PINS", releaseEnvironment, StringComparison.Ordinal);
         Assert.DoesNotContain("sha256/", releaseEnvironment, StringComparison.Ordinal);
-        Assert.Contains("CreatePhysicalUatServerCertificateValidationCallback", program,
+        Assert.Contains("BindPhysicalUatTrust", program,
             StringComparison.Ordinal);
         Assert.Contains("#if DEBUG && DEEP_PHYSICAL_E2E && ANDROID", program,
             StringComparison.Ordinal);
-        Assert.Contains("return null;", program, StringComparison.Ordinal);
+        Assert.Contains("return factory;", program, StringComparison.Ordinal);
         Assert.DoesNotContain("CreateCertificatePinningValidationCallback", program, StringComparison.Ordinal);
-        Assert.Contains("connectCallback = (context, cancellationToken) =>", program, StringComparison.Ordinal);
-        Assert.Contains("address.AddressFamily", program, StringComparison.Ordinal);
-        Assert.Contains("FileConnectFallbackDelay", program, StringComparison.Ordinal);
-        Assert.Contains("FileConnectAttemptTimeout", program, StringComparison.Ordinal);
-        Assert.Contains("Task.WhenAny(pending)", program, StringComparison.Ordinal);
-        Assert.Contains("cancellationToken.ThrowIfCancellationRequested();", program, StringComparison.Ordinal);
+        Assert.Contains("WithPreferredConnectAddresses(fileConnectIps)", program,
+            StringComparison.Ordinal);
+        Assert.Contains("address.AddressFamily", sharedHttp, StringComparison.Ordinal);
+        Assert.Contains("PreferredConnectFallbackDelay", sharedHttp, StringComparison.Ordinal);
+        Assert.Contains("PreferredConnectAttemptTimeout", sharedHttp, StringComparison.Ordinal);
+        Assert.Contains("Task.WhenAny(pending)", sharedHttp, StringComparison.Ordinal);
+        Assert.DoesNotContain("CustomAfterMicrosoftCommonTargets", appProject,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("DeepClientMaui.SharedFriend.targets", appProject,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("CustomAfterMicrosoftCommonTargets", coreProject,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -315,6 +339,8 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("Array.Clear(original)", source, StringComparison.Ordinal);
         Assert.DoesNotContain("source.CopyToAsync(destination", source, StringComparison.Ordinal);
         Assert.DoesNotContain("ResolveContentType(photo)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetRecoveryPhraseAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SessionIdentityProvider", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -361,12 +387,13 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("TransportRequired = false", stubBlock, StringComparison.Ordinal);
         Assert.Contains("MetadataPrivateTransportRequired = false", stubBlock, StringComparison.Ordinal);
         Assert.Contains(
-            "CreatePhysicalUatServerCertificateValidationCallback",
+            "WithAppScopedPrivateCertificateAuthority",
             program,
             StringComparison.Ordinal);
         Assert.Contains(
             "X509RevocationMode.Online",
-            program,
+            ReadWorkspaceFile("..", "deep-client-shared", "src", "Deep.Client.Shared",
+                "Services", "HttpServiceEndpointPolicy.cs"),
             StringComparison.Ordinal);
         Assert.Contains(
             "must use HTTPS in non-Debug builds.",
@@ -381,7 +408,7 @@ public sealed class ClientSecurityContractSmokeTests
         var program = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
 
         Assert.Contains(
-            "var runtime = PersistentClientRuntimeComposer.Create(",
+            "var runtime = await PersistentClientRuntimeComposer.CreateAsync(",
             program,
             StringComparison.Ordinal);
         Assert.Contains("return runtime;", program, StringComparison.Ordinal);
@@ -444,9 +471,9 @@ public sealed class ClientSecurityContractSmokeTests
         Assert.Contains("protected-identity-missing", policy, StringComparison.Ordinal);
         Assert.Contains("protected-identity-incompatible", policy, StringComparison.Ordinal);
         Assert.Contains("protected-identity-account-mismatch", policy, StringComparison.Ordinal);
-        Assert.Contains("ProtectedIdentityResetRequiredReason.Missing", navigation, StringComparison.Ordinal);
-        Assert.Contains("ProtectedIdentityResetRequiredReason.Incompatible", navigation, StringComparison.Ordinal);
-        Assert.Contains("ProtectedIdentityResetRequiredReason.AccountMismatch", navigation, StringComparison.Ordinal);
+        Assert.Contains("GetLocalIdentityAsync", navigation, StringComparison.Ordinal);
+        Assert.DoesNotContain("SessionAccountService", navigation, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetRecoveryPhraseAsync", navigation, StringComparison.Ordinal);
         Assert.DoesNotContain("LocalStateResetRequiredReason", navigation, StringComparison.Ordinal);
         Assert.Contains("public sealed class ProtectedIdentityResetRequiredException", identityFailure,
             StringComparison.Ordinal);
@@ -511,21 +538,20 @@ public sealed class ClientSecurityContractSmokeTests
             program,
             StringComparison.Ordinal);
         Assert.Contains(
-            "ApplicationHttpTransportComposition.CreateBoundNetwork(",
+            "ApplicationHttpTransportComposition.Create(",
             program,
             StringComparison.Ordinal);
-        Assert.Equal(
-            2,
-            httpComposition.Split(
-                "transportFactory.BindNetwork(",
-                StringSplitOptions.None).Length - 1);
-        Assert.Contains(
-            "CreateServiceTransportNetworkHooks()",
-            program,
+        Assert.Contains("WithPreferredConnectAddresses", program, StringComparison.Ordinal);
+        Assert.Contains("WithAppScopedPrivateCertificateAuthority", program,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "CreateFileTransportNetworkHooks(fileConnectIps)",
-            program,
+        Assert.DoesNotContain("HttpServiceNetworkHooks", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetRecoveryPhraseAsync", httpComposition,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ClientRuntime", httpComposition,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateCallSignaling(", httpComposition,
+            StringComparison.Ordinal);
+        Assert.Contains("CleanBreakCallSignalingTransportUnavailable", httpComposition,
             StringComparison.Ordinal);
         Assert.Contains("ResolveRealityTransportBinding(routedEndpointPolicy)",
             program, StringComparison.Ordinal);

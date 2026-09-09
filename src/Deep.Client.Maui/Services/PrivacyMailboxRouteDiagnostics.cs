@@ -1,4 +1,3 @@
-using Deep.Protocol.DeepExtension.PrivacyRouting;
 using Deep.Client.Shared.Services;
 
 namespace Deep.Client.Maui.Services;
@@ -18,23 +17,15 @@ internal sealed record PrivacyMailboxRouteDiagnosticSelection(
 
 public sealed class PrivacyMailboxRouteDiagnostics
 {
-    private PrivacyMailboxRouteDiagnosticSnapshot? snapshot;
     private PrivacyMailboxRouteDiagnosticSelection? selection;
 
-    internal PrivacyMailboxRouteDiagnosticSnapshot? Current =>
-        Volatile.Read(ref snapshot);
+    // No route topology is published until it originates from a verified XNV/XNH/PMT/DTT
+    // closure. In particular, diagnostics must never turn configuration JSON into routing
+    // authority or expose caller-authored hops as if they had been observed.
+    internal PrivacyMailboxRouteDiagnosticSnapshot? Current => null;
 
     internal PrivacyMailboxRouteDiagnosticSelection? CurrentSelection =>
         Volatile.Read(ref selection);
-
-    internal void Publish(MailboxPrivacyRouteSet routes)
-    {
-        ArgumentNullException.ThrowIfNull(routes);
-        var next = new PrivacyMailboxRouteDiagnosticSnapshot(
-            Project(routes.Primary.EntryOrigin, routes.Primary.Hops),
-            Project(routes.Fallback.EntryOrigin, routes.Fallback.Hops));
-        Interlocked.Exchange(ref snapshot, next);
-    }
 
     internal void ObserveSelection(
         PrivacyMailboxRouteSelection route,
@@ -50,14 +41,6 @@ public sealed class PrivacyMailboxRouteDiagnostics
                 Convert.ToHexStringLower(entryRouterId.Span)));
     }
 
-    private static IReadOnlyList<PrivacyMailboxRouteDiagnosticHop> Project(
-        Uri entryOrigin,
-        IReadOnlyList<PrivacyRoutingHop> hops) =>
-        hops.Select((hop, index) => new PrivacyMailboxRouteDiagnosticHop(
-                index,
-                Convert.ToHexString(hop.RouterId.Span).ToLowerInvariant(),
-                index == 0 ? entryOrigin : null))
-            .ToArray();
 }
 
 internal sealed class PrivacyMailboxRouteSelectionBridge(

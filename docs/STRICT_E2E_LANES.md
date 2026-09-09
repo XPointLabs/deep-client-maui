@@ -147,10 +147,10 @@ After the account exists, retrieve and validate that public request:
 
 Provision the pair with the Android and Windows public holder keys, assemble
 the platform-specific signed `mailbox-runtime-v1` root outside the repository,
-including `privacy-routes.v1.json`. Its raw SHA-256 must appear identically in
+including `privacy-routes.v2.json`. Its raw SHA-256 must appear identically in
 the activation and Mr. X-signed policy. The primary route is
 `xnode3 -> xnode4 -> xnode1`, where `xnode1` is the sole authoritative mailbox
-coordinator. The disjoint fallback is `xnode5 -> xnode6 -> xnode2`, where
+coordinator. The current six-node lab fallback is `xnode5 -> xnode6 -> xnode2`, where
 `xnode2` is a forwarding-only privacy exit. After unwrapping the privacy frame,
 `xnode2` forwards the unchanged canonical MAU2 to `xnode1`. MQR3 authenticates
 `xnode1` as coordinator and is not evidence that the terminal fallback hop
@@ -272,7 +272,9 @@ the exact UAT CA-trusted HTTP/2 origin. It then injects one canonical 64-byte
 retryable `DIE1` `BeforeForward` response at the primary entry and requires the
 same send to complete through the separately published three-hop fallback. The
 rendered proof binds `/api/ingress/v1/frame`, all three primary router IDs, all
-three disjoint fallback router IDs, the selected route and its entry router. It
+three fallback router IDs, the selected route and its entry router. Each route
+must contain three distinct hops; overlap between primary and fallback is valid
+for the initial three-node profile. It
 also binds the authenticated MQR3 coordinator as `xnode1`, independently of the
 selected fallback route whose terminal forwarding-only privacy exit is `xnode2`.
 

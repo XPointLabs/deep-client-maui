@@ -72,26 +72,29 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     }
 
     [Fact]
-    public void SettingsExposeTheCanonicalSessionIdOnOneScrollableLine()
+    public void SettingsExposeTheCanonicalDeepIdOnOneScrollableLine()
     {
         var settings = LoadPage("SettingsPage.xaml");
         var label = Assert.Single(ElementsWithAutomationId(
-            settings.Root!, "Settings.SessionId"));
+            settings.Root!, "Settings.DeepId"));
         Assert.Equal("Label", label.Name.LocalName);
         var scroller = Assert.IsType<XElement>(label.Parent);
         Assert.Equal("ScrollView", scroller.Name.LocalName);
         Assert.Equal("Horizontal", scroller.Attribute("Orientation")?.Value);
-        Assert.Equal("{Binding SessionId}",
+        Assert.Equal("{Binding DeepId}",
             label.Attribute("SemanticProperties.Description")?.Value);
-        Assert.Equal("SessionIdLabel", label.Attributes().Single(attribute =>
+        Assert.Equal("DeepIdLabel", label.Attributes().Single(attribute =>
             attribute.Name.LocalName == "Name").Value);
 
         Assert.Equal("NoWrap", label.Attribute("LineBreakMode")?.Value);
         Assert.Equal("1", label.Attribute("MaxLines")?.Value);
         Assert.Equal("620", label.Attribute("WidthRequest")?.Value);
         Assert.Equal("Start", label.Attribute("HorizontalOptions")?.Value);
+        Assert.Empty(ElementsWithAutomationId(settings.Root!, "Settings.RecoveryPhrase"));
         var source = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Pages", "SettingsPage.xaml.cs"));
+        Assert.DoesNotContain("GetRecoveryPhraseAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnRecoveryPhraseClicked", source, StringComparison.Ordinal);
         Assert.Contains("return value;", source, StringComparison.Ordinal);
         Assert.DoesNotContain("string.Join(Environment.NewLine", source,
             StringComparison.Ordinal);

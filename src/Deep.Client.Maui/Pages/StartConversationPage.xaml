@@ -67,8 +67,8 @@
                 </VerticalStackLayout>
 
                 <VerticalStackLayout Spacing="8" Padding="0,6,0,0">
-                    <Label Text="Ваш код приглашения" FontSize="17" />
-                    <Label Text="Покажите этот QR-код человеку, который хочет начать с вами защищённую беседу." FontSize="13" TextColor="{StaticResource TextSecondary}" />
+                    <Label Text="Ваш постоянный Deep ID" FontSize="17" />
+                    <Label Text="Он не истекает. Покажите QR-код человеку, который хочет начать с вами защищённую беседу." FontSize="13" TextColor="{StaticResource TextSecondary}" />
                     <Label
                         x:Name="AccountIdLabel"
                         AutomationId="StartConversation.AccountId"

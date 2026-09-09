@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage
     x:Class="Deep.Client.Maui.Pages.WelcomePage"
     AutomationId="Page.Welcome"
@@ -9,26 +9,51 @@
     BackgroundColor="{StaticResource PageBackground}"
     Shell.NavBarIsVisible="False"
     Title="Добро пожаловать">
-    <Grid Padding="{StaticResource PagePadding}" RowDefinitions="*,Auto,Auto,*" RowSpacing="20" BackgroundColor="{StaticResource PageBackground}">
-        <VerticalStackLayout
-            Grid.Row="1"
-            Spacing="8"
-            MaximumWidthRequest="560"
-            HorizontalOptions="Fill">
-            <Image Source="deep_mark.png" WidthRequest="118" HeightRequest="118" Aspect="AspectFit" HorizontalOptions="Center" SemanticProperties.Description="Логотип Deep" />
-            <Label Text="Deep" FontSize="36" FontAttributes="Bold" HorizontalTextAlignment="Center" />
-            <Label Text="Приватные сообщения через защищённые транспорты." FontSize="15" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
-        </VerticalStackLayout>
+    <ScrollView BackgroundColor="{StaticResource PageBackground}">
+        <Grid Padding="{StaticResource PagePadding}" RowDefinitions="Auto,Auto" RowSpacing="20" MaximumWidthRequest="560" HorizontalOptions="Fill">
+            <VerticalStackLayout Spacing="8" Padding="0,28,0,0">
+                <Image Source="deep_mark.png" WidthRequest="118" HeightRequest="118" Aspect="AspectFit" HorizontalOptions="Center" SemanticProperties.Description="Логотип Deep" />
+                <Label Text="Deep" FontSize="36" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                <Label Text="Создание локального аккаунта не требует подключения к сети." FontSize="15" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+            </VerticalStackLayout>
 
-        <VerticalStackLayout
-            Grid.Row="2"
-            Spacing="12"
-            MaximumWidthRequest="420"
-            HorizontalOptions="Fill">
-            <Entry AutomationId="Welcome.DisplayName" Placeholder="Имя профиля" Text="{Binding DisplayName}" />
-            <Button AutomationId="Welcome.Create" Text="Создать аккаунт" Command="{Binding CreateAccountCommand}" />
-            <Button AutomationId="Welcome.Restore" Text="Восстановить по фразе" Clicked="OnRestoreClicked" Style="{StaticResource SecondaryButton}" />
-            <Label AutomationId="Welcome.Error" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="13" />
-        </VerticalStackLayout>
-    </Grid>
+            <VerticalStackLayout
+                Grid.Row="1"
+                Spacing="12"
+                MaximumWidthRequest="420"
+                HorizontalOptions="Fill">
+                <Entry AutomationId="Welcome.DisplayName" Placeholder="Имя профиля" Text="{Binding DisplayName}" />
+                <Button AutomationId="Welcome.Create" Text="Подготовить аккаунт" Command="{Binding PrepareAccountCommand}" />
+
+                <VerticalStackLayout Spacing="10" IsVisible="{Binding IsConfirmationRequired}">
+                    <Label Text="Сохраните фразу восстановления. Она показывается только до подтверждения." FontSize="14" TextColor="{StaticResource TextSecondary}" />
+                    <Editor
+                        AutomationId="Welcome.GeneratedRecoveryPhrase"
+                        Text="{Binding GeneratedRecoveryPhrase, Mode=OneWay}"
+                        IsReadOnly="True"
+                        AutoSize="TextChanges"
+                        HeightRequest="128"
+                        IsSpellCheckEnabled="False"
+                        IsTextPredictionEnabled="False" />
+                    <Editor
+                        AutomationId="Welcome.RecoveryPhraseConfirmation"
+                        Placeholder="Введите все 24 слова без изменений"
+                        Text="{Binding RecoveryPhraseConfirmation}"
+                        AutoSize="TextChanges"
+                        HeightRequest="128"
+                        MaxLength="512"
+                        Keyboard="Plain"
+                        IsSpellCheckEnabled="False"
+                        IsTextPredictionEnabled="False" />
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <Button AutomationId="Welcome.CancelCreate" Text="Отмена" Command="{Binding CancelPreparationCommand}" Style="{StaticResource SecondaryButton}" WidthRequest="110" />
+                        <Button AutomationId="Welcome.ConfirmCreate" Grid.Column="1" Text="Подтвердить и создать" Command="{Binding ConfirmAccountCommand}" />
+                    </Grid>
+                </VerticalStackLayout>
+
+                <Button AutomationId="Welcome.Restore" Text="Восстановить по фразе" Clicked="OnRestoreClicked" Style="{StaticResource SecondaryButton}" />
+                <Label AutomationId="Welcome.Error" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="13" />
+            </VerticalStackLayout>
+        </Grid>
+    </ScrollView>
 </ContentPage>

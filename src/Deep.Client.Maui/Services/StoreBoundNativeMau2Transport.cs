@@ -207,11 +207,12 @@ internal sealed class PersistedMailboxPeerSelectorStore(
     {
         var localBytes = Convert.FromHexString(local.Value);
         var peerBytes = Convert.FromHexString(peer.Value);
+        var accountScope = selector.AccountScope.ToArray();
         var canonical = new byte[CanonicalBytes];
         try
         {
             if (localBytes.Length != SessionIdBytes || peerBytes.Length != SessionIdBytes ||
-                selector.AccountScope.Value.Length != OpaqueBytes ||
+                accountScope.Length != OpaqueBytes ||
                 selector.SubjectId.Length != OpaqueBytes ||
                 selector.IssuerContext.Length != OpaqueBytes ||
                 selector.ScopeId.Length != OpaqueBytes ||
@@ -224,7 +225,7 @@ internal sealed class PersistedMailboxPeerSelectorStore(
             offset += SessionIdBytes;
             peerBytes.CopyTo(canonical, offset);
             offset += SessionIdBytes;
-            selector.AccountScope.Value.CopyTo(canonical.AsSpan(offset));
+            accountScope.CopyTo(canonical.AsSpan(offset));
             offset += OpaqueBytes;
             canonical[offset++] = (byte)selector.Kind;
             selector.SubjectId.Span.CopyTo(canonical.AsSpan(offset));
@@ -247,6 +248,7 @@ internal sealed class PersistedMailboxPeerSelectorStore(
             CryptographicOperations.ZeroMemory(canonical);
             CryptographicOperations.ZeroMemory(localBytes);
             CryptographicOperations.ZeroMemory(peerBytes);
+            CryptographicOperations.ZeroMemory(accountScope);
         }
     }
 
@@ -330,61 +332,38 @@ internal sealed class PersistedMailboxPeerSelectorStore(
 }
 
 /// <summary>Debug-only adapter for the exact local Android/Windows fixture bundle.</summary>
-internal sealed class DevelopmentMailboxRuntimeProvisioningSource(
-    Func<MailboxRuntimeProvisioning> provisioningFactory,
-    Action<MailboxHolderIdentity> holderAvailable,
-    HttpServiceTransportFactory transportFactory,
-    HttpServiceClientOptions clientOptions,
-    IPrivacyMailboxRouteSelectionObserver? routeSelectionObserver) :
+internal sealed class DevelopmentMailboxRuntimeProvisioningSource :
     IMailboxRuntimeProvisioningSource
 {
-    private readonly Func<MailboxRuntimeProvisioning> provisioningFactory =
-        provisioningFactory ?? throw new ArgumentNullException(nameof(provisioningFactory));
-    private readonly Action<MailboxHolderIdentity> holderAvailable =
-        holderAvailable ?? throw new ArgumentNullException(nameof(holderAvailable));
-    private readonly HttpServiceTransportFactory transportFactory =
-        transportFactory ?? throw new ArgumentNullException(nameof(transportFactory));
-    private readonly HttpServiceClientOptions clientOptions =
-        clientOptions ?? throw new ArgumentNullException(nameof(clientOptions));
-    private readonly IPrivacyMailboxRouteSelectionObserver? routeSelectionObserver =
-        routeSelectionObserver;
+    internal DevelopmentMailboxRuntimeProvisioningSource()
+    {
+    }
 
-    public async Task<ProvisionedMailboxRuntime> ProvisionAsync(
+    internal DevelopmentMailboxRuntimeProvisioningSource(
+        Func<MailboxRuntimeProvisioning> provisioningFactory,
+        Action<MailboxHolderIdentity> holderAvailable,
+        HttpServiceTransportFactory transportFactory,
+        HttpServiceClientOptions clientOptions,
+        IPrivacyMailboxRouteSelectionObserver? routeSelectionObserver)
+    {
+        ArgumentNullException.ThrowIfNull(provisioningFactory);
+        ArgumentNullException.ThrowIfNull(holderAvailable);
+        ArgumentNullException.ThrowIfNull(transportFactory);
+        ArgumentNullException.ThrowIfNull(clientOptions);
+        _ = routeSelectionObserver;
+    }
+
+    public Task<ProvisionedMailboxRuntime> ProvisionAsync(
         SqliteSessionStore store,
         MailboxHolderIdentity holder,
         MailboxInfrastructureOwnership ownership,
         CancellationToken cancellationToken = default)
     {
-        holderAvailable(holder);
-        var provisioning = provisioningFactory() ?? throw new InvalidOperationException(
-            "The DEV-local mailbox provisioning factory returned no runtime.");
-        var options = provisioning.ImportOptions;
-        var material = await MailboxCredentialBundleImporter.ImportAsync(
-            store, holder, options, ownership, cancellationToken).ConfigureAwait(false);
-#if DEBUG && DEEP_PHYSICAL_E2E
-        return new ProvisionedMailboxRuntime(
-            material.Authority,
-            material.Activation,
-            material.DecodePolicies,
-            material.LocalSessionId,
-            material.SelfSelector,
-            (recipient, _) => Task.FromResult<MailboxCredentialSelector?>(
-                recipient == material.LocalSessionId
-                    ? material.SelfSelector
-                    : recipient == material.PeerSessionId
-                        ? material.PeerSelector
-                        : null),
-            transportFactory.CreatePrivacyRoutedMailboxIngress(
-                provisioning.PrivacyRoutes.Primary,
-                provisioning.PrivacyRoutes.Fallback,
-                material.DecodePolicies,
-                clientOptions,
-                routeSelectionObserver: routeSelectionObserver),
-            options.TimeProvider);
-#else
-        throw new InvalidOperationException(
-            "DEV-local mailbox credentials are forbidden outside physical Debug builds.");
-#endif
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(holder);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<ProvisionedMailboxRuntime>(
+            ProductionMailboxPrivacyRouteBootstrap.CreateUnavailableException());
     }
 }
 

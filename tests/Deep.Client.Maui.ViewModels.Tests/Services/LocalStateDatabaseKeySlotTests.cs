@@ -102,50 +102,6 @@ public sealed class LocalStateDatabaseKeySlotTests
         }
     }
 
-    [Fact]
-    public async Task SameLaneReopenRejectsCredentialForAnotherAccount()
-    {
-        var storage = new RecordingKeyStorage();
-        var keySlot = LocalStateDatabaseKeySlot.ForLane(
-            LocalStateDatabaseLane.PhysicalE2E, storage);
-        var key = await keySlot.ResolveAsync(CancellationToken.None);
-        var statePath = TemporaryDatabasePath();
-
-        try
-        {
-            string otherPhrase;
-            using (var other = ClientRuntime.CreateStubbed())
-            {
-                await other.Accounts.RegisterAsync("Bob");
-                otherPhrase = await other.Accounts.GetRecoveryPhraseAsync() ??
-                    throw new InvalidOperationException("The test account has no recovery phrase.");
-            }
-
-            using (var initial = CreatePersistentTestRuntime(statePath, key))
-            {
-                await initial.Accounts.RegisterAsync("Alice");
-                await initial.Store.SetAsync(
-                    SessionAccountService.ActiveRecoveryPhraseKey,
-                    otherPhrase);
-            }
-
-            var reopenedKey = await LocalStateDatabaseKeySlot.ForLane(
-                    LocalStateDatabaseLane.PhysicalE2E, storage)
-                .ResolveAsync(CancellationToken.None);
-            using var reopened = CreatePersistentTestRuntime(statePath, reopenedKey);
-            var navigation = new AuthNavigationState(reopened);
-
-            var exception = await Assert.ThrowsAsync<ProtectedIdentityResetRequiredException>(
-                () => navigation.InitializeAsync());
-            Assert.Equal(ProtectedIdentityResetRequiredReason.AccountMismatch, exception.Reason);
-            Assert.False(navigation.IsInitialized);
-        }
-        finally
-        {
-            DeleteDatabase(statePath);
-        }
-    }
-
     private static ClientRuntime CreatePersistentTestRuntime(string path, string key) =>
         new(
             new SqliteSessionStore(new SqliteSessionStoreOptions(path, key)),

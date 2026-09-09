@@ -167,13 +167,7 @@ public partial class App : MauiWinUIApplication
 
     private static void OnConnectivityChanged(object? sender, ConnectivityChangedEventArgs args)
     {
-        if (args.NetworkAccess is NetworkAccess.Internet or NetworkAccess.ConstrainedInternet)
-        {
-            Deep.Client.Maui.App.Services
-                ?.GetService<IRealityTransportRuntime>()
-                ?.NotifyNetworkChanged();
-            _ = RunPushMaintenanceAsync();
-        }
+        // Network activation remains closed until a Deep-account messaging runtime exists.
     }
 
     private static async Task RunForegroundMaintenanceAsync()
@@ -187,13 +181,7 @@ public partial class App : MauiWinUIApplication
                 return;
             }
 
-            var realityTransport = services?.GetService<IRealityTransportRuntime>();
-            if (realityTransport is not null)
-            {
-                await realityTransport.OnForegroundAsync().ConfigureAwait(false);
-            }
-
-            await RunPushMaintenanceAsync().ConfigureAwait(false);
+            // Do not compose Reality, push, DNS or certificate state from foreground startup.
         }
         catch (Exception exception)
         {
@@ -203,15 +191,7 @@ public partial class App : MauiWinUIApplication
 
     private static async Task RunPushMaintenanceAsync()
     {
-        var services = Deep.Client.Maui.App.Services;
-        await PushUnsubscribeRetryBootstrapper.TryRetryAsync(services).ConfigureAwait(false);
-        MauiBackgroundTaskService.TryPublishForegroundCatchUp();
-
-        if (services?.GetService<PushRegistrationLifecycleCoordinator>() is { } registration &&
-            Preferences.Default.Get(ClientSettingKeys.NotificationsFastMode, true))
-        {
-            await registration.EnsureRegisteredAsync().ConfigureAwait(false);
-        }
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     private static Dictionary<string, string> ParseKeyValuePairs(string args)

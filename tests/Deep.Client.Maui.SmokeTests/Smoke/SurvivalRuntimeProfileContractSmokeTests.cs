@@ -92,7 +92,9 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.InRange(relaxationIndex, bootstrapIndex + 1, debugGuardEndIndex - 1);
         Assert.Contains("RuntimeTransportProtocol.AuthenticatedMau2", program, StringComparison.Ordinal);
         Assert.Contains("StoreBoundNativeMau2Transport", program, StringComparison.Ordinal);
-        Assert.Contains("transportFactory.CreatePrivacyRoutedMailboxIngress(", nativeTransport,
+        Assert.Contains("ProductionMailboxPrivacyRouteBootstrap.CreateUnavailableException()", nativeTransport,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("CreatePrivacyRoutedMailboxIngress(", nativeTransport,
             StringComparison.Ordinal);
         Assert.DoesNotContain("HttpClientMailboxBinaryIngress", nativeTransport,
             StringComparison.Ordinal);
@@ -156,7 +158,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("Deep.AndroidLab.PolicyVerifier", script, StringComparison.Ordinal);
         Assert.Contains("Mr. X Ed25519 approval signature is invalid", script,
             StringComparison.Ordinal);
-        Assert.Contains("privacy-routes.v1.json", script, StringComparison.Ordinal);
+        Assert.Contains("privacy-routes.v2.json", script, StringComparison.Ordinal);
         Assert.Contains("signedPolicy.privacyRoutesSha256", script, StringComparison.Ordinal);
         Assert.Contains("Get-RelativeChildPath", script, StringComparison.Ordinal);
         Assert.DoesNotContain("[IO.Path]::GetRelativePath", script, StringComparison.Ordinal);
@@ -373,7 +375,7 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains(".mailbox-runtime-v1.backup", script, StringComparison.Ordinal);
         Assert.Contains("Test-RuntimeMatchesSource", script, StringComparison.Ordinal);
         Assert.Contains("Directories = $directories", script, StringComparison.Ordinal);
-        Assert.Contains("privacy-routes.v1.json", script, StringComparison.Ordinal);
+        Assert.Contains("privacy-routes.v2.json", script, StringComparison.Ordinal);
         Assert.Contains("signedPolicy.privacyRoutesSha256", script, StringComparison.Ordinal);
         Assert.DoesNotContain("[Text.Json.JsonDocument]", script, StringComparison.Ordinal);
         Assert.Contains("Published Windows mailbox runtime failed its final byte-for-byte reread.",

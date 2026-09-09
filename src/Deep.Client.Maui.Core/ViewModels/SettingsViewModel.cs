@@ -2,27 +2,26 @@
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.Presentation;
 using Deep.Client.Maui.Core.Services;
-using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Core.ViewModels;
 
 public sealed class SettingsViewModel : ViewModelBase
 {
-    private readonly ClientRuntime runtime;
+    private readonly IDeepAccountRuntimeAccessor accountRuntime;
     private readonly AuthNavigationState authNavigationState;
     private readonly INetworkStatusService networkStatusService;
     private readonly IAccountLogoutCoordinator accountLogoutCoordinator;
     private string accountDisplayName = "Нет аккаунта";
-    private string sessionId = "-";
+    private string deepId = "-";
     private string connectionStatus = "Неизвестно";
 
     public SettingsViewModel(
-        ClientRuntime runtime,
+        IDeepAccountRuntimeAccessor accountRuntime,
         AuthNavigationState authNavigationState,
         INetworkStatusService networkStatusService,
         IAccountLogoutCoordinator accountLogoutCoordinator)
     {
-        this.runtime = runtime;
+        this.accountRuntime = accountRuntime;
         this.authNavigationState = authNavigationState;
         this.networkStatusService = networkStatusService;
         this.accountLogoutCoordinator = accountLogoutCoordinator;
@@ -47,14 +46,14 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public string AccountInitial => AccountDisplayName == "Нет аккаунта"
         ? "D"
-        : DeepDisplayName.AvatarInitial(AccountDisplayName, SessionId);
+        : DeepDisplayName.AvatarInitial(AccountDisplayName, DeepId);
 
-    public string SessionId
+    public string DeepId
     {
-        get => sessionId;
+        get => deepId;
         private set
         {
-            if (SetProperty(ref sessionId, value))
+            if (SetProperty(ref deepId, value))
             {
                 RaisePropertyChanged(nameof(AccountInitial));
             }
@@ -92,22 +91,22 @@ public sealed class SettingsViewModel : ViewModelBase
     public Task LoadAsync(CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
         {
-            var account = await runtime.Accounts.GetActiveAccountAsync(ct);
-            AccountDisplayName = account?.DisplayName ?? "Нет аккаунта";
-            SessionId = account?.SessionId.Value ?? "-";
+            var accounts = await accountRuntime.GetAccountsAsync(ct);
+            var identity = await accounts.GetLocalIdentityAsync(ct);
+            AccountDisplayName = identity?.Account.DisplayName ?? "Нет аккаунта";
+            DeepId = identity?.Account.PermanentId.CanonicalText ?? "-";
             ConnectionStatus = networkStatusService.ConnectionLabel;
             RaisePropertyChanged(nameof(IsNetworkConnected));
             LogoutCommand.RaiseCanExecuteChanged();
         }, cancellationToken);
 
-    public Task<string?> GetRecoveryPhraseAsync(CancellationToken cancellationToken = default) =>
-        runtime.Accounts.GetRecoveryPhraseAsync(cancellationToken);
-
     public Task UpdateDisplayNameAsync(string displayName, CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
         {
-            var updated = await runtime.Accounts.UpdateDisplayNameAsync(displayName, ct);
+            var accounts = await accountRuntime.GetAccountsAsync(ct);
+            var updated = await accounts.UpdateDisplayNameAsync(displayName, ct);
             AccountDisplayName = updated.DisplayName;
+            await authNavigationState.RefreshAsync(ct);
         }, cancellationToken);
 
     public Task LogoutAsync(CancellationToken cancellationToken = default)
@@ -118,7 +117,7 @@ public sealed class SettingsViewModel : ViewModelBase
             authNavigationState.MarkSignedOut();
 
             AccountDisplayName = "Нет аккаунта";
-            SessionId = "-";
+            DeepId = "-";
             LogoutCommand.RaiseCanExecuteChanged();
         }, cancellationToken);
     }

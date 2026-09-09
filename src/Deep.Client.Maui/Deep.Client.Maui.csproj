@@ -32,10 +32,12 @@
     <PhysicalUatAndroidBuildIdentitySupplied Condition="'$(DeepPhysicalUatAndroidApplicationId)$(DeepPhysicalUatAndroidVersionCode)$(DeepPhysicalUatAndroidSignerLineageSha256)' != ''">true</PhysicalUatAndroidBuildIdentitySupplied>
     <PhysicalUatAndroidTransparencySupplied Condition="'$(DeepPhysicalUatAndroidCodeTransparencyManifest)' != ''">true</PhysicalUatAndroidTransparencySupplied>
     <PhysicalUatWindowsBuildIdentitySupplied Condition="'$(DeepPhysicalUatWindowsPackageName)$(DeepPhysicalUatWindowsPublisher)$(DeepPhysicalUatWindowsSigningCertificateSha256)' != ''">true</PhysicalUatWindowsBuildIdentitySupplied>
+    <DeepDevelopmentNetworkId Condition="'$(Configuration)' != 'Release' And '$(DeepPhysicalE2E)' != 'true' And '$(DeepDevelopmentNetworkId)' == ''">3e078ce750768322d79079ef97b85b56</DeepDevelopmentNetworkId>
     <DeepGoogleServicesJson Condition="'$(DeepGoogleServicesJson)' == '' And '$(Configuration)' != 'Release'">Platforms\Android\google-services.json</DeepGoogleServicesJson>
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyMetadata Include="DeepDevelopmentNetworkId" Value="$(DeepDevelopmentNetworkId)" />
     <AssemblyMetadata Include="DeepProductionMrXPublicKeySha256" Value="$(DeepProductionMrXPublicKeySha256)" />
     <AssemblyMetadata Include="DeepProductionNetworkId" Value="$(DeepProductionNetworkId)" />
     <AssemblyMetadata Include="DeepProductionAuthorityGeneration" Value="$(DeepProductionAuthorityGeneration)" />
@@ -118,40 +120,6 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <ItemGroup Condition="'$(Configuration)' == 'Release' And '$(DeepProductionPrivacyRoutesJson)' != '' And '$(DeepProductionPrivacyRoutesSignature)' != '' And '$(DeepProductionPrivacyRoutesPublicKey)' != ''">
-    <EmbeddedResource Include="$(DeepProductionPrivacyRoutesJson)">
-      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.json</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="$(DeepProductionPrivacyRoutesSignature)">
-      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.sig</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="$(DeepProductionPrivacyRoutesPublicKey)">
-      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.pub</LogicalName>
-    </EmbeddedResource>
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release' And '$(DeepPhysicalUatPrivacyRoutesJson)' != '' And '$(DeepPhysicalUatPrivacyRoutesSignature)' != '' And '$(DeepPhysicalUatPrivacyRoutesPublicKey)' != ''">
-    <EmbeddedResource Include="$(DeepPhysicalUatPrivacyRoutesJson)">
-      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.json</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="$(DeepPhysicalUatPrivacyRoutesSignature)">
-      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.sig</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="$(DeepPhysicalUatPrivacyRoutesPublicKey)">
-      <LogicalName>Deep.Client.Maui.production-mailbox-privacy-routes.v1.pub</LogicalName>
-    </EmbeddedResource>
-  </ItemGroup>
-
-  <Target Name="ValidateProductionPrivacyRouteInputs" BeforeTargets="BeforeBuild"
-          Condition="'$(Configuration)' == 'Release'">
-    <Error Condition="'$(DeepProductionPrivacyRoutesJson)' == '' Or !Exists('$(DeepProductionPrivacyRoutesJson)')"
-           Text="Release requires a signed production privacy-route JSON artifact." />
-    <Error Condition="'$(DeepProductionPrivacyRoutesSignature)' == '' Or !Exists('$(DeepProductionPrivacyRoutesSignature)')"
-           Text="Release requires the detached production privacy-route signature." />
-    <Error Condition="'$(DeepProductionPrivacyRoutesPublicKey)' == '' Or !Exists('$(DeepProductionPrivacyRoutesPublicKey)')"
-           Text="Release requires the production privacy-route signer public key." />
-  </Target>
-
   <Target Name="ValidatePhysicalUatMailboxInputs" BeforeTargets="PrepareForBuild"
           Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
     <Error Condition="'$(PhysicalUatMailboxTrustFloorSupplied)' != 'true'"
@@ -162,12 +130,6 @@
            Text="Physical UAT mailbox trust-floor generations must be positive decimal integers." />
     <Error Condition="'$(DeepMrXPublicKeySha256)' != '$(DeepPhysicalUatMrXPublicKeySha256)'"
            Text="Physical UAT transport policy and mailbox control plane must use the same build-pinned Mr. X key." />
-    <Error Condition="'$(DeepPhysicalUatPrivacyRoutesJson)' == '' Or !Exists('$(DeepPhysicalUatPrivacyRoutesJson)')"
-           Text="Physical UAT requires a signed UAT privacy-route JSON artifact." />
-    <Error Condition="'$(DeepPhysicalUatPrivacyRoutesSignature)' == '' Or !Exists('$(DeepPhysicalUatPrivacyRoutesSignature)')"
-           Text="Physical UAT requires the detached UAT privacy-route signature." />
-    <Error Condition="'$(DeepPhysicalUatPrivacyRoutesPublicKey)' == '' Or !Exists('$(DeepPhysicalUatPrivacyRoutesPublicKey)')"
-           Text="Physical UAT requires the UAT privacy-route signer public key." />
     <Error Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(PhysicalUatAndroidBuildIdentitySupplied)' != 'true'"
            Text="Android physical UAT requires its exact package, version and signer lineage." />
     <Error Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And ('$(DeepPhysicalUatAndroidApplicationId)' != '$(ApplicationId)' Or '$(DeepPhysicalUatAndroidApplicationId)' != 'network.xpoint.deep.e2e')"
@@ -195,12 +157,13 @@
   </Target>
 
   <Target Name="RejectPhysicalUatMailboxInputsOutsidePhysicalDebug" BeforeTargets="PrepareForBuild"
-          Condition="'$(PhysicalUatMailboxTrustFloorSupplied)$(PhysicalUatAndroidBuildIdentitySupplied)$(PhysicalUatAndroidTransparencySupplied)$(DeepPhysicalUatAndroidTransparencyPreparation)$(PhysicalUatWindowsBuildIdentitySupplied)$(DeepPhysicalUatPrivacyRoutesJson)$(DeepPhysicalUatPrivacyRoutesSignature)$(DeepPhysicalUatPrivacyRoutesPublicKey)' != '' And ('$(DeepPhysicalE2E)' != 'true' Or '$(Configuration)' == 'Release')">
+          Condition="'$(PhysicalUatMailboxTrustFloorSupplied)$(PhysicalUatAndroidBuildIdentitySupplied)$(PhysicalUatAndroidTransparencySupplied)$(DeepPhysicalUatAndroidTransparencyPreparation)$(PhysicalUatWindowsBuildIdentitySupplied)' != '' And ('$(DeepPhysicalE2E)' != 'true' Or '$(Configuration)' == 'Release')">
     <Error Text="Physical UAT mailbox inputs are forbidden outside a physical non-Release build." />
   </Target>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' != 'Release' And '$(DeepPhysicalE2E)' == 'true'">

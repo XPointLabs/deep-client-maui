@@ -36,23 +36,30 @@
         </Grid>
 
         <Border Grid.Row="2" Style="{StaticResource PanelBorder}" Padding="12" Margin="16,0">
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
                 <Label Text="Создать закрытую группу" FontSize="16" FontAttributes="Bold" />
+
+                <Label
+                    AutomationId="Groups.ComposerStatus"
+                    Grid.Row="1"
+                    Text="{Binding ComposerStatus}"
+                    FontSize="12"
+                    TextColor="{StaticResource TextSecondary}" />
 
                 <Entry
                     x:Name="GroupNameEntry"
                     AutomationId="Groups.GroupName"
-                    Grid.Row="1"
+                    Grid.Row="2"
                     Placeholder="Название группы"
                     Text="{Binding GroupName}"
                     ReturnType="Next" />
 
-                <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                     <Entry
-                        x:Name="MemberSessionIdEntry"
-                        AutomationId="Groups.MemberSessionId"
-                        Placeholder="ID участника или защищённое приглашение"
-                        Text="{Binding MemberSessionId}"
+                        x:Name="MemberAddressEntry"
+                        AutomationId="Groups.MemberAddress"
+                        Placeholder="canonical deep1… или deepinvite:DIA1"
+                        Text="{Binding MemberAddress}"
                         ReturnType="Done"
                         ReturnCommand="{Binding AddDraftMemberCommand}" />
                     <Button
@@ -66,7 +73,7 @@
 
                 <CollectionView
                     AutomationId="Groups.DraftMembers"
-                    Grid.Row="3"
+                    Grid.Row="4"
                     ItemsSource="{Binding DraftMembers}"
                     ItemSizingStrategy="MeasureFirstItem"
                     IsVisible="{Binding HasDraftMembers}"
@@ -88,11 +95,19 @@
 
                 <Button
                     AutomationId="Groups.Create"
-                    Grid.Row="4"
+                    Grid.Row="5"
                     Text="Создать группу"
                     IsEnabled="{Binding CanCreateGroup}"
                     Clicked="OnCreateGroupClicked"
                     HeightRequest="46" />
+
+                <Label
+                    AutomationId="Groups.OperationStatus"
+                    Grid.Row="6"
+                    Text="{Binding OperationStatus}"
+                    IsVisible="{Binding HasOperationStatus}"
+                    FontSize="12"
+                    TextColor="{StaticResource TextSecondary}" />
             </Grid>
         </Border>
 
@@ -101,7 +116,7 @@
                 <Grid Padding="0,80,0,0">
                     <VerticalStackLayout Spacing="10" HorizontalOptions="Center" VerticalOptions="Start">
                         <Label Text="Пока нет групп" FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center" />
-                        <Label Text="Создайте закрытую группу, чтобы открыть приватную комнату." FontSize="14" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
+                        <Label Text="Создайте GroupV1; GroupChat/fanout подключается отдельным срезом." FontSize="14" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center" />
                     </VerticalStackLayout>
                 </Grid>
             </CollectionView.EmptyView>
@@ -113,12 +128,12 @@
                                 <Label Text="G" TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" VerticalOptions="Center" FontAttributes="Bold" FontSize="20" />
                             </Border>
                             <Label Grid.Column="1" Text="{Binding Name}" FontAttributes="Bold" FontSize="17" LineBreakMode="TailTruncation" />
-                            <Label Grid.Column="2" Text="{Binding MemberCount, StringFormat='{}{0} уч.'}" TextColor="{StaticResource TextSecondary}" FontSize="12" />
+                            <Label Grid.Column="2" Text="{Binding MemberCount, StringFormat='{}{0} активн.'}" TextColor="{StaticResource TextSecondary}" FontSize="12" />
                             <HorizontalStackLayout Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Spacing="8">
-                                <Label Text="{Binding AdminCount, StringFormat='{}{0} адм.'}" FontSize="14" TextColor="{StaticResource TextSecondary}" />
-                                <Label Text="Архив" FontSize="14" TextColor="{StaticResource TextSecondary}" IsVisible="False">
+                                <Label Text="{Binding PendingInvitationCount, StringFormat='{}{0} приглашений ожидают fanout'}" FontSize="14" TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="Конфликт ветки" FontSize="14" TextColor="{StaticResource DangerColor}" IsVisible="False">
                                     <Label.Triggers>
-                                        <DataTrigger TargetType="Label" Binding="{Binding IsDestroyed}" Value="True">
+                                        <DataTrigger TargetType="Label" Binding="{Binding HasForkConflict}" Value="True">
                                             <Setter Property="IsVisible" Value="True" />
                                         </DataTrigger>
                                     </Label.Triggers>

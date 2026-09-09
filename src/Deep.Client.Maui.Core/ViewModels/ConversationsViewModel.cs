@@ -6,6 +6,7 @@ using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.State;
+using DeepDisplayName = Deep.Client.Maui.Core.Presentation.DeepDisplayName;
 
 namespace Deep.Client.Maui.Core.ViewModels;
 

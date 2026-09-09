@@ -1,19 +1,34 @@
-﻿using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Maui.Services;
-using Deep.Client.Shared.Domain;
 
 namespace Deep.Client.Maui.Pages;
 
 public partial class NewConversationPage : ContentPage
 {
-    private readonly ConversationsViewModel viewModel;
+    private readonly NewConversationViewModel viewModel;
+    private CancellationTokenSource? pageLifetime;
 
-    public NewConversationPage(ConversationsViewModel viewModel)
+    public NewConversationPage(NewConversationViewModel viewModel)
     {
         InitializeComponent();
-        this.viewModel = viewModel;
+        this.viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         BindingContext = viewModel;
+    }
+
+    protected override void OnAppearing()
+    {
+        pageLifetime?.Dispose();
+        pageLifetime = new CancellationTokenSource();
+        base.OnAppearing();
+    }
+
+    protected override void OnDisappearing()
+    {
+        pageLifetime?.Cancel();
+        pageLifetime?.Dispose();
+        pageLifetime = null;
+        base.OnDisappearing();
     }
 
     protected override bool OnBackButtonPressed()
@@ -30,31 +45,36 @@ public partial class NewConversationPage : ContentPage
     private static Task NavigateBackToConversationsAsync() =>
         Shell.Current.GoToAsync("..", animate: false);
 
-    private async void OnStartClicked(object? sender, EventArgs e)
+    private async void OnResolveClicked(object? sender, EventArgs e)
     {
-        var conversation = await viewModel.StartConversationFromComposerAsync();
-        if (conversation is null)
+        try
         {
-            await DisplayAlertAsync(
-                "Новое сообщение",
-                viewModel.ErrorMessage ?? "Введите корректный ID аккаунта или защищённое приглашение.",
-                "OK");
-            return;
+            var cancellationToken = pageLifetime?.Token ?? CancellationToken.None;
+            await viewModel.ResolveAsync(cancellationToken);
+            KeyboardDismissal.Dismiss(DeepIdEntry);
+            if (viewModel.VerifiedConversation is not { } verified)
+            {
+                return;
+            }
+
+            if (Shell.Current is IVerifiedDirectConversationActivationTarget activationTarget &&
+                await activationTarget.ActivateVerifiedDirectConversationAsync(
+                    verified,
+                    cancellationToken))
+            {
+                return;
+            }
+
+            viewModel.ReportDirectRuntimeUnavailable();
         }
-
-        KeyboardDismissal.Dismiss(SessionIdEntry);
-        KeyboardDismissal.Dismiss(DisplayNameEntry);
-        await Task.Delay(150);
-
-#if WINDOWS
-        if (Shell.Current is AppShell shell
-            && await shell.ActivateConversationAsync(conversation.Id))
+        catch (OperationCanceledException)
         {
-            return;
+            // If ContactV1 already wrote the address, its durable pending state
+            // survives cancellation and remains available for an exact retry.
         }
-#endif
-
-        var route = $"{ShellRouteCatalog.Chat}?sessionId={Uri.EscapeDataString(conversation.Id.Value)}&displayName={Uri.EscapeDataString(conversation.DisplayName)}";
-        await Shell.Current.GoToAsync(route);
+        catch (Exception exception)
+        {
+            CrashDiagnostics.LogException("ContactV1.EntryFlow", exception);
+        }
     }
 }

@@ -129,7 +129,6 @@ try {
         -p:AndroidKeyStore=true `
         -p:AndroidSigningKeyStore="$Keystore" `
         -p:AndroidSigningKeyAlias="$Alias" `
-        -p:AndroidSigningKeyPass="file:$PasswordFile" `
         -p:AndroidSigningStorePass="file:$PasswordFile" `
         -p:DeepProductionAndroidTransparencyPreparation=true `
         "-p:DeepProductionAndroidApplicationId=$applicationId" `
@@ -146,7 +145,7 @@ try {
     $apks = Join-Path $temp 'candidate.apks'
     & $java -jar $BundletoolJar build-apks "--bundle=$($bundle.FullName)" "--output=$apks" `
         --mode=default "--ks=$Keystore" "--ks-key-alias=$Alias" `
-        "--ks-pass=file:$PasswordFile" "--key-pass=file:$PasswordFile" --overwrite
+        "--ks-pass=file:$PasswordFile" --overwrite
     if ($LASTEXITCODE -ne 0) { throw 'bundletool candidate expansion failed.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($apks)

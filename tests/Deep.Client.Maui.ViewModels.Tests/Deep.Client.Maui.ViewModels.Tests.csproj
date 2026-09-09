@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <DefineConstants>$(DefineConstants);DEEP_TEST_INTERNALS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,7 +17,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Deep.Client.Maui.Core\Deep.Client.Maui.Core.csproj" />
+    <ProjectReference Include="..\..\src\Deep.Client.Maui.Core\Deep.Client.Maui.Core.csproj"
+                      AdditionalProperties="EnableDeepTestInternals=true" />
+    <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.csproj"
+                      AdditionalProperties="EnableDeepTestInternals=true" />
   </ItemGroup>
 
   <ItemGroup>
@@ -54,10 +58,26 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PushRegistrationLifecycleCoordinator.cs" Link="Services\PushRegistrationLifecycleCoordinator.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\BackgroundSyncSchedulingCoordinator.cs" Link="Services\BackgroundSyncSchedulingCoordinator.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ClientRuntimeBootstrapper.cs" Link="Services\ClientRuntimeBootstrapper.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ActiveBuildNetworkId.cs" Link="Services\ActiveBuildNetworkId.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\DeepAccountRuntimeAccessor.cs" Link="Services\DeepAccountRuntimeAccessor.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\DeepAccountRuntimeOwner.cs" Link="Services\DeepAccountRuntimeOwner.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\GroupV1\AccountOwnedGroupDeviceCustodySigner.cs" Link="Services\GroupV1\AccountOwnedGroupDeviceCustodySigner.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\GroupV1\ProductionGroupContactCapabilitySource.cs" Link="Services\GroupV1\ProductionGroupContactCapabilitySource.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\GroupV1\AccountScopedGroupV1Composer.cs" Link="Services\GroupV1\AccountScopedGroupV1Composer.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ContactResolvePrivacyHostState.cs" Link="Services\ContactResolvePrivacyHostState.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\PlatformDeepSecureStorage.cs" Link="Services\PlatformDeepSecureStorage.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\DeepContactResolveRuntimeAccessor.cs" Link="Services\DeepContactResolveRuntimeAccessor.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\PlatformOnionMonotonicClock.cs" Link="Services\PlatformOnionMonotonicClock.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionContactResolveRuntimePrerequisitesSource.cs" Link="Services\ProductionContactResolveRuntimePrerequisitesSource.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\IncomingMessageNotificationCoordinator.cs" Link="Services\IncomingMessageNotificationCoordinator.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\IncomingCallPollingBackoff.cs" Link="Services\IncomingCallPollingBackoff.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PushUnsubscribeRetryStateCodec.cs" Link="Services\PushUnsubscribeRetryStateCodec.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PushUnsubscribeRetryBootstrapper.cs" Link="Services\PushUnsubscribeRetryBootstrapper.cs" />
+    <Compile Remove="Services\PersistentClientRuntimeComposerTests.cs" Condition="'$(SkipConcurrentMsg01Tests)' == 'true'" />
+    <Compile Remove="Services\ProductionMailboxRuntimeCoordinatorTests.cs" Condition="'$(SkipConcurrentMsg01Tests)' == 'true'" />
+    <Compile Remove="Services\ProductionMailboxCredentialAcquirerTests.cs" Condition="'$(SkipConcurrentMsg01Tests)' == 'true'" />
+    <Compile Remove="Services\StoreBoundNativeMau2TransportDeliveryPolicyTests.cs" Condition="'$(SkipConcurrentMsg01Tests)' == 'true'" />
+    <Compile Remove="Services\StoreBoundNativeMau2TransportLifecycleTests.cs" Condition="'$(SkipConcurrentMsg01Tests)' == 'true'" />
     <Compile Remove="Services\PushNotificationSecureStorageTests.cs" Condition="'$(SkipPushNotificationFocusedTests)' == 'true'" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PushNotificationKeyStateCodec.cs" Link="Services\PushNotificationKeyStateCodec.cs" />
   </ItemGroup>

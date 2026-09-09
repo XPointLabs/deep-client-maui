@@ -14,15 +14,12 @@ public sealed class StoreBoundNativeMau2TransportLifecycleTests
         "amaze buffet cake entrance symptoms tiger lamb maze nestle python dusted faxed faxed";
 
     [Fact]
-    public async Task DisposeWaitsForInFlightLazyBindAndRejectsLaterOperations()
+    public async Task LegacyDevelopmentProvisioningFailsClosedWithoutInvokingFactory()
     {
         var directory = Path.Combine(
             Path.GetTempPath(), $"deep-mau2-lifetime-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
-        var enteredFactory = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var releaseFactory = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryCalls = 0;
         try
         {
             using var sqlite = new SqliteSessionStore(new SqliteSessionStoreOptions(
@@ -35,8 +32,7 @@ public sealed class StoreBoundNativeMau2TransportLifecycleTests
                 secureStore,
                 () =>
                 {
-                    enteredFactory.TrySetResult();
-                    releaseFactory.Task.GetAwaiter().GetResult();
+                    factoryCalls++;
                     throw new InvalidDataException("Synthetic blocked import.");
                 },
                 _ => { },
@@ -48,22 +44,19 @@ public sealed class StoreBoundNativeMau2TransportLifecycleTests
                 new HttpServiceTransportFactory(HttpServiceEndpointPolicy.Production),
                 new HttpServiceClientOptions());
 
-            var receive = Task.Run(async () =>
-                await transport.ReceiveAuthenticatedAsync(identity));
-            await enteredFactory.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            var dispose = Task.Run(transport.Dispose);
-            await Task.Delay(50);
-            Assert.False(dispose.IsCompleted);
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => transport.ReceiveAuthenticatedAsync(identity));
+            Assert.Equal(
+                ProductionMailboxPrivacyRouteBootstrap.UnavailableCode,
+                exception.Message);
+            Assert.Equal(0, factoryCalls);
 
-            releaseFactory.TrySetResult();
-            await Assert.ThrowsAsync<InvalidDataException>(() => receive);
-            await dispose.WaitAsync(TimeSpan.FromSeconds(5));
+            transport.Dispose();
             await Assert.ThrowsAsync<ObjectDisposedException>(
                 () => transport.ReceiveAuthenticatedAsync(identity));
         }
         finally
         {
-            releaseFactory.TrySetResult();
             TryDeleteDirectory(directory);
         }
     }
@@ -86,9 +79,12 @@ public sealed class StoreBoundNativeMau2TransportLifecycleTests
             Assert.Equal(0, fixture.FactoryCalls);
 
             fixture.Transport.Resume(fixture.Identity.SessionId);
-            await Assert.ThrowsAsync<InvalidDataException>(
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => fixture.Transport.ReceiveAuthenticatedAsync(fixture.Identity));
-            Assert.Equal(1, fixture.FactoryCalls);
+            Assert.Equal(
+                ProductionMailboxPrivacyRouteBootstrap.UnavailableCode,
+                exception.Message);
+            Assert.Equal(0, fixture.FactoryCalls);
         }
         finally
         {

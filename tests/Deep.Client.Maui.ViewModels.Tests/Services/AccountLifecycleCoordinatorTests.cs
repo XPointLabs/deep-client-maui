@@ -96,7 +96,7 @@ public sealed class AccountLifecycleCoordinatorTests
     }
 
     [Fact]
-    public async Task ColdPushUnsubscribeRetry_BootstrapsRuntimeBeforeResolvingCoordinator()
+    public async Task ColdPushUnsubscribeRetry_DoesNotBootstrapLegacyRuntime()
     {
         await using var bootstrapper = new ClientRuntimeBootstrapper(
             _ => Task.FromResult(ClientRuntime.CreateStubbed()));
@@ -105,22 +105,8 @@ public sealed class AccountLifecycleCoordinatorTests
 
         var completed = await PushUnsubscribeRetryBootstrapper.TryRetryAsync(services);
 
-        Assert.True(completed);
-        Assert.True(services.CoordinatorResolvedAfterBootstrap);
-        Assert.Equal(1, retry.RetryCalls);
-    }
-
-    [Fact]
-    public async Task ColdPushUnsubscribeRetry_BootstrapFailureDoesNotResolveCoordinator()
-    {
-        await using var bootstrapper = new ClientRuntimeBootstrapper(
-            _ => Task.FromException<ClientRuntime>(new InvalidOperationException("storage unavailable")));
-        var retry = new RecordingRetryCoordinator(result: true);
-        var services = new BootstrapAwareServiceProvider(bootstrapper, retry);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => PushUnsubscribeRetryBootstrapper.TryRetryAsync(services));
-
+        Assert.False(completed);
+        Assert.Equal(ClientRuntimeBootstrapState.NotStarted, bootstrapper.State);
         Assert.False(services.CoordinatorResolvedAfterBootstrap);
         Assert.Equal(0, retry.RetryCalls);
     }

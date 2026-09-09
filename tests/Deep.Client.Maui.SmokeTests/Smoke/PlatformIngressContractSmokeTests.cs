@@ -161,6 +161,20 @@ public sealed class PlatformIngressContractSmokeTests
     }
 
     [Fact]
+    public void AndroidClearsNativeInputFocusBeforeMauiActivityPause()
+    {
+        var activity = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Platforms", "Android", "MainActivity.cs");
+        var pause = activity[
+            activity.IndexOf("protected override void OnPause()", StringComparison.Ordinal)..
+            activity.IndexOf("protected override void OnActivityResult", StringComparison.Ordinal)];
+
+        Assert.True(
+            pause.IndexOf("CurrentFocus?.ClearFocus();", StringComparison.Ordinal) <
+            pause.IndexOf("base.OnPause();", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void AndroidVoiceCaptureCancelsReadLoopBeforeStoppingAudioRecord()
     {
         var recorder = ReadWorkspaceFile("src", "Deep.Client.Maui", "Services", "MauiVoiceMessageRecorder.cs");

@@ -1,6 +1,11 @@
 using Deep.Client.Shared.Features;
+using Deep.Client.Shared.Domain;
+using Deep.Client.Shared.Domain.MessagingV1;
 using Deep.Client.Shared.Persistence;
+using Deep.Client.Shared.Persistence.GroupV1;
+using Deep.Client.Shared.Persistence.MessagingV1;
 using Deep.Client.Shared.Services;
+using Deep.Client.Shared.Services.GroupV1;
 using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Services;
@@ -8,6 +13,12 @@ namespace Deep.Client.Maui.Services;
 internal sealed record StoreBoundRuntimeTransportComposition(
     ISessionMessageTransport Transport,
     IMailboxDeliveryPolicy DeliveryPolicy);
+
+internal sealed record DeepGroupV1RuntimeBinding(
+    SqliteGroupStateStore StateStore,
+    SqliteGroupInvitationActivationStore InvitationActivationStore,
+    MessageStoreScope MessagingScope,
+    IDeepGroupV1Runtime Runtime);
 
 internal static class PersistentClientRuntimeComposer
 {
@@ -21,6 +32,57 @@ internal static class PersistentClientRuntimeComposer
             StoreBoundRuntimeTransportComposition> transportFactory,
         IExternalTransportOutboxExecutor? transportOutboxExecutor,
         IGroupMailboxRouteExchange? groupMailboxRoutes = null)
+        => CreateCore(
+            stateDbPath,
+            featureFlags,
+            clock,
+            avatarProfiles,
+            sqlCipherKey,
+            transportFactory,
+            transportOutboxExecutor,
+            groupMailboxRoutes,
+            groupV1: null);
+
+    internal static async Task<ClientRuntime> CreateAsync(
+        string stateDbPath,
+        ClientFeatureFlags featureFlags,
+        IClock clock,
+        IAvatarProfileTransport avatarProfiles,
+        string sqlCipherKey,
+        Func<SqliteSessionStore, SecureRecoverySessionStore,
+            StoreBoundRuntimeTransportComposition> transportFactory,
+        IExternalTransportOutboxExecutor? transportOutboxExecutor,
+        DeepAccountRuntimeAccessor accountRuntime,
+        IGroupMailboxRouteExchange? groupMailboxRoutes = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(accountRuntime);
+        var groupV1 = await accountRuntime
+            .TryGetGroupV1RuntimeBindingAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return CreateCore(
+            stateDbPath,
+            featureFlags,
+            clock,
+            avatarProfiles,
+            sqlCipherKey,
+            transportFactory,
+            transportOutboxExecutor,
+            groupMailboxRoutes,
+            groupV1);
+    }
+
+    private static ClientRuntime CreateCore(
+        string stateDbPath,
+        ClientFeatureFlags featureFlags,
+        IClock clock,
+        IAvatarProfileTransport avatarProfiles,
+        string sqlCipherKey,
+        Func<SqliteSessionStore, SecureRecoverySessionStore,
+            StoreBoundRuntimeTransportComposition> transportFactory,
+        IExternalTransportOutboxExecutor? transportOutboxExecutor,
+        IGroupMailboxRouteExchange? groupMailboxRoutes,
+        DeepGroupV1RuntimeBinding? groupV1)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDbPath);
         ArgumentNullException.ThrowIfNull(featureFlags);
@@ -59,7 +121,12 @@ internal static class PersistentClientRuntimeComposer
 #else
                 messageDispatchFailureObserver: null,
 #endif
-                groupMailboxRoutes: groupMailboxRoutes);
+                groupMailboxRoutes: groupMailboxRoutes,
+                messagingV1Persistence: new MessagingV1PersistenceOptions(
+                    stateDbPath + ".msg01",
+                    sqlCipherKey,
+                    groupV1?.MessagingScope),
+                groupV1StateStore: groupV1?.StateStore);
 #if DEBUG && DEEP_PHYSICAL_E2E
             PhysicalE2eAckCorrelationProvider.Bind(runtime);
 #endif

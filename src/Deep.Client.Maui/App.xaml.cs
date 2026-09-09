@@ -1,4 +1,5 @@
 using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Persistence;
 
@@ -7,24 +8,24 @@ namespace Deep.Client.Maui;
 public partial class App : Application
 {
     private readonly IServiceProvider services;
-    private readonly ClientRuntimeBootstrapper runtimeBootstrapper;
-    private readonly IRealityTransportRuntime realityTransportRuntime;
+    private readonly IDeepAccountRuntimeAccessor accountRuntime;
+    private readonly DeferredApplicationServiceInputs deferredNetworkInputs;
     private readonly SemaphoreSlim startupGate = new(1, 1);
     private readonly object shutdownSync = new();
     private readonly StartupLocalStateResetContext localStateResetContext = new();
-    private Task? realityShutdownTask;
+    private Task? shutdownTask;
 
     public static IServiceProvider? Services { get; private set; }
 
     public App(
         IServiceProvider services,
-        ClientRuntimeBootstrapper runtimeBootstrapper,
-        IRealityTransportRuntime realityTransportRuntime)
+        IDeepAccountRuntimeAccessor accountRuntime,
+        DeferredApplicationServiceInputs deferredNetworkInputs)
     {
         InitializeComponent();
         this.services = services;
-        this.runtimeBootstrapper = runtimeBootstrapper;
-        this.realityTransportRuntime = realityTransportRuntime;
+        this.accountRuntime = accountRuntime;
+        this.deferredNetworkInputs = deferredNetworkInputs;
         Services = services;
 
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -37,7 +38,6 @@ public partial class App : Application
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        realityTransportRuntime.SetForeground(true);
         var startupPage = CreateStartupPage();
         var window = new Window(startupPage.Page)
         {
@@ -72,16 +72,22 @@ public partial class App : Application
         Task shutdown;
         lock (shutdownSync)
         {
-            shutdown = realityShutdownTask ??= realityTransportRuntime.DisposeAsync().AsTask();
+            shutdown = shutdownTask ??= ShutdownAsync();
         }
 
         _ = shutdown.ContinueWith(
             static completed => CrashDiagnostics.LogException(
-                "App.RealityTransportShutdown",
+                "App.RuntimeShutdown",
                 completed.Exception?.GetBaseException()),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
+    }
+
+    private async Task ShutdownAsync()
+    {
+        await accountRuntime.DisposeAsync().ConfigureAwait(false);
+        await deferredNetworkInputs.DisposeAsync().ConfigureAwait(false);
     }
 
     private async Task InitializeWindowAsync(Window window, StartupPage startupPage)
@@ -111,7 +117,6 @@ public partial class App : Application
 
         try
         {
-            await runtimeBootstrapper.InitializeAsync().ConfigureAwait(false);
             await services.GetRequiredService<AuthNavigationState>()
                 .InitializeAsync()
                 .ConfigureAwait(false);
@@ -165,7 +170,7 @@ public partial class App : Application
             await UpdateStartupPageAsync(
                 startupPage,
                 "Не удалось запустить Deep",
-                "Проверьте подключение и повторите попытку.",
+                "Не удалось открыть локальное состояние приложения. Создание аккаунта не требует подключения к сети. Повторите запуск.",
                 retryEnabled: true,
                 resetEnabled: false,
                 activityRunning: false).ConfigureAwait(false);
@@ -251,6 +256,8 @@ public partial class App : Application
                 return;
             }
 
+            await accountRuntime.ResetLocalStateAsync(CancellationToken.None).ConfigureAwait(false);
+            Preferences.Default.Remove(StartupLocalStateReset.WipeLocalDataOnNextLaunchKey);
             await InitializeWindowCoreAsync(window, startupPage).ConfigureAwait(false);
         }
         finally

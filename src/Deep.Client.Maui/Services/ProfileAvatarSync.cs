@@ -1,6 +1,4 @@
 using System.Buffers.Binary;
-using Deep.Client.Shared.Services;
-using Deep.Client.Shared.State;
 using Microsoft.Maui.Storage;
 
 #if ANDROID
@@ -17,18 +15,15 @@ internal static class ProfileAvatarSync
     internal const long MaximumInputPixels = 25_000_000;
     internal const int MaximumAvatarDimension = 1_024;
     internal const int MaximumAvatarBytes = 1_500_000;
-    private const string AvatarContentType = "image/jpeg";
     private static readonly int[] JpegQualities = [88, 80, 72, 64];
 
-    public static async Task SaveAndPublishAsync(
+    public static async Task SaveLocalAsync(
         FileResult photo,
         string avatarPath,
-        ClientRuntime runtime,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(photo);
         ArgumentException.ThrowIfNullOrWhiteSpace(avatarPath);
-        ArgumentNullException.ThrowIfNull(runtime);
 
         byte[]? original = null;
         byte[]? normalizedContent = null;
@@ -41,7 +36,6 @@ internal static class ProfileAvatarSync
 
             var fullAvatarPath = Path.GetFullPath(avatarPath);
             await WriteAtomicallyAsync(fullAvatarPath, normalizedContent, cancellationToken).ConfigureAwait(false);
-            await PublishAsync(fullAvatarPath, runtime, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -153,36 +147,6 @@ internal static class ProfileAvatarSync
                 File.Delete(temporaryPath);
             }
         }
-    }
-
-    private static async Task PublishAsync(
-        string avatarPath,
-        ClientRuntime runtime,
-        CancellationToken cancellationToken)
-    {
-        if (!runtime.AvatarProfiles.IsEnabled)
-        {
-            return;
-        }
-
-        var account = await runtime.Accounts.GetActiveAccountAsync(cancellationToken).ConfigureAwait(false);
-        if (account is null)
-        {
-            return;
-        }
-
-        var recoveryPhrase = await runtime.Accounts.GetRecoveryPhraseAsync(cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("The active account recovery phrase is unavailable.");
-        using var identity = new SessionIdentityProvider(recoveryPhrase);
-        if (identity.SessionId != account.SessionId)
-        {
-            throw new InvalidOperationException("The active account identity does not match its recovery phrase.");
-        }
-
-        await using var upload = File.OpenRead(avatarPath);
-        await runtime.AvatarProfiles
-            .UploadAsync(identity, upload, AvatarContentType, cancellationToken)
-            .ConfigureAwait(false);
     }
 
     private static Task<NormalizedAvatar> NormalizeToJpegAsync(

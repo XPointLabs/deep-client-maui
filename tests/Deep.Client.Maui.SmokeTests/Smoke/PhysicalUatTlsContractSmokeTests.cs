@@ -18,6 +18,9 @@ public sealed class PhysicalUatTlsContractSmokeTests
             "src", "Deep.Client.Maui", "Deep.Client.Maui.csproj"));
         var program = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "MauiProgram.cs"));
+        var sharedHttp = File.ReadAllText(WorkspacePath(
+            "..", "deep-client-shared", "src", "Deep.Client.Shared", "Services",
+            "HttpServiceEndpointPolicy.cs"));
         var mailboxTransport = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Services", "StoreBoundNativeMau2Transport.cs"));
 
@@ -37,54 +40,50 @@ public sealed class PhysicalUatTlsContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("#if DEBUG && DEEP_PHYSICAL_E2E && ANDROID", program,
             StringComparison.Ordinal);
-        Assert.Contains("X509ChainTrustMode.CustomRootTrust", program,
+        Assert.Contains("X509ChainTrustMode.CustomRootTrust", sharedHttp,
             StringComparison.Ordinal);
-        Assert.Contains("X509RevocationMode.Online", program,
+        Assert.Contains("X509RevocationMode.Online", sharedHttp,
             StringComparison.Ordinal);
-        Assert.Contains("X509RevocationFlag.ExcludeRoot", program,
+        Assert.Contains("X509RevocationFlag.ExcludeRoot", sharedHttp,
             StringComparison.Ordinal);
-        Assert.Contains("X509VerificationFlags.NoFlag", program,
+        Assert.Contains("X509VerificationFlags.NoFlag", sharedHttp,
             StringComparison.Ordinal);
-        Assert.Contains("Certificate chain rejected with safe status", program,
+        Assert.Contains("RemoteCertificateNameMismatch", sharedHttp,
             StringComparison.Ordinal);
-        Assert.Contains("Certificate validation callback invoked.", program,
+        Assert.Contains("RemoteCertificateNotAvailable", sharedHttp,
             StringComparison.Ordinal);
-        Assert.Contains("Certificate validation failed with safe exception type", program,
+        Assert.Contains("errors == SslPolicyErrors.None", sharedHttp,
             StringComparison.Ordinal);
-        Assert.Contains("RemoteCertificateNameMismatch", program,
+        Assert.Contains("errors != SslPolicyErrors.RemoteCertificateChainErrors",
+            sharedHttp, StringComparison.Ordinal);
+        Assert.Contains("BindPhysicalUatTrust(transportFactory)", program,
             StringComparison.Ordinal);
-        Assert.Contains("RemoteCertificateNotAvailable", program,
+        Assert.Contains("WithPreferredConnectAddresses(fileConnectIps)", program,
             StringComparison.Ordinal);
-        Assert.Contains("sslPolicyErrors == System.Net.Security.SslPolicyErrors.None", program,
+        Assert.Contains("WithAppScopedPrivateCertificateAuthority", program,
             StringComparison.Ordinal);
-        Assert.Contains("sslPolicyErrors != System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors",
-            program, StringComparison.Ordinal);
-        Assert.Contains("CreateServiceTransportNetworkHooks()", program,
+        Assert.Contains("Value.ServiceTransportFactory", program,
             StringComparison.Ordinal);
-        Assert.Contains("CreateFileTransportNetworkHooks(fileConnectIps)", program,
+        Assert.Contains("Value.ServiceTransportClientOptions", program,
             StringComparison.Ordinal);
-        Assert.Contains("CreatePhysicalUatServerCertificateValidationCallback()", program,
+        Assert.Contains("ProductionMailboxPrivacyRouteBootstrap.CreateUnavailableException()", mailboxTransport,
             StringComparison.Ordinal);
-        Assert.Contains("services.AddSingleton(inputs.ServiceTransportFactory)", program,
-            StringComparison.Ordinal);
-        Assert.Contains("services.AddSingleton(inputs.ServiceTransportClientOptions)", program,
-            StringComparison.Ordinal);
-        Assert.Contains("transportFactory.CreatePrivacyRoutedMailboxIngress(", mailboxTransport,
+        Assert.DoesNotContain("CreatePrivacyRoutedMailboxIngress(", mailboxTransport,
             StringComparison.Ordinal);
         Assert.DoesNotContain("new PrivacyRoutedMailboxBinaryIngress(", mailboxTransport,
             StringComparison.Ordinal);
         Assert.DoesNotContain("new HttpClient", mailboxTransport,
             StringComparison.Ordinal);
-        var validatorStart = program.IndexOf(
-            "private static bool ValidatePhysicalUatServerCertificate(",
+        var validatorStart = sharedHttp.IndexOf(
+            "private static bool ValidateWithAppScopedRoot(",
             StringComparison.Ordinal);
-        var validatorEnd = program.IndexOf(
-            "private static System.Security.Cryptography.X509Certificates.X509Certificate2",
+        var validatorEnd = sharedHttp.IndexOf(
+            "private static bool IsCertificateAuthority(",
             validatorStart,
             StringComparison.Ordinal);
         Assert.True(validatorStart >= 0 && validatorEnd > validatorStart);
-        Assert.DoesNotContain("return true;", program[validatorStart..validatorEnd],
-            StringComparison.Ordinal);
+        Assert.Contains("if (errors == SslPolicyErrors.None)",
+            sharedHttp[validatorStart..validatorEnd], StringComparison.Ordinal);
         Assert.Equal(
             "3fcbafc7014f27e11ab66043ad8fa2c931da048ed9973779e75acca435956f29",
             Convert.ToHexStringLower(SHA256.HashData(

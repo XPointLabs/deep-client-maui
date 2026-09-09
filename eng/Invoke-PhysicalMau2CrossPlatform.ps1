@@ -368,7 +368,17 @@ function Get-PackageSnapshot([string]$Package) {
     return $value
 }
 
-function Get-Sha256([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
+function Get-Sha256([string]$Path) {
+    $stream = [IO.File]::Open(
+        $Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
+}
 
 function Get-TextSha256([string]$Value) {
     $algorithm = [Security.Cryptography.SHA256]::Create()
@@ -819,7 +829,7 @@ function Get-TreeSha256([string]$Root) {
     $lines = foreach ($path in $paths) {
         $file = Get-Item -Force -LiteralPath $path
         $relative = $path.Substring($canonical.Length + 1).Replace('\', '/')
-        "$relative`t$($file.Length)`t$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant())"
+        "$relative`t$($file.Length)`t$(Get-Sha256 $path)"
     }
     $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($lines -join "`n") + "`n")
     $hasher = [Security.Cryptography.SHA256]::Create()

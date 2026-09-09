@@ -1,7 +1,6 @@
 using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
-using Deep.Protocol.DeepExtension.PrivacyRouting;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
 
@@ -87,9 +86,9 @@ public sealed class PhysicalMailboxRouteUsageTrackerTests
     }
 
     [Fact]
-    public void DurableHistoryPreservesBothRoutesUntilExplicitConversationReset()
+    public void SelectionCannotCreateRouteEvidenceWithoutVerifiedTopology()
     {
-        var diagnostics = CreateDiagnostics();
+        var diagnostics = new PrivacyMailboxRouteDiagnostics();
         var tracker = new PhysicalMailboxRouteUsageTracker(diagnostics);
         var fallbackAttempt = Guid.NewGuid();
         var primaryAttempt = Guid.NewGuid();
@@ -106,15 +105,9 @@ public sealed class PhysicalMailboxRouteUsageTrackerTests
         tracker.Observe(Usage(ConversationA, primaryAttempt,
             MailboxDispatchRouteOutcome.Durable, RouterA));
 
-        Assert.Equal(
-            [Convert.ToHexStringLower(EntryA), Convert.ToHexStringLower(EntryB)],
-            tracker.GetObservedRouterIds(ConversationA));
-        Assert.Equal(Convert.ToHexStringLower(RouterA),
-            tracker.GetObservedCoordinatorId(
-                ConversationA, Convert.ToHexStringLower(EntryB)));
-        Assert.NotEqual(Convert.ToHexStringLower(RouterB),
-            tracker.GetObservedCoordinatorId(
-                ConversationA, Convert.ToHexStringLower(EntryB)));
+        Assert.Empty(tracker.GetObservedRouterIds(ConversationA));
+        Assert.Null(tracker.GetObservedCoordinatorId(
+            ConversationA, Convert.ToHexStringLower(EntryB)));
 
         tracker.Reset(ConversationA);
 
@@ -127,7 +120,7 @@ public sealed class PhysicalMailboxRouteUsageTrackerTests
     [Fact]
     public void FallbackTerminalExitCannotMasqueradeAsAuthenticatedCoordinator()
     {
-        var diagnostics = CreateDiagnostics();
+        var diagnostics = new PrivacyMailboxRouteDiagnostics();
         var tracker = new PhysicalMailboxRouteUsageTracker(diagnostics);
         var attempt = Guid.NewGuid();
         tracker.Observe(Usage(ConversationA, attempt,
@@ -142,27 +135,6 @@ public sealed class PhysicalMailboxRouteUsageTrackerTests
         Assert.Null(tracker.GetObservedCoordinatorId(
             ConversationA, Convert.ToHexStringLower(EntryB)));
     }
-
-    private static PrivacyMailboxRouteDiagnostics CreateDiagnostics()
-    {
-        var diagnostics = new PrivacyMailboxRouteDiagnostics();
-        diagnostics.Publish(new MailboxPrivacyRouteSet(
-            Route("primary", EntryA, RouterA, 0x31),
-            Route("fallback", EntryB, RouterB, 0x71)));
-        return diagnostics;
-    }
-
-    private static PrivacyMailboxRoute Route(
-        string host, byte[] entry, byte[] coordinator, byte keySeed) => new(
-        new Uri($"https://{host}.example:443/"),
-        [
-            new PrivacyRoutingHop(entry, Bytes(0x11, keySeed)),
-            new PrivacyRoutingHop(Bytes(0x21, keySeed), Bytes(0x31, keySeed)),
-            new PrivacyRoutingHop(coordinator, Bytes(0x41, keySeed))
-        ]);
-
-    private static byte[] Bytes(byte value, byte offset) =>
-        Enumerable.Repeat(unchecked((byte)(value + offset)), 32).ToArray();
 
     private static MailboxDispatchRouteUsage Usage(
         ConversationId conversationId,

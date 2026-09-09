@@ -182,7 +182,6 @@ dotnet publish $project `
     -p:AndroidKeyStore=true `
     -p:AndroidSigningKeyStore="$Keystore" `
     -p:AndroidSigningKeyAlias="$Alias" `
-    -p:AndroidSigningKeyPass="file:$PasswordFile" `
     -p:AndroidSigningStorePass="file:$PasswordFile" `
     @trustMsBuildArguments `
     -nodeReuse:false
@@ -325,7 +324,6 @@ $generatedApks = Join-Path $candidateDirectory "network.xpoint.deep.apks"
     "--ks=$Keystore" `
     "--ks-key-alias=$Alias" `
     "--ks-pass=file:$PasswordFile" `
-    "--key-pass=file:$PasswordFile" `
     --overwrite
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $generatedApks -PathType Leaf)) {
     throw "bundletool failed to generate the complete default APK set."

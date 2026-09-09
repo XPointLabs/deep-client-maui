@@ -1,4 +1,3 @@
-using System.Security.Cryptography.X509Certificates;
 using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Persistence;
@@ -20,15 +19,7 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
 {
     public bool SupportsReactiveRejectedRetrieveRefresh => true;
 
-    internal const string RoutesResource =
-        "Deep.Client.Maui.production-mailbox-privacy-routes.v1.json";
-    internal const string RoutesSignatureResource =
-        "Deep.Client.Maui.production-mailbox-privacy-routes.v1.sig";
-    internal const string RoutesPublicKeyResource =
-        "Deep.Client.Maui.production-mailbox-privacy-routes.v1.pub";
-
-    private readonly ProductionMailboxRegistryClient registry;
-    private readonly HttpClient registryHttpClient;
+    private readonly Lazy<RegistryRuntime> registryRuntime;
     private readonly string protectedRoot;
     private readonly HttpServiceTransportFactory transportFactory;
     private readonly HttpServiceClientOptions clientOptions;
@@ -41,13 +32,13 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
     private int disposed;
 
     public ProductionMailboxRuntimeCoordinator(
-        Uri registryOrigin,
+        Func<Uri> registryOriginFactory,
         string appDataDirectory,
         HttpServiceTransportFactory transportFactory,
         HttpServiceClientOptions clientOptions,
         TimeProvider? timeProvider = null)
     {
-        ArgumentNullException.ThrowIfNull(registryOrigin);
+        ArgumentNullException.ThrowIfNull(registryOriginFactory);
         ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
         this.transportFactory = transportFactory ??
             throw new ArgumentNullException(nameof(transportFactory));
@@ -56,14 +47,12 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
         this.timeProvider = timeProvider ?? TimeProvider.System;
         protectedRoot = Path.Combine(
             Path.GetFullPath(appDataDirectory), "production-mailbox-runtime-v1");
-        var handler = transportFactory.CreateBoundHttpHandler(clientOptions);
-        handler.AutomaticDecompression = System.Net.DecompressionMethods.None;
-        handler.SslOptions.CertificateRevocationCheckMode = X509RevocationMode.Online;
-        registryHttpClient = new HttpClient(handler, disposeHandler: true)
-        {
-            Timeout = Timeout.InfiniteTimeSpan
-        };
-        registry = new ProductionMailboxRegistryClient(registryHttpClient, registryOrigin);
+        registryRuntime = new Lazy<RegistryRuntime>(
+            () => CreateRegistryRuntime(
+                registryOriginFactory(),
+                this.transportFactory,
+                this.clientOptions),
+            LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     public bool CanAccept(string contactInput)
@@ -316,6 +305,10 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
             throw new InvalidOperationException(
                 "Production mailbox acquisition requires official-managed ownership.");
 
+        // This gate intentionally precedes attestation, registry acquisition and every
+        // HTTP transport. Offline account creation does not call mailbox provisioning.
+        ProductionMailboxPrivacyRouteBootstrap.RequireHostAdapters();
+
         await provisionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -326,8 +319,7 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
                 if (bound is not null)
                 {
                     if (bound.Material.LocalSessionId != holder.SessionId ||
-                        !string.Equals(bound.StoreIdentity, store.CanonicalStateIdentity,
-                            StringComparison.Ordinal))
+                        !ReferenceEquals(bound.Store, store))
                         throw new InvalidOperationException(
                             "Production mailbox coordinator is already bound to another account generation.");
                     return CreateProvisioned(bound);
@@ -340,13 +332,6 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
 
             if (!ProductionMailboxBuildTrustFloor.TryLoad(out var anchor) || anchor is null)
                 throw new InvalidOperationException("production-credentials-unavailable");
-            var routes = ProductionMailboxPrivacyRouteBootstrap.Load(
-                typeof(ProductionMailboxRuntimeCoordinator).Assembly,
-                RoutesResource,
-                RoutesSignatureResource,
-                RoutesPublicKeyResource,
-                anchor,
-                timeProvider);
             var clientIdentity = await ProductionMailboxClientIdentityAttestor.AttestAsync(
                 cancellationToken).ConfigureAwait(false);
             var trust = ProtectedProductionMailboxTrustStateStore.OpenOrCreate(protectedRoot);
@@ -398,7 +383,7 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
                             cancellationToken)
                         .ConfigureAwait(false);
                     var acquirer = new ProductionMailboxCredentialAcquirer(
-                        registry,
+                        registryRuntime.Value.Client,
                         store,
                         sessionIdentity,
                         ownerIdentity,
@@ -438,15 +423,14 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
                         .ConfigureAwait(false);
 
                     var state = new BoundState(
-                        store.CanonicalStateIdentity,
+                        store,
                         activation.Material,
                         activation.PublicRoute,
                         sessionIdentity,
                         ownerIdentity,
                         acquirer,
                         new ProductionMailboxContactStateStore(store),
-                        new PersistedMailboxPeerSelectorStore(store),
-                        routes);
+                        new PersistedMailboxPeerSelectorStore(store));
                     await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
                     try
                     {
@@ -503,8 +487,7 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
             {
                 state = RequireBound();
                 if (state.Material.LocalSessionId != holder.SessionId ||
-                    !string.Equals(state.StoreIdentity, store.CanonicalStateIdentity,
-                        StringComparison.Ordinal))
+                    !ReferenceEquals(state.Store, store))
                     throw new InvalidOperationException(
                         "Reactive mailbox refresh targets another account generation.");
                 var currentGeneration = state.Material.Authority.MinimumGeneration;
@@ -575,15 +558,14 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
                     }
 
                     var replacement = new BoundState(
-                        state.StoreIdentity,
+                        store,
                         activation.Material,
                         activation.PublicRoute,
                         state.SessionIdentity,
                         state.OwnerIdentity,
                         state.Acquirer,
                         state.ContactState,
-                        state.PeerSelectorState,
-                        state.Routes);
+                        state.PeerSelectorState);
                     foreach (var selector in state.PeerSelectors)
                         replacement.PeerSelectors.Add(selector.Key, selector.Value);
                     bound = replacement;
@@ -605,19 +587,13 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
         }
     }
 
-    private ProvisionedMailboxRuntime CreateProvisioned(BoundState state) => new(
-        state.Material.Authority,
-        state.Material.Activation,
-        state.Material.DecodePolicies,
-        state.Material.LocalSessionId,
-        state.Material.SelfSelector,
-        ResolveRecipientAsync,
-        transportFactory.CreatePrivacyRoutedMailboxIngress(
-            state.Routes.Primary,
-            state.Routes.Fallback,
-            state.Material.DecodePolicies,
-            clientOptions),
-        timeProvider);
+    private static ProvisionedMailboxRuntime CreateProvisioned(BoundState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ProductionMailboxPrivacyRouteBootstrap.RequireHostAdapters();
+        throw new InvalidOperationException(
+            ProductionMailboxPrivacyRouteBootstrap.UnavailableCode);
+    }
 
     private async Task<MailboxCredentialSelector?> ResolveRecipientAsync(
         SessionId recipient,
@@ -772,7 +748,8 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
             {
                 if (bound is not null) DisposeBoundState(bound);
                 bound = null;
-                registryHttpClient.Dispose();
+                if (registryRuntime.IsValueCreated)
+                    registryRuntime.Value.Client.Dispose();
             }
             finally
             {
@@ -787,6 +764,31 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
         }
     }
 
+    private static RegistryRuntime CreateRegistryRuntime(
+        Uri registryOrigin,
+        HttpServiceTransportFactory transportFactory,
+        HttpServiceClientOptions clientOptions)
+    {
+        ArgumentNullException.ThrowIfNull(registryOrigin);
+        HttpServiceRequestTransport? transport = null;
+        try
+        {
+            transport = transportFactory.CreateRequestTransport(
+                ProductionMailboxRegistryClient.CreateTransportOptions(registryOrigin),
+                clientOptions);
+            var client = new ProductionMailboxRegistryClient(transport);
+            transport = null;
+            return new RegistryRuntime(client);
+        }
+        catch
+        {
+            transport?.Dispose();
+            throw;
+        }
+    }
+
+    private sealed record RegistryRuntime(ProductionMailboxRegistryClient Client);
+
     private static void DisposeBoundState(BoundState state)
     {
         state.OwnerIdentity.Dispose();
@@ -799,17 +801,16 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
         SecureRecoverySessionStore SecureStore);
 
     private sealed class BoundState(
-        string storeIdentity,
+        SqliteSessionStore store,
         ImportedProductionMailboxRuntimeMaterial material,
         ProductionMailboxLocalOwnerPublicRoute publicRoute,
         SessionIdentityProvider sessionIdentity,
         ProductionMailboxOwnerIdentity ownerIdentity,
         ProductionMailboxCredentialAcquirer acquirer,
         ProductionMailboxContactStateStore contactState,
-        PersistedMailboxPeerSelectorStore peerSelectorState,
-        MailboxPrivacyRouteSet routes)
+        PersistedMailboxPeerSelectorStore peerSelectorState)
     {
-        public string StoreIdentity { get; } = storeIdentity;
+        public SqliteSessionStore Store { get; } = store;
         public ImportedProductionMailboxRuntimeMaterial Material { get; } = material;
         public ProductionMailboxLocalOwnerPublicRoute PublicRoute { get; } = publicRoute;
         public SessionIdentityProvider SessionIdentity { get; } = sessionIdentity;
@@ -818,7 +819,6 @@ internal sealed class ProductionMailboxRuntimeCoordinator :
         public ProductionMailboxContactStateStore ContactState { get; } = contactState;
         public PersistedMailboxPeerSelectorStore PeerSelectorState { get; } =
             peerSelectorState;
-        public MailboxPrivacyRouteSet Routes { get; } = routes;
         public Dictionary<SessionId, MailboxCredentialSelector> PeerSelectors { get; } = [];
     }
 }

@@ -6,9 +6,14 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(EnableDeepTestInternals)' == 'true'">
+    <DefineConstants>$(DefineConstants);DEEP_TEST_INTERNALS</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.csproj"
-                      GlobalPropertiesToRemove="RuntimeIdentifier;RuntimeIdentifiers;SelfContained" />
+                      GlobalPropertiesToRemove="RuntimeIdentifier;RuntimeIdentifiers;SelfContained"
+                      AdditionalProperties="EnableDeepTestInternals=$(EnableDeepTestInternals)" />
   </ItemGroup>
 
 </Project>

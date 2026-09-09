@@ -1,324 +1,245 @@
-using System.Reflection;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Deep.Client.Shared.Services;
+using Deep.Client.Shared.Services.ContactV1;
+using Deep.Client.Shared.Services.XPointNetworkV1;
 using Deep.Protocol.DeepExtension.PrivacyRouting;
-using Sodium;
+using Deep.Protocol.XPointNetworkV1;
 
 namespace Deep.Client.Maui.Services;
 
 /// <summary>
-/// Loads the immutable production privacy-route bootstrap from build-embedded resources.
-/// The detached signature covers the exact canonical JSON resource bytes.
+/// Capability-only input supplied after the deployment owner has verified its
+/// signed bootstrap. MAUI receives no raw hop, routing-key, signer, or boolean
+/// trust input and never parses an unsigned route document.
 /// </summary>
-internal static class ProductionMailboxPrivacyRouteBootstrap
+internal sealed class ProductionContactResolveVerifiedHostCapabilities
 {
-    internal const int MaximumJsonBytes = 16 * 1024;
-    internal const long MaximumClockSkewSeconds = 300;
-
-    private const int SignatureBytes = 64;
-    private const int PublicKeyBytes = 32;
-    private static readonly string[] RootProperties =
-    [
-        "schemaVersion", "developmentOnly", "networkId", "notBeforeUnixSeconds",
-        "expiresUnixSeconds", "primary", "fallback"
-    ];
-    private static readonly string[] RouteProperties = ["entryOrigin", "hops"];
-    private static readonly string[] HopProperties = ["routerId", "x25519PublicKey"];
-
-    internal static MailboxPrivacyRouteSet Load(
-        Assembly assembly,
-        string jsonResourceName,
-        string signatureResourceName,
-        string publicKeyResourceName,
-        ProductionMailboxTrustAnchor trustAnchor,
-        TimeProvider? timeProvider = null)
+    internal ProductionContactResolveVerifiedHostCapabilities(
+        XPointNetworkGenesisPin genesisPin,
+        IContactResolverVerifiedCapabilitySource resolverCapabilities,
+        IContactResolvePathAuthoritySource pathAuthoritySource,
+        IContactResolveVerifiedPrivacyIngressSource privacyIngressSource)
     {
-        ArgumentNullException.ThrowIfNull(assembly);
-        RequireResourceName(jsonResourceName, nameof(jsonResourceName));
-        RequireResourceName(signatureResourceName, nameof(signatureResourceName));
-        RequireResourceName(publicKeyResourceName, nameof(publicKeyResourceName));
-        if (new[] { jsonResourceName, signatureResourceName, publicKeyResourceName }
-            .Distinct(StringComparer.Ordinal).Count() != 3)
-        {
-            throw new ArgumentException(
-                "Production privacy-route resources require three distinct exact names.");
-        }
-
-        using var json = OpenExactResource(assembly, jsonResourceName);
-        using var signature = OpenExactResource(assembly, signatureResourceName);
-        using var publicKey = OpenExactResource(assembly, publicKeyResourceName);
-        return Load(json, signature, publicKey, trustAnchor, timeProvider);
+        GenesisPin = genesisPin ?? throw new ArgumentNullException(nameof(genesisPin));
+        ResolverCapabilities = resolverCapabilities
+            ?? throw new ArgumentNullException(nameof(resolverCapabilities));
+        PathAuthoritySource = pathAuthoritySource
+            ?? throw new ArgumentNullException(nameof(pathAuthoritySource));
+        PrivacyIngressSource = privacyIngressSource
+            ?? throw new ArgumentNullException(nameof(privacyIngressSource));
     }
 
-    internal static MailboxPrivacyRouteSet Load(
-        Stream jsonStream,
-        Stream signatureStream,
-        Stream publicKeyStream,
-        ProductionMailboxTrustAnchor trustAnchor,
-        TimeProvider? timeProvider = null)
-    {
-        ArgumentNullException.ThrowIfNull(jsonStream);
-        ArgumentNullException.ThrowIfNull(signatureStream);
-        ArgumentNullException.ThrowIfNull(publicKeyStream);
-        ArgumentNullException.ThrowIfNull(trustAnchor);
+    internal XPointNetworkGenesisPin GenesisPin { get; }
+    internal IContactResolverVerifiedCapabilitySource ResolverCapabilities { get; }
+    internal IContactResolvePathAuthoritySource PathAuthoritySource { get; }
+    internal IContactResolveVerifiedPrivacyIngressSource PrivacyIngressSource { get; }
+}
 
-        ValidateAnchor(trustAnchor);
-        var encoded = ReadBounded(jsonStream, MaximumJsonBytes, "JSON");
-        var signature = ReadExact(signatureStream, SignatureBytes, "signature");
-        var publicKey = ReadExact(publicKeyStream, PublicKeyBytes, "public key");
+/// <summary>
+/// Deployment-owned capability which may return origins only after its signed
+/// bootstrap and network binding have been verified. Raw route documents never
+/// enter the MAUI composition boundary.
+/// </summary>
+internal interface IContactResolveVerifiedPrivacyIngressSource
+{
+    ValueTask<VerifiedContactResolvePrivacyIngressPair> GetCurrentAsync(
+        CancellationToken cancellationToken);
+}
+
+internal sealed class VerifiedContactResolvePrivacyIngressPair
+{
+    private readonly byte[] networkId;
+
+    internal VerifiedContactResolvePrivacyIngressPair(
+        ReadOnlyMemory<byte> networkId,
+        Uri primaryOrigin,
+        Uri fallbackOrigin)
+    {
+        if (networkId.Length != 16
+            || networkId.Span.IndexOfAnyExcept((byte)0) < 0)
+        {
+            throw new ArgumentException("A verified ingress network ID is required.",
+                nameof(networkId));
+        }
+        ValidateOrigin(primaryOrigin, nameof(primaryOrigin));
+        ValidateOrigin(fallbackOrigin, nameof(fallbackOrigin));
+        if (SameOrigin(primaryOrigin, fallbackOrigin))
+        {
+            throw new ArgumentException(
+                "ContactResolve primary and fallback ingress origins must be distinct.");
+        }
+        this.networkId = networkId.ToArray();
+        PrimaryOrigin = primaryOrigin;
+        FallbackOrigin = fallbackOrigin;
+    }
+
+    internal ReadOnlyMemory<byte> NetworkId => networkId.ToArray();
+    internal Uri PrimaryOrigin { get; }
+    internal Uri FallbackOrigin { get; }
+
+    private static void ValidateOrigin(Uri origin, string name)
+    {
+        ArgumentNullException.ThrowIfNull(origin, name);
+        if (!origin.IsAbsoluteUri
+            || origin.Scheme != Uri.UriSchemeHttps
+            || !string.IsNullOrEmpty(origin.UserInfo)
+            || origin.AbsolutePath != "/"
+            || !string.IsNullOrEmpty(origin.Query)
+            || !string.IsNullOrEmpty(origin.Fragment))
+        {
+            throw new ArgumentException(
+                "A verified privacy ingress must be a clean HTTPS origin.", name);
+        }
+    }
+
+    private static bool SameOrigin(Uri left, Uri right) =>
+        string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(left.IdnHost, right.IdnHost, StringComparison.OrdinalIgnoreCase)
+        && left.Port == right.Port;
+}
+
+internal interface IProductionContactResolveHostOptionsSource
+{
+    ValueTask<ProductionContactResolveHostOptions?> GetCurrentAsync(
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Default-dormant clean-break host bootstrap. With no verified capabilities it
+/// returns before opening account state. Once configured, it binds the verified
+/// sources to the current account/device protected guard, entropy, and key owners.
+/// </summary>
+internal sealed class ProductionMailboxPrivacyRouteBootstrap :
+    IProductionContactResolveHostOptionsSource
+{
+    internal const string UnavailableCode =
+        "production-privacy-routing-host-adapters-unavailable";
+
+    private readonly DeepAccountRuntimeAccessor accounts;
+    private readonly ProductionContactResolveVerifiedHostCapabilities? capabilities;
+    private readonly Func<ReadOnlyMemory<byte>> activeNetworkIdFactory;
+    private readonly SemaphoreSlim gate = new(1, 1);
+
+    internal ProductionMailboxPrivacyRouteBootstrap(
+        DeepAccountRuntimeAccessor accounts,
+        ProductionContactResolveVerifiedHostCapabilities? capabilities,
+        Func<ReadOnlyMemory<byte>> activeNetworkIdFactory)
+    {
+        this.accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
+        this.capabilities = capabilities;
+        this.activeNetworkIdFactory = activeNetworkIdFactory
+            ?? throw new ArgumentNullException(nameof(activeNetworkIdFactory));
+    }
+
+    // Mailbox runtime still needs its separate receive/replay host adapters.
+    // ContactResolve client activation is owned by GetCurrentAsync below.
+    internal static bool HostAdaptersAvailable => false;
+
+    internal static void RequireHostAdapters()
+    {
+        if (!HostAdaptersAvailable)
+        {
+            throw CreateUnavailableException();
+        }
+    }
+
+    internal static InvalidOperationException CreateUnavailableException() =>
+        new(UnavailableCode);
+
+    public async ValueTask<ProductionContactResolveHostOptions?> GetCurrentAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (capabilities is null)
+        {
+            return null;
+        }
+
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var actualPin = SHA256.HashData(publicKey);
+            var activeNetworkId = activeNetworkIdFactory().ToArray();
             try
             {
-                Require(CryptographicOperations.FixedTimeEquals(
-                        actualPin, trustAnchor.MrXPublicKeySha256.Span),
-                    "Production privacy-route signing key differs from the build trust anchor.");
+                if (activeNetworkId.Length != 16
+                    || activeNetworkId.AsSpan().IndexOfAnyExcept((byte)0) < 0)
+                {
+                    throw new ContactResolveHostBootstrapException(
+                        ContactResolveRuntimeUnavailableReason.MalformedConfiguration,
+                        "The active ContactResolve network binding is malformed.");
+                }
+                if (!Fixed(capabilities.GenesisPin.NetworkId.Span, activeNetworkId))
+                {
+                    throw new ContactResolveHostBootstrapException(
+                        ContactResolveRuntimeUnavailableReason.CrossNetworkConfiguration,
+                        "The verified ContactResolve bootstrap belongs to another network.");
+                }
+
+                var account = await accounts.GetContactResolvePrivacyHostBindingAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!Fixed(account.NetworkId.Span, activeNetworkId))
+                {
+                    throw new ContactResolveHostBootstrapException(
+                        ContactResolveRuntimeUnavailableReason.CrossNetworkConfiguration,
+                        "The current account belongs to another ContactResolve network.");
+                }
+
+                var ingress = await capabilities.PrivacyIngressSource
+                    .GetCurrentAsync(cancellationToken)
+                    .ConfigureAwait(false)
+                    ?? throw new ContactResolveHostBootstrapException(
+                        ContactResolveRuntimeUnavailableReason.PrivacyRoute,
+                        "The verified ContactResolve privacy ingress is unavailable.");
+                if (!Fixed(ingress.NetworkId.Span, activeNetworkId))
+                {
+                    throw new ContactResolveHostBootstrapException(
+                        ContactResolveRuntimeUnavailableReason.CrossNetworkConfiguration,
+                        "The verified privacy ingress belongs to another network.");
+                }
+
+                var pathProvider = new ContactResolvePrivacyPathProvider(
+                    capabilities.PathAuthoritySource,
+                    account.EntryGuardStore);
+                var primary = new PrivacyMailboxRoute(
+                    ingress.PrimaryOrigin,
+                    pathProvider);
+                var fallback = new PrivacyMailboxRoute(
+                    ingress.FallbackOrigin,
+                    pathProvider);
+                var codec = new PrivacyRoutingCodec(
+                    new OnionEntropyAuthority(account.EntropyLedger),
+                    new OnionKeyAgreementAuthority(account.KeyAgreementVault));
+                var verifier = new ContactResolverTrustedVerifier(
+                    capabilities.ResolverCapabilities);
+                return new ProductionContactResolveHostOptions(
+                    () => capabilities.GenesisPin,
+                    () => verifier,
+                    () => primary,
+                    () => fallback,
+                    () => codec,
+                    () => capabilities.PathAuthoritySource as IContactResolvePlacementContextSource);
             }
             finally
             {
-                CryptographicOperations.ZeroMemory(actualPin);
+                CryptographicOperations.ZeroMemory(activeNetworkId);
             }
-
-            Require(PublicKeyAuth.VerifyDetached(signature, encoded, publicKey),
-                "Production privacy-route bootstrap signature is invalid.");
-            return ParseCanonical(encoded, trustAnchor, timeProvider ?? TimeProvider.System);
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(signature);
-            CryptographicOperations.ZeroMemory(publicKey);
+            gate.Release();
         }
     }
 
-    private static MailboxPrivacyRouteSet ParseCanonical(
-        byte[] encoded,
-        ProductionMailboxTrustAnchor trustAnchor,
-        TimeProvider timeProvider)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(encoded, new JsonDocumentOptions
-            {
-                AllowTrailingCommas = false,
-                CommentHandling = JsonCommentHandling.Disallow,
-                MaxDepth = 6
-            });
-            var root = document.RootElement;
-            RequireExactProperties(root, RootProperties, "privacy-route bootstrap");
-            Require(root.GetProperty("schemaVersion").GetInt32() == 1,
-                "Production privacy-route bootstrap schema is unsupported.");
-            Require(!root.GetProperty("developmentOnly").GetBoolean(),
-                "Development privacy routes are forbidden in production.");
+    private static bool Fixed(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right) =>
+        left.Length == right.Length
+        && CryptographicOperations.FixedTimeEquals(left, right);
+}
 
-            var networkId = LowerHex(root, "networkId", 16);
-            try
-            {
-                Require(CryptographicOperations.FixedTimeEquals(
-                        networkId, trustAnchor.NetworkId.Span),
-                    "Production privacy routes target a different network.");
-            }
-            finally
-            {
-                CryptographicOperations.ZeroMemory(networkId);
-            }
-
-            var notBefore = root.GetProperty("notBeforeUnixSeconds").GetInt64();
-            var expires = root.GetProperty("expiresUnixSeconds").GetInt64();
-            Require(notBefore >= 0 && expires > notBefore,
-                "Production privacy-route validity window is invalid.");
-            var now = timeProvider.GetUtcNow().ToUnixTimeSeconds();
-            Require(now <= long.MaxValue - MaximumClockSkewSeconds &&
-                    now >= long.MinValue + MaximumClockSkewSeconds &&
-                    now + MaximumClockSkewSeconds >= notBefore &&
-                    now - MaximumClockSkewSeconds <= expires,
-                "Production privacy-route bootstrap is outside its validity window.");
-
-            var primary = ParseRoute(root.GetProperty("primary"), "primary route");
-            var fallback = ParseRoute(root.GetProperty("fallback"), "fallback route");
-            Require(encoded.AsSpan().SequenceEqual(EncodeCanonical(
-                    root.GetProperty("networkId").GetString()!, notBefore, expires,
-                    primary, fallback)),
-                "Production privacy-route JSON is not the canonical schema-v1 encoding.");
-
-            try
-            {
-                return new MailboxPrivacyRouteSet(primary, fallback);
-            }
-            catch (Exception exception) when (exception is ArgumentException or InvalidDataException)
-            {
-                throw new InvalidDataException(
-                    "Production privacy routes are not fully disjoint.", exception);
-            }
-        }
-        catch (InvalidDataException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (exception is JsonException or InvalidOperationException or
-            FormatException or OverflowException or ArgumentException)
-        {
-            throw new InvalidDataException(
-                "Production privacy-route bootstrap is malformed.", exception);
-        }
-    }
-
-    private static PrivacyMailboxRoute ParseRoute(JsonElement value, string label)
-    {
-        RequireExactProperties(value, RouteProperties, label);
-        var originText = value.GetProperty("entryOrigin").GetString();
-        Uri? origin = null;
-        Require(originText is not null &&
-                Uri.TryCreate(originText, UriKind.Absolute, out origin) &&
-                string.Equals(origin.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal) &&
-                string.IsNullOrEmpty(origin.UserInfo) &&
-                string.IsNullOrEmpty(origin.Query) &&
-                string.IsNullOrEmpty(origin.Fragment) &&
-                origin.AbsolutePath == "/" &&
-                string.Equals(origin.AbsoluteUri, originText, StringComparison.Ordinal),
-            $"Production {label} entry is not one canonical HTTPS root origin.");
-
-        var hopsValue = value.GetProperty("hops");
-        Require(hopsValue.ValueKind == JsonValueKind.Array &&
-                hopsValue.GetArrayLength() == PrivacyRoutingLimits.RouteHopCount,
-            $"Production {label} must contain exactly three hops.");
-        var hops = new List<PrivacyRoutingHop>(PrivacyRoutingLimits.RouteHopCount);
-        foreach (var hop in hopsValue.EnumerateArray())
-        {
-            RequireExactProperties(hop, HopProperties, $"{label} hop");
-            hops.Add(new PrivacyRoutingHop(
-                LowerHex(hop, "routerId", PrivacyRoutingLimits.RouterIdBytes),
-                LowerHex(hop, "x25519PublicKey", PrivacyRoutingLimits.X25519KeyBytes)));
-        }
-
-        try
-        {
-            return new PrivacyMailboxRoute(origin!, hops);
-        }
-        catch (ArgumentException exception)
-        {
-            throw new InvalidDataException($"Production {label} is invalid.", exception);
-        }
-    }
-
-    private static byte[] EncodeCanonical(
-        string networkId,
-        long notBefore,
-        long expires,
-        PrivacyMailboxRoute primary,
-        PrivacyMailboxRoute fallback)
-    {
-        using var output = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(output, new JsonWriterOptions { Indented = false }))
-        {
-            writer.WriteStartObject();
-            writer.WriteNumber("schemaVersion", 1);
-            writer.WriteBoolean("developmentOnly", false);
-            writer.WriteString("networkId", networkId);
-            writer.WriteNumber("notBeforeUnixSeconds", notBefore);
-            writer.WriteNumber("expiresUnixSeconds", expires);
-            WriteRoute(writer, "primary", primary);
-            WriteRoute(writer, "fallback", fallback);
-            writer.WriteEndObject();
-        }
-        return output.ToArray();
-    }
-
-    private static void WriteRoute(
-        Utf8JsonWriter writer,
-        string propertyName,
-        PrivacyMailboxRoute route)
-    {
-        writer.WriteStartObject(propertyName);
-        writer.WriteString("entryOrigin", route.EntryOrigin.AbsoluteUri);
-        writer.WriteStartArray("hops");
-        foreach (var hop in route.Hops)
-        {
-            writer.WriteStartObject();
-            writer.WriteString("routerId", Convert.ToHexStringLower(hop.RouterId.Span));
-            writer.WriteString("x25519PublicKey",
-                Convert.ToHexStringLower(hop.X25519PublicKey.Span));
-            writer.WriteEndObject();
-        }
-        writer.WriteEndArray();
-        writer.WriteEndObject();
-    }
-
-    private static Stream OpenExactResource(Assembly assembly, string name) =>
-        assembly.GetManifestResourceStream(name) ?? throw new InvalidDataException(
-            "A required build-embedded production privacy-route resource is missing.");
-
-    private static byte[] ReadBounded(Stream stream, int maximumBytes, string label)
-    {
-        Require(stream.CanRead, $"Production privacy-route {label} stream is unreadable.");
-        using var output = new MemoryStream(Math.Min(maximumBytes, 4096));
-        var buffer = new byte[4096];
-        while (true)
-        {
-            var read = stream.Read(buffer, 0, Math.Min(buffer.Length,
-                maximumBytes + 1 - checked((int)output.Length)));
-            if (read == 0) break;
-            output.Write(buffer, 0, read);
-            Require(output.Length <= maximumBytes,
-                $"Production privacy-route {label} exceeds its size bound.");
-        }
-        Require(output.Length > 0,
-            $"Production privacy-route {label} is empty.");
-        return output.ToArray();
-    }
-
-    private static byte[] ReadExact(Stream stream, int bytes, string label)
-    {
-        var value = ReadBounded(stream, bytes, label);
-        Require(value.Length == bytes,
-            $"Production privacy-route {label} has an invalid length.");
-        return value;
-    }
-
-    private static byte[] LowerHex(JsonElement value, string property, int bytes)
-    {
-        var text = value.GetProperty(property).GetString();
-        Require(text is not null && text.Length == bytes * 2 &&
-                text.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f'),
-            $"{property} is not canonical lowercase hexadecimal.");
-        var decoded = Convert.FromHexString(text!);
-        Require(decoded.AsSpan().IndexOfAnyExcept((byte)0) >= 0,
-            $"{property} must be nonzero.");
-        return decoded;
-    }
-
-    private static void RequireExactProperties(
-        JsonElement value,
-        IReadOnlyCollection<string> expected,
-        string label)
-    {
-        Require(value.ValueKind == JsonValueKind.Object, $"{label} must be an object.");
-        var actual = value.EnumerateObject().Select(property => property.Name).ToArray();
-        Require(actual.Length == expected.Count &&
-                actual.ToHashSet(StringComparer.Ordinal).SetEquals(expected),
-            $"{label} contains missing, duplicate, or unknown fields.");
-    }
-
-    private static void ValidateAnchor(ProductionMailboxTrustAnchor trustAnchor)
-    {
-        Require(trustAnchor.MrXPublicKeySha256.Length == 32 &&
-                trustAnchor.MrXPublicKeySha256.Span.IndexOfAnyExcept((byte)0) >= 0 &&
-                trustAnchor.NetworkId.Length == 16 &&
-                trustAnchor.NetworkId.Span.IndexOfAnyExcept((byte)0) >= 0,
-            "Production mailbox trust anchor is invalid.");
-    }
-
-    private static void RequireResourceName(string value, string parameterName)
-    {
-        if (string.IsNullOrWhiteSpace(value) || !string.Equals(value, value.Trim(),
-                StringComparison.Ordinal))
-            throw new ArgumentException("An exact assembly resource name is required.", parameterName);
-    }
-
-    private static void Require(bool condition, string message)
-    {
-        if (!condition) throw new InvalidDataException(message);
-    }
+internal sealed class ContactResolveHostBootstrapException(
+    ContactResolveRuntimeUnavailableReason reason,
+    string message,
+    Exception? inner = null) : CryptographicException(message, inner)
+{
+    internal ContactResolveRuntimeUnavailableReason Reason { get; } = reason;
 }

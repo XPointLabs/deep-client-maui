@@ -3,14 +3,12 @@ using System.Text.Json;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Services;
 using Deep.Protocol;
-using Deep.Protocol.DeepExtension.PrivacyRouting;
 using Sodium;
 
 namespace Deep.Client.Maui.Services;
 
 internal sealed record MailboxRuntimeProvisioning(
-    MailboxCredentialBundleImportOptions ImportOptions,
-    MailboxPrivacyRouteSet PrivacyRoutes)
+    MailboxCredentialBundleImportOptions ImportOptions)
 {
     internal const string DirectoryName = "mailbox-runtime-v1";
     private static readonly string[] ActivationProperties =
@@ -18,11 +16,6 @@ internal sealed record MailboxRuntimeProvisioning(
          "issuerPublicKey", "pairGeneration", "pairManifestSha256",
          "peerHolderPublicKey", "peerSessionId", "revocationSnapshotSha256",
          "privacyRoutesSha256"];
-    private static readonly string[] PrivacyRouteSetProperties =
-        ["schemaVersion", "developmentOnly", "platform", "primary", "fallback"];
-    private static readonly string[] PrivacyRouteProperties = ["entryOrigin", "hops"];
-    private static readonly string[] PrivacyHopProperties = ["routerId", "x25519PublicKey"];
-
     public static MailboxRuntimeProvisioning LoadDevelopment(
         string appDataDirectory,
         MailboxClientPlatform platform,
@@ -54,7 +47,7 @@ internal sealed record MailboxRuntimeProvisioning(
         }
 
         var privacyRouteBytes = ReadBounded(
-            SafeFile(root, "privacy-routes.v1.json"), 16 * 1024);
+            SafeFile(root, "privacy-routes.v2.json"), 16 * 1024);
         var expectedPrivacyRoutesSha256 = LowerHex(
             activation, "privacyRoutesSha256", 32);
 
@@ -79,10 +72,6 @@ internal sealed record MailboxRuntimeProvisioning(
             throw new MailboxRuntimeValidationException(
                 "approval-signature", exception);
         }
-        var privacyRoutes = ParsePrivacyRoutes(
-            privacyRouteBytes,
-            expectedPlatform);
-
         var pairRoot = SafeDirectory(root, "pair");
         var authorityPath = SafeFile(root, "authority.public.json");
         var revocationPath = SafeFile(root, "revocations.v1.json");
@@ -109,8 +98,7 @@ internal sealed record MailboxRuntimeProvisioning(
                     policyPublicKey),
                 DevelopmentOnly: true,
                 managedEntitlement,
-                timeProvider ?? TimeProvider.System),
-            privacyRoutes);
+                timeProvider ?? TimeProvider.System));
         }
         catch (MailboxRuntimeValidationException)
         {
@@ -120,58 +108,6 @@ internal sealed record MailboxRuntimeProvisioning(
         {
             throw new MailboxRuntimeValidationException("inventory", exception);
         }
-    }
-
-    internal static MailboxPrivacyRouteSet ParsePrivacyRoutes(
-        ReadOnlyMemory<byte> encoded,
-        string expectedPlatform)
-    {
-        using var document = JsonDocument.Parse(encoded, new JsonDocumentOptions
-        {
-            AllowTrailingCommas = false,
-            CommentHandling = JsonCommentHandling.Disallow,
-            MaxDepth = 6
-        });
-        var root = document.RootElement;
-        RequireExactProperties(root, PrivacyRouteSetProperties, "privacy route set");
-        Require(root.GetProperty("schemaVersion").GetInt32() == 1 &&
-                root.GetProperty("developmentOnly").GetBoolean() &&
-                string.Equals(root.GetProperty("platform").GetString(),
-                    expectedPlatform, StringComparison.Ordinal),
-            "Privacy routes do not match the activated schema and platform.");
-        var primary = ParsePrivacyRoute(root.GetProperty("primary"), "primary privacy route");
-        var fallback = ParsePrivacyRoute(root.GetProperty("fallback"), "fallback privacy route");
-        return new MailboxPrivacyRouteSet(primary, fallback);
-    }
-
-    private static PrivacyMailboxRoute ParsePrivacyRoute(JsonElement value, string label)
-    {
-        RequireExactProperties(value, PrivacyRouteProperties, label);
-        var originText = value.GetProperty("entryOrigin").GetString();
-        Uri? origin = null;
-        Require(originText is not null &&
-                Uri.TryCreate(originText, UriKind.Absolute, out origin) &&
-                string.Equals(origin.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal) &&
-                string.IsNullOrEmpty(origin.UserInfo) &&
-                string.IsNullOrEmpty(origin.Query) &&
-                string.IsNullOrEmpty(origin.Fragment) &&
-                origin.AbsolutePath == "/" &&
-                string.Equals(origin.AbsoluteUri, originText, StringComparison.Ordinal),
-            $"{label} entry origin is not one canonical HTTPS root origin.");
-        var hopsValue = value.GetProperty("hops");
-        Require(hopsValue.ValueKind == JsonValueKind.Array &&
-                hopsValue.GetArrayLength() == PrivacyRoutingLimits.RouteHopCount,
-            $"{label} must contain exactly three hops.");
-        var hops = new List<PrivacyRoutingHop>(PrivacyRoutingLimits.RouteHopCount);
-        foreach (var hopValue in hopsValue.EnumerateArray())
-        {
-            RequireExactProperties(hopValue, PrivacyHopProperties, $"{label} hop");
-            hops.Add(new PrivacyRoutingHop(
-                LowerHex(hopValue, "routerId", PrivacyRoutingLimits.RouterIdBytes),
-                LowerHex(hopValue, "x25519PublicKey", PrivacyRoutingLimits.X25519KeyBytes)));
-        }
-
-        return new PrivacyMailboxRoute(origin!, hops);
     }
 
     internal static void ValidatePinnedApproval(
@@ -377,39 +313,3 @@ internal sealed class MailboxRuntimeValidationException : Exception
 internal readonly record struct MailboxRuntimeFailurePresentation(
     string Status,
     string Guidance);
-
-internal sealed class MailboxPrivacyRouteSet
-{
-    internal MailboxPrivacyRouteSet(
-        PrivacyMailboxRoute primary,
-        PrivacyMailboxRoute fallback)
-    {
-        Primary = primary ?? throw new ArgumentNullException(nameof(primary));
-        Fallback = fallback ?? throw new ArgumentNullException(nameof(fallback));
-        if (Primary.EntryOrigin == Fallback.EntryOrigin)
-        {
-            throw new InvalidDataException(
-                "Primary and fallback privacy routes require distinct ingress origins.");
-        }
-
-        foreach (var primaryHop in Primary.Hops)
-        {
-            foreach (var fallbackHop in Fallback.Hops)
-            {
-                if (CryptographicOperations.FixedTimeEquals(
-                        primaryHop.RouterId.Span, fallbackHop.RouterId.Span) ||
-                    CryptographicOperations.FixedTimeEquals(
-                        primaryHop.X25519PublicKey.Span,
-                        fallbackHop.X25519PublicKey.Span))
-                {
-                    throw new InvalidDataException(
-                        "Primary and fallback privacy routes must be fully disjoint.");
-                }
-            }
-        }
-    }
-
-    internal PrivacyMailboxRoute Primary { get; }
-
-    internal PrivacyMailboxRoute Fallback { get; }
-}

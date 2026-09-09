@@ -1,18 +1,25 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using Deep.Client.Shared.Services;
-using Deep.Client.Shared.State;
+using Deep.Client.Maui.Core.Services;
+using Deep.Client.Shared.Domain;
 
 namespace Deep.Client.Maui.Core.Navigation;
 
-public sealed class AuthNavigationState(ClientRuntime runtime) : INotifyPropertyChanged
+public sealed class AuthNavigationState(IDeepAccountRuntimeAccessor accountRuntime) : INotifyPropertyChanged
 {
+    private DeepAccount? account;
     private bool isAuthenticated;
     private bool isInitialized;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public event EventHandler? AuthenticationChanged;
+
+    public DeepAccount? Account
+    {
+        get => account;
+        private set => SetProperty(ref account, value);
+    }
 
     public bool IsAuthenticated
     {
@@ -39,54 +46,21 @@ public sealed class AuthNavigationState(ClientRuntime runtime) : INotifyProperty
             return;
         }
 
-        var account = await runtime.Accounts
-            .GetActiveAccountAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (account is null)
-        {
-            IsAuthenticated = false;
-            IsInitialized = true;
-            return;
-        }
-
-        var recoveryPhrase = await runtime.Accounts
-            .GetRecoveryPhraseAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(recoveryPhrase))
-        {
-            throw new ProtectedIdentityResetRequiredException(
-                ProtectedIdentityResetRequiredReason.Missing,
-                "The active account does not have protected identity material. Reset local data before retrying.");
-        }
-
-        if (!SessionAccountService.IsCanonicalRecoveryPhrase(recoveryPhrase))
-        {
-            throw new ProtectedIdentityResetRequiredException(
-                ProtectedIdentityResetRequiredReason.Incompatible,
-                "The protected identity material is not compatible with the current account format. Reset local data before retrying.");
-        }
-
-        if (!await runtime.Accounts
-                .HasUsableActiveIdentityAsync(cancellationToken)
-                .ConfigureAwait(false))
-        {
-            throw new ProtectedIdentityResetRequiredException(
-                ProtectedIdentityResetRequiredReason.AccountMismatch,
-                "The protected identity material does not match the active account. Reset local data before retrying.");
-        }
-
-        IsAuthenticated = true;
-        IsInitialized = true;
+        await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public void MarkAuthenticated()
+    public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
-        IsAuthenticated = true;
+        var accounts = await accountRuntime.GetAccountsAsync(cancellationToken).ConfigureAwait(false);
+        var identity = await accounts.GetLocalIdentityAsync(cancellationToken).ConfigureAwait(false);
+        Account = identity?.Account;
+        IsAuthenticated = Account is not null;
         IsInitialized = true;
     }
 
     public void MarkSignedOut()
     {
+        Account = null;
         IsAuthenticated = false;
         IsInitialized = true;
     }

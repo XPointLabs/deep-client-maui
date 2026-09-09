@@ -23,7 +23,7 @@ public sealed class ProductionMailboxRuntimeCoordinatorTests
         try
         {
             using var coordinator = new ProductionMailboxRuntimeCoordinator(
-                new Uri("https://registry.example.net/"),
+                () => new Uri("https://registry.example.net/"),
                 root,
                 new HttpServiceTransportFactory(HttpServiceEndpointPolicy.Production),
                 new HttpServiceClientOptions());
@@ -33,6 +33,78 @@ public sealed class ProductionMailboxRuntimeCoordinatorTests
         }
         finally
         {
+            TryDeleteDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void ProductionCoordinatorDefersRegistryConfigurationUntilNetworkProvisioning()
+    {
+        var root = Root();
+        Directory.CreateDirectory(root);
+        var originResolutions = 0;
+        try
+        {
+            using (var coordinator = new ProductionMailboxRuntimeCoordinator(
+                       () =>
+                       {
+                           originResolutions++;
+                           throw new InvalidOperationException(
+                               "Registry configuration is intentionally unavailable.");
+                       },
+                       root,
+                       new HttpServiceTransportFactory(HttpServiceEndpointPolicy.Production),
+                       new HttpServiceClientOptions()))
+            {
+                Assert.True(((IMailboxRuntimeProvisioningSource)coordinator)
+                    .SupportsReactiveRejectedRetrieveRefresh);
+                Assert.Equal(0, originResolutions);
+            }
+
+            Assert.Equal(0, originResolutions);
+        }
+        finally
+        {
+            TryDeleteDirectory(root);
+        }
+    }
+
+    [Fact]
+    public async Task ProductionProvisionFailsBeforeRegistryOrNetworkDispatch()
+    {
+        var root = Root();
+        Directory.CreateDirectory(root);
+        var originResolutions = 0;
+        try
+        {
+            using var sqlite = new SqliteSessionStore(Path.Combine(root, "state.db"));
+            using var coordinator = new ProductionMailboxRuntimeCoordinator(
+                () =>
+                {
+                    originResolutions++;
+                    return new Uri("https://registry.example.net/");
+                },
+                root,
+                new HttpServiceTransportFactory(HttpServiceEndpointPolicy.Production),
+                new HttpServiceClientOptions());
+            var holder = new MailboxHolderIdentity(
+                SessionId.CreateNew(),
+                Bytes(32, 0x41));
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                coordinator.ProvisionAsync(
+                    sqlite,
+                    holder,
+                    MailboxInfrastructureOwnership.OfficialManaged));
+
+            Assert.Equal(
+                ProductionMailboxPrivacyRouteBootstrap.UnavailableCode,
+                exception.Message);
+            Assert.Equal(0, originResolutions);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             TryDeleteDirectory(root);
         }
     }
@@ -65,8 +137,8 @@ public sealed class ProductionMailboxRuntimeCoordinatorTests
 
                 Assert.NotNull(restored);
                 Assert.Equal(MailboxCredentialScopeKind.Peer, restored!.Kind);
-                Assert.Equal(selector.AccountScope.Value.ToArray(),
-                    restored.AccountScope.Value.ToArray());
+                Assert.Equal(selector.AccountScope.ToArray(),
+                    restored.AccountScope.ToArray());
                 Assert.Equal(selector.SubjectId.ToArray(), restored.SubjectId.ToArray());
                 Assert.Equal(selector.IssuerContext.ToArray(), restored.IssuerContext.ToArray());
                 Assert.Equal(selector.ScopeId.ToArray(), restored.ScopeId.ToArray());

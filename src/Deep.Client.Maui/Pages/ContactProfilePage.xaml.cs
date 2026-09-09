@@ -256,7 +256,7 @@ public partial class ContactProfilePage : ContentPage, IQueryAttributable
 
             if (isSelf)
             {
-                await ProfileAvatarSync.SaveAndPublishAsync(photo, ContactAvatarStore.GetProfileAvatarPath(), runtime);
+                await ProfileAvatarSync.SaveLocalAsync(photo, ContactAvatarStore.GetProfileAvatarPath());
             }
             else
             {

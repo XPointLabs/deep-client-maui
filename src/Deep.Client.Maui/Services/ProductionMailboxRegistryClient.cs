@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -85,7 +84,7 @@ internal sealed class ProductionMailboxRegistryRequestException(
 /// Bounded, single-attempt HTTP primitive for the production mailbox Registry.
 /// Signing and orchestration remain with the caller; this type never logs request material.
 /// </summary>
-internal sealed class ProductionMailboxRegistryClient
+internal sealed class ProductionMailboxRegistryClient : IDisposable
 {
     internal const int MaximumBodyBytes = 256 * 1024;
     internal const int MaximumRequestBodyBytes = 16 * 1024;
@@ -95,40 +94,53 @@ internal sealed class ProductionMailboxRegistryClient
     private static ReadOnlySpan<byte> ProofOfWorkDomain =>
         "Deep/production-mailbox/pow/v1"u8;
 
-    private readonly HttpClient httpClient;
-    private readonly Uri registryOrigin;
-    private readonly TimeSpan requestTimeout;
+    internal const string ChallengePath = "/api/production-mailbox/challenges";
+    internal const string RouteEnrollmentPath = "/api/production-mailbox/route-enrollments";
+    internal const string CredentialsPath = "/api/production-mailbox/credentials";
 
-    public ProductionMailboxRegistryClient(
-        HttpClient httpClient,
+    private readonly HttpServiceRequestTransport transport;
+
+    internal ProductionMailboxRegistryClient(
+        HttpServiceRequestTransport transport)
+    {
+        this.transport = transport ?? throw new ArgumentNullException(nameof(transport));
+    }
+
+    internal static HttpServiceRequestTransportOptions CreateTransportOptions(
         Uri registryOrigin,
         TimeSpan? requestTimeout = null)
     {
-        ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(registryOrigin);
-        if (!registryOrigin.IsAbsoluteUri || registryOrigin.Scheme != Uri.UriSchemeHttps ||
-            !string.IsNullOrEmpty(registryOrigin.UserInfo) ||
-            registryOrigin.AbsolutePath != "/" ||
-            !string.IsNullOrEmpty(registryOrigin.Query) ||
-            !string.IsNullOrEmpty(registryOrigin.Fragment))
+        if (!registryOrigin.IsAbsoluteUri || registryOrigin.Scheme != Uri.UriSchemeHttps
+            || !string.IsNullOrEmpty(registryOrigin.UserInfo)
+            || registryOrigin.AbsolutePath != "/"
+            || !string.IsNullOrEmpty(registryOrigin.Query)
+            || !string.IsNullOrEmpty(registryOrigin.Fragment))
+        {
             throw new ArgumentException(
                 "Registry URI must be a clean HTTPS origin.", nameof(registryOrigin));
-
+        }
         var boundedTimeout = requestTimeout ?? DefaultRequestTimeout;
         if (boundedTimeout <= TimeSpan.Zero || boundedTimeout > MaximumRequestTimeout)
             throw new ArgumentOutOfRangeException(
                 nameof(requestTimeout), "Registry request timeout is outside the supported bound.");
-
-        this.httpClient = httpClient;
-        this.registryOrigin = registryOrigin;
-        this.requestTimeout = boundedTimeout;
+        return new HttpServiceRequestTransportOptions(
+            registryOrigin.AbsoluteUri,
+            [ChallengePath, RouteEnrollmentPath, CredentialsPath],
+            "application/json",
+            "application/json",
+            MaximumRequestBodyBytes,
+            MaximumBodyBytes,
+            boundedTimeout,
+            RequestCharset: "utf-8",
+            ResponseCharset: "utf-8");
     }
 
     public async Task<ProductionMailboxRegistryChallenge> CreateChallengeAsync(
         CancellationToken cancellationToken = default)
     {
         var response = await PostAsync(
-            "api/production-mailbox/challenges", "{}"u8.ToArray(), cancellationToken)
+            ChallengePath, "{}"u8.ToArray(), cancellationToken)
             .ConfigureAwait(false);
         try
         {
@@ -146,7 +158,7 @@ internal sealed class ProductionMailboxRegistryClient
     {
         ValidateRouteEnrollment(request);
         var response = await PostAsync(
-            "api/production-mailbox/route-enrollments",
+            RouteEnrollmentPath,
             SerializeCanonicalRequest(request), cancellationToken).ConfigureAwait(false);
         try
         {
@@ -164,7 +176,7 @@ internal sealed class ProductionMailboxRegistryClient
     {
         ValidateLocalOwnerIssuance(request);
         var response = await PostAsync(
-            "api/production-mailbox/credentials",
+            CredentialsPath,
             SerializeCanonicalRequest(request), cancellationToken).ConfigureAwait(false);
         try
         {
@@ -185,7 +197,7 @@ internal sealed class ProductionMailboxRegistryClient
         ValidatePeerDepositIssuance(
             request, recipientEd25519PublicKey, canonicalRouteAdvertisement);
         var response = await PostAsync(
-            "api/production-mailbox/credentials",
+            CredentialsPath,
             SerializeCanonicalRequest(request), cancellationToken).ConfigureAwait(false);
         try
         {
@@ -227,32 +239,22 @@ internal sealed class ProductionMailboxRegistryClient
             if (canonicalBody.Length is 0 or > MaximumRequestBodyBytes)
                 throw new InvalidDataException("Registry request body length is invalid.");
 
-            using var request = new HttpRequestMessage(
-                HttpMethod.Post, new Uri(registryOrigin, relativePath));
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            request.Content = new ByteArrayContent(canonicalBody);
-            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json")
-            {
-                CharSet = "utf-8"
-            };
-
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(requestTimeout);
             try
             {
-                using var response = await httpClient.SendAsync(
-                    request, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
+                using var response = await transport.PostAsync(
+                    relativePath, canonicalBody, cancellationToken)
                     .ConfigureAwait(false);
                 if (response.StatusCode != HttpStatusCode.OK)
                     throw Status(response.StatusCode);
-                return await ReadBoundedAsync(response.Content, timeout.Token)
-                    .ConfigureAwait(false);
+                return response.Body.ToArray();
             }
-            catch (OperationCanceledException exception)
-                when (!cancellationToken.IsCancellationRequested)
+            catch (HttpServiceRequestTransportException exception)
+                when (exception.Error == HttpServiceRequestTransportError.ResponseTooLarge)
             {
-                throw new TimeoutException(
-                    "Registry request exceeded its bounded timeout.", exception);
+                throw new ProductionMailboxRegistryRequestException(
+                    ProductionMailboxRegistryRequestError.ResponseTooLarge,
+                    HttpStatusCode.OK,
+                    exception.Message);
             }
         }
         finally
@@ -261,51 +263,7 @@ internal sealed class ProductionMailboxRegistryClient
         }
     }
 
-    private static async Task<byte[]> ReadBoundedAsync(
-        HttpContent content,
-        CancellationToken cancellationToken)
-    {
-        if (content.Headers.ContentLength is > MaximumBodyBytes)
-            throw new ProductionMailboxRegistryRequestException(
-                ProductionMailboxRegistryRequestError.ResponseTooLarge,
-                HttpStatusCode.OK,
-                "Registry response exceeded the supported body bound.");
-        var contentType = content.Headers.ContentType;
-        if (!string.Equals(contentType?.MediaType, "application/json",
-                StringComparison.OrdinalIgnoreCase) ||
-            contentType?.CharSet is { Length: > 0 } charset &&
-            !string.Equals(charset, "utf-8", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException(
-                "Registry response content type is unsupported.");
-
-        await using var stream = await content.ReadAsStreamAsync(cancellationToken)
-            .ConfigureAwait(false);
-        using var output = new MemoryStream();
-        var buffer = ArrayPool<byte>.Shared.Rent(4096);
-        try
-        {
-            while (true)
-            {
-                var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)
-                    .ConfigureAwait(false);
-                if (read == 0) break;
-                if (output.Length + read > MaximumBodyBytes)
-                    throw new ProductionMailboxRegistryRequestException(
-                        ProductionMailboxRegistryRequestError.ResponseTooLarge,
-                        HttpStatusCode.OK,
-                        "Registry response exceeded the supported body bound.");
-                output.Write(buffer, 0, read);
-            }
-            if (output.Length == 0)
-                throw new InvalidDataException("Registry response body is empty.");
-            return output.ToArray();
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(buffer);
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
-    }
+    public void Dispose() => transport.Dispose();
 
     private static ProductionMailboxRegistryRequestException Status(HttpStatusCode status) =>
         status switch

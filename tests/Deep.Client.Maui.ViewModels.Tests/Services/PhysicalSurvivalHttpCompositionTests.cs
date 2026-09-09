@@ -13,7 +13,7 @@ namespace Deep.Client.Maui.ViewModels.Tests.Services;
 public sealed class PhysicalSurvivalHttpCompositionTests
 {
     [Fact]
-    public async Task PhysicalLanHttpsShape_ExercisesEveryMauiComposedTransportThroughOwnedNetworkHooks()
+    public async Task PhysicalLanHttpsShape_ExercisesEnabledTransportsAndRejectsLegacyCallSignaling()
     {
         var fileDestinations = new ConcurrentQueue<DnsEndPoint>();
         var serviceDestinations = new ConcurrentQueue<DnsEndPoint>();
@@ -54,8 +54,7 @@ public sealed class PhysicalSurvivalHttpCompositionTests
             provider.GetRequiredService<IAttachmentFileTransport>());
         var push = Assert.IsType<HttpPushSubscriptionTransport>(
             provider.GetRequiredService<IPushSubscriptionTransport>());
-        var calls = Assert.IsType<HttpCallSignalingTransport>(
-            provider.GetRequiredService<ICallSignalingTransport>());
+        var calls = provider.GetRequiredService<ICallSignalingTransport>();
         var sessionId = account.SessionId;
 
         await Assert.ThrowsAsync<HttpRequestException>(
@@ -71,7 +70,7 @@ public sealed class PhysicalSurvivalHttpCompositionTests
         }
         await Assert.ThrowsAsync<HttpRequestException>(
             () => push.SubscribeAsync(CreatePushRequest()));
-        await Assert.ThrowsAsync<HttpRequestException>(
+        await Assert.ThrowsAsync<NotSupportedException>(
             () => calls.ReceiveAsync(sessionId));
 
         Assert.Equal(2, fileDestinations.Count);
@@ -82,9 +81,7 @@ public sealed class PhysicalSurvivalHttpCompositionTests
                 Assert.Equal("192.168.1.44", destination.Host);
                 Assert.Equal(41821, destination.Port);
             });
-        Assert.Equal(
-            [41822, 41823],
-            serviceDestinations.Select(item => item.Port).Order().ToArray());
+        Assert.Equal([41822], serviceDestinations.Select(item => item.Port).ToArray());
         Assert.All(
             serviceDestinations,
             destination => Assert.Equal("192.168.1.44", destination.Host));

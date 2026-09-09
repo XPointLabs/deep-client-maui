@@ -10,9 +10,9 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $artifactNames = @(
-    'production-mailbox-privacy-routes.v1.json',
-    'production-mailbox-privacy-routes.v1.sig',
-    'production-mailbox-privacy-routes.v1.pub')
+    'production-mailbox-privacy-routes.v2.json',
+    'production-mailbox-privacy-routes.v2.sig',
+    'production-mailbox-privacy-routes.v2.pub')
 
 function Assert-NoReparseAncestors([string]$Path) {
     $current = [IO.Path]::GetFullPath($Path)

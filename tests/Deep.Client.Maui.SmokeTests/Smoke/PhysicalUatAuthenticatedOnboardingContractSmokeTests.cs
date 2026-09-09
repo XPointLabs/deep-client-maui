@@ -5,7 +5,7 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class PhysicalUatAuthenticatedOnboardingContractSmokeTests
 {
     [Fact]
-    public void PhysicalDebugUsesProductionCoordinatorWhileOrdinaryDebugKeepsSessionIdOnboarding()
+    public void PhysicalDebugUsesProductionCoordinatorWhileOrdinaryDebugKeepsNetworkDormant()
     {
         var program = Read("src", "Deep.Client.Maui", "MauiProgram.cs");
         var onboardingGuard = program.IndexOf(
@@ -20,15 +20,37 @@ public sealed class PhysicalUatAuthenticatedOnboardingContractSmokeTests
         Assert.True(sessionOnboarding > onboardingGuard);
         Assert.True(productionCoordinator > sessionOnboarding);
         Assert.Contains(
-            "transportFactory.CreateBoundHttpHandler(clientOptions)",
+            "transportFactory.CreateRequestTransport(",
             Read("src", "Deep.Client.Maui", "Services",
                 "ProductionMailboxRuntimeCoordinator.cs"),
             StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "new HttpClient",
+            Read("src", "Deep.Client.Maui", "Services",
+                "ProductionMailboxRuntimeCoordinator.cs"),
+            StringComparison.Ordinal);
+        var contactPrerequisites = Read(
+            "src", "Deep.Client.Maui", "Services",
+            "ProductionContactResolveRuntimePrerequisitesSource.cs");
+        var contactRuntime = Read(
+            "src", "Deep.Client.Maui", "Services",
+            "DeepContactResolveRuntimeAccessor.cs");
+        Assert.Contains(
+            "CreateContactResolveDirectoryArtifactSource(",
+            contactPrerequisites,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("HttpClient", contactPrerequisites, StringComparison.Ordinal);
+        Assert.DoesNotContain("new HttpContactResolveDirectoryArtifactSource(",
+            contactRuntime, StringComparison.Ordinal);
         Assert.Contains(
             "services.GetRequiredService<ProductionMailboxRuntimeCoordinator>()",
             program,
             StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.Contains("new DevelopmentMailboxRuntimeProvisioningSource()",
+            program, StringComparison.Ordinal);
+        Assert.Contains("Opening the local account and conversation stores must not depend on",
+            program, StringComparison.Ordinal);
+        Assert.DoesNotContain(
             "Authenticated MAU2 in Debug requires an explicit physical UAT build.",
             program,
             StringComparison.Ordinal);
@@ -58,9 +80,9 @@ public sealed class PhysicalUatAuthenticatedOnboardingContractSmokeTests
             projectText, StringComparison.Ordinal);
         Assert.Contains("DeepPhysicalUatAndroidCodeTransparencyManifest", projectText,
             StringComparison.Ordinal);
-        Assert.Contains("DeepPhysicalUatPrivacyRoutesJson", projectText,
+        Assert.DoesNotContain("DeepPhysicalUatPrivacyRoutesJson", projectText,
             StringComparison.Ordinal);
-        Assert.Contains("Deep.Client.Maui.production-mailbox-privacy-routes.v1.json",
+        Assert.DoesNotContain("Deep.Client.Maui.production-mailbox-privacy-routes.v2.json",
             projectText, StringComparison.Ordinal);
     }
 

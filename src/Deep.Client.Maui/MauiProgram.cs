@@ -44,6 +44,27 @@ internal sealed record ApplicationServiceInputs(
     Func<IServiceProvider, ICallIceConfigurationProvider> IceConfigurationFactory,
     Func<IServiceProvider, DesktopWorkspaceViewModel>? DesktopWorkspaceFactory);
 
+public sealed class DeferredApplicationServiceInputs : IAsyncDisposable
+{
+    private readonly Lazy<ApplicationServiceInputs> value;
+
+    internal DeferredApplicationServiceInputs(Func<ApplicationServiceInputs> factory)
+    {
+        value = new Lazy<ApplicationServiceInputs>(
+            factory ?? throw new ArgumentNullException(nameof(factory)),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+    }
+
+    internal ApplicationServiceInputs Value => value.Value;
+
+    internal bool IsValueCreated => value.IsValueCreated;
+
+    public ValueTask DisposeAsync() =>
+        value.IsValueCreated
+            ? value.Value.RealityTransportRuntime.DisposeAsync()
+            : ValueTask.CompletedTask;
+}
+
 public static class MauiProgram
 {
     internal const string TransportBaseUrlEnv = "DEEP_TRANSPORT_BASE_URL";
@@ -84,37 +105,81 @@ public static class MauiProgram
         ConfigureWindowsHandlers();
 #endif
 
-        var inputs = ResolveApplicationServiceInputs();
-        ConfigureApplicationServices(builder.Services, inputs);
+        ConfigureApplicationServices(builder.Services, ResolveApplicationServiceInputs);
         return builder.Build();
     }
 
     internal static void ConfigureApplicationServices(
         IServiceCollection services,
-        ApplicationServiceInputs inputs)
+        ApplicationServiceInputs inputs,
+        ProductionContactResolveVerifiedHostCapabilities? contactResolveCapabilities = null) =>
+        ConfigureApplicationServices(services, () => inputs, contactResolveCapabilities);
+
+    internal static void ConfigureApplicationServices(
+        IServiceCollection services,
+        Func<ApplicationServiceInputs> inputsFactory,
+        ProductionContactResolveVerifiedHostCapabilities? contactResolveCapabilities = null)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(inputs);
-        services.AddSingleton(inputs.RuntimeEnvironment);
-        services.AddSingleton(inputs.TransportMode);
-        services.AddSingleton(inputs.ServiceTransportFactory);
-        services.AddSingleton(inputs.ServiceTransportClientOptions);
-        services.AddSingleton<IRealityTransportRuntime>(inputs.RealityTransportRuntime);
+        ArgumentNullException.ThrowIfNull(inputsFactory);
+        services.AddSingleton(_ => new DeferredApplicationServiceInputs(inputsFactory));
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.RuntimeEnvironment);
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.TransportMode);
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.ServiceTransportFactory);
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.ServiceTransportClientOptions);
+        services.AddSingleton<IRealityTransportRuntime>(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.RealityTransportRuntime);
         services.AddSingleton<PrivacyMailboxRouteDiagnostics>();
 #if DEBUG && DEEP_PHYSICAL_E2E
         services.AddSingleton<PrivacyMailboxRouteSelectionBridge>();
 #endif
-        services.AddSingleton(inputs.FeatureFlags);
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.FeatureFlags);
         services.AddSingleton<IClock, SystemClock>();
-        services.AddSingleton(inputs.CountryLookupFactory);
-        services.AddSingleton(inputs.AvatarTransportFactory);
-        services.AddSingleton(inputs.AttachmentTransportFactory);
-        services.AddSingleton(inputs.RuntimeBootstrapperFactory);
-        services.AddSingleton(inputs.RuntimeFactory);
+        services.AddSingleton<DeepAccountRuntimeAccessor>(serviceProvider =>
+            new DeepAccountRuntimeAccessor(
+                ResolveAppDataDirectory(),
+                serviceProvider.GetRequiredService<IClock>(),
+                ActiveBuildNetworkId.Load,
+                PlatformDeepSecureStorage.Create));
+        services.AddSingleton<IDeepAccountRuntimeAccessor>(serviceProvider =>
+            serviceProvider.GetRequiredService<DeepAccountRuntimeAccessor>());
+        services.AddProductionContactResolveRuntimePrerequisites(
+            host: null,
+            hostOptionsSourceFactory: serviceProvider =>
+                new ProductionMailboxPrivacyRouteBootstrap(
+                    serviceProvider.GetRequiredService<DeepAccountRuntimeAccessor>(),
+                    contactResolveCapabilities,
+                    ActiveBuildNetworkId.Load));
+        services.AddSingleton<DeepContactResolveRuntimeAccessor>();
+        services.AddSingleton<IDeepContactRuntimeAccessor>(serviceProvider =>
+            serviceProvider.GetRequiredService<DeepContactResolveRuntimeAccessor>());
+        services.AddTransient<IGroupV1Composer>(serviceProvider =>
+            new Deep.Client.Maui.Services.GroupV1.AccountScopedGroupV1Composer(
+                serviceProvider.GetRequiredService<DeepAccountRuntimeAccessor>(),
+                serviceProvider.GetRequiredService<IContactResolveRuntimePrerequisitesSource>(),
+                serviceProvider.GetRequiredService<Deep.Protocol.DeepExtension.PrivacyRouting.IOnionMonotonicClock>(),
+                serviceProvider.GetRequiredService<IClock>()));
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.CountryLookupFactory(serviceProvider));
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.AvatarTransportFactory(serviceProvider));
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.AttachmentTransportFactory(serviceProvider));
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.RuntimeBootstrapperFactory(serviceProvider));
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.RuntimeFactory(serviceProvider));
 
         services.AddSingleton<IPushNotificationService, MauiPushNotificationService>();
-        services.AddSingleton(inputs.PushMetadataFactory);
-        services.AddSingleton(inputs.PushTransportFactory);
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.PushMetadataFactory(serviceProvider));
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.PushTransportFactory(serviceProvider));
         services.AddSingleton<IPushRegistrationCoordinator, PushRegistrationCoordinator>();
         services.AddSingleton<SyncPollingPolicy>();
         services.AddSingleton<PushRegistrationLifecycleCoordinator>();
@@ -143,10 +208,12 @@ public static class MauiProgram
 #endif
         services.AddSingleton<IAppearanceService, MauiAppearanceService>();
         services.AddSingleton<IAppIconService, AppIconService>();
-        services.AddSingleton(inputs.CallTransportFactory);
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.CallTransportFactory(serviceProvider));
         services.AddSingleton<RealtimeCallService>();
         services.AddSingleton<ICallService, MauiRealtimeCallService>();
-        services.AddSingleton(inputs.IceConfigurationFactory);
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.IceConfigurationFactory(serviceProvider));
         services.AddSingleton<CallSessionCoordinator>();
         services.AddSingleton<IAttachmentPickerService, MauiAttachmentPickerService>();
         services.AddSingleton<IVoiceMessageRecorder, MauiVoiceMessageRecorder>();
@@ -159,20 +226,26 @@ public static class MauiProgram
             SessionIdContactInvitationProvider>();
 #else
         services.AddSingleton(serviceProvider => new ProductionMailboxRuntimeCoordinator(
-            RequireRegistryOrigin(inputs.RuntimeEnvironment.RegistryUrl),
+            () => RequireRegistryOrigin(serviceProvider
+                .GetRequiredService<DeferredApplicationServiceInputs>().Value.RuntimeEnvironment.RegistryUrl),
             FileSystem.AppDataDirectory,
             serviceProvider.GetRequiredService<HttpServiceTransportFactory>(),
             serviceProvider.GetRequiredService<HttpServiceClientOptions>()));
         services.AddSingleton<IContactMailboxOnboarding>(serviceProvider =>
-            ResolveProductionMailboxOnboarding(serviceProvider, inputs));
+            ResolveProductionMailboxOnboarding(
+                serviceProvider,
+                serviceProvider.GetRequiredService<DeferredApplicationServiceInputs>().Value));
         services.AddSingleton<IContactInvitationProvider>(serviceProvider =>
-            ResolveProductionContactInvitationProvider(serviceProvider, inputs));
+            ResolveProductionContactInvitationProvider(
+                serviceProvider,
+                serviceProvider.GetRequiredService<DeferredApplicationServiceInputs>().Value));
         services.AddSingleton<IGroupMailboxRouteExchange>(serviceProvider =>
             serviceProvider.GetRequiredService<ProductionMailboxRuntimeCoordinator>());
 #endif
 
         services.AddTransient<OnboardingViewModel>();
         services.AddTransient<WelcomeViewModel>();
+        services.AddTransient<NewConversationViewModel>();
         services.AddTransient<ConversationsViewModel>();
         services.AddTransient<ChatViewModel>();
         services.AddTransient<GroupChatViewModel>();
@@ -181,13 +254,15 @@ public static class MauiProgram
         services.AddTransient<NotificationRegistrationViewModel>();
         services.AddTransient<SettingsViewModel>();
 #if WINDOWS
-        services.AddSingleton(inputs.DesktopWorkspaceFactory!);
+        services.AddSingleton(serviceProvider => serviceProvider
+            .GetRequiredService<DeferredApplicationServiceInputs>().Value.DesktopWorkspaceFactory!(serviceProvider));
 #endif
 
         services.AddSingleton<AppShell>();
         services.AddTransient<WelcomePage>();
         services.AddTransient<OnboardingPage>();
         services.AddTransient<ConversationsPage>();
+        services.AddTransient<NetworkUnavailablePage>();
         services.AddTransient<StartConversationPage>();
         services.AddTransient<NewConversationPage>();
         services.AddTransient<ChatPage>();
@@ -351,10 +426,10 @@ public static class MauiProgram
             _ => new IpCountryLookup(
                 _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_blocks_ipv4")),
                 _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_codes.json")));
-        var httpTransportFactories = ApplicationHttpTransportComposition.CreateBoundNetwork(
-            transportFactory,
-            CreateFileTransportNetworkHooks(fileConnectIps),
-            CreateServiceTransportNetworkHooks(),
+        var httpTransportFactories = ApplicationHttpTransportComposition.Create(
+            BindPhysicalUatTrust(
+                transportFactory.WithPreferredConnectAddresses(fileConnectIps)),
+            BindPhysicalUatTrust(transportFactory),
             fileBaseUrl,
             pushBaseUrl,
             callSignalingBaseUrl,
@@ -368,7 +443,9 @@ public static class MauiProgram
         Func<IServiceProvider, ClientRuntime> runtimeFactory =
             serviceProvider => serviceProvider
                 .GetRequiredService<ClientRuntimeBootstrapper>()
-                .GetRequiredRuntime();
+                .InitializeAsync()
+                .GetAwaiter()
+                .GetResult();
         Func<IServiceProvider, ICallIceConfigurationProvider> iceConfigurationFactory =
             serviceProvider =>
                 (ICallIceConfigurationProvider)serviceProvider
@@ -633,7 +710,7 @@ public static class MauiProgram
             .ConfigureAwait(false);
         try
         {
-            var runtime = PersistentClientRuntimeComposer.Create(
+            var runtime = await PersistentClientRuntimeComposer.CreateAsync(
                 stateDbPath,
                 outboxActivation.EffectiveFeatureFlags,
                 services.GetRequiredService<IClock>(),
@@ -646,7 +723,9 @@ public static class MauiProgram
                     appDataDirectory,
                     outboxActivation.EffectiveFeatureFlags),
                 outboxActivation.Executor,
-                services.GetService<IGroupMailboxRouteExchange>());
+                services.GetRequiredService<DeepAccountRuntimeAccessor>(),
+                services.GetService<IGroupMailboxRouteExchange>(),
+                cancellationToken).ConfigureAwait(false);
             return runtime;
         }
         catch
@@ -660,10 +739,22 @@ public static class MauiProgram
         CreateStoreBoundTransportComposition(
             IServiceProvider services,
             SqliteSessionStore sqlite,
-            SecureRecoverySessionStore secureStore,
-            string appDataDirectory,
-            ClientFeatureFlags featureFlags)
+        SecureRecoverySessionStore secureStore,
+        string appDataDirectory,
+        ClientFeatureFlags featureFlags)
     {
+#if DEBUG && !DEEP_PHYSICAL_E2E
+        // Opening the local account and conversation stores must not depend on
+        // bootstrap configuration or connectivity. Ordinary Debug keeps the
+        // legacy transport dormant; its first network operation fails closed.
+        var dormant = new StoreBoundNativeMau2Transport(
+            sqlite,
+            secureStore,
+            new DevelopmentMailboxRuntimeProvisioningSource(),
+            MailboxInfrastructureOwnership.OfficialManaged,
+            featureFlags);
+        return new StoreBoundRuntimeTransportComposition(dormant, dormant);
+#else
         var mode = services.GetRequiredService<RuntimeTransportMode>();
         mode.Validate();
         if (mode.Protocol == RuntimeTransportProtocol.DirectP2p)
@@ -677,10 +768,6 @@ public static class MauiProgram
                 new DirectP2pMailboxDeliveryPolicy());
         }
 
-#if DEBUG && !DEEP_PHYSICAL_E2E
-        throw new InvalidOperationException(
-            "Authenticated MAU2 in Debug requires an explicit physical UAT build.");
-#else
         var native = new StoreBoundNativeMau2Transport(
             sqlite,
             secureStore,
@@ -767,120 +854,22 @@ public static class MauiProgram
 
     internal static string ResolveAppDataDirectory() => AppDataPath.Resolve();
 
-    private static System.Net.Security.RemoteCertificateValidationCallback?
-        CreatePhysicalUatServerCertificateValidationCallback()
+    private static HttpServiceTransportFactory BindPhysicalUatTrust(
+        HttpServiceTransportFactory factory)
     {
+        ArgumentNullException.ThrowIfNull(factory);
 #if DEBUG && DEEP_PHYSICAL_E2E && ANDROID
-        using (LoadPhysicalUatRootCertificate())
-        {
-            // Fail startup if the build lost its exact app-scoped UAT trust root.
-        }
-        return ValidatePhysicalUatServerCertificate;
+        return factory.WithAppScopedPrivateCertificateAuthority(
+            LoadPhysicalUatRootCertificateBytes());
 #else
-        return null;
+        return factory;
 #endif
     }
 
 #if DEBUG && DEEP_PHYSICAL_E2E && ANDROID
     private const string PhysicalUatRootResource =
         "Deep.Client.Maui.PhysicalUatRootCa";
-    private static int physicalUatTlsCallbackObserved;
-
-    private static bool ValidatePhysicalUatServerCertificate(
-        object sender,
-        System.Security.Cryptography.X509Certificates.X509Certificate? certificate,
-        System.Security.Cryptography.X509Certificates.X509Chain? presentedChain,
-        System.Net.Security.SslPolicyErrors sslPolicyErrors)
-    {
-        _ = sender;
-        if (Interlocked.Exchange(ref physicalUatTlsCallbackObserved, 1) == 0)
-        {
-            CrashDiagnostics.LogInfo(
-                "PhysicalUatTls",
-                "Certificate validation callback invoked.");
-        }
-        if (certificate is null ||
-            (sslPolicyErrors & (System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch |
-                System.Net.Security.SslPolicyErrors.RemoteCertificateNotAvailable)) != 0)
-            return false;
-
-        var platformValidationSucceeded =
-            sslPolicyErrors == System.Net.Security.SslPolicyErrors.None;
-        if (platformValidationSucceeded)
-            return platformValidationSucceeded;
-        if (sslPolicyErrors != System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors)
-            return false;
-
-        try
-        {
-            using var leaf = System.Security.Cryptography.X509Certificates.X509CertificateLoader
-                .LoadCertificate(certificate.GetRawCertData());
-            using var root = LoadPhysicalUatRootCertificate();
-            using var chain = new System.Security.Cryptography.X509Certificates.X509Chain();
-            var intermediates = new List<
-                System.Security.Cryptography.X509Certificates.X509Certificate2>();
-            try
-            {
-                chain.ChainPolicy.TrustMode =
-                    System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
-                chain.ChainPolicy.CustomTrustStore.Add(root);
-                chain.ChainPolicy.RevocationMode =
-                    System.Security.Cryptography.X509Certificates.X509RevocationMode.Online;
-                chain.ChainPolicy.RevocationFlag =
-                    System.Security.Cryptography.X509Certificates.X509RevocationFlag.ExcludeRoot;
-                chain.ChainPolicy.VerificationFlags =
-                    System.Security.Cryptography.X509Certificates.X509VerificationFlags.NoFlag;
-                chain.ChainPolicy.UrlRetrievalTimeout = TimeSpan.FromSeconds(5);
-                chain.ChainPolicy.ApplicationPolicy.Add(
-                    new System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.1"));
-                if (presentedChain is not null)
-                {
-                    foreach (var element in presentedChain.ChainElements)
-                    {
-                        if (element.Certificate.RawData.AsSpan().SequenceEqual(leaf.RawData) ||
-                            element.Certificate.RawData.AsSpan().SequenceEqual(root.RawData))
-                            continue;
-                        var intermediate = System.Security.Cryptography.X509Certificates
-                            .X509CertificateLoader.LoadCertificate(element.Certificate.RawData);
-                        intermediates.Add(intermediate);
-                        chain.ChainPolicy.ExtraStore.Add(intermediate);
-                    }
-                }
-                var valid = chain.Build(leaf);
-                if (!valid)
-                {
-                    var status = string.Join(",", chain.ChainStatus
-                        .Select(static item => item.Status.ToString())
-                        .OrderBy(static item => item, StringComparer.Ordinal));
-                    CrashDiagnostics.LogInfo(
-                        "PhysicalUatTls",
-                        $"Certificate chain rejected with safe status: {status}.");
-                    Android.Util.Log.Warn(
-                        "Deep.UatTls",
-                        $"Physical UAT certificate validation rejected: {status}.");
-                }
-                return valid;
-            }
-            finally
-            {
-                foreach (var intermediate in intermediates)
-                    intermediate.Dispose();
-            }
-        }
-        catch (Exception exception)
-        {
-            CrashDiagnostics.LogInfo(
-                "PhysicalUatTls",
-                $"Certificate validation failed with safe exception type: {exception.GetType().Name}.");
-            Android.Util.Log.Warn(
-                "Deep.UatTls",
-                $"Physical UAT certificate validation failed: {exception.GetType().Name}.");
-            return false;
-        }
-    }
-
-    private static System.Security.Cryptography.X509Certificates.X509Certificate2
-        LoadPhysicalUatRootCertificate()
+    private static byte[] LoadPhysicalUatRootCertificateBytes()
     {
         using var stream = typeof(MauiProgram).Assembly.GetManifestResourceStream(
             PhysicalUatRootResource)
@@ -888,39 +877,9 @@ public static class MauiProgram
                 "The physical UAT root certificate resource is missing.");
         using var buffer = new MemoryStream();
         stream.CopyTo(buffer);
-        return System.Security.Cryptography.X509Certificates.X509CertificateLoader
-            .LoadCertificate(buffer.ToArray());
+        return buffer.ToArray();
     }
 #endif
-
-    private static HttpClient CreateServiceHttpClient(HttpMessageHandler handler)
-    {
-        return new HttpClient(handler)
-        {
-            Timeout = TimeSpan.FromSeconds(15)
-        };
-    }
-
-    private static HttpServiceNetworkHooks CreateServiceTransportNetworkHooks() =>
-        new(ServerCertificateValidationCallback:
-            CreatePhysicalUatServerCertificateValidationCallback());
-
-    private static HttpServiceNetworkHooks CreateFileTransportNetworkHooks(
-        IReadOnlyList<System.Net.IPAddress> preferredConnectIps)
-    {
-        Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>>?
-            connectCallback = null;
-#if ANDROID || WINDOWS
-        if (preferredConnectIps.Count > 0)
-        {
-            connectCallback = (context, cancellationToken) =>
-                ConnectFileSocketAsync(context, preferredConnectIps, cancellationToken);
-        }
-#endif
-        return new HttpServiceNetworkHooks(
-            connectCallback,
-            CreatePhysicalUatServerCertificateValidationCallback());
-    }
 
     private static HttpServiceClientOptions CreateServiceTransportClientOptions() =>
         new(
@@ -936,130 +895,6 @@ public static class MauiProgram
             PooledConnectionIdleTimeout: TimeSpan.FromSeconds(30),
             PooledConnectionLifetime: TimeSpan.FromMinutes(5),
             UserAgent: $"Deep/{AppInfo.Current.VersionString}");
-
-#if ANDROID || WINDOWS
-    private static readonly TimeSpan FileConnectFallbackDelay = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan FileConnectAttemptTimeout = TimeSpan.FromSeconds(5);
-
-    private static async ValueTask<Stream> ConnectFileSocketAsync(
-        SocketsHttpConnectionContext context,
-        IReadOnlyList<System.Net.IPAddress> preferredConnectIps,
-        CancellationToken cancellationToken)
-    {
-        var addresses = await System.Net.Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, cancellationToken)
-            .ConfigureAwait(false);
-        var orderedAddresses = preferredConnectIps
-            .Concat(addresses)
-            .Distinct()
-            .ToArray();
-        if (orderedAddresses.Length == 0)
-        {
-            throw new HttpRequestException($"DNS returned no addresses for {context.DnsEndPoint.Host}.");
-        }
-
-        using var raceCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var pending = orderedAddresses
-            .Select((address, index) => ConnectFileSocketCandidateAsync(
-                address,
-                context.DnsEndPoint.Port,
-                TimeSpan.FromMilliseconds(FileConnectFallbackDelay.TotalMilliseconds * index),
-                raceCancellation.Token))
-            .ToList();
-        Exception? lastError = null;
-        System.Net.Sockets.Socket? winner = null;
-
-        try
-        {
-            while (pending.Count > 0)
-            {
-                var completed = await Task.WhenAny(pending).ConfigureAwait(false);
-                pending.Remove(completed);
-                var result = await completed.ConfigureAwait(false);
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    result.Socket?.Dispose();
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
-
-                if (result.Socket is not null)
-                {
-                    winner = result.Socket;
-                    break;
-                }
-
-                lastError = result.Error;
-            }
-        }
-        finally
-        {
-            raceCancellation.Cancel();
-            foreach (var attempt in pending)
-            {
-                try
-                {
-                    var result = await attempt.ConfigureAwait(false);
-                    result.Socket?.Dispose();
-                }
-                catch (OperationCanceledException)
-                {
-                    // The race winner or caller cancellation stopped this candidate.
-                }
-            }
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        if (winner is not null)
-        {
-            return new System.Net.Sockets.NetworkStream(winner, ownsSocket: true);
-        }
-
-        throw new HttpRequestException($"Unable to connect to {context.DnsEndPoint.Host}.", lastError);
-    }
-
-    private static async Task<FileSocketConnectResult> ConnectFileSocketCandidateAsync(
-        System.Net.IPAddress address,
-        int port,
-        TimeSpan startDelay,
-        CancellationToken cancellationToken)
-    {
-        System.Net.Sockets.Socket? socket = null;
-        try
-        {
-            if (startDelay > TimeSpan.Zero)
-            {
-                await Task.Delay(startDelay, cancellationToken).ConfigureAwait(false);
-            }
-
-            socket = new System.Net.Sockets.Socket(
-                address.AddressFamily,
-                System.Net.Sockets.SocketType.Stream,
-                System.Net.Sockets.ProtocolType.Tcp)
-            {
-                NoDelay = true
-            };
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(FileConnectAttemptTimeout);
-            await socket.ConnectAsync(new System.Net.IPEndPoint(address, port), timeout.Token)
-                .ConfigureAwait(false);
-
-            var connected = socket;
-            socket = null;
-            return new FileSocketConnectResult(connected, null);
-        }
-        catch (Exception exception) when (exception is System.Net.Sockets.SocketException or OperationCanceledException)
-        {
-            return new FileSocketConnectResult(null, exception);
-        }
-        finally
-        {
-            socket?.Dispose();
-        }
-    }
-
-    private sealed record FileSocketConnectResult(
-        System.Net.Sockets.Socket? Socket,
-        Exception? Error);
-#endif
 
     private static IReadOnlyList<System.Net.IPAddress> ParseIpAddresses(string? raw)
     {

@@ -1,6 +1,6 @@
 ﻿using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Services;
-using Deep.Client.Shared.State;
+using Deep.Client.Maui.Core.Services;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
 using QRCoder;
 
@@ -8,14 +8,14 @@ namespace Deep.Client.Maui.Pages;
 
 public partial class StartConversationPage : ContentPage
 {
-    private readonly IContactInvitationProvider invitationProvider;
+    private readonly IDeepContactRuntimeAccessor contactRuntime;
     private string invitation = string.Empty;
     private byte[]? invitationQrBytes;
 
-    public StartConversationPage(IContactInvitationProvider invitationProvider)
+    public StartConversationPage(IDeepContactRuntimeAccessor contactRuntime)
     {
         InitializeComponent();
-        this.invitationProvider = invitationProvider;
+        this.contactRuntime = contactRuntime;
     }
 
     protected override async void OnAppearing()
@@ -24,11 +24,11 @@ public partial class StartConversationPage : ContentPage
 
         try
         {
-            invitation = await invitationProvider.GetInvitationAsync() ?? string.Empty;
+            invitation = await contactRuntime.GetPermanentDeepIdAsync() ?? string.Empty;
             AccountIdLabel.Text = string.IsNullOrWhiteSpace(invitation) ? "-" : invitation;
 #if DEEP_PHYSICAL_E2E
-            // Physical UAT exchanges the rendered CMI1 instead of reading app storage or
-            // reusing a pre-provisioned Session ID. The runner hashes this value before it
+            // Physical UAT exchanges the rendered permanent Deep ID instead of reading app
+            // storage. The runner hashes this value before it
             // writes sanitized evidence; no invitation is logged or persisted by automation.
             AccountIdLabel.IsVisible = !string.IsNullOrWhiteSpace(invitation);
             AccountIdLabel.Opacity = 0.01;
@@ -58,7 +58,7 @@ public partial class StartConversationPage : ContentPage
             AccountQrImage.Source = null;
             await DisplayAlertAsync(
                 "Приглашение недоступно",
-                "Не удалось подготовить защищённое приглашение. Проверьте подключение и повторите попытку.",
+                "Не удалось прочитать локальный Deep ID. Подключение к сети для этого не требуется.",
                 "OK");
         }
     }

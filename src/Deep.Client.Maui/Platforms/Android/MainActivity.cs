@@ -76,8 +76,11 @@ public class MainActivity : MauiAppCompatActivity
 
     protected override void OnPause()
     {
-        App.Services?.GetService<IRealityTransportRuntime>()?.SetForeground(false);
         ResolveActiveConversationTracker()?.SetApplicationForeground(false);
+        // Android may destroy the activity immediately after focus leaves an Entry.
+        // Clear it while the MAUI service provider is still alive; otherwise the
+        // late native focus callback can reach a disposed handler context.
+        CurrentFocus?.ClearFocus();
         base.OnPause();
     }
 
@@ -146,22 +149,8 @@ public class MainActivity : MauiAppCompatActivity
         }
 
         HandleIntent(intent);
-        var realityTransport = App.Services?.GetService<IRealityTransportRuntime>();
-        if (realityTransport is not null)
-        {
-            try
-            {
-                await realityTransport.OnForegroundAsync().ConfigureAwait(false);
-            }
-            catch (System.OperationCanceledException)
-            {
-                // App shutdown owns cancellation; no retry loop is started from the Activity.
-            }
-            catch (Exception exception)
-            {
-                CrashDiagnostics.LogException("Android.RealityTransportForeground", exception);
-            }
-        }
+        // Reality/network activation remains closed until a Deep-account messaging
+        // runtime is available. Resume only publishes local ingress in this slice.
     }
 
     private static IAppLockService? ResolveAppLock() =>

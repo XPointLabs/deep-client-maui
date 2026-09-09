@@ -8,17 +8,10 @@ public static class PushUnsubscribeRetryBootstrapper
         IServiceProvider? services,
         CancellationToken cancellationToken = default)
     {
-        if (services?.GetService(typeof(ClientRuntimeBootstrapper)) is not ClientRuntimeBootstrapper bootstrapper)
-        {
-            return false;
-        }
-
-        await bootstrapper.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        if (services.GetService(typeof(IPushRegistrationCoordinator)) is not IPushUnsubscribeRetryCoordinator retryCoordinator)
-        {
-            return false;
-        }
-
-        return await retryCoordinator.RetryPendingUnsubscribeAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        await Task.CompletedTask.ConfigureAwait(false);
+        // A future Deep messaging runtime must expose a local pending-unsubscribe
+        // preflight before any network composition is allowed here.
+        return false;
     }
 }

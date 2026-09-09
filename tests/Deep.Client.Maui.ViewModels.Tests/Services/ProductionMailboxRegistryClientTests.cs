@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Deep.Client.Maui.Services;
+using Deep.Client.Shared.Services;
 using Deep.Protocol.DeepExtension.MailboxAuthority;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
@@ -171,10 +172,7 @@ public sealed class ProductionMailboxRegistryClientTests
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             throw new UnreachableException();
         }));
-        var client = new ProductionMailboxRegistryClient(
-            http,
-            new Uri("https://registry.example/"),
-            TimeSpan.FromMilliseconds(25));
+        using var client = Client(http, TimeSpan.FromMilliseconds(25));
 
         await Assert.ThrowsAsync<TimeoutException>(() => client.CreateChallengeAsync());
     }
@@ -216,18 +214,24 @@ public sealed class ProductionMailboxRegistryClientTests
         using var http = new HttpClient(new CallbackHandler((_, _) =>
             throw new UnreachableException()));
 
-        Assert.Throws<ArgumentException>(() => new ProductionMailboxRegistryClient(
-            http, new Uri("http://registry.example/")));
+        Assert.Throws<ArgumentException>(() =>
+            ProductionMailboxRegistryClient.CreateTransportOptions(
+                new Uri("http://registry.example/")));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            new ProductionMailboxRegistryClient(
-                http,
+            ProductionMailboxRegistryClient.CreateTransportOptions(
                 new Uri("https://registry.example/"),
                 ProductionMailboxRegistryClient.MaximumRequestTimeout +
                 TimeSpan.FromMilliseconds(1)));
     }
 
-    private static ProductionMailboxRegistryClient Client(HttpClient http) => new(
-        http, new Uri("https://registry.example/"));
+    private static ProductionMailboxRegistryClient Client(
+        HttpClient http,
+        TimeSpan? requestTimeout = null) => new(
+        new HttpServiceRequestTransport(
+            http,
+            ProductionMailboxRegistryClient.CreateTransportOptions(
+                new Uri("https://registry.example/"), requestTimeout),
+            HttpServiceEndpointPolicy.Production));
 
     private static ProductionMailboxRegistryChallenge ParsedChallenge(int leadingZeroBits)
     {
@@ -476,8 +480,13 @@ public sealed class ProductionMailboxRegistryClientTests
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> callback)
         : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
-            CancellationToken cancellationToken) => callback(request, cancellationToken);
+            CancellationToken cancellationToken)
+        {
+            var response = await callback(request, cancellationToken);
+            response.RequestMessage ??= request;
+            return response;
+        }
     }
 }

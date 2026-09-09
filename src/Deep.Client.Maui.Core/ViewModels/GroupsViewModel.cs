@@ -1,45 +1,40 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using Deep.Client.Maui.Core.Commands;
-using Deep.Client.Maui.Core.Presentation;
-using Deep.Client.Shared.Domain;
-using Deep.Client.Shared.Features;
-using Deep.Client.Shared.Persistence;
-using Deep.Client.Shared.State;
+using Deep.Client.Maui.Core.Services;
 
 namespace Deep.Client.Maui.Core.ViewModels;
 
-public sealed record GroupListItem(ConversationId Id, string Name, int MemberCount, int AdminCount, bool IsDestroyed);
+public sealed record GroupListItem(
+    string Id,
+    string Name,
+    int MemberCount,
+    int PendingInvitationCount,
+    bool HasForkConflict);
 
-public sealed record GroupDraftMemberItem(SessionId SessionId, string DisplayName);
+public sealed record GroupDraftMemberItem(string CanonicalAddress, string DisplayName);
 
 public sealed class GroupsViewModel : ViewModelBase
 {
-    private readonly ClientRuntime runtime;
-    private readonly IContactRepository contacts;
-    private readonly IContactMailboxOnboarding contactOnboarding;
-    private IReadOnlyDictionary<string, string> contactDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
-    private bool contactDisplayNamesLoaded;
+    private readonly IGroupV1Composer composer;
     private string groupName = string.Empty;
-    private string memberSessionId = string.Empty;
+    private string memberAddress = string.Empty;
+    private string composerStatus = "Проверяем готовность GroupV1…";
+    private string? operationStatus;
+    private bool composerReady;
     private GroupDraftMemberItem? selectedDraftMember;
     private GroupListItem? selectedGroup;
 
-    public GroupsViewModel(
-        ClientRuntime runtime,
-        IContactMailboxOnboarding? contactOnboarding = null)
+    public GroupsViewModel(IGroupV1Composer composer)
     {
-        this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
-        this.contactOnboarding = contactOnboarding ?? new SessionIdContactMailboxOnboarding();
-        contacts = (IContactRepository)runtime.Store;
+        this.composer = composer ?? throw new ArgumentNullException(nameof(composer));
         Groups = [];
         DraftMembers = [];
-        CreateCommand = new AsyncCommand(CreateFromUiAsync, () => runtime.FeatureFlags.GroupsV2Enabled && !string.IsNullOrWhiteSpace(GroupName));
+        CreateCommand = new AsyncCommand(CreateFromUiAsync, () => CanCreateGroup);
         AddDraftMemberCommand = new AsyncCommand(AddDraftMemberAsync, CanAddDraftMember);
-        RefreshCommand = new AsyncCommand(RefreshFromUiAsync, () => runtime.FeatureFlags.GroupsV2Enabled);
+        RefreshCommand = new AsyncCommand(RefreshFromUiAsync);
     }
 
     public ObservableCollection<GroupListItem> Groups { get; }
-
     public ObservableCollection<GroupDraftMemberItem> DraftMembers { get; }
 
     public string GroupName
@@ -55,12 +50,12 @@ public sealed class GroupsViewModel : ViewModelBase
         }
     }
 
-    public string MemberSessionId
+    public string MemberAddress
     {
-        get => memberSessionId;
+        get => memberAddress;
         set
         {
-            if (SetProperty(ref memberSessionId, value))
+            if (SetProperty(ref memberAddress, value))
             {
                 RaisePropertyChanged(nameof(CanAddMember));
                 AddDraftMemberCommand.RaiseCanExecuteChanged();
@@ -68,12 +63,28 @@ public sealed class GroupsViewModel : ViewModelBase
         }
     }
 
-    public bool CanCreateGroups => runtime.FeatureFlags.GroupsV2Enabled;
+    public string ComposerStatus
+    {
+        get => composerStatus;
+        private set => SetProperty(ref composerStatus, value);
+    }
 
-    public bool CanCreateGroup => runtime.FeatureFlags.GroupsV2Enabled && !string.IsNullOrWhiteSpace(GroupName);
+    public string? OperationStatus
+    {
+        get => operationStatus;
+        private set
+        {
+            if (SetProperty(ref operationStatus, value))
+            {
+                RaisePropertyChanged(nameof(HasOperationStatus));
+            }
+        }
+    }
 
+    public bool HasOperationStatus => !string.IsNullOrWhiteSpace(OperationStatus);
+    public bool CanCreateGroups => composerReady;
+    public bool CanCreateGroup => composerReady && !string.IsNullOrWhiteSpace(GroupName);
     public bool CanAddMember => CanAddDraftMember();
-
     public bool HasDraftMembers => DraftMembers.Count > 0;
 
     public GroupListItem? SelectedGroup
@@ -89,229 +100,188 @@ public sealed class GroupsViewModel : ViewModelBase
     }
 
     public AsyncCommand CreateCommand { get; }
-
     public AsyncCommand AddDraftMemberCommand { get; }
-
     public AsyncCommand RefreshCommand { get; }
 
-    public Task<Group?> CreateGroupAsync(SessionId owner, IEnumerable<SessionId> members, CancellationToken cancellationToken = default) =>
-        RunCreateAsync(owner, members, cancellationToken);
-
-    public Task<IReadOnlyList<GroupListItem>> RefreshAsync(CancellationToken cancellationToken = default) =>
-        RunRefreshAsync(cancellationToken);
-
-    public Task RefreshContactDisplayNamesAsync(CancellationToken cancellationToken = default) =>
-        RunBusyAsync(ct => ReloadContactDisplayNamesAsync(ct), cancellationToken);
-
-    public async Task<Group?> CreateGroupFromComposerAsync(CancellationToken cancellationToken = default)
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        var account = await runtime.Accounts.GetActiveAccountAsync(cancellationToken)
-            ?? throw new InvalidOperationException("Войдите в аккаунт перед созданием группы.");
-
-        var members = DraftMembers.Select(item => item.SessionId).ToArray();
-        var created = await RunCreateAsync(account.SessionId, members, cancellationToken);
-        if (created is not null)
+        await RunBusyAsync(async ct =>
         {
+            var readiness = await composer.GetReadinessAsync(ct).ConfigureAwait(false);
+            SetReadiness(readiness);
+            await RefreshCoreAsync(ct).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<GroupListItem?> CreateGroupFromComposerAsync(
+        CancellationToken cancellationToken = default)
+    {
+        GroupListItem? created = null;
+        await RunBusyAsync(async ct =>
+        {
+            var readiness = await composer.GetReadinessAsync(ct).ConfigureAwait(false);
+            SetReadiness(readiness);
+            if (!readiness.IsReady)
+            {
+                throw new GroupV1ComposerException("group-v1-not-ready", readiness.Message);
+            }
+
+            var members = DraftMembers
+                .Select(static item => new GroupV1DraftMember(
+                    item.CanonicalAddress,
+                    item.DisplayName))
+                .ToArray();
+            var result = await composer.CreateAsync(GroupName.Trim(), members, ct)
+                .ConfigureAwait(false);
+            created = ToListItem(result);
+            Upsert(created);
             GroupName = string.Empty;
             DraftMembers.Clear();
             RaiseDraftMemberPropertiesChanged();
-        }
-
+            OperationStatus = result.PendingInvitationCount == 0
+                ? "GroupV1 создана локально. Подключение GroupChat будет выполнено следующим срезом."
+                : $"GroupV1 создана локально; проверено участников: {result.PendingInvitationCount}. Авторинг, отправка и активация приглашений ожидают GroupV1 fanout.";
+        }, cancellationToken).ConfigureAwait(false);
         return created;
     }
 
     public async Task AddDraftMemberAsync(CancellationToken cancellationToken = default)
     {
-        var contactInput = MemberSessionId.Trim();
-        if (!contactOnboarding.CanAccept(contactInput))
+        var input = MemberAddress.Trim();
+        if (input.Length == 0)
         {
-            ErrorMessage = "Введите корректный ID аккаунта или защищённое приглашение.";
+            ErrorMessage = "Введите canonical deep1… или deepinvite:DIA1.";
             return;
         }
 
         await RunBusyAsync(async ct =>
         {
-            var member = await contactOnboarding.PrepareAsync(contactInput, ct);
-            if (DraftMembers.Any(item => item.SessionId == member))
+            var readiness = await composer.GetReadinessAsync(ct).ConfigureAwait(false);
+            SetReadiness(readiness);
+            if (!readiness.IsReady)
             {
-                MemberSessionId = string.Empty;
+                throw new GroupV1ComposerException("group-v1-not-ready", readiness.Message);
+            }
+
+            var verified = await composer.VerifyMemberAsync(input, ct).ConfigureAwait(false);
+            if (DraftMembers.Any(item => string.Equals(
+                    item.CanonicalAddress,
+                    verified.CanonicalAddress,
+                    StringComparison.Ordinal)))
+            {
+                MemberAddress = string.Empty;
                 return;
             }
 
-            await EnsureContactDisplayNamesLoadedAsync(ct, member);
-            DraftMembers.Add(ToDraftMemberItem(member));
-            MemberSessionId = string.Empty;
+            DraftMembers.Add(new GroupDraftMemberItem(
+                verified.CanonicalAddress,
+                verified.DisplayName));
+            MemberAddress = string.Empty;
+            OperationStatus = "Участник проверен через ContactV1 и добавлен в черновик.";
             RaiseDraftMemberPropertiesChanged();
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public void RemoveDraftMember(GroupDraftMemberItem member)
     {
+        ArgumentNullException.ThrowIfNull(member);
         DraftMembers.Remove(member);
         if (SelectedDraftMember == member)
         {
             SelectedDraftMember = null;
         }
-
         RaiseDraftMemberPropertiesChanged();
     }
 
-    public Task<Group?> UpdateGroupNameAsync(
-        ConversationId groupId,
-        SessionId requestor,
-        string newName,
+    public Task<IReadOnlyList<GroupListItem>> RefreshAsync(
         CancellationToken cancellationToken = default) =>
-        RunGroupMutationAsync(() => runtime.Conversations.UpdateGroupNameAsync(groupId, requestor, newName, cancellationToken), cancellationToken);
+        RefreshWithBusyStateAsync(cancellationToken);
 
-    public Task<Group?> PromoteMemberAsync(
-        ConversationId groupId,
-        SessionId requestor,
-        SessionId memberId,
-        CancellationToken cancellationToken = default) =>
-        RunGroupMutationAsync(() => runtime.Conversations.PromoteMemberAsync(groupId, requestor, memberId, cancellationToken), cancellationToken);
-
-    public Task<Group?> AddMemberAsync(
-        ConversationId groupId,
-        SessionId requestor,
-        SessionId memberId,
-        CancellationToken cancellationToken = default) =>
-        RunGroupMutationAsync(() => runtime.Conversations.AddMemberAsync(groupId, requestor, memberId, cancellationToken), cancellationToken);
-
-    public Task<Group?> DemoteMemberAsync(
-        ConversationId groupId,
-        SessionId requestor,
-        SessionId memberId,
-        CancellationToken cancellationToken = default) =>
-        RunGroupMutationAsync(() => runtime.Conversations.DemoteMemberAsync(groupId, requestor, memberId, cancellationToken), cancellationToken);
-
-    public Task<Group?> MarkMemberPendingRemovalAsync(
-        ConversationId groupId,
-        SessionId requestor,
-        SessionId memberId,
-        bool isPending,
-        CancellationToken cancellationToken = default) =>
-        RunGroupMutationAsync(() => runtime.Conversations.MarkMemberPendingRemovalAsync(groupId, requestor, memberId, isPending, cancellationToken), cancellationToken);
-
-    public Task<Group?> RemoveMemberAsync(
-        ConversationId groupId,
-        SessionId requestor,
-        SessionId memberId,
-        CancellationToken cancellationToken = default) =>
-        RunGroupMutationAsync(() => runtime.Conversations.RemoveMemberAsync(groupId, requestor, memberId, cancellationToken), cancellationToken);
-
-    public Task<Group?> LeaveGroupAsync(
-        ConversationId groupId,
-        SessionId memberId,
-        CancellationToken cancellationToken = default) =>
-        RunGroupMutationAsync(() => runtime.Conversations.LeaveGroupAsync(groupId, memberId, cancellationToken), cancellationToken);
-
-    public Task<Group?> DestroyGroupAsync(
-        ConversationId groupId,
-        SessionId requestor,
-        CancellationToken cancellationToken = default) =>
-        RunGroupMutationAsync(() => runtime.Conversations.DestroyGroupAsync(groupId, requestor, cancellationToken), cancellationToken);
-
-    private async Task CreateFromUiAsync(CancellationToken cancellationToken)
+    public void ReportGroupChatHandoffPending(GroupListItem group)
     {
-        await CreateGroupFromComposerAsync(cancellationToken);
+        ArgumentNullException.ThrowIfNull(group);
+        OperationStatus =
+            $"«{group.Name}» хранится как GroupV1. Открытие и отправка сообщений появятся после подключения GroupChat/fanout.";
+        SelectedGroup = null;
     }
+
+    private Task CreateFromUiAsync(CancellationToken cancellationToken) =>
+        CreateGroupFromComposerAsync(cancellationToken);
 
     private Task RefreshFromUiAsync(CancellationToken cancellationToken) =>
-        RunRefreshAsync(cancellationToken);
+        RefreshWithBusyStateAsync(cancellationToken);
 
-    private async Task<Group?> RunCreateAsync(SessionId owner, IEnumerable<SessionId> members, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<GroupListItem>> RefreshWithBusyStateAsync(
+        CancellationToken cancellationToken)
     {
-        Group? created = null;
+        IReadOnlyList<GroupListItem> items = [];
         await RunBusyAsync(async ct =>
         {
-            if (!runtime.FeatureFlags.GroupsV2Enabled)
-            {
-                throw new FeatureDisabledException(nameof(runtime.FeatureFlags.GroupsV2Enabled));
-            }
-
-            created = await runtime.Conversations.CreateGroupScaffoldAsync(owner, GroupName, members, ct);
-            UpsertGroupItem(created);
-        }, cancellationToken);
-
-        return created;
-    }
-
-    private async Task<IReadOnlyList<GroupListItem>> RunRefreshAsync(CancellationToken cancellationToken)
-    {
-        var items = Array.Empty<GroupListItem>();
-        await RunBusyAsync(async ct =>
-        {
-            if (!runtime.FeatureFlags.GroupsV2Enabled)
-            {
-                throw new FeatureDisabledException(nameof(runtime.FeatureFlags.GroupsV2Enabled));
-            }
-
-            var account = await runtime.Accounts.GetActiveAccountAsync(ct);
-            if (account is not null)
-            {
-                await runtime.Conversations.ReceiveGroupUpdatesAsync(account.SessionId, ct);
-            }
-
-            var groups = await runtime.Conversations.ListGroupsAsync(ct);
-            items = groups
-                .Select(ToListItem)
-                .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            await ReloadContactDisplayNamesAsync(ct);
-            SyncGroupItems(items);
-        }, cancellationToken);
-
+            var readiness = await composer.GetReadinessAsync(ct).ConfigureAwait(false);
+            SetReadiness(readiness);
+            items = await RefreshCoreAsync(ct).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
         return items;
     }
 
-    private async Task<Group?> RunGroupMutationAsync(Func<Task<Group?>> operation, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<GroupListItem>> RefreshCoreAsync(
+        CancellationToken cancellationToken)
     {
-        Group? group = null;
-        await RunBusyAsync(async _ =>
-        {
-            group = await operation();
-            if (group is not null)
-            {
-                UpsertGroupItem(group);
-            }
-        }, cancellationToken);
-
-        return group;
+        var items = (await composer.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            .Select(ToListItem)
+            .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        Sync(items);
+        return items;
     }
 
-    private static GroupListItem ToListItem(Group group) =>
-        new(
-            group.Id,
-            group.Name,
-            group.Members.Count,
-            group.Members.Count(member => member.Role == GroupMemberRole.Admin),
-            group.IsDestroyed);
-
-    private void UpsertGroupItem(Group group)
+    private void SetReadiness(GroupV1ComposerReadiness readiness)
     {
-        var item = ToListItem(group);
-        var index = Groups
-            .Select((entry, idx) => new { entry, idx })
-            .FirstOrDefault(x => x.entry.Id == group.Id)
-            ?.idx;
+        ArgumentNullException.ThrowIfNull(readiness);
+        composerReady = readiness.IsReady;
+        ComposerStatus = readiness.Message;
+        RaisePropertyChanged(nameof(CanCreateGroups));
+        RaisePropertyChanged(nameof(CanCreateGroup));
+        RaisePropertyChanged(nameof(CanAddMember));
+        CreateCommand.RaiseCanExecuteChanged();
+        AddDraftMemberCommand.RaiseCanExecuteChanged();
+    }
 
-        if (index is null)
+    private static GroupListItem ToListItem(GroupV1ComposerGroup group) => new(
+        group.GroupId,
+        group.Name,
+        group.MemberCount,
+        group.PendingInvitationCount,
+        group.HasForkConflict);
+
+    private void Upsert(GroupListItem item)
+    {
+        var index = -1;
+        for (var position = 0; position < Groups.Count; position++)
         {
-            Groups.Add(item);
-            return;
+            if (string.Equals(Groups[position].Id, item.Id, StringComparison.Ordinal))
+            {
+                index = position;
+                break;
+            }
         }
 
-        Groups[index.Value] = item;
+        if (index < 0)
+        {
+            Groups.Add(item);
+        }
+        else
+        {
+            Groups[index] = item;
+        }
     }
 
-    private void SyncGroupItems(IReadOnlyList<GroupListItem> items)
+    private void Sync(IReadOnlyList<GroupListItem> items)
     {
         if (Groups.Count == items.Count && Groups.SequenceEqual(items))
         {
             return;
         }
-
         Groups.Clear();
         foreach (var item in items)
         {
@@ -319,106 +289,8 @@ public sealed class GroupsViewModel : ViewModelBase
         }
     }
 
-    private async Task EnsureContactDisplayNamesLoadedAsync(
-        CancellationToken cancellationToken,
-        SessionId? additionalContactId = null)
-    {
-        if (!contactDisplayNamesLoaded
-            || additionalContactId is { } id && !contactDisplayNames.ContainsKey(id.Value))
-        {
-            await ReloadContactDisplayNamesAsync(cancellationToken, additionalContactId);
-        }
-    }
-
-    private async Task ReloadContactDisplayNamesAsync(
-        CancellationToken cancellationToken,
-        SessionId? additionalContactId = null)
-    {
-        var ids = DraftMembers.Select(static item => item.SessionId);
-        if (additionalContactId is { } id)
-        {
-            ids = ids.Append(id);
-        }
-
-        contactDisplayNames = await LoadContactDisplayNamesAsync(ids, cancellationToken);
-        contactDisplayNamesLoaded = true;
-        RefreshDraftMemberDisplayNames();
-    }
-
-    private async Task<IReadOnlyDictionary<string, string>> LoadContactDisplayNamesAsync(
-        IEnumerable<SessionId> contactIds,
-        CancellationToken cancellationToken)
-    {
-        var displayNames = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var contactId in contactIds.Distinct())
-        {
-            var contact = await contacts.GetAsync(contactId, cancellationToken).ConfigureAwait(false);
-            if (contact is null)
-            {
-                continue;
-            }
-
-            var displayName = DeepDisplayName.ContactTitle(contact.Id, contact.DisplayName);
-            if (!string.IsNullOrWhiteSpace(displayName))
-            {
-                displayNames[contact.Id.Value] = displayName;
-            }
-        }
-
-        return displayNames;
-    }
-
-    private GroupDraftMemberItem ToDraftMemberItem(SessionId sessionId) =>
-        new(sessionId, ResolveContactDisplayName(sessionId));
-
-    private string ResolveContactDisplayName(SessionId sessionId) =>
-        contactDisplayNames.TryGetValue(sessionId.Value, out var displayName)
-            ? displayName
-            : DeepDisplayName.ShortId(sessionId.Value);
-
-    private void RefreshDraftMemberDisplayNames()
-    {
-        for (var index = 0; index < DraftMembers.Count; index++)
-        {
-            var current = DraftMembers[index];
-            var updated = ToDraftMemberItem(current.SessionId);
-            if (current != updated)
-            {
-                DraftMembers[index] = updated;
-            }
-        }
-    }
-
-    private bool CanAddDraftMember()
-    {
-        var contactInput = MemberSessionId.Trim();
-        if (!contactOnboarding.CanAccept(contactInput))
-        {
-            return false;
-        }
-
-        return !TryParseMemberSessionId(out var member)
-            || DraftMembers.All(item => item.SessionId != member);
-    }
-
-    private bool TryParseMemberSessionId(out SessionId member)
-    {
-        member = default;
-        if (string.IsNullOrWhiteSpace(MemberSessionId))
-        {
-            return false;
-        }
-
-        try
-        {
-            member = SessionId.Parse(MemberSessionId);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private bool CanAddDraftMember() =>
+        composerReady && !string.IsNullOrWhiteSpace(MemberAddress);
 
     private void RaiseDraftMemberPropertiesChanged()
     {

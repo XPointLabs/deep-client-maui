@@ -319,7 +319,11 @@ public sealed class ProductionMailboxCredentialAcquirerTests
             HttpClient http,
             ProductionMailboxClientApprovalIdentity? approval = null) => new(
                 new ProductionMailboxRegistryClient(
-                    http, new Uri("https://registry.example/")),
+                    new HttpServiceRequestTransport(
+                        http,
+                        ProductionMailboxRegistryClient.CreateTransportOptions(
+                            new Uri("https://registry.example/")),
+                        HttpServiceEndpointPolicy.Production)),
                 store,
                 HolderIdentity,
                 ownerIdentity,
@@ -663,9 +667,14 @@ public sealed class ProductionMailboxCredentialAcquirerTests
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> callback)
         : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
-            CancellationToken cancellationToken) => callback(request, cancellationToken);
+            CancellationToken cancellationToken)
+        {
+            var response = await callback(request, cancellationToken);
+            response.RequestMessage ??= request;
+            return response;
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

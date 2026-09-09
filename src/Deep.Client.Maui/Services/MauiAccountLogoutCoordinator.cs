@@ -7,6 +7,7 @@ namespace Deep.Client.Maui.Services;
 
 public sealed class MauiAccountLogoutCoordinator(
     ClientRuntime runtime,
+    IDeepAccountRuntimeAccessor deepAccountRuntime,
     IPushRegistrationCoordinator pushRegistration,
     ChatOpenUiCache chatOpenUiCache,
     PushRegistrationLifecycleCoordinator pushRegistrationLifecycle,
@@ -22,7 +23,17 @@ public sealed class MauiAccountLogoutCoordinator(
         // Once logout starts it owns its lifetime. Caller cancellation must not leave a
         // half-purged account after push unsubscription or the database commit.
         await TryUnregisterPushAsync(CancellationToken.None).ConfigureAwait(false);
-        await runtime.Accounts.SignOutAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await runtime.Accounts.SignOutAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // Legacy cleanup is transitional and must never keep the authoritative
+            // clean-break Deep account on the device.
+            CrashDiagnostics.LogException("MauiAccountLogoutCoordinator.LegacySignOut", exception);
+        }
+        await deepAccountRuntime.ResetLocalStateAsync(CancellationToken.None).ConfigureAwait(false);
 
         chatOpenUiCache.Clear();
         TryCleanup("ResetPushRegistration", () => pushRegistrationLifecycle.Reset());

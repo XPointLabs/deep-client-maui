@@ -86,6 +86,26 @@ delivery remains a pre-release integration blocker.
    clean-break baseline; existing state is
    exactly attested and incompatible state raises an actionable reset-required
    error. Account/recovery creation is local and remains available offline.
+   `DeepAccountRuntimeOwner` opens the account database first and lazily owns the
+   account/network-scoped SQLCipher ContactV1 operation journal, AccountDirectory
+   LKG, XPoint LKG, and protected entry-guard stores only when a consumer asks
+   for them. Those stores use distinct generation-scoped SecureStorage key
+   slots; reset destroys every database family and its key together with the
+   local account generation.
+   A new permanent Deep ID is always written to the local pending-contact queue
+   before ContactResolve prerequisites are inspected. The lazy ContactResolve
+   accessor can only compose `HttpContactResolveDirectoryArtifactSource` with
+   `ProductionContactResolvePathAuthoritySource`, a privacy-routed resolver
+   transport, and a trusted response verifier. It accepts no raw ADP1/DTT1 or
+   caller-authored placement. Missing genesis pin, protected monotonic clock,
+   privacy route, directory source, or response authority leaves the contact in
+   retryable pending state and returns an exact nonfatal UI status. The current
+   release composition intentionally reports the missing genesis pin: the
+   legacy mailbox trust floor is not silently reused as XPoint genesis authority.
+   Registry origin validation and Registry HTTP client construction are deferred
+   until the first operation that actually provisions network reachability; a
+   missing or unreachable Registry cannot prevent the local shell or onboarding
+   from opening.
    Operational failures remain retryable and are not classified as reset
    authorization.
 3. `AuthNavigationState` selects onboarding or conversations from local state.
@@ -95,8 +115,8 @@ delivery remains a pre-release integration blocker.
 ## Messaging
 
 Outgoing messages are persisted to the durable MAU2 outbox before dispatch.
-The existing six-node physical Debug composition loads two hash-bound, fully disjoint three-hop
-privacy routes from app-private `mailbox-runtime-v1/privacy-routes.v1.json`.
+The existing six-node physical Debug composition loads two hash-bound three-hop
+privacy routes from app-private `mailbox-runtime-v1/privacy-routes.v2.json`.
 Canonical MAU2 is wrapped in a padded binary privacy frame and sent to the first
 route's public HTTPS ingress. The exit returns a reply encrypted to the
 per-attempt client key; only then does the existing mailbox adapter verify MQR3,
@@ -112,7 +132,7 @@ VLESS/Reality ingress and must fail closed instead of bypassing it with direct
 HTTPS.
 
 The Survival primary topology is `xnode3 -> xnode4 -> xnode1`; `xnode1` is the
-sole authoritative mailbox coordinator. The disjoint fallback topology is
+sole authoritative mailbox coordinator. The current lab fallback topology is
 `xnode5 -> xnode6 -> xnode2`; `xnode2` is a forwarding-only privacy exit and,
 after unwrapping the privacy frame, forwards the unchanged canonical MAU2 to
 `xnode1`. MQR3 therefore authenticates `xnode1` as coordinator and does not
@@ -120,10 +140,11 @@ identify the terminal fallback hop (`xnode2`) as the coordinator.
 
 The raw route artifact SHA-256 must equal both the activation
 `privacyRoutesSha256` and the same field in the verified Mr. X-signed policy.
-Its current lab schema binds the platform, two clean HTTPS root origins, three
-hops per route, independent X25519 keys, and six distinct router
-identities/keys. This is stronger than the initial three-node release minimum;
-production v1 does not claim a failure-domain-disjoint fallback.
+Its current lab schema binds the platform, two clean HTTPS root origins and
+three independently keyed hops per route. The six-node fixture happens to use
+six distinct router identities/keys, but that is test-topology evidence rather
+than a production capability claim. Production v1 does not promise a
+failure-domain-disjoint fallback.
 
 The routed runtime accepts between three and sixteen distinct lowercase pinned identities
 and canonical router URLs. Router bases have a root path and no
@@ -226,7 +247,7 @@ The optional Reality/VLESS runtime is currently adjacent transport diagnostics o
 does not yet implement, select, or forward the privacy mailbox message path, and no
 Session RPC client or membership-route provider is registered. Privacy mailbox
 hops come only from the separately signed and activation-bound
-`privacy-routes.v1.json`; Settings projects a read-only diagnostic view from
+`privacy-routes.v2.json`; Settings projects a read-only diagnostic view from
 that active route. Connecting these two paths without introducing an unmasked
 fallback is the highest-priority transport change before release.
 

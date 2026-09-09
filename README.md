@@ -50,7 +50,7 @@ Platform caveats/workarounds are documented in `docs/ARCHITECTURE.md`.
 
 Runtime transport behavior:
 
-- Physical Debug MAU2 loads an exact app-private `privacy-routes.v1.json` bound
+- Physical Debug MAU2 loads an exact app-private `privacy-routes.v2.json` bound
   by both `activation.v1.json` and the Mr. X-signed mailbox policy.
 - Primary and fallback routes each contain exactly three independent X25519
   hops. All six router identities and keys, and both HTTPS ingress origins, must

@@ -1,5 +1,4 @@
 ﻿using Deep.Client.Maui.Core.ViewModels;
-using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Services;
 
@@ -29,12 +28,10 @@ public partial class GroupsPage : ContentPage
         base.OnAppearing();
         networkStatusService.StatusChanged -= OnNetworkStatusChanged;
         networkStatusService.StatusChanged += OnNetworkStatusChanged;
-        ContactProfileUpdateBus.ContactChanged -= OnContactProfileChanged;
-        ContactProfileUpdateBus.ContactChanged += OnContactProfileChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         BackgroundSyncBridge.SyncScheduled += OnBackgroundSyncScheduled;
         UpdateNetworkUi();
-        await viewModel.RefreshAsync();
+        await viewModel.InitializeAsync();
         await ConfigureAutoRefreshAsync();
     }
 
@@ -42,7 +39,6 @@ public partial class GroupsPage : ContentPage
     {
         base.OnDisappearing();
         networkStatusService.StatusChanged -= OnNetworkStatusChanged;
-        ContactProfileUpdateBus.ContactChanged -= OnContactProfileChanged;
         BackgroundSyncBridge.SyncScheduled -= OnBackgroundSyncScheduled;
         if (autoRefreshTimer is not null)
         {
@@ -65,8 +61,8 @@ public partial class GroupsPage : ContentPage
             return;
         }
 
-        var route = $"{ShellRouteCatalog.GroupChat}?groupId={Uri.EscapeDataString(selected.Id.Value)}&displayName={Uri.EscapeDataString(selected.Name)}";
-        await Shell.Current.GoToAsync(route, animate: false);
+        viewModel.ReportGroupChatHandoffPending(selected);
+        await DisplayAlertAsync("GroupV1", viewModel.OperationStatus!, "OK");
     }
 
     private async void OnCreateGroupClicked(object? sender, EventArgs e)
@@ -79,11 +75,8 @@ public partial class GroupsPage : ContentPage
         }
 
         KeyboardDismissal.Dismiss(GroupNameEntry);
-        KeyboardDismissal.Dismiss(MemberSessionIdEntry);
-        await Task.Delay(150);
-
-        var route = $"{ShellRouteCatalog.GroupChat}?groupId={Uri.EscapeDataString(created.Id.Value)}&displayName={Uri.EscapeDataString(created.Name)}";
-        await Shell.Current.GoToAsync(route, animate: false);
+        KeyboardDismissal.Dismiss(MemberAddressEntry);
+        await DisplayAlertAsync("GroupV1", viewModel.OperationStatus!, "OK");
     }
 
     private void OnDraftMemberSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -112,17 +105,6 @@ public partial class GroupsPage : ContentPage
     private void OnNetworkStatusChanged(object? sender, EventArgs e)
     {
         MainThread.BeginInvokeOnMainThread(UpdateNetworkUi);
-    }
-
-    private void OnContactProfileChanged(object? sender, Deep.Client.Shared.Domain.SessionId contactId)
-    {
-        MainThread.BeginInvokeOnMainThread(async () =>
-        {
-            if (!viewModel.IsBusy)
-            {
-                await viewModel.RefreshContactDisplayNamesAsync();
-            }
-        });
     }
 
     private void UpdateNetworkUi()

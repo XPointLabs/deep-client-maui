@@ -167,7 +167,6 @@ if ($requireAndroidUatIdentity -and
         '-p:AndroidKeyStore=true',
         "-p:AndroidSigningKeyStore=$androidKeystore",
         "-p:AndroidSigningKeyAlias=$AndroidSigningKeyAlias",
-        "-p:AndroidSigningKeyPass=file:$androidSigningPasswordFile",
         "-p:AndroidSigningStorePass=file:$androidSigningPasswordFile")
 }
 
@@ -317,7 +316,7 @@ function Invoke-ExplicitApkSigning {
         $env:JAVA_HOME = $resolvedJavaHome
         & $ApkSigner sign --out $temporary --ks $Keystore --ks-type PKCS12 `
             --ks-key-alias $KeyAlias --ks-pass "file:$PasswordFile" `
-            --key-pass "file:$PasswordFile" $Apk
+            $Apk
         if ($LASTEXITCODE -ne 0) { throw 'Explicit SDK APK signing failed.' }
         Move-Item -LiteralPath $temporary -Destination $Apk -Force
     } finally {

@@ -1,7 +1,6 @@
 ﻿using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Maui.Services;
-using Deep.Client.Shared.State;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
 using Microsoft.Maui.Storage;
@@ -12,13 +11,11 @@ public partial class SettingsPage : ContentPage
 {
     private const string AvatarFileName = "profile-avatar.jpg";
     private readonly SettingsViewModel viewModel;
-    private readonly ClientRuntime runtime;
 
-    public SettingsPage(SettingsViewModel viewModel, ClientRuntime runtime)
+    public SettingsPage(SettingsViewModel viewModel)
     {
         InitializeComponent();
         this.viewModel = viewModel;
-        this.runtime = runtime;
         BindingContext = viewModel;
     }
 
@@ -28,7 +25,7 @@ public partial class SettingsPage : ContentPage
         viewModel.Activate();
         await viewModel.LoadAsync();
         UpdateProfileAvatarUi();
-        SessionIdLabel.Text = FormatSessionIdForDisplay(viewModel.SessionId);
+        DeepIdLabel.Text = FormatDeepIdForDisplay(viewModel.DeepId);
         VersionLabel.Text = $"Deep {AppInfo.Current.VersionString}";
     }
 
@@ -55,29 +52,29 @@ public partial class SettingsPage : ContentPage
     private static Task NavigateToSettingsSectionAsync(string section) =>
         Shell.Current.GoToAsync($"{ShellRouteCatalog.SettingsDetail}?section={Uri.EscapeDataString(section)}");
 
-    private async void OnCopySessionIdClicked(object? sender, EventArgs e)
+    private async void OnCopyDeepIdClicked(object? sender, EventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(viewModel.SessionId) || viewModel.SessionId == "-")
+        if (string.IsNullOrWhiteSpace(viewModel.DeepId) || viewModel.DeepId == "-")
         {
             return;
         }
 
-        await Clipboard.Default.SetTextAsync(viewModel.SessionId);
+        await Clipboard.Default.SetTextAsync(viewModel.DeepId);
     }
 
     private async void OnShareClicked(object? sender, EventArgs e)
     {
-        await ShareSessionIdAsync();
+        await ShareDeepIdAsync();
     }
 
     private async void OnInviteClicked(object? sender, EventArgs e)
     {
-        await ShareSessionIdAsync();
+        await ShareDeepIdAsync();
     }
 
-    private async Task ShareSessionIdAsync()
+    private async Task ShareDeepIdAsync()
     {
-        if (string.IsNullOrWhiteSpace(viewModel.SessionId) || viewModel.SessionId == "-")
+        if (string.IsNullOrWhiteSpace(viewModel.DeepId) || viewModel.DeepId == "-")
         {
             return;
         }
@@ -85,7 +82,7 @@ public partial class SettingsPage : ContentPage
         await Share.Default.RequestAsync(new ShareTextRequest
         {
             Title = "Пригласить друга",
-            Text = $"Добавьте меня в Deep: {viewModel.SessionId}"
+            Text = $"Добавьте меня в Deep: {viewModel.DeepId}"
         });
     }
 
@@ -133,7 +130,7 @@ public partial class SettingsPage : ContentPage
                 return;
             }
 
-            await ProfileAvatarSync.SaveAndPublishAsync(photo, GetAvatarPath(), runtime);
+            await ProfileAvatarSync.SaveLocalAsync(photo, GetAvatarPath());
             UpdateProfileAvatarUi();
         }
         catch (Exception ex)
@@ -158,9 +155,9 @@ public partial class SettingsPage : ContentPage
 
     private static string GetAvatarPath() => Path.Combine(MauiProgram.ResolveAppDataDirectory(), AvatarFileName);
 
-    private static string FormatSessionIdForDisplay(string? sessionId)
+    private static string FormatDeepIdForDisplay(string? deepId)
     {
-        var value = sessionId?.Trim();
+        var value = deepId?.Trim();
         if (string.IsNullOrWhiteSpace(value) || value == "-")
         {
             return "-";
@@ -202,49 +199,6 @@ public partial class SettingsPage : ContentPage
     private async void OnMessageRequestsClicked(object? sender, EventArgs e)
     {
         await NavigateToSettingsSectionAsync("message-requests");
-    }
-
-    private async void OnRecoveryPhraseClicked(object? sender, EventArgs e)
-    {
-        var recoveryPhrase = await viewModel.GetRecoveryPhraseAsync();
-        if (string.IsNullOrWhiteSpace(recoveryPhrase))
-        {
-            await DisplayAlertAsync("Фраза восстановления", "Для этого аккаунта не сохранена фраза восстановления.", "OK");
-            return;
-        }
-
-        var action = await DisplayActionSheetAsync("Фраза восстановления", "Отмена", null, "Показать", "Скопировать");
-        if (action == "Скопировать")
-        {
-            await CopySensitiveTextAsync(recoveryPhrase);
-        }
-        else if (action == "Показать")
-        {
-            await DisplayAlertAsync("Фраза восстановления", recoveryPhrase, "OK");
-        }
-    }
-
-    private static async Task CopySensitiveTextAsync(string value)
-    {
-        await Clipboard.Default.SetTextAsync(value);
-        _ = ClearClipboardIfUnchangedAsync(value);
-    }
-
-    private static async Task ClearClipboardIfUnchangedAsync(string value)
-    {
-        try
-        {
-            await Task.Delay(TimeSpan.FromMinutes(1));
-            var current = await Clipboard.Default.GetTextAsync();
-            if (string.Equals(current, value, StringComparison.Ordinal))
-            {
-                await Clipboard.Default.SetTextAsync(string.Empty);
-            }
-        }
-        catch
-        {
-            // Clipboard access is best-effort and must not affect settings UX.
-        }
     }
 
     private async void OnHelpClicked(object? sender, EventArgs e)

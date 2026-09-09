@@ -175,7 +175,7 @@ function Assert-SourceRuntime([string]$Root, [string]$Pin) {
     $activationPath = Join-Path $Root 'activation.v1.json'
     $pointerPath = Join-Path $Root 'pair\current-generation.json'
     foreach ($relative in @('activation.v1.json', 'authority.public.json', 'revocations.v1.json',
-            'privacy-routes.v1.json',
+            'privacy-routes.v2.json',
             'mr-x-mailbox-policy.payload.json', 'mr-x-mailbox-policy.signature',
             'mr-x-mailbox-policy.public-key', 'pair\current-generation.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $Root $relative) -PathType Leaf)) {
@@ -193,7 +193,7 @@ function Assert-SourceRuntime([string]$Root, [string]$Pin) {
         throw 'Mailbox runtime activation and pair pointer do not match Windows DEV schema v1.'
     }
     $files = @('activation.v1.json', 'authority.public.json', 'revocations.v1.json',
-        'privacy-routes.v1.json',
+        'privacy-routes.v2.json',
         'mr-x-mailbox-policy.payload.json', 'mr-x-mailbox-policy.signature',
         'mr-x-mailbox-policy.public-key', 'pair/current-generation.json',
         "pair/generations/$generation/android.mailbox-credentials.v1.json",
@@ -228,7 +228,7 @@ function Assert-SourceRuntime([string]$Root, [string]$Pin) {
     if ((Get-Sha256Lower (Join-Path $Root 'authority.public.json')) -cne [string]$activation.authoritySha256 -or
         (Get-Sha256Lower (Join-Path $Root 'revocations.v1.json')) -cne [string]$activation.revocationSnapshotSha256 -or
         [string]$activation.privacyRoutesSha256 -cnotmatch '^[0-9a-f]{64}$' -or
-        (Get-Sha256Lower (Join-Path $Root 'privacy-routes.v1.json')) -cne [string]$activation.privacyRoutesSha256 -or
+        (Get-Sha256Lower (Join-Path $Root 'privacy-routes.v2.json')) -cne [string]$activation.privacyRoutesSha256 -or
         [string]$signedPolicy.privacyRoutesSha256 -cne [string]$activation.privacyRoutesSha256 -or
         (Get-Sha256Lower $manifest) -cne [string]$activation.pairManifestSha256) {
         throw 'Mailbox runtime independent activation hashes do not match staged bytes.'

@@ -4,9 +4,9 @@ using Sodium;
 
 const int maximumJsonBytes = 16 * 1024;
 const long maximumClockSkewSeconds = 300;
-const string jsonName = "production-mailbox-privacy-routes.v1.json";
-const string signatureName = "production-mailbox-privacy-routes.v1.sig";
-const string publicKeyName = "production-mailbox-privacy-routes.v1.pub";
+const string jsonName = "production-mailbox-privacy-routes.v2.json";
+const string signatureName = "production-mailbox-privacy-routes.v2.sig";
+const string publicKeyName = "production-mailbox-privacy-routes.v2.pub";
 
 if (args.Length != 5 || args[0] != "issue")
 {
@@ -91,7 +91,7 @@ static void ValidateCanonicalCandidate(byte[] encoded, long nowUnixSeconds)
         "schemaVersion", "developmentOnly", "networkId", "notBeforeUnixSeconds",
         "expiresUnixSeconds", "primary", "fallback"
     ]);
-    Require(root.GetProperty("schemaVersion").GetInt32() == 1);
+    Require(root.GetProperty("schemaVersion").GetInt32() == 2);
     Require(!root.GetProperty("developmentOnly").GetBoolean());
     var networkId = LowerHex(root.GetProperty("networkId"), 16);
     Require(networkId.AsSpan().IndexOfAnyExcept((byte)0) >= 0);
@@ -108,12 +108,6 @@ static void ValidateCanonicalCandidate(byte[] encoded, long nowUnixSeconds)
     var fallback = ParseRoute(root.GetProperty("fallback"));
     Require(!string.Equals(primary.EntryOrigin, fallback.EntryOrigin,
         StringComparison.Ordinal));
-    Require(!primary.Hops.Select(hop => hop.RouterId)
-        .Intersect(fallback.Hops.Select(hop => hop.RouterId), StringComparer.Ordinal)
-        .Any());
-    Require(!primary.Hops.Select(hop => hop.X25519PublicKey)
-        .Intersect(fallback.Hops.Select(hop => hop.X25519PublicKey), StringComparer.Ordinal)
-        .Any());
 
     var canonical = EncodeCanonical(
         Convert.ToHexStringLower(networkId), notBefore, expires, primary, fallback);
@@ -146,16 +140,27 @@ static Route ParseRoute(JsonElement value)
     var hops = new List<Hop>(3);
     foreach (var valueHop in hopsValue.EnumerateArray())
     {
-        RequireProperties(valueHop, ["routerId", "x25519PublicKey"]);
-        var routerId = LowerHex(valueHop.GetProperty("routerId"), 32);
+        RequireProperties(valueHop, ["routerOwnerId", "keyId", "epoch", "x25519PublicKey"]);
+        var routerOwnerId = LowerHex(valueHop.GetProperty("routerOwnerId"), 32);
+        var keyId = LowerHex(valueHop.GetProperty("keyId"), 32);
+        ulong epoch = 0;
+        Require(valueHop.GetProperty("epoch").ValueKind == JsonValueKind.Number &&
+                valueHop.GetProperty("epoch").TryGetUInt64(out epoch) && epoch > 0);
         var x25519 = LowerHex(valueHop.GetProperty("x25519PublicKey"), 32);
-        Require(routerId.AsSpan().IndexOfAnyExcept((byte)0) >= 0);
+        Require(routerOwnerId.AsSpan().IndexOfAnyExcept((byte)0) >= 0);
+        Require(keyId.AsSpan().IndexOfAnyExcept((byte)0) >= 0);
         Require(x25519.AsSpan().IndexOfAnyExcept((byte)0) >= 0);
-        hops.Add(new Hop(Convert.ToHexStringLower(routerId), Convert.ToHexStringLower(x25519)));
-        CryptographicOperations.ZeroMemory(routerId);
+        hops.Add(new Hop(
+            Convert.ToHexStringLower(routerOwnerId),
+            Convert.ToHexStringLower(keyId),
+            epoch,
+            Convert.ToHexStringLower(x25519)));
+        CryptographicOperations.ZeroMemory(routerOwnerId);
+        CryptographicOperations.ZeroMemory(keyId);
         CryptographicOperations.ZeroMemory(x25519);
     }
-    Require(hops.Select(hop => hop.RouterId).Distinct(StringComparer.Ordinal).Count() == 3);
+    Require(hops.Select(hop => hop.RouterOwnerId).Distinct(StringComparer.Ordinal).Count() == 3);
+    Require(hops.Select(hop => hop.KeyId).Distinct(StringComparer.Ordinal).Count() == 3);
     Require(hops.Select(hop => hop.X25519PublicKey).Distinct(StringComparer.Ordinal).Count() == 3);
     return new Route(originText!, hops);
 }
@@ -171,7 +176,7 @@ static byte[] EncodeCanonical(
     using (var writer = new Utf8JsonWriter(output, new JsonWriterOptions { Indented = false }))
     {
         writer.WriteStartObject();
-        writer.WriteNumber("schemaVersion", 1);
+        writer.WriteNumber("schemaVersion", 2);
         writer.WriteBoolean("developmentOnly", false);
         writer.WriteString("networkId", networkId);
         writer.WriteNumber("notBeforeUnixSeconds", notBefore);
@@ -191,7 +196,9 @@ static void WriteRoute(Utf8JsonWriter writer, string name, Route route)
     foreach (var hop in route.Hops)
     {
         writer.WriteStartObject();
-        writer.WriteString("routerId", hop.RouterId);
+        writer.WriteString("routerOwnerId", hop.RouterOwnerId);
+        writer.WriteString("keyId", hop.KeyId);
+        writer.WriteNumber("epoch", hop.Epoch);
         writer.WriteString("x25519PublicKey", hop.X25519PublicKey);
         writer.WriteEndObject();
     }
@@ -265,5 +272,5 @@ static void Require(bool condition)
     if (!condition) throw new InvalidDataException();
 }
 
-sealed record Hop(string RouterId, string X25519PublicKey);
+sealed record Hop(string RouterOwnerId, string KeyId, ulong Epoch, string X25519PublicKey);
 sealed record Route(string EntryOrigin, IReadOnlyList<Hop> Hops);

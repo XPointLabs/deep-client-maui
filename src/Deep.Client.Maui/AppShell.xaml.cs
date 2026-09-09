@@ -13,7 +13,6 @@ namespace Deep.Client.Maui;
 public partial class AppShell : Shell
 {
     private readonly AuthNavigationState authNavigationState;
-    private readonly ClientRuntime runtime;
     private readonly IShareExtensionBridge shareBridge;
     private readonly IServiceProvider services;
     private readonly SemaphoreSlim rootNavigationGate = new(1, 1);
@@ -21,20 +20,13 @@ public partial class AppShell : Shell
 
     public AppShell(
         AuthNavigationState authNavigationState,
-        ClientRuntime runtime,
         IShareExtensionBridge shareBridge,
         IServiceProvider services)
     {
         InitializeComponent();
         this.authNavigationState = authNavigationState;
-        this.runtime = runtime;
         this.shareBridge = shareBridge;
         this.services = services;
-#if WINDOWS
-        ConversationsTab.ContentTemplate = new DataTemplate(
-            () => services.GetRequiredService<DesktopWorkspacePage>());
-#endif
-
         Routing.RegisterRoute(ShellRouteCatalog.Restore, typeof(OnboardingPage));
         Routing.RegisterRoute(ShellRouteCatalog.Chat, typeof(ChatPage));
         Routing.RegisterRoute(ShellRouteCatalog.ContactProfile, typeof(ContactProfilePage));
@@ -95,12 +87,6 @@ public partial class AppShell : Shell
         try
         {
             var authenticated = authNavigationState.IsAuthenticated;
-#if WINDOWS
-            if (!authenticated)
-            {
-                services.GetRequiredService<DesktopWorkspaceViewModel>().ResetSession();
-            }
-#endif
             var targetItem = authenticated ? ConversationsTab : OnboardingTab;
             var targetRoute = authenticated
                 ? $"//{ShellRouteCatalog.Conversations}"
@@ -151,12 +137,21 @@ public partial class AppShell : Shell
             return;
         }
 
+        // OFFLINE-START-01 deliberately has no adapter from a Deep account to the
+        // legacy Session-derived ClientRuntime. Keep ingress closed until MSG-01
+        // supplies the authenticated messaging runtime in a later slice.
+        var runtime = TryGetAuthenticatedMessagingRuntime();
+        if (runtime is null)
+        {
+            return;
+        }
+
         await ingressGate.WaitAsync();
         try
         {
             foreach (var action in NotificationActionBridge.Drain())
             {
-                if (await NavigateToConversationAsync(action.ConversationId))
+                if (await NavigateToConversationAsync(runtime, action.ConversationId))
                 {
                     NotificationActionBridge.MarkHandled(action);
                 }
@@ -165,7 +160,7 @@ public partial class AppShell : Shell
             var shares = await shareBridge.DrainPendingSharesAsync();
             foreach (var share in shares)
             {
-                if (await ApplyShareToComposerAsync(share))
+                if (await ApplyShareToComposerAsync(runtime, share))
                 {
                     MauiShareExtensionBridge.MarkHandled(share);
                     DeleteConsumedShareFiles(share);
@@ -182,7 +177,9 @@ public partial class AppShell : Shell
         }
     }
 
-    private async Task<bool> NavigateToConversationAsync(string conversationId)
+    private async Task<bool> NavigateToConversationAsync(
+        ClientRuntime runtime,
+        string conversationId)
     {
         ConversationId id;
         try
@@ -228,9 +225,13 @@ public partial class AppShell : Shell
     }
 
     internal Task<bool> ActivateConversationAsync(ConversationId conversationId) =>
-        NavigateToConversationAsync(conversationId.Value);
+        TryGetAuthenticatedMessagingRuntime() is { } runtime
+            ? NavigateToConversationAsync(runtime, conversationId.Value)
+            : Task.FromResult(false);
 
-    private async Task<bool> ApplyShareToComposerAsync(SharePayload share)
+    private async Task<bool> ApplyShareToComposerAsync(
+        ClientRuntime runtime,
+        SharePayload share)
     {
         if (string.IsNullOrWhiteSpace(share.Text) && share.FilePaths.Count == 0)
         {
@@ -242,7 +243,7 @@ public partial class AppShell : Shell
             var latest = (await runtime.Conversations.ListAsync())
                 .OrderByDescending(static item => item.UpdatedAt)
                 .FirstOrDefault();
-            if (latest is null || !await NavigateToConversationAsync(latest.Id.Value))
+            if (latest is null || !await NavigateToConversationAsync(runtime, latest.Id.Value))
             {
                 return false;
             }
@@ -307,6 +308,8 @@ public partial class AppShell : Shell
 
         return true;
     }
+
+    private static ClientRuntime? TryGetAuthenticatedMessagingRuntime() => null;
 
     private bool TryGetComposer(out ChatViewModel? chat, out GroupChatViewModel? group)
     {

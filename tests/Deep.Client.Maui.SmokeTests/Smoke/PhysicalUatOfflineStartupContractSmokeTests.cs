@@ -3,6 +3,31 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class PhysicalUatOfflineStartupContractSmokeTests
 {
     [Fact]
+    public void ColdUiCompositionDefersEveryNetworkInput()
+    {
+        var program = ReadMauiProgram();
+        var create = ExtractMethodBody(program, "public static MauiApp CreateMauiApp()");
+        var app = ReadWorkspaceFile("src", "Deep.Client.Maui", "App.xaml.cs");
+        var shell = ReadWorkspaceFile("src", "Deep.Client.Maui", "AppShell.xaml.cs");
+        var appConstructor = ExtractMethodBody(app, "public App(");
+        var shellConstructor = ExtractMethodBody(shell, "public AppShell(");
+        var auth = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui.Core", "Navigation", "AuthNavigationState.cs");
+
+        Assert.DoesNotContain("ResolveApplicationServiceInputs()", create, StringComparison.Ordinal);
+        Assert.Contains(
+            "ConfigureApplicationServices(builder.Services, ResolveApplicationServiceInputs)",
+            create,
+            StringComparison.Ordinal);
+        Assert.Contains("DeferredApplicationServiceInputs", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClientRuntimeBootstrapper", appConstructor, StringComparison.Ordinal);
+        Assert.DoesNotContain("IRealityTransportRuntime", appConstructor, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClientRuntime", shellConstructor, StringComparison.Ordinal);
+        Assert.Contains("IDeepAccountRuntimeAccessor", auth, StringComparison.Ordinal);
+        Assert.DoesNotContain("SessionAccountService", auth, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PhysicalUatRuntimeFactoryDoesNotSynchronizeInboxBeforePublishingRuntime()
     {
         var program = ReadMauiProgram();
@@ -39,6 +64,26 @@ public sealed class PhysicalUatOfflineStartupContractSmokeTests
             ".EnsureStartedAsync(",
             bootstrapperRegistration,
             StringComparison.Ordinal);
+        var runtimeRegistration = composition[runtimeFactoryStart..];
+        Assert.Contains(".InitializeAsync()", runtimeRegistration,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(".GetRequiredRuntime()", runtimeRegistration,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StartupFailureDoesNotMisreportEveryLocalFailureAsConnectivity()
+    {
+        var app = ReadWorkspaceFile("src", "Deep.Client.Maui", "App.xaml.cs");
+
+        Assert.Contains(
+            "Создание аккаунта не требует подключения к сети.",
+            app,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Проверьте подключение и повторите попытку.",
+            app,
+            StringComparison.Ordinal);
     }
 
     private static string ReadMauiProgram()
@@ -56,6 +101,19 @@ public sealed class PhysicalUatOfflineStartupContractSmokeTests
             "src",
             "Deep.Client.Maui",
             "MauiProgram.cs"));
+    }
+
+    private static string ReadWorkspaceFile(params string[] segments)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null &&
+               !File.Exists(Path.Combine(directory.FullName, "Deep.Client.Maui.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+        return File.ReadAllText(Path.Combine([directory!.FullName, .. segments]));
     }
 
     private static string ExtractMethodBody(string source, string declaration)
