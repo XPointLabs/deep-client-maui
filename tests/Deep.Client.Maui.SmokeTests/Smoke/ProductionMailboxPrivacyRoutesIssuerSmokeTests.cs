@@ -5,6 +5,7 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class ProductionMailboxPrivacyRoutesIssuerSmokeTests
 {
     [Fact]
+    [Trait("RequiresWindows", "true")]
     public async Task IssuerValidatesSignsAndAtomicallyRotatesSyntheticArtifacts()
     {
         var root = FindWorkspaceRoot();

@@ -63,10 +63,17 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: dotnet test tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj --configuration Release -m:1 --logger "trx;LogFileName=viewmodels-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/viewmodels
       - name: Smoke UI route tests
+        if: runner.os == 'Windows'
         working-directory: deep-client-maui
         env:
           TMPDIR: ${{ runner.temp }}
         run: dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj --configuration Release -m:1 --logger "trx;LogFileName=route-smoke-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/route-smoke
+      - name: Portable smoke UI route tests
+        if: runner.os != 'Windows'
+        working-directory: deep-client-maui
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj --configuration Release -m:1 --filter "RequiresWindows!=true" --logger "trx;LogFileName=route-smoke-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/route-smoke
       - name: Upload unit test evidence
         if: always()
         uses: actions/upload-artifact@v4

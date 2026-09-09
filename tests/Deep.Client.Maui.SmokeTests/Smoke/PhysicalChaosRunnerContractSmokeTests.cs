@@ -7,6 +7,7 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class PhysicalChaosRunnerContractSmokeTests
 {
     [Fact]
+    [Trait("RequiresWindows", "true")]
     public async Task Bounded_runner_kills_immediate_descendants_and_output_floods()
     {
         var root = FindRepositoryRoot();

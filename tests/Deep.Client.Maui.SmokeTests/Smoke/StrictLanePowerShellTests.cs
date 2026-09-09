@@ -8,18 +8,21 @@ public sealed class StrictLanePowerShellTests
     private static readonly TimeSpan ScriptTimeout = TimeSpan.FromMinutes(20);
 
     [Fact]
+    [Trait("RequiresWindows", "true")]
     public async Task PathSafetyRejectsSiblingPrefixAndJunction()
     {
         await RunScriptAsync("Test-StrictLanePathSafety.ps1");
     }
 
     [Fact]
+    [Trait("RequiresWindows", "true")]
     public async Task PhysicalMau2RunsRootRejectsJunctionBeforeAnyChildWrite()
     {
         await RunScriptAsync("Test-PhysicalMau2RunsRoot.ps1", TimeSpan.FromSeconds(30));
     }
 
     [Fact]
+    [Trait("RequiresWindows", "true")]
     public async Task AndroidRunnerExecutesAndEvidenceRejectsTamperingAndStaleness()
     {
         await RunScriptAsync("Test-AndroidRunnerContract.ps1");
@@ -32,12 +35,14 @@ public sealed class StrictLanePowerShellTests
     }
 
     [Fact]
+    [Trait("RequiresWindows", "true")]
     public async Task ProductionTrustBundleContractIsExecutable()
     {
         await RunScriptAsync("Test-ProductionTrustBundleContract.ps1", TimeSpan.FromSeconds(30));
     }
 
     [Fact]
+    [Trait("RequiresWindows", "true")]
     public async Task AndroidLabProvisioningRequiresProtectedSignedAllowlistedBundle()
     {
         var protectedRoot = Path.Combine(
