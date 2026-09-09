@@ -11,7 +11,7 @@ permissions:
 jobs:
   strict-evidence-status:
     name: strict-evidence-status-not-run
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows, X64, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - name: Report physical/live evidence as NOT-RUN
@@ -27,13 +27,17 @@ jobs:
 
   unit-tests:
     name: unit-tests-${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
       matrix:
         # Apple client validation is intentionally deferred until the operator
         # explicitly re-enables the Apple platform sprint.
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            runner: '["self-hosted","Linux","X64","ubuntu-latest"]'
+          - os: windows-latest
+            runner: '["self-hosted","Windows","X64","windows-latest"]'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,6 +61,8 @@ jobs:
           token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
           path: deep-devops
       - uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
         with:
           dotnet-version: 10.0.301
       - name: ViewModel tests
@@ -86,7 +92,7 @@ jobs:
 
   release-transport-guard:
     name: release-transport-guard
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows, X64, windows-latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -104,6 +110,8 @@ jobs:
           token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
           path: deep-protocol
       - uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
         with:
           dotnet-version: 10.0.301
       - name: Restore pinned MAUI workloads
@@ -126,7 +134,7 @@ jobs:
 
   android-build:
     name: build-android
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -144,6 +152,8 @@ jobs:
           token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
           path: deep-protocol
       - uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
         with:
           dotnet-version: 10.0.301
       - name: Materialize production Firebase configuration
@@ -197,7 +207,7 @@ jobs:
 
   windows-build:
     name: build-windows
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows, X64, windows-latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -215,6 +225,8 @@ jobs:
           token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
           path: deep-protocol
       - uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
         with:
           dotnet-version: 10.0.301
       - working-directory: deep-client-maui
@@ -243,7 +255,7 @@ jobs:
 
   platform-matrix-gate:
     name: platform-matrix-gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, ubuntu-latest]
     needs: [unit-tests, release-transport-guard, android-build, windows-build]
     if: always()
     steps:
