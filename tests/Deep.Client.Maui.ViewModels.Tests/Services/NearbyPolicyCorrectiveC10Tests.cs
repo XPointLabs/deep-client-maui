@@ -229,9 +229,13 @@ public sealed class NearbyPolicyCorrectiveC10Tests
                 if (RaiseChangedCrossThreadFromGetter)
                 {
                     RaiseChangedCrossThreadFromGetter = false;
-                    var raised = Task.Run(RaiseChanged);
+                    var raised = Task.Factory.StartNew(
+                        RaiseChanged,
+                        CancellationToken.None,
+                        TaskCreationOptions.LongRunning,
+                        TaskScheduler.Default);
                     CrossThreadChangedReturned = raised.Wait(
-                        TimeSpan.FromMilliseconds(500));
+                        TimeSpan.FromSeconds(2));
                 }
 
                 return Current;

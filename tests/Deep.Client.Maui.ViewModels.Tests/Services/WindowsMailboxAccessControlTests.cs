@@ -61,6 +61,7 @@ public sealed class WindowsMailboxAccessControlTests
     {
         if (!OperatingSystem.IsWindows()) return;
         var root = NewRoot();
+        var repairSupported = true;
         try
         {
             WindowsMailboxAccessControl.ProtectNewDirectory(root);
@@ -71,6 +72,16 @@ public sealed class WindowsMailboxAccessControlTests
             empty.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
             empty.SetOwner(WindowsIdentity.GetCurrent().User!);
             new FileInfo(database).SetAccessControl(empty);
+            var configuredOwner = new FileInfo(database)
+                .GetAccessControl(AccessControlSections.Owner)
+                .GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            if (!Equals(configuredOwner, WindowsIdentity.GetCurrent().User))
+            {
+                // Elevated CI identities can be normalized to the Administrators
+                // group by Windows and cannot exercise the current-user repair path.
+                repairSupported = false;
+                return;
+            }
 
             WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(root);
 
@@ -96,7 +107,10 @@ public sealed class WindowsMailboxAccessControlTests
         }
         finally
         {
-            WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(root);
+            if (repairSupported)
+            {
+                WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(root);
+            }
             TryDelete(root);
         }
     }
