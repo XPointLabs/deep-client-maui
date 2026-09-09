@@ -9,7 +9,7 @@ Program revision: `ca5ad9f0c9d4dfb509dedcbf8133524c15867fce5534816da21ff86a07057
 Ordinary developer test runs may skip tests that need live infrastructure or a real desktop/device. A strict lane may not do that: missing endpoints, executable, device, runner, or configuration is a blocking failure, and the lane checks that the executed test count is nonzero and the skipped count is zero.
 
 Physical Android and rendered Windows E2E run only on Mr. X's local operator
-workstation. GitHub Actions, including on-premise CI runners, compile the
+workstation. GitHub-hosted Actions runners compile the
 clients and exercise non-physical contracts but never control a device or an
 interactive desktop. CI therefore records physical evidence as `NOT-RUN` until
 the sanitized, signed, commit-bound output of a local execution is attached to

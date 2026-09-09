@@ -11,7 +11,7 @@ permissions:
 jobs:
   strict-evidence-status:
     name: strict-evidence-status-not-run
-    runs-on: [self-hosted, Windows, X64, windows-latest]
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - name: Report physical/live evidence as NOT-RUN
@@ -27,7 +27,7 @@ jobs:
 
   unit-tests:
     name: unit-tests-${{ matrix.os }}
-    runs-on: ${{ fromJSON(matrix.runner) }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -35,9 +35,7 @@ jobs:
         # explicitly re-enables the Apple platform sprint.
         include:
           - os: ubuntu-latest
-            runner: '["self-hosted","Linux","X64","ubuntu-latest"]'
-          - os: windows-latest
-            runner: '["self-hosted","Windows","X64","windows-latest"]'
+          - os: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,19 +44,19 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/deep-client-shared
           ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN || github.token }}
           path: deep-client-shared
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/deep-protocol
           ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN || github.token }}
           path: deep-protocol
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/deep-devops
           ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN || github.token }}
           path: deep-devops
       - uses: actions/setup-dotnet@v4
         env:
@@ -92,7 +90,7 @@ jobs:
 
   release-transport-guard:
     name: release-transport-guard
-    runs-on: [self-hosted, Windows, X64, windows-latest]
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,13 +99,13 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/deep-client-shared
           ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN || github.token }}
           path: deep-client-shared
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/deep-protocol
           ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN || github.token }}
           path: deep-protocol
       - uses: actions/setup-dotnet@v4
         env:
@@ -134,7 +132,7 @@ jobs:
 
   android-build:
     name: build-android
-    runs-on: [self-hosted, Linux, X64, ubuntu-latest]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -143,13 +141,13 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/deep-client-shared
           ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN || github.token }}
           path: deep-client-shared
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/deep-protocol
           ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN || github.token }}
           path: deep-protocol
       - uses: actions/setup-dotnet@v4
         env:
@@ -215,7 +213,7 @@ jobs:
 
   windows-build:
     name: build-windows
-    runs-on: [self-hosted, Windows, X64, windows-latest]
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
@@ -263,7 +261,7 @@ jobs:
 
   platform-matrix-gate:
     name: platform-matrix-gate
-    runs-on: [self-hosted, Linux, X64, ubuntu-latest]
+    runs-on: ubuntu-latest
     needs: [unit-tests, release-transport-guard, android-build, windows-build]
     if: always()
     steps:
