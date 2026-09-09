@@ -162,7 +162,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         var desktop = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Pages", "DesktopWorkspacePage.xaml.cs"));
         var physical = File.ReadAllText(WorkspacePath(
-            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"))
+            .ReplaceLineEndings("\n");
         var runner = File.ReadAllText(WorkspacePath(
             "eng", "Invoke-PhysicalMau2CrossPlatform.ps1"));
 
@@ -232,7 +233,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     public void PhysicalAttachmentPickerUsesExactFilenameInsteadOfAmbiguousItemRoot()
     {
         var physical = File.ReadAllText(WorkspacePath(
-            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"))
+            .ReplaceLineEndings("\n");
         var runner = File.ReadAllText(WorkspacePath(
             "eng", "Invoke-PhysicalMau2CrossPlatform.ps1"));
 
@@ -305,7 +307,8 @@ public sealed class E2eAutomationSelectorContractSmokeTests
     public void PhysicalRestartDurabilityOpensTheConversationBeforeInspectingMessages()
     {
         var physical = File.ReadAllText(WorkspacePath(
-            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"))
+            .ReplaceLineEndings("\n");
         const string openConversation =
             "android.Tap(options.App(\"Conversations.ConversationRow\"));";
         var restart = physical.IndexOf(

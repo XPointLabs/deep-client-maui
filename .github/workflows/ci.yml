@@ -73,7 +73,7 @@ jobs:
         working-directory: deep-client-maui
         env:
           TMPDIR: ${{ runner.temp }}
-        run: dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj --configuration Release -m:1 --logger "trx;LogFileName=route-smoke-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/route-smoke
+        run: dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj --configuration Release -m:1 --filter "RequiresPhysicalHost!=true" --logger "trx;LogFileName=route-smoke-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/route-smoke
       - name: Portable smoke UI route tests
         if: runner.os != 'Windows'
         working-directory: deep-client-maui
@@ -162,6 +162,11 @@ jobs:
         env:
           ANDROID_HOME: ${{ runner.temp }}/android-sdk
           ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
       - name: Materialize production Firebase configuration
         working-directory: deep-client-maui
         shell: bash
@@ -222,13 +227,13 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/deep-client-shared
           ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN || github.token }}
           path: deep-client-shared
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/deep-protocol
           ref: ${{ github.ref_name }}
-          token: ${{ secrets.DEEP_CI_REPO_TOKEN }}
+          token: ${{ secrets.DEEP_CI_REPO_TOKEN || github.token }}
           path: deep-protocol
       - uses: actions/setup-dotnet@v4
         env:

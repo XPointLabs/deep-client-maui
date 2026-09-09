@@ -16,6 +16,7 @@ public sealed class StrictLanePowerShellTests
 
     [Fact]
     [Trait("RequiresWindows", "true")]
+    [Trait("RequiresPhysicalHost", "true")]
     public async Task PhysicalMau2RunsRootRejectsJunctionBeforeAnyChildWrite()
     {
         await RunScriptAsync("Test-PhysicalMau2RunsRoot.ps1", TimeSpan.FromSeconds(30));
@@ -43,6 +44,7 @@ public sealed class StrictLanePowerShellTests
 
     [Fact]
     [Trait("RequiresWindows", "true")]
+    [Trait("RequiresPhysicalHost", "true")]
     public async Task AndroidLabProvisioningRequiresProtectedSignedAllowlistedBundle()
     {
         var protectedRoot = Path.Combine(
