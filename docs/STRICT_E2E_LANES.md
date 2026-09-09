@@ -8,6 +8,13 @@ Program revision: `ca5ad9f0c9d4dfb509dedcbf8133524c15867fce5534816da21ff86a07057
 
 Ordinary developer test runs may skip tests that need live infrastructure or a real desktop/device. A strict lane may not do that: missing endpoints, executable, device, runner, or configuration is a blocking failure, and the lane checks that the executed test count is nonzero and the skipped count is zero.
 
+Physical Android and rendered Windows E2E run only on Mr. X's local operator
+workstation. GitHub Actions, including on-premise CI runners, compile the
+clients and exercise non-physical contracts but never control a device or an
+interactive desktop. CI therefore records physical evidence as `NOT-RUN` until
+the sanitized, signed, commit-bound output of a local execution is attached to
+the release evidence set.
+
 Machine-readable preflight and result files are written below `artifacts/survival/I01-MAUI-STRICT-GATES`. They contain check names and status only; endpoint values, identities, recovery material, tokens, and absolute user paths are excluded.
 
 Create one lowercase 32-hex release invocation and pass it to all three lanes and the final validator:
@@ -102,7 +109,23 @@ multicast addresses, alternate IPv4 spellings, credentials, query, and
 fragment forms fail closed. The identical LAN values remain invalid in ordinary
 Debug and Release composition.
 
-CI does not trust a pre-existing checkout directory. `eng/Provision-AndroidLabPolicy.ps1` materializes an exact allowlisted bundle from `DEEP_ANDROID_LAB_PROTECTED_SOURCE` after checkout, rejects reparse points in every existing source/destination ancestor, requires a pinned owner, and permits write access only to that owner, Local System, and Builtin Administrators by resolved SID. Every source file is regular/read-only, and both source and destination are re-enumerated against the exact signed file set with no extras. The script verifies all receipt/tool hashes and an Ed25519 signature over the complete semantic policy projection. The Mr. X public-key SHA-256 enters the protected build invocation as `DEEP_MR_X_PUBLIC_KEY_SHA256`, is passed explicitly as `DeepMrXPublicKeySha256`, and is compiled into the physical-lab binary; application runtime configuration never supplies or replaces this trust root. Release and non-physical builds reject the property. The repository contains no invented real key. The verify-only helper uses a locked dependency graph, is built before provisioning, and runs without restore/build at the trust gate. An `if: always()` step removes the destination even after a failed lane.
+The local operator run does not trust a pre-existing checkout directory.
+`eng/Provision-AndroidLabPolicy.ps1` materializes an exact allowlisted bundle
+from an explicitly selected protected source, rejects reparse points in every
+existing source/destination ancestor, requires a pinned owner, and permits
+write access only to that owner, Local System, and Builtin Administrators by
+resolved SID. Every source file is regular/read-only, and both source and
+destination are re-enumerated against the exact signed file set with no extras.
+The script verifies all receipt/tool hashes and an Ed25519 signature over the
+complete semantic policy projection. The Mr. X public-key SHA-256 enters the
+protected build invocation as `DEEP_MR_X_PUBLIC_KEY_SHA256`, is passed
+explicitly as `DeepMrXPublicKeySha256`, and is compiled into the physical-lab
+binary; application runtime configuration never supplies or replaces this
+trust root. Release and non-physical builds reject the property. The repository
+contains no invented real key. The verify-only helper uses a locked dependency
+graph, is built before provisioning, and runs without restore/build at the
+trust gate. The local orchestration cleans the provisioned destination in its
+`finally` path even after a failed lane.
 
 Physical Android policy issuance and every downstream validator require Android 9 (API 28) or
 newer, matching the application minimum and its signing-lineage trust boundary. API 26/27 devices
@@ -396,7 +419,9 @@ There is no selector, coordinate, or deterministic-pass fallback.
 
 ## Release evidence gate
 
-`.github/workflows/strict-release-evidence.yml` derives exactly one just-built Windows executable and E2E APK after cleaning their relevant output roots, invokes all three wrappers with the same release invocation on the dedicated self-hosted Windows/device lab, and then runs:
+On Mr. X's local operator workstation, derive exactly one just-built Windows
+executable and E2E APK after cleaning their relevant output roots, invoke all
+three wrappers with the same release invocation, and then run:
 
 ```powershell
 .\eng\Test-StrictClientEvidence.ps1 `
