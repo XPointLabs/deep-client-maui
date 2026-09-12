@@ -14,6 +14,7 @@ public sealed class WindowsMailboxAccessControlTests
         var root = NewRoot();
         try
         {
+            if (!TryAssignCurrentUserOwner(root)) return;
             WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(root);
             WindowsMailboxAccessControl.ValidatePrivateAppDataRoot(root);
         }
@@ -151,6 +152,29 @@ public sealed class WindowsMailboxAccessControlTests
             Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         return root;
+    }
+
+    private static bool TryAssignCurrentUserOwner(string path)
+    {
+        var current = WindowsIdentity.GetCurrent().User;
+        if (current is null) return false;
+        try
+        {
+            var directory = new DirectoryInfo(path);
+            var security = directory.GetAccessControl();
+            security.SetOwner(current);
+            directory.SetAccessControl(security);
+            var actual = directory.GetAccessControl(AccessControlSections.Owner)
+                .GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            return actual is not null && current.Equals(actual);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Some hosted elevated identities force temporary-directory ownership
+            // to Administrators and cannot represent the production current-user
+            // precondition. The implementation still rejects that state closed.
+            return false;
+        }
     }
 
     private static void TryDelete(string root)
