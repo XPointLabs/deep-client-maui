@@ -5,6 +5,13 @@ using Deep.Client.Shared.State;
 
 namespace Deep.Client.Maui.Services;
 
+internal sealed class DeferredMauiAccountLogoutCoordinator(
+    Func<MauiAccountLogoutCoordinator> coordinatorFactory) : IAccountLogoutCoordinator
+{
+    public Task LogoutAsync(CancellationToken cancellationToken = default) =>
+        coordinatorFactory().LogoutAsync(cancellationToken);
+}
+
 public sealed class MauiAccountLogoutCoordinator(
     ClientRuntime runtime,
     IDeepAccountRuntimeAccessor deepAccountRuntime,

@@ -14,12 +14,6 @@ public partial class WelcomePage : ContentPage
         BindingContext = viewModel;
     }
 
-    protected override void OnDisappearing()
-    {
-        viewModel.DiscardPreparedAccount();
-        base.OnDisappearing();
-    }
-
     private async void OnRestoreClicked(object? sender, EventArgs e)
     {
         await Shell.Current.GoToAsync(ShellRouteCatalog.Restore);

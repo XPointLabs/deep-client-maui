@@ -190,7 +190,10 @@ public static class MauiProgram
         services.AddSingleton<IMailboxDispatchRouteUsageObserver>(serviceProvider =>
             serviceProvider.GetRequiredService<PhysicalMailboxRouteUsageTracker>());
 #endif
-        services.AddSingleton<IAccountLogoutCoordinator, MauiAccountLogoutCoordinator>();
+        services.AddTransient<MauiAccountLogoutCoordinator>();
+        services.AddSingleton<IAccountLogoutCoordinator>(serviceProvider =>
+            new DeferredMauiAccountLogoutCoordinator(
+                () => serviceProvider.GetRequiredService<MauiAccountLogoutCoordinator>()));
         services.AddSingleton<IMediaCodecService, MauiMediaCodecService>();
         services.AddSingleton<IPermissionsService, MauiPermissionsService>();
         services.AddSingleton<IBackgroundTaskService, MauiBackgroundTaskService>();

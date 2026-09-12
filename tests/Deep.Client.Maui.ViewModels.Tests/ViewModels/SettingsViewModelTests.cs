@@ -24,6 +24,61 @@ public sealed class SettingsViewModelTests
         Assert.Equal(created.Result.Identity.Account.PermanentId.CanonicalText, viewModel.DeepId);
         Assert.StartsWith("deep1", viewModel.DeepId, StringComparison.Ordinal);
         Assert.Equal("Alice", viewModel.AccountDisplayName);
+        Assert.True(viewModel.HasRetainedRecoveryPhrase);
+        Assert.False(viewModel.IsRecoveryPhraseRevealed);
+    }
+
+    [Fact]
+    public async Task RecoveryPhrase_CanBeRevealedThenHiddenWithoutChangingTheAccount()
+    {
+        await using var localAccounts = new DeepAccountTestRuntime();
+        var created = await localAccounts.CreateAsync("Alice");
+        var navigation = new AuthNavigationState(localAccounts);
+        await navigation.InitializeAsync();
+        var viewModel = new SettingsViewModel(
+            localAccounts,
+            navigation,
+            new TestNetworkStatusService(),
+            new RecordingLogoutCoordinator(() => Task.CompletedTask));
+        await viewModel.LoadAsync();
+
+        await viewModel.RevealRecoveryPhraseAsync();
+
+        Assert.True(viewModel.IsRecoveryPhraseRevealed);
+        Assert.Equal(24, viewModel.RetainedRecoveryPhrase.Split(' ').Length);
+        Assert.Equal(created.RecoveryPhrase, viewModel.RetainedRecoveryPhrase);
+
+        viewModel.ClearRecoveryPhraseFromUi();
+
+        Assert.False(viewModel.IsRecoveryPhraseRevealed);
+        Assert.Empty(viewModel.RetainedRecoveryPhrase);
+        Assert.True(await localAccounts.Accounts.HasRetainedRecoveryPhraseAsync());
+    }
+
+    [Fact]
+    public async Task RecoveryPhrase_DeleteIsIrreversibleLocallyButKeepsAccountUsable()
+    {
+        await using var localAccounts = new DeepAccountTestRuntime();
+        var created = await localAccounts.CreateAsync("Alice");
+        var navigation = new AuthNavigationState(localAccounts);
+        await navigation.InitializeAsync();
+        var viewModel = new SettingsViewModel(
+            localAccounts,
+            navigation,
+            new TestNetworkStatusService(),
+            new RecordingLogoutCoordinator(() => Task.CompletedTask));
+        await viewModel.LoadAsync();
+        await viewModel.RevealRecoveryPhraseAsync();
+
+        await viewModel.DeleteRecoveryPhraseAsync();
+
+        Assert.False(viewModel.HasRetainedRecoveryPhrase);
+        Assert.False(viewModel.IsRecoveryPhraseRevealed);
+        Assert.Empty(viewModel.RetainedRecoveryPhrase);
+        Assert.False(await localAccounts.Accounts.HasRetainedRecoveryPhraseAsync());
+        var identity = await localAccounts.Accounts.GetLocalIdentityAsync();
+        Assert.Equal(created.Result.Identity.Account.PermanentId, identity!.Account.PermanentId);
+        Assert.True(navigation.IsAuthenticated);
     }
 
     [Fact]

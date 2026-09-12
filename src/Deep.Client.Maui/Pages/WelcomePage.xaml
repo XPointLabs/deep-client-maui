@@ -23,33 +23,8 @@
                 MaximumWidthRequest="420"
                 HorizontalOptions="Fill">
                 <Entry AutomationId="Welcome.DisplayName" Placeholder="Имя профиля" Text="{Binding DisplayName}" />
-                <Button AutomationId="Welcome.Create" Text="Подготовить аккаунт" Command="{Binding PrepareAccountCommand}" />
-
-                <VerticalStackLayout Spacing="10" IsVisible="{Binding IsConfirmationRequired}">
-                    <Label Text="Сохраните фразу восстановления. Она показывается только до подтверждения." FontSize="14" TextColor="{StaticResource TextSecondary}" />
-                    <Editor
-                        AutomationId="Welcome.GeneratedRecoveryPhrase"
-                        Text="{Binding GeneratedRecoveryPhrase, Mode=OneWay}"
-                        IsReadOnly="True"
-                        AutoSize="TextChanges"
-                        HeightRequest="128"
-                        IsSpellCheckEnabled="False"
-                        IsTextPredictionEnabled="False" />
-                    <Editor
-                        AutomationId="Welcome.RecoveryPhraseConfirmation"
-                        Placeholder="Введите все 24 слова без изменений"
-                        Text="{Binding RecoveryPhraseConfirmation}"
-                        AutoSize="TextChanges"
-                        HeightRequest="128"
-                        MaxLength="512"
-                        Keyboard="Plain"
-                        IsSpellCheckEnabled="False"
-                        IsTextPredictionEnabled="False" />
-                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-                        <Button AutomationId="Welcome.CancelCreate" Text="Отмена" Command="{Binding CancelPreparationCommand}" Style="{StaticResource SecondaryButton}" WidthRequest="110" />
-                        <Button AutomationId="Welcome.ConfirmCreate" Grid.Column="1" Text="Подтвердить и создать" Command="{Binding ConfirmAccountCommand}" />
-                    </Grid>
-                </VerticalStackLayout>
+                <Button AutomationId="Welcome.Create" Text="Создать аккаунт" Command="{Binding CreateAccountCommand}" />
+                <Label Text="Фраза восстановления будет безопасно сохранена на этом устройстве. Её можно посмотреть, скопировать или удалить в настройках." FontSize="13" TextColor="{StaticResource TextSecondary}" />
 
                 <Button AutomationId="Welcome.Restore" Text="Восстановить по фразе" Clicked="OnRestoreClicked" Style="{StaticResource SecondaryButton}" />
                 <Label AutomationId="Welcome.Error" Text="{Binding ErrorMessage}" TextColor="{StaticResource DangerColor}" FontSize="13" />

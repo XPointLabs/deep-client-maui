@@ -90,11 +90,16 @@ public sealed class E2eAutomationSelectorContractSmokeTests
         Assert.Equal("1", label.Attribute("MaxLines")?.Value);
         Assert.Equal("620", label.Attribute("WidthRequest")?.Value);
         Assert.Equal("Start", label.Attribute("HorizontalOptions")?.Value);
-        Assert.Empty(ElementsWithAutomationId(settings.Root!, "Settings.RecoveryPhrase"));
+        Assert.Single(ElementsWithAutomationId(settings.Root!, "Settings.RecoveryPhrase"));
+        Assert.Single(ElementsWithAutomationId(settings.Root!, "Settings.RecoveryPhraseReveal"));
+        Assert.Single(ElementsWithAutomationId(settings.Root!, "Settings.RecoveryPhraseCopy"));
+        Assert.Single(ElementsWithAutomationId(settings.Root!, "Settings.RecoveryPhraseHide"));
+        Assert.Single(ElementsWithAutomationId(settings.Root!, "Settings.RecoveryPhraseDelete"));
         var source = File.ReadAllText(WorkspacePath(
             "src", "Deep.Client.Maui", "Pages", "SettingsPage.xaml.cs"));
         Assert.DoesNotContain("GetRecoveryPhraseAsync", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("OnRecoveryPhraseClicked", source, StringComparison.Ordinal);
+        Assert.Contains("OnCopyRecoveryPhraseClicked", source, StringComparison.Ordinal);
+        Assert.Contains("OnDeleteRecoveryPhraseClicked", source, StringComparison.Ordinal);
         Assert.Contains("return value;", source, StringComparison.Ordinal);
         Assert.DoesNotContain("string.Join(Environment.NewLine", source,
             StringComparison.Ordinal);

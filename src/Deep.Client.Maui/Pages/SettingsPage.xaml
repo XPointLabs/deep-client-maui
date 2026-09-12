@@ -146,6 +146,42 @@
                     </VerticalStackLayout>
                 </Border>
 
+                <Border Style="{StaticResource SettingsSection}" Padding="14,12">
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="Deep Recovery Phrase" FontSize="16" FontAttributes="Bold" />
+                        <Label AutomationId="Settings.RecoveryPhraseStatus" Text="{Binding RecoveryPhraseStatus}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                        <Button
+                            AutomationId="Settings.RecoveryPhraseReveal"
+                            Text="Показать фразу"
+                            Command="{Binding RevealRecoveryPhraseCommand}"
+                            IsVisible="{Binding HasRetainedRecoveryPhrase}"
+                            Style="{StaticResource SecondaryButton}" />
+                        <VerticalStackLayout Spacing="9" IsVisible="{Binding IsRecoveryPhraseRevealed}">
+                            <Label Text="Никому не отправляйте эти 24 слова. Скопируйте их только в выбранное вами безопасное хранилище." FontSize="12" TextColor="{StaticResource DangerColor}" />
+                            <Editor
+                                x:Name="RecoveryPhraseEditor"
+                                AutomationId="Settings.RecoveryPhrase"
+                                Text="{Binding RetainedRecoveryPhrase, Mode=OneWay}"
+                                IsReadOnly="True"
+                                AutoSize="TextChanges"
+                                HeightRequest="128"
+                                IsSpellCheckEnabled="False"
+                                IsTextPredictionEnabled="False" />
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                                <Button AutomationId="Settings.RecoveryPhraseCopy" Text="Скопировать" Clicked="OnCopyRecoveryPhraseClicked" />
+                                <Button AutomationId="Settings.RecoveryPhraseHide" Grid.Column="1" Text="Скрыть" Command="{Binding HideRecoveryPhraseCommand}" Style="{StaticResource SecondaryButton}" />
+                            </Grid>
+                        </VerticalStackLayout>
+                        <Button
+                            AutomationId="Settings.RecoveryPhraseDelete"
+                            Text="Удалить фразу с устройства"
+                            Clicked="OnDeleteRecoveryPhraseClicked"
+                            IsVisible="{Binding HasRetainedRecoveryPhrase}"
+                            TextColor="{StaticResource DangerColor}"
+                            Style="{StaticResource SecondaryButton}" />
+                    </VerticalStackLayout>
+                </Border>
+
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="14" Padding="0,2,0,0">
                     <Border AutomationId="Settings.Share" Stroke="{StaticResource PrimaryColor}" StrokeThickness="1" Background="Transparent" HeightRequest="42" Padding="0" StrokeShape="RoundRectangle 21">
                         <Label Text="Поделиться" TextColor="{StaticResource PrimaryColor}" FontSize="15" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />

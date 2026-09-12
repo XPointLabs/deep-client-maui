@@ -20,10 +20,10 @@ public sealed class OfflineAccountServiceResolutionTests
 
         await sourceNavigation.InitializeAsync();
         welcome.DisplayName = "Alice";
-        await welcome.PrepareAccountAsync();
-        var recoveryPhrase = welcome.GeneratedRecoveryPhrase;
-        welcome.RecoveryPhraseConfirmation = recoveryPhrase;
-        await welcome.ConfirmAccountAsync();
+        await welcome.CreateAccountAsync();
+        string? recoveryPhrase = null;
+        Assert.True(await sourceAccounts.Accounts.RevealRetainedRecoveryPhraseAsync(
+            bytes => recoveryPhrase = System.Text.Encoding.UTF8.GetString(bytes)));
 
         Assert.True(sourceNavigation.IsAuthenticated);
         Assert.Equal(0, networkFactoryCalls);
@@ -33,7 +33,7 @@ public sealed class OfflineAccountServiceResolutionTests
         var restoredNavigation = restoredServices.GetRequiredService<AuthNavigationState>();
         var onboarding = restoredServices.GetRequiredService<OnboardingViewModel>();
         onboarding.DisplayName = "Alice";
-        onboarding.RecoveryPhrase = recoveryPhrase;
+        onboarding.RecoveryPhrase = recoveryPhrase!;
 
         await onboarding.RestoreAsync();
 

@@ -34,9 +34,13 @@ fast unit tests.
 secure storage adapters, media/picker integration, push callbacks, app lock,
 Reality sidecars, and OS activation ingress.
 
-Secure storage is the sole recovery-phrase source after account activation.
-An absent secure phrase is a normal clean-break state and is never populated
-from SQLite or another wrapped store.
+Fresh account creation accepts only a profile name and commits in one action.
+The generated 24-word Deep Recovery Phrase is atomically retained with the
+account in platform secure storage; onboarding never requires display, copy or
+confirmation. Settings is the only post-activation reveal surface and provides
+explicit copy, hide and irreversible device-local deletion actions. An absent
+secure phrase is a normal state: the account and device keys remain usable, and
+the phrase is never populated from SQLite or another wrapped store.
 
 The SQLCipher key uses a compile-time lane namespace. Ordinary packages retain
 the existing `client-state.sqlcipher-key.v1` SecureStorage slot, while

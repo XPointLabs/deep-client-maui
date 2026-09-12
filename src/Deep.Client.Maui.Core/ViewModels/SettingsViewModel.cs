@@ -1,4 +1,5 @@
 ﻿using Deep.Client.Maui.Core.Commands;
+using System.Text;
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.Presentation;
 using Deep.Client.Maui.Core.Services;
@@ -14,6 +15,10 @@ public sealed class SettingsViewModel : ViewModelBase
     private string accountDisplayName = "Нет аккаунта";
     private string deepId = "-";
     private string connectionStatus = "Неизвестно";
+    private string retainedRecoveryPhrase = string.Empty;
+    private string recoveryPhraseStatus = "Проверка защищённой копии…";
+    private bool hasRetainedRecoveryPhrase;
+    private bool isRecoveryPhraseRevealed;
 
     public SettingsViewModel(
         IDeepAccountRuntimeAccessor accountRuntime,
@@ -28,6 +33,19 @@ public sealed class SettingsViewModel : ViewModelBase
 
         RefreshCommand = new AsyncCommand(LoadAsync);
         LogoutCommand = new AsyncCommand(LogoutAsync, () => authNavigationState.IsAuthenticated);
+        RevealRecoveryPhraseCommand = new AsyncCommand(
+            RevealRecoveryPhraseAsync,
+            () => HasRetainedRecoveryPhrase && !IsRecoveryPhraseRevealed);
+        HideRecoveryPhraseCommand = new AsyncCommand(
+            _ =>
+            {
+                ClearRecoveryPhraseFromUi();
+                return Task.CompletedTask;
+            },
+            () => IsRecoveryPhraseRevealed);
+        DeleteRecoveryPhraseCommand = new AsyncCommand(
+            DeleteRecoveryPhraseAsync,
+            () => HasRetainedRecoveryPhrase);
 
         connectionStatus = networkStatusService.ConnectionLabel;
     }
@@ -68,9 +86,53 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public bool IsNetworkConnected => networkStatusService.IsConnected;
 
+    public string RetainedRecoveryPhrase
+    {
+        get => retainedRecoveryPhrase;
+        private set => SetProperty(ref retainedRecoveryPhrase, value);
+    }
+
+    public string RecoveryPhraseStatus
+    {
+        get => recoveryPhraseStatus;
+        private set => SetProperty(ref recoveryPhraseStatus, value);
+    }
+
+    public bool HasRetainedRecoveryPhrase
+    {
+        get => hasRetainedRecoveryPhrase;
+        private set
+        {
+            if (SetProperty(ref hasRetainedRecoveryPhrase, value))
+            {
+                RevealRecoveryPhraseCommand.RaiseCanExecuteChanged();
+                DeleteRecoveryPhraseCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsRecoveryPhraseRevealed
+    {
+        get => isRecoveryPhraseRevealed;
+        private set
+        {
+            if (SetProperty(ref isRecoveryPhraseRevealed, value))
+            {
+                RevealRecoveryPhraseCommand.RaiseCanExecuteChanged();
+                HideRecoveryPhraseCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
     public AsyncCommand RefreshCommand { get; }
 
     public AsyncCommand LogoutCommand { get; }
+
+    public AsyncCommand RevealRecoveryPhraseCommand { get; }
+
+    public AsyncCommand HideRecoveryPhraseCommand { get; }
+
+    public AsyncCommand DeleteRecoveryPhraseCommand { get; }
 
     public void Activate()
     {
@@ -95,10 +157,53 @@ public sealed class SettingsViewModel : ViewModelBase
             var identity = await accounts.GetLocalIdentityAsync(ct);
             AccountDisplayName = identity?.Account.DisplayName ?? "Нет аккаунта";
             DeepId = identity?.Account.PermanentId.CanonicalText ?? "-";
+            HasRetainedRecoveryPhrase = identity is not null
+                && await accounts.HasRetainedRecoveryPhraseAsync(ct).ConfigureAwait(false);
+            RecoveryPhraseStatus = HasRetainedRecoveryPhrase
+                ? "Защищённая копия сохранена на этом устройстве"
+                : "Копия удалена. Для восстановления понадобится сохранённая вами фраза.";
+            ClearRecoveryPhraseFromUi();
             ConnectionStatus = networkStatusService.ConnectionLabel;
             RaisePropertyChanged(nameof(IsNetworkConnected));
             LogoutCommand.RaiseCanExecuteChanged();
         }, cancellationToken);
+
+    public Task RevealRecoveryPhraseAsync(CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            var accounts = await accountRuntime.GetAccountsAsync(ct).ConfigureAwait(false);
+            string? revealed = null;
+            var found = await accounts.RevealRetainedRecoveryPhraseAsync(
+                    bytes => revealed = Encoding.UTF8.GetString(bytes),
+                    ct)
+                .ConfigureAwait(false);
+            if (!found)
+            {
+                HasRetainedRecoveryPhrase = false;
+                RecoveryPhraseStatus = "Копия удалена. Для восстановления понадобится сохранённая вами фраза.";
+                ClearRecoveryPhraseFromUi();
+                return;
+            }
+
+            RetainedRecoveryPhrase = revealed!;
+            IsRecoveryPhraseRevealed = true;
+        }, cancellationToken);
+
+    public Task DeleteRecoveryPhraseAsync(CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            var accounts = await accountRuntime.GetAccountsAsync(ct).ConfigureAwait(false);
+            await accounts.DeleteRetainedRecoveryPhraseAsync(ct).ConfigureAwait(false);
+            ClearRecoveryPhraseFromUi();
+            HasRetainedRecoveryPhrase = false;
+            RecoveryPhraseStatus = "Копия удалена. Для восстановления понадобится сохранённая вами фраза.";
+        }, cancellationToken);
+
+    public void ClearRecoveryPhraseFromUi()
+    {
+        RetainedRecoveryPhrase = string.Empty;
+        IsRecoveryPhraseRevealed = false;
+    }
 
     public Task UpdateDisplayNameAsync(string displayName, CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
@@ -118,6 +223,9 @@ public sealed class SettingsViewModel : ViewModelBase
 
             AccountDisplayName = "Нет аккаунта";
             DeepId = "-";
+            ClearRecoveryPhraseFromUi();
+            HasRetainedRecoveryPhrase = false;
+            RecoveryPhraseStatus = "Нет аккаунта";
             LogoutCommand.RaiseCanExecuteChanged();
         }, cancellationToken);
     }

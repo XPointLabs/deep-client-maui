@@ -193,6 +193,23 @@ public sealed class ClientSecurityContractSmokeTests
     }
 
     [Fact]
+    public void RetainedRecoveryPhraseIsExplicitlyRevealedAndClearedWhenSettingsCloses()
+    {
+        var welcome = ReadWorkspaceFile("src", "Deep.Client.Maui", "Pages", "WelcomePage.xaml");
+        var settings = ReadWorkspaceFile("src", "Deep.Client.Maui", "Pages", "SettingsPage.xaml");
+        var codeBehind = ReadWorkspaceFile("src", "Deep.Client.Maui", "Pages", "SettingsPage.xaml.cs");
+
+        Assert.Contains("Command=\"{Binding CreateAccountCommand}\"", welcome, StringComparison.Ordinal);
+        Assert.DoesNotContain("Welcome.GeneratedRecoveryPhrase", welcome, StringComparison.Ordinal);
+        Assert.DoesNotContain("Welcome.RecoveryPhraseConfirmation", welcome, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding RevealRecoveryPhraseCommand}\"", settings, StringComparison.Ordinal);
+        Assert.Contains("AutomationId=\"Settings.RecoveryPhraseDelete\"", settings, StringComparison.Ordinal);
+        Assert.Contains("viewModel.ClearRecoveryPhraseFromUi();", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ImportantForAccessibility.NoHideDescendants", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("SetAccessibilityView", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AndroidPlayBuildPinsUploadCertificateForApkAndAab()
     {
         var script = ReadWorkspaceFile("eng", "build-android-play.ps1");
