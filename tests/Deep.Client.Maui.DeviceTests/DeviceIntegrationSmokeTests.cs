@@ -42,6 +42,10 @@ public sealed class DeviceIntegrationSmokeTests
             return Task.FromResult(accounts);
         }
 
+        public async Task EnsureLocalIdentityActivatedAsync(
+            CancellationToken cancellationToken = default) =>
+            _ = await accounts.EnsureGenesisDeviceActivatedAsync(cancellationToken);
+
         public Task ResetLocalStateAsync(CancellationToken cancellationToken = default) =>
             accounts.ResetLocalAccountAsync(cancellationToken);
 
