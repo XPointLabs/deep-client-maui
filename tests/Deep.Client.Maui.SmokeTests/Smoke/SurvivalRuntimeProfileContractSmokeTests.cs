@@ -5,7 +5,7 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class SurvivalRuntimeProfileContractSmokeTests
 {
     [Fact]
-    public void ProjectSelectsOverrideOnlyForNonReleasePhysicalE2eBuilds()
+    public void ProjectSelectsOverrideOnlyForNonReleasePhysicalOrLocalDevBuilds()
     {
         var project = XDocument.Load(WorkspacePath("src", "Deep.Client.Maui", "Deep.Client.Maui.csproj"));
         var resources = project.Descendants("EmbeddedResource")
@@ -21,22 +21,23 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             item.Include == "deep.release.env" &&
             item.Condition is not null &&
             item.Condition.Contains("'$(Configuration)' == 'Release'", StringComparison.Ordinal) &&
-            item.Condition.Contains("'$(DeepPhysicalE2E)' != 'true'", StringComparison.Ordinal));
-        Assert.DoesNotContain(resources, item =>
-            item.Include == "deep.release.env" &&
-            item.Condition is not null &&
+            item.Condition.Contains("'$(DeepPhysicalE2E)' != 'true'", StringComparison.Ordinal) &&
+            item.Condition.Contains("'$(DeepLocalDev)' != 'true'", StringComparison.Ordinal) &&
             item.Condition.Contains("'$(DeepSurvivalRuntimeEnv)' == ''", StringComparison.Ordinal));
         Assert.Contains(resources, item =>
             item.Include == "$(DeepSurvivalRuntimeEnv)" &&
             item.Condition is not null &&
             item.Condition.Contains("'$(Configuration)' != 'Release'", StringComparison.Ordinal) &&
-            item.Condition.Contains("'$(DeepPhysicalE2E)' == 'true'", StringComparison.Ordinal));
+            item.Condition.Contains("'$(DeepPhysicalE2E)' == 'true'", StringComparison.Ordinal) &&
+            item.Condition.Contains("'$(DeepLocalDev)' == 'true'", StringComparison.Ordinal));
 
         var validationTarget = project.Descendants("Target")
             .Single(target => (string?)target.Attribute("Name") == "ValidateDeepSurvivalRuntimeEnvironment");
         var errors = validationTarget.Elements("Error").Select(error => (string?)error.Attribute("Condition") ?? string.Empty).ToArray();
         Assert.Contains(errors, condition => condition.Contains("'$(Configuration)' == 'Release'", StringComparison.Ordinal));
-        Assert.Contains(errors, condition => condition.Contains("'$(DeepPhysicalE2E)' != 'true'", StringComparison.Ordinal));
+        Assert.Contains(errors, condition =>
+            condition.Contains("'$(DeepPhysicalE2E)' != 'true'", StringComparison.Ordinal) &&
+            condition.Contains("'$(DeepLocalDev)' != 'true'", StringComparison.Ordinal));
         Assert.Contains(errors, condition =>
             condition.Contains("'$(DeepPhysicalE2E)' == 'true'", StringComparison.Ordinal) &&
             condition.Contains("'$(DeepSurvivalRuntimeEnv)' == ''", StringComparison.Ordinal));
@@ -174,6 +175,8 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             "eng", "Invoke-PhysicalMau2CrossPlatform.ps1"));
         var ui = File.ReadAllText(WorkspacePath(
             "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformUiTests.cs"));
+        var contracts = File.ReadAllText(WorkspacePath(
+            "tests", "Deep.Client.Maui.UiTests", "StrictCrossPlatformContracts.cs"));
         var chaosController = File.ReadAllText(WorkspacePath(
             "tests", "Deep.Client.Maui.UiTests", "PhysicalChaosController.cs"));
         var windowsUi = File.ReadAllText(WorkspacePath(
@@ -298,8 +301,9 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
         Assert.Contains("case Mau2PhysicalPhase.NegativeRuntime", ui, StringComparison.Ordinal);
         Assert.Contains("android.DismissKeyboard();", ui, StringComparison.Ordinal);
         Assert.Contains("KEYCODE_BACK", ui, StringComparison.Ordinal);
-        Assert.Contains("WaitForWindowsSessionId", ui, StringComparison.Ordinal);
-        Assert.Contains("^(05|15|25)[0-9a-f]{64}$", ui, StringComparison.Ordinal);
+        Assert.Contains("WaitForWindowsDeepId", ui, StringComparison.Ordinal);
+        Assert.Contains("StrictCrossPlatformContracts.RequireDeepId", ui, StringComparison.Ordinal);
+        Assert.Contains("DeepPermanentIdV1.ParseCanonical", contracts, StringComparison.Ordinal);
         Assert.Contains("internal void ColdStart()", ui, StringComparison.Ordinal);
         Assert.Contains("DismissStaleDocumentPicker();", ui, StringComparison.Ordinal);
         Assert.Contains("RequireSingleResumedActivityComponent", ui,
@@ -408,6 +412,18 @@ public sealed class SurvivalRuntimeProfileContractSmokeTests
             project,
             StringComparison.Ordinal);
         Assert.Contains("RejectPhysicalLabTrustRootOutsidePhysicalDebug", project,
+            StringComparison.Ordinal);
+        var document = XDocument.Parse(project);
+        var generateTrustRoot = document.Descendants("Target").Single(target =>
+            (string?)target.Attribute("Name") == "GeneratePhysicalLabTrustRoot");
+        var generateCondition = (string?)generateTrustRoot.Attribute("Condition") ?? string.Empty;
+        Assert.Contains("'$(DeepPhysicalE2E)' == 'true'", generateCondition, StringComparison.Ordinal);
+        Assert.Contains("'$(DeepLocalDev)' == 'true'", generateCondition, StringComparison.Ordinal);
+        Assert.Contains("'$(Configuration)' != 'Release'", generateCondition, StringComparison.Ordinal);
+        var rejectTrustRoot = document.Descendants("Target").Single(target =>
+            (string?)target.Attribute("Name") == "RejectPhysicalLabTrustRootOutsidePhysicalDebug");
+        Assert.Contains("'$(Configuration)' == 'Release'",
+            (string?)rejectTrustRoot.Attribute("Condition") ?? string.Empty,
             StringComparison.Ordinal);
         Assert.Contains("DeepPhysicalUatMrXPublicKeySha256", project,
             StringComparison.Ordinal);

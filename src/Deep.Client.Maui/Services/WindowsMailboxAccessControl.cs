@@ -35,7 +35,8 @@ internal static class WindowsMailboxAccessControl
         ApplyExact(
             path,
             isDirectory: true,
-            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit);
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+            preserveExistingOwner: true);
 
         // Older strict-lane roots were protected without inheritable ACEs. Files
         // created below them therefore retained an empty DACL after their first

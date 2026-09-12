@@ -34,6 +34,10 @@
                 AutomationId="AccountHome.MyDeepId"
                 Text="Мой Deep ID"
                 Clicked="OnMyDeepIdClicked" />
+            <Button
+                AutomationId="AccountHome.Settings"
+                Text="Настройки и сид-фраза"
+                Clicked="OnSettingsClicked" />
         </VerticalStackLayout>
     </Grid>
 </ContentPage>

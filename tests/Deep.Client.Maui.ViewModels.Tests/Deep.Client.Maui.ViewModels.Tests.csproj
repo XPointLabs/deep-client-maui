@@ -59,6 +59,9 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\BackgroundSyncSchedulingCoordinator.cs" Link="Services\BackgroundSyncSchedulingCoordinator.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ClientRuntimeBootstrapper.cs" Link="Services\ClientRuntimeBootstrapper.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ActiveBuildNetworkId.cs" Link="Services\ActiveBuildNetworkId.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ActiveBuildXPointGenesisPin.cs" Link="Services\ActiveBuildXPointGenesisPin.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\IRealityTransportRuntime.cs" Link="Services\IRealityTransportRuntime.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionContactResolveVerifiedHostCapabilitiesSource.cs" Link="Services\ProductionContactResolveVerifiedHostCapabilitiesSource.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\DeepAccountRuntimeAccessor.cs" Link="Services\DeepAccountRuntimeAccessor.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\DeepAccountRuntimeOwner.cs" Link="Services\DeepAccountRuntimeOwner.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\GroupV1\AccountOwnedGroupDeviceCustodySigner.cs" Link="Services\GroupV1\AccountOwnedGroupDeviceCustodySigner.cs" />

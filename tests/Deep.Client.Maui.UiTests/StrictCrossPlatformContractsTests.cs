@@ -263,6 +263,9 @@ public sealed class StrictCrossPlatformContractsTests
     public void Apk_metadata_and_identity_are_strictly_parsed()
     {
         var metadata = StrictCrossPlatformContracts.ApkMetadata.ParseAaptBadging("package: name='network.xpoint.deep.e2e' versionCode='1' versionName='1.2.3'\n", new string('a', 64));
+        var deepId = Deep.Protocol.Identity.DeepPermanentIdV1.Create(
+            Enumerable.Repeat((byte)1, 32).ToArray(),
+            Enumerable.Repeat((byte)2, 16).ToArray()).CanonicalText;
 
         Assert.Equal(StrictCrossPlatformContracts.AndroidPackage, metadata.PackageName);
         Assert.Equal("1", metadata.VersionCode);
@@ -271,6 +274,9 @@ public sealed class StrictCrossPlatformContractsTests
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.RequireSessionId(new string('b', 64), "test"));
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.RequireSessionId("35" + new string('b', 64), "test"));
         Assert.Throws<InvalidOperationException>(() => StrictCrossPlatformContracts.RequireSessionId("not-an-id", "test"));
+        Assert.Equal(deepId, StrictCrossPlatformContracts.RequireDeepId(deepId, "test"));
+        Assert.Throws<InvalidOperationException>(() =>
+            StrictCrossPlatformContracts.RequireDeepId("05" + new string('b', 64), "test"));
     }
 
     [Fact]

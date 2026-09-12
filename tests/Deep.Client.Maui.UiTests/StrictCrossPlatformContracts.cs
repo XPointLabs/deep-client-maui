@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Deep.Protocol.Identity;
 
 namespace Deep.Client.Maui.UiTests;
 
@@ -433,6 +434,20 @@ internal static class StrictCrossPlatformContracts
         }
 
         return normalized;
+    }
+
+    internal static string RequireDeepId(string value, string surface)
+    {
+        var normalized = value.Trim();
+        try
+        {
+            return DeepPermanentIdV1.ParseCanonical(normalized).CanonicalText;
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidOperationException(
+                $"{surface} did not expose one canonical Deep permanent ID.", exception);
+        }
     }
 
     internal static string Sha256(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));

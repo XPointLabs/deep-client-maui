@@ -35,4 +35,7 @@ public partial class NetworkUnavailablePage : ContentPage
 
     private async void OnMyDeepIdClicked(object? sender, EventArgs e) =>
         await Shell.Current.GoToAsync(ShellRouteCatalog.StartConversation);
+
+    private async void OnSettingsClicked(object? sender, EventArgs e) =>
+        await Shell.Current.GoToAsync(ShellRouteCatalog.Settings);
 }

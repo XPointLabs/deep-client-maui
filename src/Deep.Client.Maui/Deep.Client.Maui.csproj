@@ -12,8 +12,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationTitle>Deep</ApplicationTitle>
-    <ApplicationId Condition="'$(DeepPhysicalE2E)' != 'true' Or '$(Configuration)' == 'Release'">network.xpoint.deep</ApplicationId>
-    <ApplicationId Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">network.xpoint.deep.e2e</ApplicationId>
+    <DeepLocalDev Condition="'$(DeepLocalDev)' == ''">false</DeepLocalDev>
+    <ApplicationId Condition="('$(DeepPhysicalE2E)' != 'true' And '$(DeepLocalDev)' != 'true') Or '$(Configuration)' == 'Release'">network.xpoint.deep</ApplicationId>
+    <ApplicationId Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">network.xpoint.deep.e2e</ApplicationId>
     <ApplicationDisplayVersion>0.2.9</ApplicationDisplayVersion>
     <ApplicationVersion>16</ApplicationVersion>
     <WindowsPackageType>None</WindowsPackageType>
@@ -33,6 +34,8 @@
     <PhysicalUatAndroidTransparencySupplied Condition="'$(DeepPhysicalUatAndroidCodeTransparencyManifest)' != ''">true</PhysicalUatAndroidTransparencySupplied>
     <PhysicalUatWindowsBuildIdentitySupplied Condition="'$(DeepPhysicalUatWindowsPackageName)$(DeepPhysicalUatWindowsPublisher)$(DeepPhysicalUatWindowsSigningCertificateSha256)' != ''">true</PhysicalUatWindowsBuildIdentitySupplied>
     <DeepDevelopmentNetworkId Condition="'$(Configuration)' != 'Release' And '$(DeepPhysicalE2E)' != 'true' And '$(DeepDevelopmentNetworkId)' == ''">3e078ce750768322d79079ef97b85b56</DeepDevelopmentNetworkId>
+    <DeepPhysicalUatNetworkId Condition="'$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release' And '$(DeepPhysicalUatNetworkId)' == ''">$(DeepDevelopmentNetworkId)</DeepPhysicalUatNetworkId>
+    <DeepMrXPublicKeySha256 Condition="'$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release' And '$(DeepMrXPublicKeySha256)' == ''">1111111111111111111111111111111111111111111111111111111111111111</DeepMrXPublicKeySha256>
     <DeepGoogleServicesJson Condition="'$(DeepGoogleServicesJson)' == '' And '$(Configuration)' != 'Release'">Platforms\Android\google-services.json</DeepGoogleServicesJson>
   </PropertyGroup>
 
@@ -53,7 +56,7 @@
     <AssemblyMetadata Include="DeepCiReleaseCandidate" Value="$(DeepCiReleaseCandidate)" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+  <ItemGroup Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">
     <AssemblyMetadata Include="DeepPhysicalUatMrXPublicKeySha256" Value="$(DeepPhysicalUatMrXPublicKeySha256)" />
     <AssemblyMetadata Include="DeepPhysicalUatNetworkId" Value="$(DeepPhysicalUatNetworkId)" />
     <AssemblyMetadata Include="DeepPhysicalUatAuthorityGeneration" Value="$(DeepPhysicalUatAuthorityGeneration)" />
@@ -81,12 +84,12 @@
                   Link="deep/production/android-code-transparency.act1" />
   </ItemGroup>
 
-  <PropertyGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+  <PropertyGroup Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">
     <DefineConstants>$(DefineConstants);DEEP_PHYSICAL_E2E</DefineConstants>
     <PhysicalLabTrustRootSource>$(BaseIntermediateOutputPath)deep-physical\$(TargetFramework)\$(RuntimeIdentifier)\PhysicalLabTrustRoot.g.cs</PhysicalLabTrustRootSource>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+  <ItemGroup Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">
     <Compile Include="$(PhysicalLabTrustRootSource)" Visible="false" />
   </ItemGroup>
 
@@ -115,14 +118,14 @@
     <GoogleServicesJson Include="$(DeepGoogleServicesJson)" Condition="'$(DeepGoogleServicesJson)' != '' And Exists('$(DeepGoogleServicesJson)')" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(Configuration)' == 'Release' Or '$(DeepPhysicalE2E)' != 'true'">
+  <ItemGroup Condition="'$(Configuration)' == 'Release' Or (('$(DeepPhysicalE2E)' != 'true' And '$(DeepLocalDev)' != 'true') Or '$(DeepSurvivalRuntimeEnv)' == '')">
     <EmbeddedResource Include="deep.release.env">
       <LogicalName>deep.release.env</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 
   <Target Name="ValidatePhysicalUatMailboxInputs" BeforeTargets="PrepareForBuild"
-          Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+          Condition="'$(DeepPhysicalE2E)' == 'true' And '$(DeepLocalDev)' != 'true' And '$(Configuration)' != 'Release'">
     <Error Condition="'$(PhysicalUatMailboxTrustFloorSupplied)' != 'true'"
            Text="Physical UAT builds require the complete, separately named UAT mailbox trust floor." />
     <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatMrXPublicKeySha256)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatNetworkId)', '^[0-9a-f]{32}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatAuthorityHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatRevocationHeadHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatRevocationSnapshotHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatTopologyHash)', '^[0-9a-f]{64}$'))"
@@ -167,7 +170,7 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' != 'Release' And '$(DeepPhysicalE2E)' == 'true'">
+  <ItemGroup Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' != 'Release' And ('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true')">
     <EmbeddedResource Include="$(DeepSurvivalRuntimeEnv)">
       <LogicalName>deep.release.env</LogicalName>
     </EmbeddedResource>
@@ -255,8 +258,8 @@
   <Target Name="ValidateDeepSurvivalRuntimeEnvironment" BeforeTargets="PrepareForBuild">
     <Error Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release' And '$(DeepSurvivalRuntimeEnv)' == ''"
            Text="Physical E2E builds require an explicit DeepSurvivalRuntimeEnv file and never fall back to the release runtime environment." />
-    <Error Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(DeepPhysicalE2E)' != 'true'"
-           Text="DeepSurvivalRuntimeEnv is accepted only with -p:DeepPhysicalE2E=true." />
+    <Error Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(DeepPhysicalE2E)' != 'true' And '$(DeepLocalDev)' != 'true'"
+           Text="DeepSurvivalRuntimeEnv is accepted only with -p:DeepPhysicalE2E=true or -p:DeepLocalDev=true." />
     <Error Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' == 'Release'"
            Text="DeepSurvivalRuntimeEnv is forbidden for Release builds." />
     <Error Condition="'$(DeepSurvivalRuntimeEnv)' != '' And '$(Configuration)' != 'Release' And '$(DeepPhysicalE2E)' == 'true' And !Exists('$(DeepSurvivalRuntimeEnv)')"
@@ -317,7 +320,7 @@
 
   <Target Name="GeneratePhysicalLabTrustRoot"
           BeforeTargets="PrepareForBuild"
-          Condition="'$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+          Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">
     <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepMrXPublicKeySha256)', '^[0-9a-f]{64}$'))"
            Text="Physical E2E builds require -p:DeepMrXPublicKeySha256=&lt;64 lowercase hex&gt;. The Mr. X trust pin is compiled into the lab binary and cannot come from runtime env." />
     <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(PhysicalLabTrustRootSource)'))" />
@@ -328,7 +331,7 @@
 
   <Target Name="RejectPhysicalLabTrustRootOutsidePhysicalDebug"
           BeforeTargets="PrepareForBuild"
-          Condition="'$(DeepMrXPublicKeySha256)' != '' And ('$(DeepPhysicalE2E)' != 'true' Or '$(Configuration)' == 'Release')">
+          Condition="'$(DeepMrXPublicKeySha256)' != '' And ('$(Configuration)' == 'Release' Or ('$(DeepPhysicalE2E)' != 'true' And '$(DeepLocalDev)' != 'true'))">
     <Error Text="DeepMrXPublicKeySha256 is forbidden outside a physical non-Release build." />
   </Target>
 

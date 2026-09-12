@@ -217,18 +217,24 @@ public sealed class ProductionContactResolvePrerequisitesTests
     }
 
     [Fact]
-    public void VerifiedIngressPairRequiresDistinctCleanHttpsOrigins()
+    public void VerifiedIngressPairAllowsBoundLoopbackCarrierButRejectsPublicHttp()
     {
-        Assert.Throws<ArgumentException>(() =>
-            new VerifiedContactResolvePrivacyIngressPair(
-                NetworkId,
-                new Uri("https://same.example/"),
-                new Uri("https://same.example:443/")));
         Assert.Throws<ArgumentException>(() =>
             new VerifiedContactResolvePrivacyIngressPair(
                 NetworkId,
                 new Uri("http://primary.example/"),
                 new Uri("https://fallback.example/")));
+
+        var routerId = Bytes(32, 0x71);
+        var pair = new VerifiedContactResolvePrivacyIngressPair(
+            NetworkId,
+            new Uri("http://127.0.0.1:17891/"),
+            routerId,
+            new Uri("http://127.0.0.1:17891/"),
+            routerId);
+
+        Assert.Equal(routerId, pair.PrimaryRouterId.ToArray());
+        Assert.Equal(routerId, pair.FallbackRouterId.ToArray());
     }
 
     private static ProductionContactResolveRuntimePrerequisitesSource Source(

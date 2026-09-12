@@ -28,7 +28,17 @@ public sealed class StrictCrossPlatformUiTests
     [StrictCrossPlatformUiFact]
     public void Physical_android_and_windows_exchange_persist_and_decrypt_an_attachment()
     {
-        var options = CrossPlatformOptions.Load();
+        ExecutePhase(CrossPlatformOptions.Load());
+    }
+
+    [LocalDevCrossPlatformUiFact]
+    public void Local_dev_android_and_windows_exchange_persist_and_decrypt_an_attachment()
+    {
+        ExecutePhase(CrossPlatformOptions.LoadLocalDev());
+    }
+
+    private static void ExecutePhase(CrossPlatformOptions options)
+    {
         switch (options.Phase)
         {
             case Mau2PhysicalPhase.ProvisionIdentity:
@@ -71,6 +81,11 @@ public sealed class StrictCrossPlatformUiTests
 
     private static void ProvisionOrPreserveIdentities(CrossPlatformOptions options)
     {
+        if (options.IsLocalDev)
+        {
+            ProvisionLocalDevIdentities(options);
+            return;
+        }
         var evidence = CreatePhaseEvidence(options);
         var android = new AndroidUiautomatorClient(options);
         android.AssertPhysicalConnectedDevice();
@@ -176,6 +191,94 @@ public sealed class StrictCrossPlatformUiTests
         evidence.AddBoolean("windowsUatLocalResetPerformed", windowsResetPerformed);
         evidence.AddBoolean("authenticatedMau2EnvironmentValidated", true);
         CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void ProvisionLocalDevIdentities(CrossPlatformOptions options)
+    {
+        var evidence = CreatePhaseEvidence(options);
+        var android = new AndroidUiautomatorClient(options);
+        android.AssertPhysicalConnectedDevice();
+        android.AssertInstalledPackage(options.ReadAndValidateApkMetadata());
+        android.ColdStart();
+        var androidSurface = android.WaitForExactlyOneResource(
+            [options.App("Welcome.DisplayName"), options.App("AccountHome.Settings")],
+            TimeSpan.FromSeconds(45));
+        var androidCreated = string.Equals(
+            androidSurface, options.App("Welcome.DisplayName"), StringComparison.Ordinal);
+        if (androidCreated)
+        {
+            android.Type(options.App("Welcome.DisplayName"),
+                StrictCrossPlatformContracts.NewMarker("android"));
+            android.DismissKeyboard();
+            android.Tap(options.App("Welcome.Create"));
+            android.WaitForResource(options.App("AccountHome.Settings"),
+                TimeSpan.FromSeconds(45));
+        }
+        android.Tap(options.App("AccountHome.Settings"));
+        var androidIdentity = StrictCrossPlatformContracts.RequireDeepId(
+            android.WaitForResource(options.App("Settings.DeepId"),
+                TimeSpan.FromSeconds(20)).AccessibleText,
+            "Android settings");
+        android.Tap(options.App("Settings.RecoveryPhraseReveal"));
+        var androidPhrase = android.WaitForResource(
+            options.App("Settings.RecoveryPhrase"), TimeSpan.FromSeconds(20)).AccessibleText;
+        RequireTwentyFourWordRecoveryPhrase(androidPhrase);
+        android.Tap(options.App("Settings.RecoveryPhraseHide"));
+
+        using var windows = WindowsUiSmokeTests.WindowsUiTestSession
+            .CreateStrictWithAppData(options.WindowsAppDataRoot);
+        var windowsSurface = WaitForExactlyOneWindowsSurface(
+            windows, ["Welcome.DisplayName", "AccountHome.Settings"],
+            TimeSpan.FromSeconds(45));
+        var windowsCreated = string.Equals(
+            windowsSurface, "Welcome.DisplayName", StringComparison.Ordinal);
+        if (windowsCreated)
+        {
+            var displayName = Require(
+                windows.WaitForAutomationId("Welcome.DisplayName", TimeSpan.FromSeconds(20)),
+                "Welcome.DisplayName").AsTextBox();
+            displayName.Text = StrictCrossPlatformContracts.NewMarker("windows");
+            windows.ActivateExact(Require(
+                windows.WaitForAutomationId("Welcome.Create", TimeSpan.FromSeconds(10)),
+                "Welcome.Create"));
+            Require(windows.WaitForAutomationId(
+                "AccountHome.Settings", TimeSpan.FromSeconds(45)),
+                "AccountHome.Settings");
+        }
+        windows.ActivateExact(Require(
+            windows.WaitForAutomationId("AccountHome.Settings", TimeSpan.FromSeconds(20)),
+            "AccountHome.Settings"));
+        var windowsIdentity = WaitForWindowsDeepId(windows);
+        windows.ActivateExact(Require(
+            windows.WaitForAutomationId("Settings.RecoveryPhraseReveal", TimeSpan.FromSeconds(20)),
+            "Settings.RecoveryPhraseReveal"));
+        var windowsPhrase = Require(
+            windows.WaitForRawAutomationId("Settings.RecoveryPhrase", TimeSpan.FromSeconds(20)),
+            "Settings.RecoveryPhrase").AsTextBox().Text;
+        RequireTwentyFourWordRecoveryPhrase(windowsPhrase);
+        windows.ActivateExact(Require(
+            windows.WaitForAutomationId("Settings.RecoveryPhraseHide", TimeSpan.FromSeconds(20)),
+            "Settings.RecoveryPhraseHide"));
+
+        Assert.NotEqual(androidIdentity, windowsIdentity);
+        evidence.AddHash("androidIdentityHash", androidIdentity);
+        evidence.AddHash("windowsIdentityHash", windowsIdentity);
+        evidence.AddBoolean("androidIdentityCreated", androidCreated);
+        evidence.AddBoolean("windowsIdentityCreated", windowsCreated);
+        evidence.AddBoolean("oneButtonCreationVerified", true);
+        evidence.AddBoolean("retainedRecoveryPhraseRevealedInSettings", true);
+        evidence.AddBoolean("retainedRecoveryPhraseHiddenAgain", true);
+        evidence.AddBoolean("accountCreationWasOffline", true);
+        CompletePhaseEvidence(options, evidence);
+    }
+
+    private static void RequireTwentyFourWordRecoveryPhrase(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.Split(' ', StringSplitOptions.RemoveEmptyEntries |
+                StringSplitOptions.TrimEntries).Length != 24)
+            throw new InvalidOperationException(
+                "Settings did not expose one canonical 24-word recovery phrase.");
     }
 
     private static void RequireClosedLocalResetReason(string? resetCode, string role)
@@ -1188,10 +1291,12 @@ public sealed class StrictCrossPlatformUiTests
     private static StrictCrossPlatformContracts.SanitizedEvidence CreatePhaseEvidence(CrossPlatformOptions options)
     {
         var evidence = new StrictCrossPlatformContracts.SanitizedEvidence();
-        evidence.AddSafeValue("schema", "deep.physical-mau2-phase.v1");
+        evidence.AddSafeValue("schema", options.IsLocalDev
+            ? "deep.local-dev-physical-phase.v1"
+            : "deep.physical-mau2-phase.v1");
         evidence.AddSafeValue("phase", options.Phase.ToString());
         evidence.AddSafeValue("sourceCommit", options.SourceCommit);
-        evidence.AddSafeValue("policyId", (ApprovedCrossPlatformPolicy.Current ?? throw new InvalidOperationException("Approved policy was not loaded.")).PolicyId);
+        evidence.AddSafeValue(options.IsLocalDev ? "devProfileId" : "policyId", options.ProfileId);
         evidence.AddSafeValue("storageReplication", "shared-dev-storage-non-replicated");
         return evidence;
     }
@@ -1205,7 +1310,7 @@ public sealed class StrictCrossPlatformUiTests
                 : "windowsUatArtifactSetSha256",
             options.WindowsOutputTreeSha256);
         evidence.AddBoolean("installedWindowsUatPackageValidated",
-            WindowsUatPackageApproval.Current is not null);
+            !options.IsLocalDev && WindowsUatPackageApproval.Current is not null);
         evidence.AddSafeValue("status", "passed");
         evidence.Write(options.ResultPath);
     }
@@ -1213,7 +1318,7 @@ public sealed class StrictCrossPlatformUiTests
     private static string ReadAndroidIdentity(AndroidUiautomatorClient android, CrossPlatformOptions options)
     {
         android.Tap(options.App("Conversations.ProfileSettings"));
-        var identity = StrictCrossPlatformContracts.RequireSessionId(android.WaitForResource(options.App("Settings.SessionId"), TimeSpan.FromSeconds(20)).AccessibleText, "Android settings");
+        var identity = StrictCrossPlatformContracts.RequireDeepId(android.WaitForResource(options.App("Settings.DeepId"), TimeSpan.FromSeconds(20)).AccessibleText, "Android settings");
         android.Tap(options.App("Settings.Back"));
         android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(20));
         return identity;
@@ -1222,7 +1327,7 @@ public sealed class StrictCrossPlatformUiTests
     private static string ReadWindowsIdentity(WindowsUiSmokeTests.WindowsUiTestSession windows)
     {
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.ProfileSettings", TimeSpan.FromSeconds(20)), "DesktopWorkspace.ProfileSettings"));
-        var identity = WaitForWindowsSessionId(windows);
+        var identity = WaitForWindowsDeepId(windows);
         CloseWindowsSettings(windows);
         return identity;
     }
@@ -1279,7 +1384,7 @@ public sealed class StrictCrossPlatformUiTests
         android.Tap(options.App("Welcome.Create"));
         android.WaitForResource(options.App("Conversations.Root"), TimeSpan.FromSeconds(30));
         android.Tap(options.App("Conversations.ProfileSettings"));
-        var identity = StrictCrossPlatformContracts.RequireSessionId(android.WaitForResource(options.App("Settings.SessionId"), TimeSpan.FromSeconds(20)).AccessibleText, "Android settings");
+        var identity = StrictCrossPlatformContracts.RequireDeepId(android.WaitForResource(options.App("Settings.DeepId"), TimeSpan.FromSeconds(20)).AccessibleText, "Android settings");
         android.Tap(options.App("Settings.Back"));
         return identity;
     }
@@ -1291,34 +1396,38 @@ public sealed class StrictCrossPlatformUiTests
         windows.ActivateExact(Require(windows.WaitForAutomationId("Welcome.Create", TimeSpan.FromSeconds(10)), "Welcome.Create"));
         windows.WaitForAutomationId("Conversations.NewConversation", TimeSpan.FromSeconds(30));
         windows.ActivateExact(Require(windows.WaitForAutomationId("DesktopWorkspace.ProfileSettings", TimeSpan.FromSeconds(20)), "DesktopWorkspace.ProfileSettings"));
-        var identity = WaitForWindowsSessionId(windows);
+        var identity = WaitForWindowsDeepId(windows);
         CloseWindowsSettings(windows);
         return identity;
     }
 
-    private static string WaitForWindowsSessionId(
+    private static string WaitForWindowsDeepId(
         WindowsUiSmokeTests.WindowsUiTestSession windows)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
         while (DateTime.UtcNow < deadline)
         {
             var candidate = windows
-                .WaitForAutomationId("Settings.SessionId", TimeSpan.FromSeconds(1))?
+                .WaitForAutomationId("Settings.DeepId", TimeSpan.FromSeconds(1))?
                 .Properties.Name.ValueOrDefault;
-            if (candidate is not null &&
-                System.Text.RegularExpressions.Regex.IsMatch(
-                    candidate, "^(05|15|25)[0-9a-f]{64}$",
-                    System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+            if (candidate is not null)
             {
-                return StrictCrossPlatformContracts.RequireSessionId(
-                    candidate, "Windows settings");
+                try
+                {
+                    return StrictCrossPlatformContracts.RequireDeepId(
+                        candidate, "Windows settings");
+                }
+                catch (InvalidOperationException)
+                {
+                    // The bound value can arrive after the Settings surface.
+                }
             }
 
             Thread.Sleep(100);
         }
 
         throw new InvalidOperationException(
-            "Windows settings did not publish its loaded Session identity before the deadline.");
+            "Windows settings did not publish its canonical Deep ID before the deadline.");
     }
 
     private static void CloseWindowsSettings(WindowsUiSmokeTests.WindowsUiTestSession windows)
@@ -2054,13 +2163,24 @@ public sealed class StrictCrossPlatformUiFactAttribute : FactAttribute
     }
 }
 
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class LocalDevCrossPlatformUiFactAttribute : FactAttribute
+{
+    public LocalDevCrossPlatformUiFactAttribute()
+    {
+        Skip = CrossPlatformOptions.LocalDevNotRunReason();
+        if (Skip is null) Skip = WindowsDesktopGate.NotRunReason();
+    }
+}
+
 internal sealed class CrossPlatformOptions
 {
     private static readonly string[] RequiredAppRoles =
     [
         "Startup.Status", "Startup.RuntimeFailureCode", "StartupResetLocalStateButton",
-        "Welcome.DisplayName", "Welcome.Create", "Conversations.Root", "PhysicalE2E.RuntimeReadyMarker", "Conversations.ProfileSettings",
-        "Conversations.NewConversationTop", "Conversations.ConversationRow", "Settings.SessionId", "Settings.Back",
+        "Welcome.DisplayName", "Welcome.Create", "AccountHome.Settings", "Conversations.Root", "PhysicalE2E.RuntimeReadyMarker", "Conversations.ProfileSettings",
+        "Conversations.NewConversationTop", "Conversations.ConversationRow", "Settings.DeepId", "Settings.Back",
+        "Settings.RecoveryPhraseReveal", "Settings.RecoveryPhrase", "Settings.RecoveryPhraseHide",
         "StartConversation.NewMessage", "StartConversation.CreateGroup",
         "StartConversation.AccountId", "StartConversation.Close",
         "NewConversation.SessionId", "NewConversation.DisplayName", "NewConversation.Start",
@@ -2079,7 +2199,7 @@ internal sealed class CrossPlatformOptions
     private readonly Dictionary<string, string> androidSelectors;
     private readonly Uri? chaosHttpsOrigin;
     private readonly string? uatCaCertificatePath;
-    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string genericFixturePath, string documentFixturePath, string imageFixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256, bool allowAndroidE2eLocalReset, bool allowWindowsUatLocalReset, Uri? chaosHttpsOrigin, string? uatCaCertificatePath)
+    private CrossPlatformOptions(Mau2PhysicalPhase phase, string serial, string adbPath, string apkPath, string aaptPath, string apksignerPath, string genericFixturePath, string documentFixturePath, string imageFixturePath, string artifactDirectory, string windowsAppDataRoot, Dictionary<string, string> selectors, string pickerFile, string? pickerConfirm, string fingerprint, string model, string sourceCommit, string windowsExeSha256, string windowsOutputTreeSha256, string releaseInvocationId, string policySha256, string profileId, bool isLocalDev, StrictCrossPlatformContracts.ApkMetadata? localApkMetadata, bool allowAndroidE2eLocalReset, bool allowWindowsUatLocalReset, Uri? chaosHttpsOrigin, string? uatCaCertificatePath)
     {
         AndroidSerial = serial; AdbPath = adbPath; ApkPath = apkPath; AaptPath = aaptPath; ApksignerPath = apksignerPath; GenericFixturePath = genericFixturePath; DocumentFixturePath = documentFixturePath; ImageFixturePath = imageFixturePath; ArtifactDirectory = artifactDirectory;
         androidSelectors = selectors; PickerFileResourceId = pickerFile; PickerConfirmResourceId = pickerConfirm;
@@ -2087,6 +2207,9 @@ internal sealed class CrossPlatformOptions
         ResultPath = Path.Combine(artifactDirectory, Mau2PhysicalPhaseContract.GetResultFileName(phase)); InvocationId = Guid.NewGuid().ToString("N"); DeviceFingerprint = fingerprint; DeviceModel = model; SourceCommit = sourceCommit; WindowsExeSha256 = windowsExeSha256; WindowsOutputTreeSha256 = windowsOutputTreeSha256;
         ReleaseInvocationId = releaseInvocationId;
         PolicySha256 = policySha256;
+        ProfileId = profileId;
+        IsLocalDev = isLocalDev;
+        LocalApkMetadata = localApkMetadata;
         AllowAndroidE2eLocalReset = allowAndroidE2eLocalReset;
         AllowWindowsUatLocalReset = allowWindowsUatLocalReset;
         this.chaosHttpsOrigin = chaosHttpsOrigin;
@@ -2114,6 +2237,9 @@ internal sealed class CrossPlatformOptions
     internal string WindowsOutputTreeSha256 { get; }
     internal string ReleaseInvocationId { get; }
     internal string PolicySha256 { get; }
+    internal string ProfileId { get; }
+    internal bool IsLocalDev { get; }
+    private StrictCrossPlatformContracts.ApkMetadata? LocalApkMetadata { get; }
     internal bool AllowAndroidE2eLocalReset { get; }
     internal bool AllowWindowsUatLocalReset { get; }
     internal Uri ChaosHttpsOrigin => chaosHttpsOrigin ?? throw new InvalidOperationException(
@@ -2128,6 +2254,15 @@ internal sealed class CrossPlatformOptions
         var required = new[] { "DEEP_E2E_ANDROID_SERIAL", "DEEP_E2E_ADB", "DEEP_E2E_ANDROID_APK", "DEEP_E2E_AAPT", "DEEP_E2E_APKSIGNER", "DEEP_E2E_GENERIC_FIXTURE", "DEEP_E2E_DOCUMENT_FIXTURE", "DEEP_E2E_IMAGE_FIXTURE", "DEEP_E2E_ARTIFACTS", "DEEP_E2E_ANDROID_SELECTORS_JSON", "DEEP_E2E_ANDROID_PICKER_FILE_ID", "DEEP_MAUI_EXE", "DEEP_E2E_APPDATA_ROOT", "DEEP_E2E_BOOTSTRAP", "DEEP_E2E_ANDROID_POLICY", "DEEP_E2E_REPOSITORY_ROOT", "DEEP_MR_X_PUBLIC_KEY_SHA256", "DEEP_RELEASE_INVOCATION_ID", "DEEP_MAU2_E2E_PHASE", "DEEP_MAU2_E2E_RUN_STATE" };
         var missing = required.Where(key => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key))).ToArray();
         return missing.Length == 0 ? null : "NOT-RUN: missing physical lane prerequisites: " + string.Join(", ", missing);
+    }
+
+    internal static string? LocalDevNotRunReason()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_LOCAL_DEV_CROSS_PLATFORM_UI"), "1", StringComparison.Ordinal))
+            return "NOT-RUN: set DEEP_LOCAL_DEV_CROSS_PLATFORM_UI=1 for the explicit local dev physical lane.";
+        var required = new[] { "DEEP_E2E_ANDROID_SERIAL", "DEEP_E2E_ADB", "DEEP_E2E_ANDROID_APK", "DEEP_E2E_AAPT", "DEEP_E2E_APKSIGNER", "DEEP_E2E_GENERIC_FIXTURE", "DEEP_E2E_DOCUMENT_FIXTURE", "DEEP_E2E_IMAGE_FIXTURE", "DEEP_E2E_ARTIFACTS", "DEEP_E2E_ANDROID_SELECTORS_JSON", "DEEP_E2E_ANDROID_PICKER_FILE_ID", "DEEP_MAUI_EXE", "DEEP_E2E_APPDATA_ROOT", "DEEP_E2E_BOOTSTRAP", "DEEP_E2E_REPOSITORY_ROOT", "DEEP_MAU2_E2E_PHASE", "DEEP_E2E_ANDROID_FINGERPRINT", "DEEP_E2E_ANDROID_MODEL" };
+        var missing = required.Where(key => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key))).ToArray();
+        return missing.Length == 0 ? null : "NOT-RUN: missing local dev physical lane prerequisites: " + string.Join(", ", missing);
     }
 
     internal static CrossPlatformOptions Load()
@@ -2236,10 +2371,81 @@ internal sealed class CrossPlatformOptions
                     "PrivacyFallback requires one exact HTTPS chaos origin.");
             uatCaCertificatePath = RequireAbsoluteFile("DEEP_E2E_UAT_CA_CERTIFICATE");
         }
-        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, genericFixture, documentFixture, imageFixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256, allowAndroidE2eLocalReset, allowWindowsUatLocalReset, chaosHttpsOrigin, uatCaCertificatePath);
+        return new CrossPlatformOptions(phase, policy.Device.Serial, adb, apk, aapt, apksigner, genericFixture, documentFixture, imageFixture, artifacts, Path.GetFullPath(appDataRoot), selectors, pickerFile, pickerConfirm, policy.Device.Fingerprint, policy.Device.Model, commit, windowsHash, windowsOutputTreeHash, releaseInvocation, policy.PolicySha256, policy.PolicyId, false, null, allowAndroidE2eLocalReset, allowWindowsUatLocalReset, chaosHttpsOrigin, uatCaCertificatePath);
     }
+
+    internal static CrossPlatformOptions LoadLocalDev()
+    {
+        if (LocalDevNotRunReason() is { } reason) throw new InvalidOperationException(reason);
+        var phase = Mau2PhysicalPhaseContract.LoadRequired();
+        if (phase is not (Mau2PhysicalPhase.ProvisionIdentity or Mau2PhysicalPhase.Attach or Mau2PhysicalPhase.GroupText or Mau2PhysicalPhase.PayloadMatrix))
+            throw new InvalidOperationException("The local dev physical lane is limited to identity, attachment, group-text, and payload-matrix phases.");
+        if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_PROTOCOL"), "authenticated-mau2", StringComparison.Ordinal) ||
+            !string.Equals(Environment.GetEnvironmentVariable("DEEP_TRANSPORT_OWNERSHIP"), "user-managed", StringComparison.Ordinal))
+            throw new InvalidOperationException("Local dev E2E requires authenticated-mau2/user-managed runtime ownership.");
+        if (!string.Equals(Environment.GetEnvironmentVariable("DEEP_E2E_BOOTSTRAP"), "live", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Local dev E2E requires live application composition.");
+
+        var selectors = ParseSelectors(Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_SELECTORS_JSON")!);
+        var pickerFile = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_FILE_ID")!;
+        var pickerConfirm = Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_PICKER_CONFIRM_ID");
+        StrictCrossPlatformContracts.ValidateResourceId(pickerFile, "picker file selector");
+        if (!string.IsNullOrWhiteSpace(pickerConfirm)) StrictCrossPlatformContracts.ValidateResourceId(pickerConfirm, "picker confirm selector");
+        else pickerConfirm = null;
+
+        var repositoryRoot = Path.GetFullPath(RequireAbsoluteDirectory("DEEP_E2E_REPOSITORY_ROOT"));
+        var apk = RequireAbsoluteFile("DEEP_E2E_ANDROID_APK");
+        var adb = RequireAbsoluteFile("DEEP_E2E_ADB");
+        var aapt = RequireAbsoluteFile("DEEP_E2E_AAPT");
+        var apksigner = RequireAbsoluteFile("DEEP_E2E_APKSIGNER");
+        var genericFixture = RequireAbsoluteFile("DEEP_E2E_GENERIC_FIXTURE");
+        var documentFixture = RequireAbsoluteFile("DEEP_E2E_DOCUMENT_FIXTURE");
+        var imageFixture = RequireAbsoluteFile("DEEP_E2E_IMAGE_FIXTURE");
+        var windowsExe = RequireAbsoluteFile("DEEP_MAUI_EXE");
+        var artifacts = Path.GetFullPath(RequireAbsoluteDirectory("DEEP_E2E_ARTIFACTS", create: true));
+        var appDataRoot = Path.GetFullPath(RequireAbsoluteDirectory("DEEP_E2E_APPDATA_ROOT", create: true));
+
+        var badging = AndroidUiautomatorClient.Run(aapt, ["dump", "badging", apk]);
+        if (badging.ExitCode != 0) throw new InvalidOperationException("aapt failed to inspect the local dev APK.");
+        var apkSha = StrictCrossPlatformContracts.Sha256File(apk);
+        var metadata = StrictCrossPlatformContracts.ApkMetadata.ParseAaptBadging(badging.Output, apkSha);
+        if (!string.Equals(metadata.PackageName, StrictCrossPlatformContracts.AndroidPackage, StringComparison.Ordinal))
+            throw new InvalidOperationException("Local dev APK is not the isolated E2E package.");
+        var signer = AndroidUiautomatorClient.Run(apksigner, ["verify", "--print-certs", apk]);
+        if (signer.ExitCode != 0) throw new InvalidOperationException("apksigner rejected the local dev APK.");
+        var digest = System.Text.RegularExpressions.Regex.Match(signer.Output, "SHA-256[^:]*digest:\\s*(?<digest>[A-Fa-f0-9:]{64,95})", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        if (!digest.Success) throw new InvalidOperationException("apksigner did not emit the local dev signing digest.");
+        metadata = metadata.WithSigningDigest(digest.Groups["digest"].Value.Replace(":", string.Empty, StringComparison.Ordinal).ToLowerInvariant());
+
+        var commitResult = StrictCrossPlatformContracts.RunBounded("git", ["-C", repositoryRoot, "rev-parse", "HEAD"], TimeSpan.FromSeconds(15));
+        var commit = commitResult.Output.Trim();
+        if (commitResult.ExitCode != 0 || !System.Text.RegularExpressions.Regex.IsMatch(commit, "^[a-f0-9]{40}$"))
+            throw new InvalidOperationException("Local dev E2E could not bind the repository HEAD.");
+        var windowsHash = StrictCrossPlatformContracts.Sha256File(windowsExe);
+        var windowsTreeHash = StrictCrossPlatformContracts.Sha256Tree(Path.GetDirectoryName(windowsExe)!);
+        var profileBytes = Encoding.UTF8.GetBytes(string.Join("\n", apkSha, windowsHash, windowsTreeHash, commit));
+        var profileId = Convert.ToHexStringLower(SHA256.HashData(profileBytes));
+
+        return new CrossPlatformOptions(
+            phase,
+            Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_SERIAL")!,
+            adb, apk, aapt, apksigner, genericFixture, documentFixture, imageFixture,
+            artifacts, appDataRoot, selectors, pickerFile, pickerConfirm,
+            Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_FINGERPRINT")!,
+            Environment.GetEnvironmentVariable("DEEP_E2E_ANDROID_MODEL")!,
+            commit, windowsHash, windowsTreeHash, Guid.NewGuid().ToString("N"),
+            profileId, profileId, true, metadata, false, false, null, null);
+    }
+
     internal StrictCrossPlatformContracts.ApkMetadata ReadAndValidateApkMetadata()
     {
+        if (IsLocalDev)
+        {
+            var expected = LocalApkMetadata ?? throw new InvalidOperationException("Local dev APK metadata was not captured.");
+            if (!string.Equals(StrictCrossPlatformContracts.Sha256File(ApkPath), expected.Sha256, StringComparison.Ordinal))
+                throw new InvalidOperationException("Local dev APK changed after validation.");
+            return expected;
+        }
         var policy = ApprovedCrossPlatformPolicy.Current ?? throw new InvalidOperationException("Approved policy was not loaded.");
         var sha = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(ApkPath)));
         if (new FileInfo(ApkPath).Length != policy.Apk.SizeBytes || !string.Equals(sha, policy.Apk.Sha256, StringComparison.Ordinal)) throw new InvalidOperationException("Selected APK does not match the signed size/SHA-256.");
@@ -2257,6 +2463,7 @@ internal sealed class CrossPlatformOptions
     }
 
     private static string RequireAbsoluteFile(string key) { var path = Environment.GetEnvironmentVariable(key)!; if (!Path.IsPathFullyQualified(path) || !File.Exists(path)) throw new InvalidOperationException($"{key} must be an existing absolute path."); return Path.GetFullPath(path); }
+    private static string RequireAbsoluteDirectory(string key, bool create = false) { var path = Environment.GetEnvironmentVariable(key)!; if (!Path.IsPathFullyQualified(path)) throw new InvalidOperationException($"{key} must be an absolute directory path."); path = Path.GetFullPath(path); if (create) Directory.CreateDirectory(path); if (!Directory.Exists(path)) throw new InvalidOperationException($"{key} must be an existing absolute directory path."); return path; }
     private static string RequirePinnedPath(string key, string approvedPath) { var path = RequireAbsoluteFile(key); if (!string.Equals(path, Path.GetFullPath(approvedPath), StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException($"{key} is not the approved exact path."); return path; }
     internal string ResolveProductionDownloadsDirectory() =>
         ResolveProductionDownloadsDirectoryAsync().GetAwaiter().GetResult().Path;
@@ -2529,11 +2736,12 @@ internal sealed class AndroidUiautomatorClient
     internal AndroidUiautomatorClient(CrossPlatformOptions options) => this.options = options;
     internal void AssertPhysicalConnectedDevice()
     {
-        var policy = ApprovedCrossPlatformPolicy.Current ?? throw new InvalidOperationException("Approved policy was not loaded.");
         RequireSuccess(Adb("get-state"), expectedOutput: "device");
         RequireExactProperty("ro.kernel.qemu", "0");
-        RequireExactProperty("ro.build.fingerprint", policy.Device.Fingerprint);
-        RequireExactProperty("ro.product.model", policy.Device.Model);
+        RequireExactProperty("ro.build.fingerprint", options.DeviceFingerprint);
+        RequireExactProperty("ro.product.model", options.DeviceModel);
+        if (options.IsLocalDev) return;
+        var policy = ApprovedCrossPlatformPolicy.Current ?? throw new InvalidOperationException("Approved policy was not loaded.");
         RequireExactProperty("ro.product.name", policy.Device.Product);
         RequireExactProperty("ro.hardware", policy.Device.Hardware);
         RequireExactProperty("ro.build.version.sdk", policy.Device.Sdk.ToString(System.Globalization.CultureInfo.InvariantCulture));

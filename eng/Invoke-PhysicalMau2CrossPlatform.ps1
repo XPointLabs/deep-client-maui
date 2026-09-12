@@ -762,10 +762,12 @@ function Resolve-PolicyPinnedFile(
 function New-CanonicalAndroidSelectorsJson {
     $roles = @(
         'Startup.Status', 'Startup.RuntimeFailureCode', 'StartupResetLocalStateButton',
-        'Welcome.DisplayName', 'Welcome.Create', 'Conversations.Root',
+        'Welcome.DisplayName', 'Welcome.Create', 'AccountHome.Settings', 'Conversations.Root',
         'PhysicalE2E.RuntimeReadyMarker',
         'Conversations.ProfileSettings', 'Conversations.NewConversationTop',
-        'Conversations.ConversationRow', 'Settings.SessionId', 'Settings.Back',
+        'Conversations.ConversationRow', 'Settings.DeepId', 'Settings.Back',
+        'Settings.RecoveryPhraseReveal', 'Settings.RecoveryPhrase',
+        'Settings.RecoveryPhraseHide',
         'StartConversation.NewMessage', 'StartConversation.CreateGroup',
         'StartConversation.AccountId', 'StartConversation.Close',
         'NewConversation.SessionId',
@@ -778,7 +780,7 @@ function New-CanonicalAndroidSelectorsJson {
         'Chat.AttachmentSave', 'Chat.MessageAttachmentOpen', 'Chat.MessageAttachmentSave',
         'Chat.ImagePreview', 'Chat.ImageMetadata',
         'Chat.Voice', 'Chat.VoicePlayButton', 'PhysicalE2E.VoicePlaybackState',
-        'Groups.GroupName', 'Groups.MemberSessionId', 'Groups.AddMember',
+        'Groups.GroupName', 'Groups.MemberAddress', 'Groups.AddMember',
         'Groups.DraftMembers', 'Groups.Create',
         'GroupChat.Title', 'GroupChat.Draft', 'GroupChat.Send',
         'GroupChat.MessageBubble', 'GroupChat.MessageBody',

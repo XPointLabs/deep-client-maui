@@ -148,12 +148,23 @@ public static class MauiProgram
                 PlatformDeepSecureStorage.Create));
         services.AddSingleton<IDeepAccountRuntimeAccessor>(serviceProvider =>
             serviceProvider.GetRequiredService<DeepAccountRuntimeAccessor>());
+        services.AddSingleton<IProductionContactResolveVerifiedHostCapabilitiesSource>(
+            serviceProvider => contactResolveCapabilities is null
+                ? new ProductionContactResolveVerifiedHostCapabilitiesSource(
+                    serviceProvider.GetRequiredService<DeepAccountRuntimeAccessor>(),
+                    serviceProvider.GetRequiredService<HttpServiceTransportFactory>(),
+                    serviceProvider.GetRequiredService<HttpServiceClientOptions>(),
+                    serviceProvider.GetRequiredService<Deep.Protocol.DeepExtension.PrivacyRouting.IOnionMonotonicClock>(),
+                    serviceProvider.GetRequiredService<RuntimeEnvironmentOptions>().RegistryUrl,
+                    serviceProvider.GetRequiredService<IRealityTransportRuntime>())
+                : new FixedProductionContactResolveVerifiedHostCapabilitiesSource(
+                    contactResolveCapabilities));
         services.AddProductionContactResolveRuntimePrerequisites(
             host: null,
             hostOptionsSourceFactory: serviceProvider =>
                 new ProductionMailboxPrivacyRouteBootstrap(
                     serviceProvider.GetRequiredService<DeepAccountRuntimeAccessor>(),
-                    contactResolveCapabilities,
+                    serviceProvider.GetRequiredService<IProductionContactResolveVerifiedHostCapabilitiesSource>(),
                     ActiveBuildNetworkId.Load));
         services.AddSingleton<DeepContactResolveRuntimeAccessor>();
         services.AddSingleton<IDeepContactRuntimeAccessor>(serviceProvider =>
@@ -431,8 +442,9 @@ public static class MauiProgram
                 _ => Task.FromResult(OpenEmbeddedResource("geolite2_country_codes.json")));
         var httpTransportFactories = ApplicationHttpTransportComposition.Create(
             BindPhysicalUatTrust(
-                transportFactory.WithPreferredConnectAddresses(fileConnectIps)),
-            BindPhysicalUatTrust(transportFactory),
+                transportFactory.WithPreferredConnectAddresses(fileConnectIps),
+                survivalDevelopment),
+            BindPhysicalUatTrust(transportFactory, survivalDevelopment),
             fileBaseUrl,
             pushBaseUrl,
             callSignalingBaseUrl,
@@ -858,9 +870,14 @@ public static class MauiProgram
     internal static string ResolveAppDataDirectory() => AppDataPath.Resolve();
 
     private static HttpServiceTransportFactory BindPhysicalUatTrust(
-        HttpServiceTransportFactory factory)
+        HttpServiceTransportFactory factory,
+        bool survivalDevelopment)
     {
         ArgumentNullException.ThrowIfNull(factory);
+        if (survivalDevelopment)
+        {
+            return factory;
+        }
 #if DEBUG && DEEP_PHYSICAL_E2E && ANDROID
         return factory.WithAppScopedPrivateCertificateAuthority(
             LoadPhysicalUatRootCertificateBytes());

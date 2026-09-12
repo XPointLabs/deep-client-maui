@@ -408,6 +408,64 @@ public sealed class WindowsUiSmokeTests
         public AutomationElement? FindAutomationId(string automationId) =>
             CurrentWindow().FindFirstDescendant(condition => condition.ByAutomationId(automationId));
 
+        internal AutomationElement? WaitForRawAutomationId(string automationId, TimeSpan timeout)
+        {
+            var result = Retry.WhileNull(
+                () => FindRawAutomationIdForRetry(automationId),
+                timeout,
+                TimeSpan.FromMilliseconds(200),
+                throwOnTimeout: false);
+            if (result.Result is not null)
+            {
+                return result.Result;
+            }
+
+            WriteFailureEvidence($"Raw-view element '{automationId}' was not found.");
+            return null;
+        }
+
+        private AutomationElement? FindRawAutomationIdForRetry(string automationId)
+        {
+            try
+            {
+                var walker = automation.TreeWalkerFactory.GetRawViewWalker();
+                return FindRaw(CurrentWindow(), depth: 0);
+
+                AutomationElement? FindRaw(AutomationElement parent, int depth)
+                {
+                    if (depth > 64)
+                    {
+                        return null;
+                    }
+
+                    for (var child = walker.GetFirstChild(parent);
+                         child is not null;
+                         child = walker.GetNextSibling(child))
+                    {
+                        if (string.Equals(
+                                child.Properties.AutomationId.ValueOrDefault,
+                                automationId,
+                                StringComparison.Ordinal))
+                        {
+                            return child;
+                        }
+
+                        var descendant = FindRaw(child, depth + 1);
+                        if (descendant is not null)
+                        {
+                            return descendant;
+                        }
+                    }
+
+                    return null;
+                }
+            }
+            catch (COMException) when (!application.HasExited)
+            {
+                return null;
+            }
+        }
+
         private AutomationElement? FindAutomationIdForRetry(string automationId)
         {
             try
@@ -1273,6 +1331,16 @@ public sealed class WindowsUiSmokeTests
         private static void WriteLaunchFailure(string artifactDirectory, Application app, Exception exception)
         {
             Directory.CreateDirectory(artifactDirectory);
+            var processStarted = false;
+            try
+            {
+                processStarted = app.ProcessId > 0;
+            }
+            catch (InvalidOperationException)
+            {
+                // FlaUI can detach after an early process exit. Preserve the
+                // original launch exception instead of masking it in evidence.
+            }
             File.WriteAllText(
                 Path.Combine(artifactDirectory, "windows-ui-result.json"),
                 JsonSerializer.Serialize(
@@ -1281,7 +1349,7 @@ public sealed class WindowsUiSmokeTests
                         schema = "deep.survival.windows-ui.v1",
                         status = "failed",
                         reason = exception.GetType().Name,
-                        processStarted = app.ProcessId > 0,
+                        processStarted,
                         nonzeroWindow = false
                     },
                     new JsonSerializerOptions { WriteIndented = true }),
@@ -1356,7 +1424,15 @@ public sealed class WindowsUiSmokeTests
 
         private static void CloseApplication(Application app)
         {
-            var processId = app.ProcessId;
+            int? processId = null;
+            try
+            {
+                processId = app.ProcessId;
+            }
+            catch (InvalidOperationException)
+            {
+                // The launched process may already have exited and detached.
+            }
             try
             {
                 app.Close(killIfCloseFails: true);
@@ -1374,7 +1450,12 @@ public sealed class WindowsUiSmokeTests
 
             try
             {
-                using var process = Process.GetProcessById(processId);
+                if (processId is null)
+                {
+                    return;
+                }
+
+                using var process = Process.GetProcessById(processId.Value);
                 if (!process.WaitForExit(TimeSpan.FromSeconds(15)))
                 {
                     try

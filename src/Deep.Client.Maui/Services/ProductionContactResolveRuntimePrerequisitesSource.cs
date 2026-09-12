@@ -142,7 +142,11 @@ internal sealed class ProductionContactResolveRuntimePrerequisitesSource
                 return Unavailable(ContactResolveRuntimeUnavailableReason.PrivacyRoute);
             }
             if (ReferenceEquals(primaryRoute, fallbackRoute)
-                || SameOrigin(primaryRoute.EntryOrigin, fallbackRoute.EntryOrigin))
+                || SameOrigin(primaryRoute.EntryOrigin, fallbackRoute.EntryOrigin)
+                && (primaryRoute.ExpectedEntryRouterId.IsEmpty
+                    || fallbackRoute.ExpectedEntryRouterId.IsEmpty
+                    || !primaryRoute.ExpectedEntryRouterId.Span.SequenceEqual(
+                        fallbackRoute.ExpectedEntryRouterId.Span)))
             {
                 return Unavailable(ContactResolveRuntimeUnavailableReason.MalformedConfiguration);
             }

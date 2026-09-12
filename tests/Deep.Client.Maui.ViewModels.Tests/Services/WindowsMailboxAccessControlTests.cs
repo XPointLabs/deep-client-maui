@@ -8,6 +8,22 @@ namespace Deep.Client.Maui.ViewModels.Tests.Services;
 public sealed class WindowsMailboxAccessControlTests
 {
     [Fact]
+    public void StrictAppDataRootCanonicalizesInheritedAclWithoutRewritingItsOwner()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var root = NewRoot();
+        try
+        {
+            WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(root);
+            WindowsMailboxAccessControl.ValidatePrivateAppDataRoot(root);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
     public void CanonicalWindowsAclAcceptsOnlyTheExactThreePrincipals()
     {
         if (!OperatingSystem.IsWindows()) return;

@@ -56,7 +56,9 @@ public sealed class PhysicalUatTlsContractSmokeTests
             StringComparison.Ordinal);
         Assert.Contains("errors != SslPolicyErrors.RemoteCertificateChainErrors",
             sharedHttp, StringComparison.Ordinal);
-        Assert.Contains("BindPhysicalUatTrust(transportFactory)", program,
+        Assert.Contains("BindPhysicalUatTrust(transportFactory, survivalDevelopment)", program,
+            StringComparison.Ordinal);
+        Assert.Contains("if (survivalDevelopment)", program,
             StringComparison.Ordinal);
         Assert.Contains("WithPreferredConnectAddresses(fileConnectIps)", program,
             StringComparison.Ordinal);

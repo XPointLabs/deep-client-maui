@@ -35,6 +35,24 @@ internal sealed class ProductionContactResolveVerifiedHostCapabilities
     internal IContactResolveVerifiedPrivacyIngressSource PrivacyIngressSource { get; }
 }
 
+internal interface IProductionContactResolveVerifiedHostCapabilitiesSource
+{
+    ValueTask<ProductionContactResolveVerifiedHostCapabilities?> GetCurrentAsync(
+        CancellationToken cancellationToken);
+}
+
+internal sealed class FixedProductionContactResolveVerifiedHostCapabilitiesSource(
+    ProductionContactResolveVerifiedHostCapabilities? value)
+    : IProductionContactResolveVerifiedHostCapabilitiesSource
+{
+    public ValueTask<ProductionContactResolveVerifiedHostCapabilities?> GetCurrentAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(value);
+    }
+}
+
 /// <summary>
 /// Deployment-owned capability which may return origins only after its signed
 /// bootstrap and network binding have been verified. Raw route documents never
@@ -49,11 +67,28 @@ internal interface IContactResolveVerifiedPrivacyIngressSource
 internal sealed class VerifiedContactResolvePrivacyIngressPair
 {
     private readonly byte[] networkId;
+    private readonly byte[] primaryRouterId;
+    private readonly byte[] fallbackRouterId;
 
     internal VerifiedContactResolvePrivacyIngressPair(
         ReadOnlyMemory<byte> networkId,
         Uri primaryOrigin,
         Uri fallbackOrigin)
+        : this(
+            networkId,
+            primaryOrigin,
+            ReadOnlyMemory<byte>.Empty,
+            fallbackOrigin,
+            ReadOnlyMemory<byte>.Empty)
+    {
+    }
+
+    internal VerifiedContactResolvePrivacyIngressPair(
+        ReadOnlyMemory<byte> networkId,
+        Uri primaryOrigin,
+        ReadOnlyMemory<byte> primaryRouterId,
+        Uri fallbackOrigin,
+        ReadOnlyMemory<byte> fallbackRouterId)
     {
         if (networkId.Length != 16
             || networkId.Span.IndexOfAnyExcept((byte)0) < 0)
@@ -63,39 +98,48 @@ internal sealed class VerifiedContactResolvePrivacyIngressPair
         }
         ValidateOrigin(primaryOrigin, nameof(primaryOrigin));
         ValidateOrigin(fallbackOrigin, nameof(fallbackOrigin));
-        if (SameOrigin(primaryOrigin, fallbackOrigin))
-        {
-            throw new ArgumentException(
-                "ContactResolve primary and fallback ingress origins must be distinct.");
-        }
+        ValidateRouterId(primaryRouterId, nameof(primaryRouterId));
+        ValidateRouterId(fallbackRouterId, nameof(fallbackRouterId));
         this.networkId = networkId.ToArray();
+        this.primaryRouterId = primaryRouterId.ToArray();
+        this.fallbackRouterId = fallbackRouterId.ToArray();
         PrimaryOrigin = primaryOrigin;
         FallbackOrigin = fallbackOrigin;
     }
 
     internal ReadOnlyMemory<byte> NetworkId => networkId.ToArray();
     internal Uri PrimaryOrigin { get; }
+    internal ReadOnlyMemory<byte> PrimaryRouterId => primaryRouterId.ToArray();
     internal Uri FallbackOrigin { get; }
+    internal ReadOnlyMemory<byte> FallbackRouterId => fallbackRouterId.ToArray();
 
     private static void ValidateOrigin(Uri origin, string name)
     {
         ArgumentNullException.ThrowIfNull(origin, name);
         if (!origin.IsAbsoluteUri
             || origin.Scheme != Uri.UriSchemeHttps
+                && origin.Scheme != Uri.UriSchemeHttp
             || !string.IsNullOrEmpty(origin.UserInfo)
             || origin.AbsolutePath != "/"
             || !string.IsNullOrEmpty(origin.Query)
-            || !string.IsNullOrEmpty(origin.Fragment))
+            || !string.IsNullOrEmpty(origin.Fragment)
+            || origin.Scheme == Uri.UriSchemeHttp && !origin.IsLoopback)
         {
             throw new ArgumentException(
-                "A verified privacy ingress must be a clean HTTPS origin.", name);
+                "A verified privacy ingress must be clean HTTPS or an explicit loopback HTTP origin.", name);
         }
     }
 
-    private static bool SameOrigin(Uri left, Uri right) =>
-        string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(left.IdnHost, right.IdnHost, StringComparison.OrdinalIgnoreCase)
-        && left.Port == right.Port;
+    private static void ValidateRouterId(ReadOnlyMemory<byte> routerId, string name)
+    {
+        if (!routerId.IsEmpty &&
+            (routerId.Length != 32 || routerId.Span.IndexOfAnyExcept((byte)0) < 0))
+        {
+            throw new ArgumentException(
+                "A verified ingress router ID must be empty or exactly 32 non-zero bytes.",
+                name);
+        }
+    }
 }
 
 internal interface IProductionContactResolveHostOptionsSource
@@ -116,7 +160,7 @@ internal sealed class ProductionMailboxPrivacyRouteBootstrap :
         "production-privacy-routing-host-adapters-unavailable";
 
     private readonly DeepAccountRuntimeAccessor accounts;
-    private readonly ProductionContactResolveVerifiedHostCapabilities? capabilities;
+    private readonly IProductionContactResolveVerifiedHostCapabilitiesSource capabilitySource;
     private readonly Func<ReadOnlyMemory<byte>> activeNetworkIdFactory;
     private readonly SemaphoreSlim gate = new(1, 1);
 
@@ -124,9 +168,21 @@ internal sealed class ProductionMailboxPrivacyRouteBootstrap :
         DeepAccountRuntimeAccessor accounts,
         ProductionContactResolveVerifiedHostCapabilities? capabilities,
         Func<ReadOnlyMemory<byte>> activeNetworkIdFactory)
+        : this(
+            accounts,
+            new FixedProductionContactResolveVerifiedHostCapabilitiesSource(capabilities),
+            activeNetworkIdFactory)
+    {
+    }
+
+    internal ProductionMailboxPrivacyRouteBootstrap(
+        DeepAccountRuntimeAccessor accounts,
+        IProductionContactResolveVerifiedHostCapabilitiesSource capabilitySource,
+        Func<ReadOnlyMemory<byte>> activeNetworkIdFactory)
     {
         this.accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
-        this.capabilities = capabilities;
+        this.capabilitySource = capabilitySource
+            ?? throw new ArgumentNullException(nameof(capabilitySource));
         this.activeNetworkIdFactory = activeNetworkIdFactory
             ?? throw new ArgumentNullException(nameof(activeNetworkIdFactory));
     }
@@ -150,6 +206,8 @@ internal sealed class ProductionMailboxPrivacyRouteBootstrap :
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var capabilities = await capabilitySource.GetCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
         if (capabilities is null)
         {
             return null;
@@ -203,10 +261,12 @@ internal sealed class ProductionMailboxPrivacyRouteBootstrap :
                     account.EntryGuardStore);
                 var primary = new PrivacyMailboxRoute(
                     ingress.PrimaryOrigin,
-                    pathProvider);
+                    pathProvider,
+                    ingress.PrimaryRouterId);
                 var fallback = new PrivacyMailboxRoute(
                     ingress.FallbackOrigin,
-                    pathProvider);
+                    pathProvider,
+                    ingress.FallbackRouterId);
                 var codec = new PrivacyRoutingCodec(
                     new OnionEntropyAuthority(account.EntropyLedger),
                     new OnionKeyAgreementAuthority(account.KeyAgreementVault));

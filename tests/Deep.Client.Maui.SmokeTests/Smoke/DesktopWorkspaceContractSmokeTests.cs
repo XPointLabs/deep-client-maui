@@ -64,6 +64,10 @@ public sealed class DesktopWorkspaceContractSmokeTests
         var shellXaml = ReadWorkspaceFile("src", "Deep.Client.Maui", "AppShell.xaml");
         var shellCode = ReadWorkspaceFile("src", "Deep.Client.Maui", "AppShell.xaml.cs");
         var mauiProgram = ReadWorkspaceFile("src", "Deep.Client.Maui", "MauiProgram.cs");
+        var offlineHomeXaml = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Pages", "NetworkUnavailablePage.xaml");
+        var offlineHomeCode = ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Pages", "NetworkUnavailablePage.xaml.cs");
 
         Assert.Contains("ContentTemplate=\"{DataTemplate pages:NetworkUnavailablePage}\"", shellXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ContentTemplate=\"{DataTemplate pages:ConversationsPage}\"", shellXaml, StringComparison.Ordinal);
@@ -74,6 +78,9 @@ public sealed class DesktopWorkspaceContractSmokeTests
         Assert.Contains("AddTransient<ConversationsPage>()", mauiProgram, StringComparison.Ordinal);
         Assert.Contains("new DesktopWorkspaceViewModel(", mauiProgram, StringComparison.Ordinal);
         Assert.Contains("AddSingleton<DesktopWorkspacePage>()", mauiProgram, StringComparison.Ordinal);
+        Assert.Contains("AutomationId=\"AccountHome.Settings\"", offlineHomeXaml,
+            StringComparison.Ordinal);
+        Assert.Contains("ShellRouteCatalog.Settings", offlineHomeCode, StringComparison.Ordinal);
 
         var newConversation = ReadWorkspaceFile(
             "src", "Deep.Client.Maui", "Pages", "NewConversationPage.xaml.cs");
