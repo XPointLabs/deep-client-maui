@@ -20,14 +20,12 @@ public sealed class DeviceIntegrationSmokeTests
             Enumerable.Range(1, 16).Select(static value => (byte)value).ToArray());
         await using var accessor = new TestAccountRuntimeAccessor(service);
         var navigation = new AuthNavigationState(accessor);
-        using var onboarding = new WelcomeViewModel(accessor, navigation)
+        var onboarding = new WelcomeViewModel(accessor, navigation)
         {
             DisplayName = "Device"
         };
 
-        await onboarding.PrepareAccountAsync();
-        onboarding.RecoveryPhraseConfirmation = onboarding.GeneratedRecoveryPhrase;
-        await onboarding.ConfirmAccountAsync();
+        await onboarding.CreateAccountAsync();
 
         Assert.NotNull(onboarding.Account);
         Assert.True(navigation.IsAuthenticated);
