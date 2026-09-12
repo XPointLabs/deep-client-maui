@@ -47,6 +47,7 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxContactStateStore.cs" Link="Services\ProductionMailboxContactStateStore.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionMailboxArtifactSetDigest.cs" Link="Services\ProductionMailboxArtifactSetDigest.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionAndroidCodeTransparency.cs" Link="Services\ProductionAndroidCodeTransparency.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ApprovedAndroidNativeCryptoAssetStager.cs" Link="Services\ApprovedAndroidNativeCryptoAssetStager.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\StoreBoundNativeMau2Transport.cs" Link="Services\StoreBoundNativeMau2Transport.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PhysicalMailboxRouteUsageTracker.cs" Link="Services\PhysicalMailboxRouteUsageTracker.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PrivacyMailboxRouteDiagnostics.cs" Link="Services\PrivacyMailboxRouteDiagnostics.cs" />

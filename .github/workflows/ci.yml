@@ -189,6 +189,18 @@ jobs:
         run: dotnet workload restore src/Deep.Client.Maui/Deep.Client.Maui.csproj
       - working-directory: deep-client-maui
         run: dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android --configuration Release -m:1 --disable-build-servers -p:UseSharedCompilation=false -p:DeepGoogleServicesJson=Platforms/Android/google-services.json -p:DeepCiReleaseCandidate=true
+      - name: Verify approved Android native assets in APK
+        shell: pwsh
+        working-directory: deep-client-maui
+        run: |
+          $apk = Get-ChildItem `
+            -LiteralPath src/Deep.Client.Maui/bin/Release/net10.0-android `
+            -Filter 'network.xpoint.deep.apk' `
+            -File | Select-Object -ExpandProperty FullName -First 1
+          if ([string]::IsNullOrWhiteSpace($apk)) {
+            throw 'Android Release build did not produce the required APK.'
+          }
+          ./eng/Test-AndroidApprovedNativeAssets.ps1 -ApkPath $apk
       - name: Android device integration test build
         working-directory: deep-client-maui
         run: dotnet build tests/Deep.Client.Maui.DeviceTests/Deep.Client.Maui.DeviceTests.csproj -f net10.0-android --configuration Release -m:1 --disable-build-servers -p:UseSharedCompilation=false -p:DeepCiReleaseCandidate=true

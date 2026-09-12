@@ -699,6 +699,8 @@ public static class MauiProgram
                 avatarProfiles: services.GetRequiredService<IAvatarProfileTransport>());
         }
 #endif
+        await ApprovedNativeCryptoAssetBootstrap.StageAsync(cancellationToken)
+            .ConfigureAwait(false);
         var appDataDirectory = ResolveAppDataDirectory();
         var stateDbPath = Path.Combine(appDataDirectory, "client-state.db");
         var stateDbKeySlot = LocalStateDatabaseKeySlot.Active;
