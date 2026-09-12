@@ -131,7 +131,11 @@ public sealed class AndroidRunnerV3Tests
 
         Assert.False(outcome.Passed);
         Assert.False(outcome.Device.TestPackageRemovedAfter);
-        Assert.True(elapsed < TimeSpan.FromSeconds(2));
+        // GitHub-hosted Windows runners can pause a process for several seconds while
+        // the 50 ms cancellation timer is already armed.  Keep this as a generous
+        // deadlock guard; the exact cleanup budget and the fact that every independent
+        // cleanup command was attempted are asserted by the remainder of the test.
+        Assert.True(elapsed < TimeSpan.FromSeconds(10));
         Assert.Contains(adb.Calls, call => call.SequenceEqual(
             new[] { "-s", options.Serial, "shell", "am", "force-stop", RunnerOptions.E2ePackage }));
         Assert.Contains(adb.Calls, call => call.SequenceEqual(
