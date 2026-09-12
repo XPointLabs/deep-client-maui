@@ -74,6 +74,30 @@ internal sealed class DeepAccountRuntimeAccessor :
         }
     }
 
+    public async Task EnsureLocalIdentityActivatedAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            owner ??= await DeepAccountRuntimeOwner.OpenAsync(
+                    appDataDirectory,
+                    clock,
+                    networkIdFactory(),
+                    secureStorageFactory,
+                    privacyStateProtectorFactory,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            _ = await owner.EnsureGenesisDeviceActivatedAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public async Task<string> GetPermanentDeepIdAsync(
         CancellationToken cancellationToken = default)
     {
@@ -190,15 +214,8 @@ internal sealed class DeepAccountRuntimeAccessor :
 
     internal async Task<DeepDirectMessagingStorageFacade?>
         TryGetDirectMessagingStorageAsync(
-            LocalDeviceX25519AgreementAuthority? localAgreementAuthority,
-            VerifiedDeviceRelative? verifiedDevice,
             CancellationToken cancellationToken = default)
     {
-        if (localAgreementAuthority is null || verifiedDevice is null)
-        {
-            return null;
-        }
-
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -211,10 +228,7 @@ internal sealed class DeepAccountRuntimeAccessor :
                     privacyStateProtectorFactory,
                     cancellationToken)
                 .ConfigureAwait(false);
-            return await owner.TryGetDirectMessagingStorageAsync(
-                    localAgreementAuthority,
-                    verifiedDevice,
-                    cancellationToken)
+            return await owner.TryGetDirectMessagingStorageAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
         finally

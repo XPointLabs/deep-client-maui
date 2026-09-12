@@ -70,6 +70,7 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
     private readonly SemaphoreSlim groupGate = new(1, 1);
     private readonly SemaphoreSlim directMessagingGate = new(1, 1);
     private readonly SemaphoreSlim contactResolvePrivacyGate = new(1, 1);
+    private readonly SemaphoreSlim activationGate = new(1, 1);
     private SqliteDeepAccountStore? store;
     private SqliteContactStateStore? contactStore;
     private SqliteDeviceStateStore? deviceStateStore;
@@ -87,6 +88,8 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
 #endif
     private ProtectedContactResolveEntropyLedger? contactResolveEntropyLedger;
     private DeepContactResolvePrivacyHostBinding? contactResolvePrivacyBinding;
+    private DeepGenesisDeviceActivation? genesisActivation;
+    private LocalDeviceX25519AgreementAuthority? localAgreementAuthority;
 
     private DeepAccountRuntimeOwner(
         string appDataDirectory,
@@ -105,6 +108,46 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
 
     internal DeepAccountService Accounts { get; }
 
+    internal async Task<DeepGenesisDeviceActivation?> EnsureGenesisDeviceActivatedAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await activationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(store is null, this);
+            var identity = await Accounts.GetLocalIdentityAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (identity is null) return null;
+            var activated = genesisActivation ??
+                await Accounts.EnsureGenesisDeviceActivatedAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            var operationId = DeviceOperationId32.FromBytes(
+                activated.CurrentDirectory.Head.Record.RecordHash.Span);
+            var commit = await CommitCurrentDmd1Async(
+                    operationId,
+                    activated.CurrentDirectory,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (commit.Disposition is not (
+                ProtectedCurrentDmd1CommitDisposition.Applied or
+                ProtectedCurrentDmd1CommitDisposition.ExactReplay))
+                throw new InvalidOperationException(
+                    $"Genesis DMD1 could not become current: {commit.Disposition}.");
+            localAgreementAuthority ??=
+                await Accounts.OpenCurrentDeviceAgreementAuthorityAsync(
+                        identity,
+                        activated.VerifiedDevice,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            genesisActivation = activated;
+            return activated;
+        }
+        finally
+        {
+            activationGate.Release();
+        }
+    }
+
     internal async Task<IGroupDeviceCustodySigner?> TryGetGroupDeviceCustodySignerAsync(
         CancellationToken cancellationToken = default)
     {
@@ -118,14 +161,13 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
 
     internal async Task<DeepDirectMessagingStorageFacade?>
         TryGetDirectMessagingStorageAsync(
-            LocalDeviceX25519AgreementAuthority? localAgreementAuthority,
-            VerifiedDeviceRelative? verifiedDevice,
             CancellationToken cancellationToken = default)
     {
-        if (localAgreementAuthority is null || verifiedDevice is null)
-        {
-            return null;
-        }
+        var activation = await EnsureGenesisDeviceActivatedAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (activation is null) return null;
+        var agreement = localAgreementAuthority ??
+            throw new InvalidOperationException("Local agreement authority was not activated.");
 
         await directMessagingGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -134,8 +176,8 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
             if (directMessagingStorage is not null)
             {
                 if (!directMessagingStorage.IsBoundTo(
-                        localAgreementAuthority,
-                        verifiedDevice))
+                        agreement,
+                        activation.VerifiedDevice))
                 {
                     throw new CryptographicException(
                         "The direct-message owner is already bound to another verified local authority.");
@@ -146,8 +188,8 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
             directMessagingStorage = await DeepDirectMessagingStorageFacade.OpenAsync(
                     appDataDirectory,
                     Accounts,
-                    localAgreementAuthority,
-                    verifiedDevice,
+                    agreement,
+                    activation.VerifiedDevice,
                     cancellationToken)
                 .ConfigureAwait(false);
             return directMessagingStorage;
@@ -708,7 +750,9 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                     secureStorage,
                     clock,
                     networkId.Span);
-                if (await service.GetLocalIdentityAsync(cancellationToken).ConfigureAwait(false) is null)
+                var localIdentity = await service.GetLocalIdentityAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (localIdentity is null)
                 {
                     DeleteSqliteFamily(Path.Combine(root, RelativeContactStatePath));
                     DeleteSqliteFamily(Path.Combine(root, RelativeDeviceStatePath));
@@ -722,12 +766,16 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                         RelativeGroupInvitationActivationPath));
                     DeepDirectMessagingStorageFacade.DeleteAccountState(root);
                 }
-                return new DeepAccountRuntimeOwner(
+                var owner = new DeepAccountRuntimeOwner(
                     root,
                     secureStorage,
                     privacyStateProtectorFactory(),
                     store,
                     service);
+                if (localIdentity?.Account.ActivationState == DeepAccountActivationState.ActiveLocal)
+                    _ = await owner.EnsureGenesisDeviceActivatedAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                return owner;
             }
             catch
             {
@@ -785,7 +833,8 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                 xPointGate.WaitAsync(),
                 groupGate.WaitAsync(),
                 directMessagingGate.WaitAsync(),
-                contactResolvePrivacyGate.WaitAsync())
+                contactResolvePrivacyGate.WaitAsync(),
+                activationGate.WaitAsync())
             .ConfigureAwait(false);
         try
         {
@@ -822,6 +871,9 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
             contactResolvePrivacyBinding = null;
             contactResolveEntropyLedger?.Dispose();
             contactResolveEntropyLedger = null;
+            genesisActivation = null;
+            localAgreementAuthority?.Dispose();
+            localAgreementAuthority = null;
             await ownedStore.DisposeAsync().ConfigureAwait(false);
         }
         finally
@@ -834,6 +886,7 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
             groupGate.Release();
             directMessagingGate.Release();
             contactResolvePrivacyGate.Release();
+            activationGate.Release();
             secureStorage.Dispose();
         }
     }

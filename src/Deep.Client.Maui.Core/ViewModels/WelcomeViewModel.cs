@@ -46,6 +46,7 @@ public sealed class WelcomeViewModel : ViewModelBase
         {
             var accounts = await accountRuntime.GetAccountsAsync(ct).ConfigureAwait(false);
             var result = await accounts.CreateAsync(DisplayName, ct).ConfigureAwait(false);
+            await accountRuntime.EnsureLocalIdentityActivatedAsync(ct).ConfigureAwait(false);
             Account = result.Identity.Account;
             DisplayName = Account.DisplayName;
             await authNavigationState.RefreshAsync(ct).ConfigureAwait(false);

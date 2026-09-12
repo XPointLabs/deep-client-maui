@@ -20,6 +20,27 @@ public sealed class DeepDirectMessagingStorageOwnerTests
         .ToArray();
 
     [Fact]
+    public async Task ProductionOwner_ActivatesAndRestoresVerifiedLocalAuthority()
+    {
+        using var fixture = new RuntimeFixture();
+        await using (var first = fixture.CreateAccessor())
+        {
+            await CreateAccountAsync(await first.GetAccountsAsync());
+            await first.EnsureLocalIdentityActivatedAsync();
+            Assert.NotNull(await first.TryGetDirectMessagingStorageAsync(
+                CancellationToken.None));
+            AssertEncrypted(fixture.PreKeyPath);
+            AssertEncrypted(fixture.CatalogPath);
+        }
+
+        await using var restarted = fixture.CreateAccessor();
+        Assert.NotNull(await restarted.TryGetDirectMessagingStorageAsync(
+            CancellationToken.None));
+        AssertEncrypted(fixture.PreKeyPath);
+        AssertEncrypted(fixture.CatalogPath);
+    }
+
+    [Fact]
     public async Task MissingAccountOrVerifiedAuthoritiesCreateNoMessagingState()
     {
         using var fixture = new RuntimeFixture();

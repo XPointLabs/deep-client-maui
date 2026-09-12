@@ -9,5 +9,7 @@ public interface IDeepAccountRuntimeAccessor : IAsyncDisposable
 {
     Task<DeepAccountService> GetAccountsAsync(CancellationToken cancellationToken = default);
 
+    Task EnsureLocalIdentityActivatedAsync(CancellationToken cancellationToken = default);
+
     Task ResetLocalStateAsync(CancellationToken cancellationToken = default);
 }

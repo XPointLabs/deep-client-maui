@@ -33,6 +33,10 @@ internal sealed class DeepAccountTestRuntime : IDeepAccountRuntimeAccessor
         return Task.FromResult(Accounts);
     }
 
+    public async Task EnsureLocalIdentityActivatedAsync(
+        CancellationToken cancellationToken = default) =>
+        _ = await Accounts.EnsureGenesisDeviceActivatedAsync(cancellationToken);
+
     public Task ResetLocalStateAsync(CancellationToken cancellationToken = default) =>
         Accounts.ResetLocalAccountAsync(cancellationToken);
 
