@@ -278,7 +278,8 @@ internal sealed class ProductionMailboxPrivacyRouteBootstrap :
                     () => primary,
                     () => fallback,
                     () => codec,
-                    () => capabilities.PathAuthoritySource as IContactResolvePlacementContextSource);
+                    () => capabilities.PathAuthoritySource as IContactResolvePlacementContextSource,
+                    PathAuthoritySourceFactory: () => capabilities.PathAuthoritySource);
             }
             finally
             {

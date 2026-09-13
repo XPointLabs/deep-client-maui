@@ -20,7 +20,8 @@ internal sealed record ProductionContactResolveHostOptions(
     Func<PrivacyMailboxRoute?> FallbackPrivacyMailboxRouteFactory,
     Func<PrivacyRoutingCodec?> PrivacyRoutingCodecFactory,
     Func<IContactResolvePlacementContextSource?> PlacementContextSourceFactory,
-    ushort SupportedDirectoryReader = 1);
+    ushort SupportedDirectoryReader = 1,
+    Func<IContactResolvePathAuthoritySource>? PathAuthoritySourceFactory = null);
 
 /// <summary>
 /// Production-capable but dormant unless every bootstrap-owned capability is
@@ -94,6 +95,7 @@ internal sealed class ProductionContactResolveRuntimePrerequisitesSource
                 || host.FallbackPrivacyMailboxRouteFactory is null
                 || host.PrivacyRoutingCodecFactory is null
                 || host.PlacementContextSourceFactory is null
+                || host.PathAuthoritySourceFactory is null
                 || host.SupportedDirectoryReader == 0)
             {
                 return Unavailable(ContactResolveRuntimeUnavailableReason.MalformedConfiguration);
@@ -168,7 +170,8 @@ internal sealed class ProductionContactResolveRuntimePrerequisitesSource
                         serviceTransportOptionsFactory()),
                 () => verifier,
                 host.PlacementContextSourceFactory,
-                host.SupportedDirectoryReader);
+                host.SupportedDirectoryReader,
+                PathAuthoritySourceFactory: host.PathAuthoritySourceFactory);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

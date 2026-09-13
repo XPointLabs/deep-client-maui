@@ -1,8 +1,11 @@
 using System.Security.Cryptography;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Shared.Domain.ContactV1;
+using Deep.Client.Shared.Persistence.ContactV1;
 using Deep.Client.Shared.Services.ContactV1;
+using Deep.Client.Shared.Services.MessagingV1;
 using Deep.Client.Shared.Services.XPointNetworkV1;
+using Deep.Protocol.ContactV1;
 using Deep.Protocol.DeepExtension.PrivacyRouting;
 using Deep.Protocol.XPointNetworkV1;
 
@@ -26,7 +29,8 @@ internal sealed record ContactResolveRuntimePrerequisites(
     Func<ContactResolverTrustedVerifier>? TrustedAuthorityVerifierFactory,
     Func<IContactResolvePlacementContextSource?>? PlacementContextSourceFactory,
     ushort SupportedDirectoryReader = 1,
-    ContactResolveRuntimeUnavailableReason? UnavailableReason = null);
+    ContactResolveRuntimeUnavailableReason? UnavailableReason = null,
+    Func<IContactResolvePathAuthoritySource>? PathAuthoritySourceFactory = null);
 
 internal interface IContactResolveRuntimePrerequisitesSource
 {
@@ -64,6 +68,69 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
             CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(target);
+        var package = await TryLoadVerifiedPeerPackageAsync(target, cancellationToken)
+            .ConfigureAwait(false);
+        if (package is null)
+        {
+            return null;
+        }
+        var current = await prerequisites.GetCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return await ReverifyPeerAsync(target, package, current, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal async ValueTask<VerifiedXpc1PreKeyClaimReceipt?>
+        TryClaimDirectMessagingPreKeyAsync(
+            VerifiedDirectConversationTarget target,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        var package = await TryLoadVerifiedPeerPackageAsync(target, cancellationToken)
+            .ConfigureAwait(false);
+        if (package is null)
+        {
+            return null;
+        }
+        var current = await prerequisites.GetCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var peer = await ReverifyPeerAsync(target, package, current, cancellationToken)
+            .ConfigureAwait(false);
+        var started = await accounts.TryBeginDirectMessagingInitiatorClaimAsync(
+                peer,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (started is null)
+        {
+            return null;
+        }
+
+        var transport = current.PrivacyRoutedTransportFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        var pathAuthority = current.PathAuthoritySourceFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.AuthoritySource);
+        var monotonicClock = current.MonotonicClock
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.MonotonicClock);
+        var journal = await accounts.GetXpk1ClaimJournalAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var coordinator = new DeepDirectMessagingPreKeyClaimCoordinator(
+            journal,
+            transport,
+            pathAuthority,
+            new OnionTrustedTimeAuthority(monotonicClock),
+            peer);
+        return await coordinator.ClaimAsync(started, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<ContactVerifiedPeerPackageEvidence?>
+        TryLoadVerifiedPeerPackageAsync(
+            VerifiedDirectConversationTarget target,
+            CancellationToken cancellationToken)
+    {
         var persistence = await accounts.GetContactResolvePersistenceBindingAsync(
                 cancellationToken)
             .ConfigureAwait(false);
@@ -80,9 +147,15 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
             throw new CryptographicException(
                 "The selected conversation differs from its durable verified ContactV1 package.");
         }
+        return package;
+    }
 
-        var current = await prerequisites.GetCurrentAsync(cancellationToken)
-            .ConfigureAwait(false);
+    private static async Task<ContactResolverReverifiedPeerAuthority> ReverifyPeerAsync(
+        VerifiedDirectConversationTarget target,
+        ContactVerifiedPeerPackageEvidence package,
+        ContactResolveRuntimePrerequisites current,
+        CancellationToken cancellationToken)
+    {
         if (current.UnavailableReason is { } unavailable)
         {
             throw new ContactPeerReverificationUnavailableException(unavailable);

@@ -306,6 +306,23 @@ public sealed class DeepContactOfflineRuntimeTests
     }
 
     [Fact]
+    public async Task MissingVerifiedPeerPackageCannotStartPreKeyClaimOrTouchNetworkAuthority()
+    {
+        using var fixture = new RuntimeFixture();
+        await using var accountRuntime = fixture.CreateAccessor();
+        await CreateAccountAsync(await accountRuntime.GetAccountsAsync());
+        var source = new FixedPrerequisitesSource(
+            PrerequisitesMissing(ContactResolveRuntimeUnavailableReason.AuthoritySource));
+        var runtime = new DeepContactResolveRuntimeAccessor(accountRuntime, source);
+        var target = new VerifiedDirectConversationTarget(
+            ContactRelationshipId32.FromBytes(Bytes(32, 0xB7)),
+            ContactConversationId32.FromBytes(Bytes(32, 0xB8)));
+
+        Assert.Null(await runtime.TryClaimDirectMessagingPreKeyAsync(target));
+        Assert.Equal(0, source.Calls);
+    }
+
+    [Fact]
     public async Task NullVerifiedHostCapabilitiesRemainDormantWithoutOpeningAccountState()
     {
         using var fixture = new RuntimeFixture();

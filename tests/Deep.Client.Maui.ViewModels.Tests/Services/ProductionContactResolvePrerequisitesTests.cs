@@ -59,6 +59,7 @@ public sealed class ProductionContactResolvePrerequisitesTests
         Assert.NotNull(current.MonotonicClock);
         Assert.NotNull(current.PrivacyRoutedTransportFactory);
         Assert.NotNull(current.TrustedAuthorityVerifierFactory);
+        Assert.NotNull(current.PathAuthoritySourceFactory);
         Assert.NotNull(current.PlacementContextSourceFactory);
         Assert.NotNull(current.PlacementContextSourceFactory!());
         Assert.Equal((ushort)1, current.SupportedDirectoryReader);
@@ -141,7 +142,8 @@ public sealed class ProductionContactResolvePrerequisitesTests
                 sensitiveFactoryReads++;
                 return Codec();
             },
-            () => new NoUsePlacementSource());
+            () => new NoUsePlacementSource(),
+            PathAuthoritySourceFactory: () => new NoUsePlacementSource());
         var source = Source(host);
 
         var current = await source.GetCurrentAsync();
@@ -259,7 +261,8 @@ public sealed class ProductionContactResolvePrerequisitesTests
             primary ?? (() => Route(new Uri("https://primary.example/"))),
             fallback ?? (() => Route(new Uri("https://fallback.example/"))),
             Codec,
-            () => new NoUsePlacementSource());
+            () => new NoUsePlacementSource(),
+            PathAuthoritySourceFactory: () => new NoUsePlacementSource());
 
     private static PrivacyMailboxRoute Route(Uri origin) =>
         new(origin, new NoUsePathProvider());
@@ -336,7 +339,9 @@ public sealed class ProductionContactResolvePrerequisitesTests
                 new InvalidOperationException("The composition test must not verify capabilities."));
     }
 
-    private sealed class NoUsePlacementSource : IContactResolvePlacementContextSource
+    private sealed class NoUsePlacementSource :
+        IContactResolvePlacementContextSource,
+        IContactResolvePathAuthoritySource
     {
         public ValueTask<VerifiedContactResolverPlacementContext> MintPlacementContextAsync(
             Deep.Client.Shared.Domain.ContactV1.ContactStoreScope accountScope,
@@ -344,6 +349,12 @@ public sealed class ProductionContactResolvePrerequisitesTests
             CancellationToken cancellationToken = default) =>
             ValueTask.FromException<VerifiedContactResolverPlacementContext>(
                 new InvalidOperationException("The composition test must not mint placement."));
+
+        public ValueTask<ContactResolvePathAuthority> GetCurrentAsync(
+            Xiq1Request request,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromException<ContactResolvePathAuthority>(
+                new InvalidOperationException("The composition test must not resolve path authority."));
     }
 
 }
