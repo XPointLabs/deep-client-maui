@@ -237,6 +237,34 @@ internal sealed class DeepAccountRuntimeAccessor :
         }
     }
 
+    internal async ValueTask<DeepDirectMessagingInitiatorClaimStart?>
+        TryBeginDirectMessagingInitiatorClaimAsync(
+            ContactResolverReverifiedPeerAuthority? verifiedPeer,
+            CancellationToken cancellationToken = default)
+    {
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            owner ??= await DeepAccountRuntimeOwner.OpenAsync(
+                    appDataDirectory,
+                    clock,
+                    networkIdFactory(),
+                    secureStorageFactory,
+                    privacyStateProtectorFactory,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return await owner.TryBeginDirectMessagingInitiatorClaimAsync(
+                    verifiedPeer,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
 #if DEEP_TEST_INTERNALS
     internal async Task<DeepDirectMessagingStorageOwner?>
         TryGetDirectMessagingStorageAsync(

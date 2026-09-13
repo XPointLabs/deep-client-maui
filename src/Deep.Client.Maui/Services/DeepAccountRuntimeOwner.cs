@@ -200,6 +200,36 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
         }
     }
 
+    internal async ValueTask<DeepDirectMessagingInitiatorClaimStart?>
+        TryBeginDirectMessagingInitiatorClaimAsync(
+            ContactResolverReverifiedPeerAuthority? verifiedPeer,
+            CancellationToken cancellationToken = default)
+    {
+        if (verifiedPeer is null)
+        {
+            return null;
+        }
+        var activation = await EnsureGenesisDeviceActivatedAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (activation is null)
+        {
+            return null;
+        }
+        var agreement = localAgreementAuthority ??
+            throw new InvalidOperationException(
+                "Local agreement authority was not activated.");
+        var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return messaging is null
+            ? null
+            : await messaging.TryBeginInitiatorClaimAsync(
+                    verifiedPeer,
+                    agreement,
+                    activation.CurrentDirectory,
+                    cancellationToken)
+                .ConfigureAwait(false);
+    }
+
 #if DEEP_TEST_INTERNALS
     internal async Task<DeepDirectMessagingStorageOwner?>
         TryGetDirectMessagingStorageAsync(

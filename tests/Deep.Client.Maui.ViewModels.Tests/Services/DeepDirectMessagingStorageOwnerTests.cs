@@ -156,6 +156,17 @@ public sealed class DeepDirectMessagingStorageOwnerTests
     }
 
     [Fact]
+    public async Task ProductionInitiatorEntryRequiresReverifiedPeerAuthority()
+    {
+        using var fixture = new RuntimeFixture();
+        await using var accessor = fixture.CreateAccessor();
+        await CreateAccountAsync(await accessor.GetAccountsAsync());
+
+        Assert.Null(await accessor.TryBeginDirectMessagingInitiatorClaimAsync(null));
+        Assert.False(Directory.Exists(fixture.SessionsPath));
+    }
+
+    [Fact]
     public async Task CatalogAndPerSessionStoreSurviveRestartAndRequireSameVerifiedTuple()
     {
         using var fixture = new RuntimeFixture();
