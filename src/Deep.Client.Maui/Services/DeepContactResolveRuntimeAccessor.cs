@@ -52,6 +52,55 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
         CancellationToken cancellationToken = default) =>
         accounts.GetPermanentDeepIdAsync(cancellationToken);
 
+    /// <summary>
+    /// Reopens the encrypted peer package selected by the UI and re-runs the
+    /// current ContactV1 authority verifier before any DPK2/DPH2 capability is
+    /// handed to the messaging runtime. A navigation identifier by itself is
+    /// never treated as peer authority.
+    /// </summary>
+    internal async Task<ContactResolverReverifiedPeerAuthority?>
+        TryReverifyPeerAsync(
+            VerifiedDirectConversationTarget target,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        var persistence = await accounts.GetContactResolvePersistenceBindingAsync(
+                cancellationToken)
+            .ConfigureAwait(false);
+        var package = await persistence.ContactStore.ReadVerifiedPeerPackageAsync(
+                target.RelationshipId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (package is null)
+        {
+            return null;
+        }
+        if (!package.ConversationId.Equals(target.ConversationId))
+        {
+            throw new CryptographicException(
+                "The selected conversation differs from its durable verified ContactV1 package.");
+        }
+
+        var current = await prerequisites.GetCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (current.UnavailableReason is { } unavailable)
+        {
+            throw new ContactPeerReverificationUnavailableException(unavailable);
+        }
+        var verifier = current.TrustedAuthorityVerifierFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.AuthoritySource);
+        var authority = await verifier.ReverifyAsync(package, cancellationToken)
+            .ConfigureAwait(false);
+        if (!authority.Evidence.RelationshipId.Equals(target.RelationshipId) ||
+            !authority.Evidence.ConversationId.Equals(target.ConversationId))
+        {
+            throw new CryptographicException(
+                "The current ContactV1 authority differs from the selected durable relationship.");
+        }
+        return authority;
+    }
+
     public async Task<ContactImportAndResolveResult> ImportAndEnqueueResolveAsync(
         string input,
         CancellationToken cancellationToken = default)
@@ -256,6 +305,14 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
             CanRetry: false,
             ContactResolverDisposition.ProtocolRejected,
             ContactResolverRetryClassification.FailClosed);
+}
+
+internal sealed class ContactPeerReverificationUnavailableException(
+    ContactResolveRuntimeUnavailableReason reason)
+    : InvalidOperationException(
+        $"The verified ContactV1 peer authority is unavailable: {reason}.")
+{
+    internal ContactResolveRuntimeUnavailableReason Reason { get; } = reason;
 }
 
 internal sealed record ContactResolveRuntimeCompositionResult(
