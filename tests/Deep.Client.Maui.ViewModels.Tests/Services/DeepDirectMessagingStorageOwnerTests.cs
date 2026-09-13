@@ -165,6 +165,8 @@ public sealed class DeepDirectMessagingStorageOwnerTests
         Assert.Null(await accessor.TryBeginDirectMessagingInitiatorClaimAsync(null));
         Assert.Null(await accessor.TryCompleteDirectMessagingInitiatorClaimAsync(
             null, null, 64));
+        Assert.Null(await accessor.TryCommitDirectMessagingInitiatorSessionAsync(
+            null, null));
         Assert.False(Directory.Exists(fixture.SessionsPath));
     }
 
@@ -446,6 +448,11 @@ public sealed class DeepDirectMessagingStorageOwnerTests
                 parameter.ParameterType.Name.Contains("Sqlite", StringComparison.Ordinal) ||
                 parameter.Name!.Contains("private", StringComparison.OrdinalIgnoreCase) ||
                 parameter.Name.Contains("secret", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            publicMethods.Where(static method =>
+                    method.Name == "TryCommitInitiatorSessionAsync")
+                .SelectMany(static method => method.GetParameters()),
+            static parameter => parameter.ParameterType == typeof(ReadOnlyMemory<byte>));
         Assert.DoesNotContain(
             capabilityTypes.SelectMany(static type => type.GetProperties()),
             static property =>

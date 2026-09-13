@@ -311,6 +311,37 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
         }
     }
 
+    internal async ValueTask<DeepDirectMessagingInitiatorCommitResult?>
+        TryCommitDirectMessagingInitiatorSessionAsync(
+            DeepDirectMessagingInitiatorClaimPreparation? preparedClaim,
+            VerifiedXpc1PreKeyClaimReceipt? verifiedClaim,
+            CancellationToken cancellationToken = default)
+    {
+        var delegated = false;
+        try
+        {
+            var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (messaging is null)
+            {
+                return null;
+            }
+            delegated = true;
+            return await messaging.TryCommitInitiatorSessionAsync(
+                    preparedClaim,
+                    verifiedClaim,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            if (!delegated)
+            {
+                preparedClaim?.Dispose();
+            }
+        }
+    }
+
 #if DEEP_TEST_INTERNALS
     internal async Task<DeepDirectMessagingStorageOwner?>
         TryGetDirectMessagingStorageAsync(

@@ -318,7 +318,7 @@ public sealed class DeepContactOfflineRuntimeTests
             ContactRelationshipId32.FromBytes(Bytes(32, 0xB7)),
             ContactConversationId32.FromBytes(Bytes(32, 0xB8)));
 
-        Assert.Null(await runtime.TryClaimDirectMessagingPreKeyAsync(target));
+        Assert.Null(await runtime.TryEstablishDirectMessagingSessionAsync(target));
         Assert.Equal(0, source.Calls);
     }
 

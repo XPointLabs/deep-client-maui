@@ -80,8 +80,8 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
             .ConfigureAwait(false);
     }
 
-    internal async ValueTask<VerifiedXpc1PreKeyClaimReceipt?>
-        TryClaimDirectMessagingPreKeyAsync(
+    internal async ValueTask<DeepDirectMessagingInitiatorCommitResult?>
+        TryEstablishDirectMessagingSessionAsync(
             VerifiedDirectConversationTarget target,
             CancellationToken cancellationToken = default)
     {
@@ -122,8 +122,36 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
             pathAuthority,
             new OnionTrustedTimeAuthority(monotonicClock),
             peer);
-        return await coordinator.ClaimAsync(started, cancellationToken)
-            .ConfigureAwait(false);
+        DeepDirectMessagingInitiatorClaimPreparation? prepared = null;
+        try
+        {
+            var verifiedClaim = await coordinator.ClaimAsync(started, cancellationToken)
+                .ConfigureAwait(false);
+            var transferredStart = started;
+            started = null;
+            prepared = await accounts.TryCompleteDirectMessagingInitiatorClaimAsync(
+                    transferredStart,
+                    verifiedClaim,
+                    maximumMessagesWithoutPqInjection: 64,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (prepared is null)
+            {
+                return null;
+            }
+            var transferredPreparation = prepared;
+            prepared = null;
+            return await accounts.TryCommitDirectMessagingInitiatorSessionAsync(
+                    transferredPreparation,
+                    verifiedClaim,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            started?.Dispose();
+            prepared?.Dispose();
+        }
     }
 
     private async Task<ContactVerifiedPeerPackageEvidence?>
