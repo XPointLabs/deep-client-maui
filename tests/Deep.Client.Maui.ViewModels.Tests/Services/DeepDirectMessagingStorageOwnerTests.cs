@@ -9,6 +9,7 @@ using Deep.Client.Shared.Services;
 using Deep.Client.Shared.Services.MessagingV1;
 using Deep.Protocol.DeepNative;
 using Deep.Protocol.Identity;
+using Deep.Protocol.MessagingWire;
 
 namespace Deep.Client.Maui.ViewModels.Tests.Services;
 
@@ -194,6 +195,38 @@ public sealed class DeepDirectMessagingStorageOwnerTests
         await Assert.ThrowsAsync<CryptographicException>(async () =>
             await reopenedOwner.TryOpenSessionAsync(conflicting, createIfMissing: true));
         Assert.Single(await reopenedOwner.ReadCatalogAsync());
+    }
+
+    [Fact]
+    public async Task EstablishedRatchetOperationsRequireAnActivatedExactSession()
+    {
+        using var fixture = new RuntimeFixture();
+        await using var accessor = fixture.CreateAccessor();
+        var identity = (await CreateAccountAsync(await accessor.GetAccountsAsync())).Identity;
+        var owner = Assert.IsType<DeepDirectMessagingStorageOwner>(
+            await accessor.TryGetDirectMessagingStorageAsync(LocalAuthority(identity)));
+        var session = Session(NetworkId, 0x49);
+
+        Assert.Null(await owner.TryCommitEstablishedSendAsync(
+            session,
+            ReadOnlyMemory<byte>.Empty,
+            ReadOnlyMemory<byte>.Empty));
+        Assert.Null(await owner.TryCommitEstablishedReceiveAsync(
+            session,
+            ReadOnlyMemory<byte>.Empty));
+
+        var opened = Assert.IsType<DeepDirectMessagingSessionStoreBinding>(
+            await owner.TryOpenSessionAsync(session, createIfMissing: true));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await owner.TryCommitEstablishedSendAsync(
+                session,
+                ReadOnlyMemory<byte>.Empty,
+                ReadOnlyMemory<byte>.Empty));
+        await Assert.ThrowsAsync<MessagingWireFormatException>(async () =>
+            await owner.TryCommitEstablishedReceiveAsync(
+                session,
+                ReadOnlyMemory<byte>.Empty));
+        Assert.Null(await opened.Store.ReadHeadAsync());
     }
 
     [Theory]
