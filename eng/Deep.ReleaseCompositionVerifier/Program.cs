@@ -13,7 +13,7 @@ const string routerOne = "111111111111111111111111111111111111111111111111111111
 const string routerTwo = "2222222222222222222222222222222222222222222222222222222222222222";
 const string routerThree = "3333333333333333333333333333333333333333333333333333333333333333";
 const string expectedDescriptorFingerprint =
-    "8d227875a32a7fd4c116e2d9b37e5ba40886af5fa563de02f86e1238937ab250";
+    "240f2d4882393540eac54954d3b38ddb8cfe7b2757c7ada52bc9f4d065590273";
 var pinnedRouters = new[]
 {
     new RealityRouterEndpoint("http://127.0.0.1:29281/", routerOne),
@@ -232,7 +232,7 @@ static void ValidateFinalApplicationComposition(
     string expectedFingerprint)
 {
     Require(
-        descriptors.Count == 83,
+        descriptors.Count == 84,
         $"Final Windows Release app-owned descriptor count changed: {descriptors.Count}.");
     var descriptorFingerprint = DescriptorFingerprint(descriptors);
     Require(
