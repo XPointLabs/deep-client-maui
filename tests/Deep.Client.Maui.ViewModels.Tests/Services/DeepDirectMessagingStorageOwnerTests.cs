@@ -77,21 +77,21 @@ public sealed class DeepDirectMessagingStorageOwnerTests
         var requested = Session(NetworkId, 0x31);
         var opened = Assert.IsType<DeepDirectMessagingSessionStoreBinding>(
             await owner.TryOpenSessionAsync(requested, createIfMissing: true));
-        Assert.True(opened.Store.OwnsSession(requested.ExactDph2Id));
+        Assert.True(opened.Store.OwnsSession(requested.ExactDph2Id.Span));
         Assert.True(opened.Store.OwnsContactInitialSession(
             identity.Account.AccountIdentity.AccountId.Bytes.Span,
             identity.Device.DeviceId.Bytes.Span,
             identity.Device.DeviceGeneration,
-            requested.ConversationId,
-            requested.ExactDph2Id));
+            requested.ConversationId.Span,
+            requested.ExactDph2Id.Span));
 
         var entry = Assert.Single(await owner.ReadCatalogAsync());
-        Assert.True(entry.RemoteAccountId.Span.SequenceEqual(requested.RemoteAccountId));
+        Assert.True(entry.RemoteAccountId.Span.SequenceEqual(requested.RemoteAccountId.Span));
         Assert.Equal(requested.RemoteAccountGeneration, entry.RemoteAccountGeneration);
-        Assert.True(entry.RemoteDeviceId.Span.SequenceEqual(requested.RemoteDeviceId));
+        Assert.True(entry.RemoteDeviceId.Span.SequenceEqual(requested.RemoteDeviceId.Span));
         Assert.Equal(requested.RemoteDeviceGeneration, entry.RemoteDeviceGeneration);
-        Assert.True(entry.ConversationId.Span.SequenceEqual(requested.ConversationId));
-        Assert.True(entry.ExactDph2Id.Span.SequenceEqual(requested.ExactDph2Id));
+        Assert.True(entry.ConversationId.Span.SequenceEqual(requested.ConversationId.Span));
+        Assert.True(entry.ExactDph2Id.Span.SequenceEqual(requested.ExactDph2Id.Span));
 
         var sessionPath = Assert.Single(Directory.GetFiles(fixture.SessionsPath, "*.mcr1"));
         AssertEncrypted(sessionPath);
@@ -182,15 +182,15 @@ public sealed class DeepDirectMessagingStorageOwnerTests
         Assert.Single(entries);
         var reopened = Assert.IsType<DeepDirectMessagingSessionStoreBinding>(
             await reopenedOwner.TryOpenSessionAsync(requested, createIfMissing: false));
-        Assert.True(reopened.Store.OwnsSession(requested.ExactDph2Id));
+        Assert.True(reopened.Store.OwnsSession(requested.ExactDph2Id.Span));
 
         var conflicting = DeepDirectMessagingVerifiedSessionBinding.CreateForTests(
             NetworkId,
-            requested.RemoteAccountId,
+            requested.RemoteAccountId.Span,
             requested.RemoteAccountGeneration,
-            requested.RemoteDeviceId,
+            requested.RemoteDeviceId.Span,
             requested.RemoteDeviceGeneration,
-            ContactConversationId32.FromBytes(requested.ConversationId),
+            ContactConversationId32.FromBytes(requested.ConversationId.Span),
             Bytes(32, 0xE2));
         await Assert.ThrowsAsync<CryptographicException>(async () =>
             await reopenedOwner.TryOpenSessionAsync(conflicting, createIfMissing: true));
@@ -401,6 +401,47 @@ public sealed class DeepDirectMessagingStorageOwnerTests
     }
 
     [Fact]
+    public void ProductionFacadeExposesOnlyOpaqueVerifiedMessagingCapabilities()
+    {
+        var capabilityTypes = new[]
+        {
+            typeof(DeepDirectMessagingInitiatorClaimStart),
+            typeof(DeepDirectMessagingInitiatorClaimPreparation),
+            typeof(DeepDirectMessagingInitiatorCommitResult),
+            typeof(DeepDirectMessagingVerifiedSessionBinding),
+        };
+        Assert.All(capabilityTypes, type => Assert.Empty(type.GetConstructors()));
+
+        var publicMethods = typeof(DeepDirectMessagingStorageFacade)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance |
+                        BindingFlags.DeclaredOnly);
+        Assert.Contains(publicMethods,
+            method => method.Name == "TryBeginInitiatorClaimAsync");
+        Assert.Contains(publicMethods,
+            method => method.Name == "TryCompleteInitiatorClaimAsync");
+        Assert.Contains(publicMethods,
+            method => method.Name == "TryCommitInitiatorSessionAsync");
+        Assert.Contains(publicMethods,
+            method => method.Name == "TryCommitEstablishedSendAsync");
+        Assert.Contains(publicMethods,
+            method => method.Name == "TryCommitEstablishedReceiveAsync");
+        Assert.DoesNotContain(
+            publicMethods.SelectMany(static method => method.GetParameters()),
+            static parameter =>
+                parameter.ParameterType == typeof(byte[]) ||
+                parameter.ParameterType.Name.Contains("Provider", StringComparison.Ordinal) ||
+                parameter.ParameterType.Name.Contains("Sqlite", StringComparison.Ordinal) ||
+                parameter.Name!.Contains("private", StringComparison.OrdinalIgnoreCase) ||
+                parameter.Name.Contains("secret", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            capabilityTypes.SelectMany(static type => type.GetProperties()),
+            static property =>
+                property.PropertyType == typeof(byte[]) ||
+                property.PropertyType.Name.Contains("Secret", StringComparison.Ordinal) ||
+                property.PropertyType.Name.Contains("Sqlite", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void InitiatorDurableDispatchResultOwnsCopiesAndZeroizesOnDispose()
     {
         var commitment = Bytes(32, 0x41);
@@ -424,7 +465,10 @@ public sealed class DeepDirectMessagingStorageOwnerTests
                 operation,
                 exactDph2Id,
                 replay);
-            var result = new DeepDirectMessagingInitiatorCommitResult(commit, dispatch);
+            var result = new DeepDirectMessagingInitiatorCommitResult(
+                commit,
+                dispatch,
+                Session(NetworkId, 0x47));
 
             Assert.True(result.ExactDph2.Span.SequenceEqual(exactDph2));
             Assert.True(result.ClaimOperationId.Span.SequenceEqual(operation));
