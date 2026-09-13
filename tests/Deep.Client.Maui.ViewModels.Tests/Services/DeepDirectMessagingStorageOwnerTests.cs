@@ -142,7 +142,9 @@ public sealed class DeepDirectMessagingStorageOwnerTests
         Assert.False(owner.HasProductionInventoryOwner);
 
         Assert.Null(await accessor.EnsureDirectMessagingInventoryAsync(local, null));
-        Assert.Null(await accessor.TryPrepareDirectMessagingInitiatorClaimAsync(
+        Assert.Null(await accessor.TryBeginDirectMessagingInitiatorClaimAsync(
+            local, null));
+        Assert.Null(await accessor.TryCompleteDirectMessagingInitiatorClaimAsync(
             local, null, null, null, 64));
         Assert.Null(await accessor.TryCommitDirectMessagingInitiatorSessionAsync(
             local, null, null, ReadOnlyMemory<byte>.Empty));

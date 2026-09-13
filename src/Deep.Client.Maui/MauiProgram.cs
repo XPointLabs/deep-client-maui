@@ -148,6 +148,12 @@ public static class MauiProgram
                 PlatformDeepSecureStorage.Create));
         services.AddSingleton<IDeepAccountRuntimeAccessor>(serviceProvider =>
             serviceProvider.GetRequiredService<DeepAccountRuntimeAccessor>());
+        services.AddSingleton<IDeepAccountDirectoryAdmissionCoordinator>(serviceProvider =>
+            new DeepAccountDirectoryAdmissionCoordinator(
+                serviceProvider.GetRequiredService<IDeepAccountRuntimeAccessor>(),
+                serviceProvider.GetRequiredService<HttpServiceTransportFactory>(),
+                serviceProvider.GetRequiredService<HttpServiceClientOptions>(),
+                serviceProvider.GetRequiredService<RuntimeEnvironmentOptions>().RegistryUrl));
         services.AddSingleton<IProductionContactResolveVerifiedHostCapabilitiesSource>(
             serviceProvider => contactResolveCapabilities is null
                 ? new ProductionContactResolveVerifiedHostCapabilitiesSource(
@@ -156,7 +162,8 @@ public static class MauiProgram
                     serviceProvider.GetRequiredService<HttpServiceClientOptions>(),
                     serviceProvider.GetRequiredService<Deep.Protocol.DeepExtension.PrivacyRouting.IOnionMonotonicClock>(),
                     serviceProvider.GetRequiredService<RuntimeEnvironmentOptions>().RegistryUrl,
-                    serviceProvider.GetRequiredService<IRealityTransportRuntime>())
+                    serviceProvider.GetRequiredService<IRealityTransportRuntime>(),
+                    serviceProvider.GetRequiredService<IDeepAccountDirectoryAdmissionCoordinator>())
                 : new FixedProductionContactResolveVerifiedHostCapabilitiesSource(
                     contactResolveCapabilities));
         services.AddProductionContactResolveRuntimePrerequisites(

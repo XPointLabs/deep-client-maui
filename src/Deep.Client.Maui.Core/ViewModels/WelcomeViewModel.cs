@@ -9,15 +9,18 @@ public sealed class WelcomeViewModel : ViewModelBase
 {
     private readonly IDeepAccountRuntimeAccessor accountRuntime;
     private readonly AuthNavigationState authNavigationState;
+    private readonly IDeepAccountDirectoryAdmissionCoordinator? directoryAdmission;
     private DeepAccount? account;
     private string displayName = string.Empty;
 
     public WelcomeViewModel(
         IDeepAccountRuntimeAccessor accountRuntime,
-        AuthNavigationState authNavigationState)
+        AuthNavigationState authNavigationState,
+        IDeepAccountDirectoryAdmissionCoordinator? directoryAdmission = null)
     {
         this.accountRuntime = accountRuntime;
         this.authNavigationState = authNavigationState;
+        this.directoryAdmission = directoryAdmission;
         CreateAccountCommand = new AsyncCommand(CreateAccountAsync, CanCreateAccount);
     }
 
@@ -46,7 +49,15 @@ public sealed class WelcomeViewModel : ViewModelBase
         {
             var accounts = await accountRuntime.GetAccountsAsync(ct).ConfigureAwait(false);
             var result = await accounts.CreateAsync(DisplayName, ct).ConfigureAwait(false);
-            await accountRuntime.EnsureLocalIdentityActivatedAsync(ct).ConfigureAwait(false);
+            if (directoryAdmission is null)
+            {
+                await accountRuntime.EnsureLocalIdentityActivatedAsync(ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await directoryAdmission.EnsureCurrentAccountAdmittedAsync(ct)
+                    .ConfigureAwait(false);
+            }
             Account = result.Identity.Account;
             DisplayName = Account.DisplayName;
             await authNavigationState.RefreshAsync(ct).ConfigureAwait(false);

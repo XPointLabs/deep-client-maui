@@ -23,6 +23,7 @@ internal sealed class ProductionContactResolveVerifiedHostCapabilitiesSource :
     private readonly IOnionMonotonicClock monotonicClock;
     private readonly string? registryUrl;
     private readonly IRealityTransportRuntime reality;
+    private readonly IDeepAccountDirectoryAdmissionCoordinator directoryAdmission;
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly List<IDisposable> ownedAuthorities = [];
     private CachedCapabilities? cached;
@@ -34,7 +35,8 @@ internal sealed class ProductionContactResolveVerifiedHostCapabilitiesSource :
         HttpServiceClientOptions clientOptions,
         IOnionMonotonicClock monotonicClock,
         string? registryUrl,
-        IRealityTransportRuntime reality)
+        IRealityTransportRuntime reality,
+        IDeepAccountDirectoryAdmissionCoordinator directoryAdmission)
     {
         this.accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
         this.transportFactory = transportFactory
@@ -45,6 +47,8 @@ internal sealed class ProductionContactResolveVerifiedHostCapabilitiesSource :
             ?? throw new ArgumentNullException(nameof(monotonicClock));
         this.registryUrl = registryUrl;
         this.reality = reality ?? throw new ArgumentNullException(nameof(reality));
+        this.directoryAdmission = directoryAdmission
+            ?? throw new ArgumentNullException(nameof(directoryAdmission));
     }
 
     public async ValueTask<ProductionContactResolveVerifiedHostCapabilities?>
@@ -58,6 +62,9 @@ internal sealed class ProductionContactResolveVerifiedHostCapabilitiesSource :
         {
             return null;
         }
+
+        await directoryAdmission.EnsureCurrentAccountAdmittedAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var endpoints = reality.RouterEndpoints;
         if (endpoints.Count == 0)

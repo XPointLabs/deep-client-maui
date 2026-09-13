@@ -1,4 +1,5 @@
 using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Shared.Domain;
 
@@ -11,7 +12,8 @@ public sealed class WelcomeViewModelTests
     {
         await using var accounts = new DeepAccountTestRuntime();
         var navigation = new AuthNavigationState(accounts);
-        var viewModel = new WelcomeViewModel(accounts, navigation)
+        var admission = new RecordingAdmissionCoordinator(accounts);
+        var viewModel = new WelcomeViewModel(accounts, navigation, admission)
         {
             DisplayName = "Alice"
         };
@@ -24,6 +26,7 @@ public sealed class WelcomeViewModelTests
         Assert.Equal("Alice", viewModel.DisplayName);
         Assert.True(navigation.IsAuthenticated);
         Assert.True(await accounts.Accounts.HasRetainedRecoveryPhraseAsync());
+        Assert.Equal(1, admission.Calls);
     }
 
     [Fact]
@@ -55,5 +58,19 @@ public sealed class WelcomeViewModelTests
         Assert.False(navigation.IsAuthenticated);
         Assert.Null(viewModel.Account);
         Assert.False(string.IsNullOrWhiteSpace(viewModel.ErrorMessage));
+    }
+
+    private sealed class RecordingAdmissionCoordinator(
+        IDeepAccountRuntimeAccessor accounts)
+        : IDeepAccountDirectoryAdmissionCoordinator
+    {
+        internal int Calls { get; private set; }
+
+        public async Task EnsureCurrentAccountAdmittedAsync(
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            await accounts.EnsureLocalIdentityActivatedAsync(cancellationToken);
+        }
     }
 }

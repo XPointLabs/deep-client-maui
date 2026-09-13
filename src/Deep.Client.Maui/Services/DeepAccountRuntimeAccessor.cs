@@ -301,10 +301,40 @@ internal sealed class DeepAccountRuntimeAccessor :
         }
     }
 
-    internal async ValueTask<DeepDirectMessagingInitiatorClaimPreparation?>
-        TryPrepareDirectMessagingInitiatorClaimAsync(
+    internal async ValueTask<DeepDirectMessagingInitiatorClaimStart?>
+        TryBeginDirectMessagingInitiatorClaimAsync(
             DeepDirectMessagingLocalAuthorityBinding? verifiedLocalAuthority,
             ContactResolverReverifiedPeerAuthority? verifiedPeer,
+            CancellationToken cancellationToken = default)
+    {
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            owner ??= await DeepAccountRuntimeOwner.OpenAsync(
+                    appDataDirectory,
+                    clock,
+                    networkIdFactory(),
+                    secureStorageFactory,
+                    privacyStateProtectorFactory,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return await owner.TryBeginDirectMessagingInitiatorClaimAsync(
+                    verifiedLocalAuthority,
+                    verifiedPeer,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    internal async ValueTask<DeepDirectMessagingInitiatorClaimPreparation?>
+        TryCompleteDirectMessagingInitiatorClaimAsync(
+            DeepDirectMessagingLocalAuthorityBinding? verifiedLocalAuthority,
+            DeepDirectMessagingInitiatorClaimStart? startedClaim,
             VerifiedDpk2Offering? verifiedOffering,
             LocalDeviceX25519AgreementLease? deviceAgreementLease,
             int maximumMessagesWithoutPqInjection,
@@ -326,9 +356,9 @@ internal sealed class DeepAccountRuntimeAccessor :
                     cancellationToken)
                 .ConfigureAwait(false);
             delegated = true;
-            return await owner.TryPrepareDirectMessagingInitiatorClaimAsync(
+            return await owner.TryCompleteDirectMessagingInitiatorClaimAsync(
                     verifiedLocalAuthority,
-                    verifiedPeer,
+                    startedClaim,
                     verifiedOffering,
                     deviceAgreementLease,
                     maximumMessagesWithoutPqInjection,
@@ -339,6 +369,7 @@ internal sealed class DeepAccountRuntimeAccessor :
         {
             if (!delegated)
             {
+                startedClaim?.Dispose();
                 deviceAgreementLease?.Dispose();
             }
             if (gateHeld)

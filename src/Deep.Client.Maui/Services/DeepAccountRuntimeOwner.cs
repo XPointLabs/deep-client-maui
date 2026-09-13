@@ -263,10 +263,34 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                 .ConfigureAwait(false);
     }
 
-    internal async ValueTask<DeepDirectMessagingInitiatorClaimPreparation?>
-        TryPrepareDirectMessagingInitiatorClaimAsync(
+    internal async ValueTask<DeepDirectMessagingInitiatorClaimStart?>
+        TryBeginDirectMessagingInitiatorClaimAsync(
             DeepDirectMessagingLocalAuthorityBinding? verifiedLocalAuthority,
             ContactResolverReverifiedPeerAuthority? verifiedPeer,
+            CancellationToken cancellationToken = default)
+    {
+        var messaging = await TryGetDirectMessagingStorageAsync(
+                verifiedLocalAuthority,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (messaging is null)
+        {
+            return null;
+        }
+        var activation = await EnsureGenesisDeviceActivatedAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return await messaging.TryBeginInitiatorClaimAsync(
+                verifiedPeer,
+                localAgreementAuthority,
+                activation?.CurrentDirectory,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal async ValueTask<DeepDirectMessagingInitiatorClaimPreparation?>
+        TryCompleteDirectMessagingInitiatorClaimAsync(
+            DeepDirectMessagingLocalAuthorityBinding? verifiedLocalAuthority,
+            DeepDirectMessagingInitiatorClaimStart? startedClaim,
             VerifiedDpk2Offering? verifiedOffering,
             LocalDeviceX25519AgreementLease? deviceAgreementLease,
             int maximumMessagesWithoutPqInjection,
@@ -284,8 +308,8 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                 return null;
             }
             delegated = true;
-            return await messaging.TryPrepareInitiatorClaimAsync(
-                    verifiedPeer,
+            return await messaging.TryCompleteInitiatorClaimAsync(
+                    startedClaim,
                     verifiedOffering,
                     deviceAgreementLease,
                     maximumMessagesWithoutPqInjection,
@@ -296,6 +320,7 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
         {
             if (!delegated)
             {
+                startedClaim?.Dispose();
                 deviceAgreementLease?.Dispose();
             }
         }
