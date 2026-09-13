@@ -265,6 +265,49 @@ internal sealed class DeepAccountRuntimeAccessor :
         }
     }
 
+    internal async ValueTask<DeepDirectMessagingInitiatorClaimPreparation?>
+        TryCompleteDirectMessagingInitiatorClaimAsync(
+            DeepDirectMessagingInitiatorClaimStart? startedClaim,
+            VerifiedXpc1PreKeyClaimReceipt? verifiedClaim,
+            int maximumMessagesWithoutPqInjection,
+            CancellationToken cancellationToken = default)
+    {
+        var gateHeld = false;
+        var delegated = false;
+        try
+        {
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateHeld = true;
+            ObjectDisposedException.ThrowIf(disposed, this);
+            owner ??= await DeepAccountRuntimeOwner.OpenAsync(
+                    appDataDirectory,
+                    clock,
+                    networkIdFactory(),
+                    secureStorageFactory,
+                    privacyStateProtectorFactory,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            delegated = true;
+            return await owner.TryCompleteDirectMessagingInitiatorClaimAsync(
+                    startedClaim,
+                    verifiedClaim,
+                    maximumMessagesWithoutPqInjection,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            if (!delegated)
+            {
+                startedClaim?.Dispose();
+            }
+            if (gateHeld)
+            {
+                gate.Release();
+            }
+        }
+    }
+
 #if DEEP_TEST_INTERNALS
     internal async Task<DeepDirectMessagingStorageOwner?>
         TryGetDirectMessagingStorageAsync(

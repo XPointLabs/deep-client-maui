@@ -230,6 +230,87 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                 .ConfigureAwait(false);
     }
 
+    internal async ValueTask<DeepDirectMessagingInitiatorClaimPreparation?>
+        TryCompleteDirectMessagingInitiatorClaimAsync(
+            DeepDirectMessagingInitiatorClaimStart? startedClaim,
+            VerifiedXpc1PreKeyClaimReceipt? verifiedClaim,
+            int maximumMessagesWithoutPqInjection,
+            CancellationToken cancellationToken = default)
+    {
+        if (startedClaim is null || verifiedClaim is null)
+        {
+            startedClaim?.Dispose();
+            return null;
+        }
+
+        var delegated = false;
+        LocalDeviceX25519AgreementLease? lease = null;
+        try
+        {
+            var operation = startedClaim.ClaimOperationId.ToArray();
+            var claimedOperation = verifiedClaim.OperationId.ToArray();
+            try
+            {
+                if (!CryptographicOperations.FixedTimeEquals(operation, claimedOperation))
+                {
+                    throw new CryptographicException(
+                        "The verified XPC1 receipt belongs to another initiator claim.");
+                }
+                var activation = await EnsureGenesisDeviceActivatedAsync(cancellationToken)
+                    .ConfigureAwait(false) ?? throw new CryptographicException(
+                        "The current local device is not activated for direct messaging.");
+                var agreement = localAgreementAuthority ?? throw new CryptographicException(
+                    "The current local agreement authority is unavailable.");
+                var authorized = await AuthorizeAndRedeemDeviceAgreementAsync(
+                        DeviceOperationId32.FromBytes(operation),
+                        activation.CurrentDirectory,
+                        agreement,
+                        LocalDeviceX25519AgreementPurpose.Dph2InitiatorDh1,
+                        operation,
+                        verifiedClaim.Offering.InitiatorAgreementPeerPublicKey,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                lease = authorized.Lease;
+                if (authorized.Disposition != ProtectedDeviceAgreementDisposition.Granted ||
+                    lease is null)
+                {
+                    throw new CryptographicException(
+                        $"The protected DPH2 agreement operation was not granted: {authorized.Disposition}.");
+                }
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(operation);
+                CryptographicOperations.ZeroMemory(claimedOperation);
+            }
+
+            var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (messaging is null)
+            {
+                return null;
+            }
+            delegated = true;
+            var prepared = await messaging.TryCompleteInitiatorClaimAsync(
+                    startedClaim,
+                    verifiedClaim.Offering,
+                    lease,
+                    maximumMessagesWithoutPqInjection,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            lease = null;
+            return prepared;
+        }
+        finally
+        {
+            if (!delegated)
+            {
+                startedClaim.Dispose();
+                lease?.Dispose();
+            }
+        }
+    }
+
 #if DEEP_TEST_INTERNALS
     internal async Task<DeepDirectMessagingStorageOwner?>
         TryGetDirectMessagingStorageAsync(

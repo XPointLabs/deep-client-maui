@@ -163,6 +163,8 @@ public sealed class DeepDirectMessagingStorageOwnerTests
         await CreateAccountAsync(await accessor.GetAccountsAsync());
 
         Assert.Null(await accessor.TryBeginDirectMessagingInitiatorClaimAsync(null));
+        Assert.Null(await accessor.TryCompleteDirectMessagingInitiatorClaimAsync(
+            null, null, 64));
         Assert.False(Directory.Exists(fixture.SessionsPath));
     }
 
