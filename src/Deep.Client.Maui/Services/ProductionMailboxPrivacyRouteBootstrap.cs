@@ -267,6 +267,25 @@ internal sealed class ProductionMailboxPrivacyRouteBootstrap :
                     ingress.FallbackOrigin,
                     pathProvider,
                     ingress.FallbackRouterId);
+                var mailboxAuthority = capabilities.PathAuthoritySource
+                    as ProductionContactResolvePathAuthoritySource
+                    ?? throw new ContactResolveHostBootstrapException(
+                        ContactResolveRuntimeUnavailableReason.AuthoritySource,
+                        "The verified host cannot mint mailbox privacy paths.");
+                var primaryMailbox = new PrivacyMailboxRoute(
+                    ingress.PrimaryOrigin,
+                    new MailboxPrivacyPathProvider(
+                        mailboxAuthority,
+                        account.EntryGuardStore,
+                        PrivacyMailboxRouteSelection.Primary),
+                    ingress.PrimaryRouterId);
+                var fallbackMailbox = new PrivacyMailboxRoute(
+                    ingress.FallbackOrigin,
+                    new MailboxPrivacyPathProvider(
+                        mailboxAuthority,
+                        account.EntryGuardStore,
+                        PrivacyMailboxRouteSelection.Fallback),
+                    ingress.FallbackRouterId);
                 var codec = new PrivacyRoutingCodec(
                     new OnionEntropyAuthority(account.EntropyLedger),
                     new OnionKeyAgreementAuthority(account.KeyAgreementVault));
@@ -279,7 +298,9 @@ internal sealed class ProductionMailboxPrivacyRouteBootstrap :
                     () => fallback,
                     () => codec,
                     () => capabilities.PathAuthoritySource as IContactResolvePlacementContextSource,
-                    PathAuthoritySourceFactory: () => capabilities.PathAuthoritySource);
+                    PathAuthoritySourceFactory: () => capabilities.PathAuthoritySource,
+                    PrimaryMailboxRouteFactory: () => primaryMailbox,
+                    FallbackMailboxRouteFactory: () => fallbackMailbox);
             }
             finally
             {

@@ -472,7 +472,8 @@ public sealed class StoreBoundNativeMau2TransportLifecycleTests
                     break;
                 case ReactiveReadEntryPoint.OpaqueRetrieve:
                     _ = await Transport.RetrieveOpaqueMailboxInboxAsync(
-                        signer, new OpaqueMailboxContinuation(0, []));
+                        signer, Identity.SessionId,
+                        new OpaqueMailboxContinuation(0, []));
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(entryPoint));
@@ -665,6 +666,7 @@ public sealed class StoreBoundNativeMau2TransportLifecycleTests
 
         public async Task<OpaqueMailboxInboxPage> RetrieveOpaqueMailboxInboxAsync(
             IMailboxOperationSigner signer,
+            SessionId account,
             OpaqueMailboxContinuation continuation,
             CancellationToken cancellationToken)
         {

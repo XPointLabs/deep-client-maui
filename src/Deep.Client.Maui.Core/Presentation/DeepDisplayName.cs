@@ -1,5 +1,3 @@
-using Deep.Client.Shared.Domain;
-
 namespace Deep.Client.Maui.Core.Presentation;
 
 public static class DeepDisplayName
@@ -7,7 +5,7 @@ public static class DeepDisplayName
     public static string AvatarInitial(string? displayName, string? fallbackSeed = null)
     {
         var trimmed = displayName?.Trim();
-        var source = LooksLikeRawSessionId(trimmed)
+        var source = LooksLikeOpaqueIdentifier(trimmed)
             ? null
             : trimmed;
 
@@ -27,37 +25,10 @@ public static class DeepDisplayName
         return "D";
     }
 
-    public static string ContactTitleOrFallback(SessionId sessionId, string? displayName)
-    {
-        var title = ContactTitle(sessionId, displayName);
-        return string.IsNullOrWhiteSpace(title)
-            ? $"Deep {CompactSuffix(sessionId.Value)}"
-            : title;
-    }
-
-    public static string ContactTitle(SessionId sessionId, string? displayName)
-    {
-        var trimmed = displayName?.Trim();
-        return LooksLikeRawSessionId(trimmed, sessionId)
-            ? string.Empty
-            : trimmed!;
-    }
-
-    public static string LocalNameOrEmpty(SessionId sessionId, string? displayName)
-    {
-        var trimmed = displayName?.Trim();
-        return LooksLikeRawSessionId(trimmed, sessionId) ? string.Empty : trimmed ?? string.Empty;
-    }
-
-    public static bool LooksLikeRawSessionId(string? value, SessionId? expected = null)
+    public static bool LooksLikeOpaqueIdentifier(string? value)
     {
         var trimmed = value?.Trim();
         if (string.IsNullOrWhiteSpace(trimmed))
-        {
-            return true;
-        }
-
-        if (expected is not null && string.Equals(trimmed, expected.Value.Value, StringComparison.Ordinal))
         {
             return true;
         }
@@ -69,8 +40,7 @@ public static class DeepDisplayName
             return true;
         }
 
-        return trimmed.Length >= 48 && trimmed.All(static ch =>
-            IsHex(ch));
+        return trimmed.Length >= 48 && trimmed.All(IsHex);
     }
 
     public static string ShortId(string value)

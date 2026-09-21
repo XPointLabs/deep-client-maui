@@ -1,11 +1,15 @@
 using System.Security.Cryptography;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Shared.Domain.ContactV1;
+using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Persistence.ContactV1;
+using Deep.Client.Shared.Services;
 using Deep.Client.Shared.Services.ContactV1;
 using Deep.Client.Shared.Services.MessagingV1;
 using Deep.Client.Shared.Services.XPointNetworkV1;
 using Deep.Protocol.ContactV1;
+using Deep.Protocol.ApplicationCore;
+using Deep.Protocol.DeepExtension.MailboxCapabilities;
 using Deep.Protocol.DeepExtension.PrivacyRouting;
 using Deep.Protocol.XPointNetworkV1;
 
@@ -30,7 +34,10 @@ internal sealed record ContactResolveRuntimePrerequisites(
     Func<IContactResolvePlacementContextSource?>? PlacementContextSourceFactory,
     ushort SupportedDirectoryReader = 1,
     ContactResolveRuntimeUnavailableReason? UnavailableReason = null,
-    Func<IContactResolvePathAuthoritySource>? PathAuthoritySourceFactory = null);
+    Func<IContactResolvePathAuthoritySource>? PathAuthoritySourceFactory = null,
+    Func<PrivacyMailboxRoute>? PrimaryMailboxRouteFactory = null,
+    Func<PrivacyMailboxRoute>? FallbackMailboxRouteFactory = null,
+    Func<PrivacyRoutingCodec>? MailboxPrivacyCodecFactory = null);
 
 internal interface IContactResolveRuntimePrerequisitesSource
 {
@@ -55,6 +62,26 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
     public Task<string> GetPermanentDeepIdAsync(
         CancellationToken cancellationToken = default) =>
         accounts.GetPermanentDeepIdAsync(cancellationToken);
+
+    internal async ValueTask<VerifiedContactRouteProposalAuthority>
+        MintLocalRouteProposalAsync(
+            CancellationToken cancellationToken = default)
+    {
+        var current = await prerequisites.GetCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var authority = current.PathAuthoritySourceFactory?.Invoke()
+            as ProductionContactResolvePathAuthoritySource
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.AuthoritySource);
+        var activation = await accounts.EnsureGenesisDeviceActivatedAsync(
+                cancellationToken)
+            .ConfigureAwait(false) ?? throw new CryptographicException(
+                "Local route publication requires an activated current device.");
+        return await authority.MintLocalRouteProposalAsync(
+                activation,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Reopens the encrypted peer package selected by the UI and re-runs the
@@ -96,6 +123,200 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
             .ConfigureAwait(false);
         var peer = await ReverifyPeerAsync(target, package, current, cancellationToken)
             .ConfigureAwait(false);
+        return await EstablishDirectMessagingSessionAsync(
+                peer, current, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal async ValueTask<DeepDirectMessagingInitialDeliveryResult?>
+        TryEstablishAndDispatchDirectMessagingSessionAsync(
+            VerifiedDirectConversationTarget target,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        var package = await TryLoadVerifiedPeerPackageAsync(target, cancellationToken)
+            .ConfigureAwait(false);
+        if (package is null)
+            return null;
+        var current = await prerequisites.GetCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var peer = await ReverifyPeerAsync(target, package, current, cancellationToken)
+            .ConfigureAwait(false);
+        var primary = current.PrimaryMailboxRouteFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        var fallback = current.FallbackMailboxRouteFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        var codec = current.MailboxPrivacyCodecFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        using var holder = await accounts.OpenReachabilityMailboxHolderAsync(
+                peer.Route,
+                peer.LocatorHash,
+                MailboxCapabilityDomain.Deposit,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (holder is null)
+            return null;
+
+        var contactTransport = current.PrivacyRoutedTransportFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        VerifiedCurrentMailboxGrant grant;
+        try
+        {
+            grant = await new PrivacyRoutedMailboxGrantAcquisitionClient(
+                    contactTransport)
+                .AcquireDepositAsync(
+                    peer.Route,
+                    peer.LocatorHash,
+                    holder,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            contactTransport.Dispose();
+        }
+
+        var store = await accounts.TryGetMailboxStoreAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (store is null)
+            return null;
+        _ = await grant.InstallForHolderAsync(
+                store,
+                MailboxCredentialScopeKind.Peer,
+                holder,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        using var committed = await EstablishDirectMessagingSessionAsync(
+                peer, current, cancellationToken)
+            .ConfigureAwait(false);
+        if (committed is null)
+            return null;
+        using var dispatcher = await accounts.CreateInitialSessionDispatcherAsync(
+                grant,
+                holder,
+                primary,
+                fallback,
+                codec,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return dispatcher is null
+            ? null
+            : await dispatcher.SendAsync(committed, peer, cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    internal async ValueTask<PrivacyRoutedMessagingReceiver?>
+        CreateMessagingReceiverAsync(
+            CancellationToken cancellationToken = default)
+    {
+        var current = await prerequisites.GetCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var pathAuthority = current.PathAuthoritySourceFactory?.Invoke()
+            as ProductionContactResolvePathAuthoritySource
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.AuthoritySource);
+        var primary = current.PrimaryMailboxRouteFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        var fallback = current.FallbackMailboxRouteFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        var codec = current.MailboxPrivacyCodecFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        var activation = await accounts.EnsureGenesisDeviceActivatedAsync(
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (activation is null)
+            return null;
+        var publicationStore = await accounts.GetContactAddressPublicationStoreAsync(
+                cancellationToken)
+            .ConfigureAwait(false);
+        var publication = await publicationStore.ReadLatestConfirmedAsync(
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (publication is null)
+            return null;
+        var request = Xpu1Codec.Decode(publication.ExactXpu1.Span);
+        var localRecipient = await pathAuthority.RecoverLocalMessagingRecipientAsync(
+                activation,
+                request,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var route = localRecipient.Route;
+        var holder = await accounts.OpenReachabilityMailboxHolderAsync(
+                route,
+                request.LocatorHash,
+                MailboxCapabilityDomain.Retrieve,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (holder is null)
+            return null;
+        var transferred = false;
+        try
+        {
+            var contactTransport = current.PrivacyRoutedTransportFactory?.Invoke()
+                ?? throw new ContactPeerReverificationUnavailableException(
+                    ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+            VerifiedCurrentMailboxGrant grant;
+            try
+            {
+                grant = await new PrivacyRoutedMailboxGrantAcquisitionClient(
+                        contactTransport)
+                    .AcquireRetrieveAsync(
+                        route,
+                        request.LocatorHash,
+                        request.OwnerRetrieveCapability,
+                        holder,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                contactTransport.Dispose();
+            }
+            var store = await accounts.TryGetMailboxStoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (store is null)
+                return null;
+            _ = await grant.InstallForHolderAsync(
+                    store,
+                    MailboxCredentialScopeKind.Self,
+                    holder,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var receiver = await accounts.CreateMessagingReceiverAsync(
+                    grant,
+                    holder,
+                    ContactRouteClosureCodec.Decode(request.ExactRouteClosure.Span),
+                    primary,
+                    fallback,
+                    codec,
+                    pathAuthority,
+                    localRecipient,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            transferred = receiver is not null;
+            return receiver;
+        }
+        finally
+        {
+            if (!transferred)
+                holder.Dispose();
+        }
+    }
+
+    private async ValueTask<DeepDirectMessagingInitiatorCommitResult?>
+        EstablishDirectMessagingSessionAsync(
+            ContactResolverReverifiedPeerAuthority peer,
+            ContactResolveRuntimePrerequisites current,
+            CancellationToken cancellationToken)
+    {
         var started = await accounts.TryBeginDirectMessagingInitiatorClaimAsync(
                 peer,
                 cancellationToken)
@@ -139,11 +360,36 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
             {
                 return null;
             }
+            var rendezvous = await accounts.TryOpenCurrentContactUpdateRendezvousAsync(
+                    verifiedClaim.ServerTimeUnixSeconds,
+                    cancellationToken)
+                .ConfigureAwait(false) ?? throw new CryptographicException(
+                    "The current account has no verified inbound ContactV1 update rendezvous.");
+            var logicalMessageId = RandomNonZero32();
+            AuthoredVerifiedContactHello hello;
+            try
+            {
+                var createdAt = checked(verifiedClaim.ServerTimeUnixSeconds * 1_000UL);
+                hello = ApplicationCoreCodec.AuthorVerifiedContactHello(
+                    rendezvous,
+                    ApplicationCoreVerifier.StartDab1Lineage(peer.Bundle.Binding).Next,
+                    peer.Evidence.RelationshipId.ToArray(),
+                    logicalMessageId,
+                    peer.Evidence.ConversationId.ToArray(),
+                    createdAt,
+                    checked(createdAt + 3_600_000UL),
+                    ContactPolicy.AllowRouteUpdates);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(logicalMessageId);
+            }
             var transferredPreparation = prepared;
             prepared = null;
             return await accounts.TryCommitDirectMessagingInitiatorSessionAsync(
                     transferredPreparation,
                     verifiedClaim,
+                    hello,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -151,6 +397,89 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
         {
             started?.Dispose();
             prepared?.Dispose();
+        }
+    }
+
+    private static byte[] RandomNonZero32()
+    {
+        while (true)
+        {
+            var value = RandomNumberGenerator.GetBytes(32);
+            if (value.AsSpan().IndexOfAnyExcept((byte)0) >= 0)
+                return value;
+            CryptographicOperations.ZeroMemory(value);
+        }
+    }
+
+    internal async ValueTask<VerifiedPreKeyInventoryPublication>
+        PublishLocalPreKeyInventoryAsync(
+            DeepDirectMessagingInventoryPublication publication,
+            VerifiedContactNetworkAuthority recipientAuthority,
+            VerifiedContactBundleClosure recipientBundle,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(publication);
+        ArgumentNullException.ThrowIfNull(recipientAuthority);
+        ArgumentNullException.ThrowIfNull(recipientBundle);
+        var current = await prerequisites.GetCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var transport = current.PrivacyRoutedTransportFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        try
+        {
+            var pathAuthority = current.PathAuthoritySourceFactory?.Invoke()
+                as ProductionContactResolvePathAuthoritySource
+                ?? throw new ContactPeerReverificationUnavailableException(
+                    ContactResolveRuntimeUnavailableReason.AuthoritySource);
+            var messaging = await accounts.TryGetDirectMessagingStorageAsync(
+                    cancellationToken)
+                .ConfigureAwait(false) ?? throw new CryptographicException(
+                    "Pre-key publication requires the active direct-message owner.");
+            return await messaging.PublishInventoryAsync(
+                    publication,
+                    transport,
+                    pathAuthority,
+                    recipientAuthority,
+                    recipientBundle,
+                    predecessor: null,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            transport.Dispose();
+        }
+    }
+
+    internal async ValueTask<ContactAddressPublicationResult>
+        PublishLocalContactAddressAsync(
+            AuthoredPermanentAddressPublication publication,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(publication);
+        var current = await prerequisites.GetCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var transport = current.PrivacyRoutedTransportFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        try
+        {
+            var store = await accounts.GetContactAddressPublicationStoreAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var authorized = DirectoryAuthorizedXpu1.FromVerified(
+                store.Scope,
+                publication);
+            var orchestrator = new ContactAddressPublicationOrchestrator(
+                store,
+                transport);
+            return await orchestrator.PublishAsync(authorized, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            transport.Dispose();
         }
     }
 

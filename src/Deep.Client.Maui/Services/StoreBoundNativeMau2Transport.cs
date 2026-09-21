@@ -32,6 +32,7 @@ internal interface IReactiveMau2ReadRuntime
 
     Task<OpaqueMailboxInboxPage> RetrieveOpaqueMailboxInboxAsync(
         IMailboxOperationSigner signer,
+        SessionId account,
         OpaqueMailboxContinuation continuation,
         CancellationToken cancellationToken);
 
@@ -61,9 +62,11 @@ internal sealed class NativeReactiveMau2ReadRuntime(
 
     public Task<OpaqueMailboxInboxPage> RetrieveOpaqueMailboxInboxAsync(
         IMailboxOperationSigner signer,
+        SessionId account,
         OpaqueMailboxContinuation continuation,
         CancellationToken cancellationToken) =>
-        transport.RetrieveOpaqueMailboxInboxAsync(signer, continuation, cancellationToken);
+        transport.RetrieveOpaqueMailboxInboxAsync(
+            signer, account, continuation, cancellationToken);
 
     public Task RetireTerminallyRejectedRetrieveAsync(
         SessionId account,
@@ -507,7 +510,8 @@ internal sealed class StoreBoundNativeMau2Transport :
         try
         {
             var runtime = await EnsureBoundAsync(
-                signer.SessionId, publicKey, cancellationToken).ConfigureAwait(false);
+                logicalBatch.Targets[0].Sender, publicKey, cancellationToken)
+                .ConfigureAwait(false);
             return await runtime.Transport.PrepareScopedMailboxLogicalBatchAsync(
                 signer, logicalBatch, targets, cancellationToken).ConfigureAwait(false);
         }
@@ -531,7 +535,8 @@ internal sealed class StoreBoundNativeMau2Transport :
         try
         {
             var runtime = await EnsureBoundAsync(
-                signer.SessionId, publicKey, cancellationToken).ConfigureAwait(false);
+                batch.Targets[0].Sender, publicKey, cancellationToken)
+                .ConfigureAwait(false);
             return await runtime.Transport.TryResumeScopedMailboxBatchAsync(
                 signer, batch, cancellationToken).ConfigureAwait(false);
         }
@@ -554,7 +559,8 @@ internal sealed class StoreBoundNativeMau2Transport :
         try
         {
             var runtime = await EnsureBoundAsync(
-                signer.SessionId, publicKey, cancellationToken).ConfigureAwait(false);
+                targets[0].Envelope.Sender, publicKey, cancellationToken)
+                .ConfigureAwait(false);
             return await runtime.Transport.PrepareScopedMailboxBatchAsync(
                 signer, targets, cancellationToken).ConfigureAwait(false);
         }
@@ -653,6 +659,7 @@ internal sealed class StoreBoundNativeMau2Transport :
 
     public async Task<OpaqueMailboxInboxPage> RetrieveOpaqueMailboxInboxAsync(
         IMailboxOperationSigner signer,
+        SessionId account,
         OpaqueMailboxContinuation continuation,
         CancellationToken cancellationToken = default)
     {
@@ -660,10 +667,10 @@ internal sealed class StoreBoundNativeMau2Transport :
         try
         {
             return await ExecuteReadOnlyRetrieveWithReactiveRefreshAsync(
-                signer.SessionId,
+                account,
                 publicKey,
                 (runtime, token) => runtime.RetrieveOpaqueMailboxInboxAsync(
-                    signer, continuation, token),
+                    signer, account, continuation, token),
                 cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -729,13 +736,15 @@ internal sealed class StoreBoundNativeMau2Transport :
 
     public async Task AcknowledgeOpaqueMailboxInboxAsync(
         IMailboxOperationSigner signer,
+        SessionId account,
         string opaqueItemHandle,
         CancellationToken cancellationToken = default)
     {
         using var operation = EnterOperation();
         var runtime = RequireBound();
+        RequireSession(runtime, account);
         await runtime.Transport.AcknowledgeOpaqueMailboxInboxAsync(
-            signer, opaqueItemHandle, cancellationToken).ConfigureAwait(false);
+            signer, account, opaqueItemHandle, cancellationToken).ConfigureAwait(false);
     }
 
     async Task<MailboxAckCorrelationProjection?>

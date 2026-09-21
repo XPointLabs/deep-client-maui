@@ -11,9 +11,27 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.csproj"
+    <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.Production.csproj"
                       GlobalPropertiesToRemove="RuntimeIdentifier;RuntimeIdentifiers;SelfContained"
                       AdditionalProperties="EnableDeepTestInternals=$(EnableDeepTestInternals)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Clean break: these view models and HTTP composition are the retired
+         Session-derived application surface. New UI binds only opaque
+         ContactV1/MSG-01/GroupV1 capabilities. -->
+    <Compile Remove="Services\ApplicationHttpTransportComposition.cs" />
+    <Compile Remove="ViewModels\IContactMailboxOnboarding.cs" />
+    <Compile Remove="ViewModels\ChatViewModel.cs" />
+    <Compile Remove="ViewModels\ChatOpenUiCache.cs" />
+    <Compile Remove="ViewModels\ConversationsViewModel.cs" />
+    <Compile Remove="ViewModels\DesktopWorkspaceViewModel.cs" />
+    <Compile Remove="ViewModels\GroupChatViewModel.cs" />
+    <Compile Remove="ViewModels\NotificationRegistrationViewModel.cs" />
+    <Compile Remove="Services\IActiveConversationTracker.cs" />
+    <Compile Remove="Services\SyncFailureCodeClassifier.cs" />
+    <Compile Remove="ViewModels\MessageDeliveryProgress.cs" />
+    <Compile Remove="ViewModels\MessageStatusPresentation.cs" />
   </ItemGroup>
 
 </Project>

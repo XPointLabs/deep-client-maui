@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Domain.AccountDirectoryV1;
@@ -16,13 +17,18 @@ using Deep.Client.Shared.Services;
 using Deep.Client.Shared.Services.ContactV1;
 using Deep.Client.Shared.Services.GroupV1;
 using Deep.Client.Shared.Services.MessagingV1;
+using Deep.Client.Shared.Services.XPointNetworkV1;
 using Deep.Protocol.DeepExtension.PrivacyRouting;
+using Deep.Protocol.DeepExtension.MailboxCapabilities;
 using Deep.Protocol.ApplicationCore;
+using Deep.Protocol.AccountDirectoryV1;
 using Deep.Protocol.ContactV1;
 using Deep.Protocol.DeepNative;
 using Deep.Protocol.GroupV1;
 using Deep.Protocol.Identity;
+using Deep.Protocol.MessagingCrypto;
 using Deep.Protocol.MessagingWire;
+using Deep.Protocol.XPointNetworkV1;
 using Deep.Client.Maui.Services.GroupV1;
 
 namespace Deep.Client.Maui.Services;
@@ -35,6 +41,8 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
 {
     private const string RelativeStatePath = "deep-store-v1/account.dsv1";
     private const string RelativeContactStatePath = "deep-store-v1/contacts.dcv1";
+    private const string RelativeContactAddressPublicationPath =
+        "deep-store-v1/contact-publication.dcp1";
     private const string RelativeDeviceStatePath = "deep-store-v1/devices.dvs1";
     private const string RelativeXpk1ClaimJournalPath = "deep-store-v1/xpk1-claims.xcj1";
     private const string RelativeAccountDirectoryStatePath =
@@ -42,17 +50,24 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
     private const string RelativeXPointNetworkStatePath = "deep-store-v1/xpoint-network.xlk1";
     private const string RelativeEntryGuardStatePath = "deep-store-v1/entry-guards.xgs1";
     private const string RelativeGroupStatePath = "deep-store-v1/groups.dgv1";
+    private const string RelativeMailboxStatePath = "deep-store-v1/mailbox.dmb1";
     private const string RelativeGroupInvitationActivationPath =
         "deep-store-v1/group-invitation-activation.gia1";
     private const string RelativeContactResolveEntropyStatePath =
         "deep-store-v1/contact-resolve-entropy.cre1";
     private const string ContactKeySuffix = ".contact-state-key";
+    private const string ContactAddressPublicationKeySuffix =
+        ".contact-publication-key";
     private const string DeviceStateKeySuffix = ".device-state-key";
     private const string Xpk1ClaimJournalKeySuffix = ".xpk1-claim-journal-key";
     private const string AccountDirectoryKeySuffix = ".account-directory-state-key";
     private const string XPointNetworkKeySuffix = ".xpoint-network-state-key";
     private const string EntryGuardKeySuffix = ".xpoint-entry-guard-key";
     private const string GroupStateKeySuffix = ".group-v1-state-key";
+    private const string MailboxStateKeySuffix = ".mailbox-v1-state-key";
+    private const string MessagingDao1SeedSuffix = ".msg01-dao1-seed";
+    private const string ContactUpdateRendezvousSuffix =
+        ".contact-xur1-genesis";
     private const string GroupInvitationActivationKeySuffix =
         ".group-v1-invitation-activation-key";
     private const string ContactResolveEntropyAnchor0Suffix =
@@ -63,16 +78,21 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
     private readonly JournaledDeepSecureStorage secureStorage;
     private readonly IDeepSecretProtector privacyStateProtector;
     private readonly SemaphoreSlim contactGate = new(1, 1);
+    private readonly SemaphoreSlim contactAddressPublicationGate = new(1, 1);
     private readonly SemaphoreSlim deviceGate = new(1, 1);
     private readonly SemaphoreSlim xpk1ClaimJournalGate = new(1, 1);
     private readonly SemaphoreSlim accountDirectoryGate = new(1, 1);
     private readonly SemaphoreSlim xPointGate = new(1, 1);
     private readonly SemaphoreSlim groupGate = new(1, 1);
     private readonly SemaphoreSlim directMessagingGate = new(1, 1);
+    private readonly SemaphoreSlim mailboxGate = new(1, 1);
+    private readonly SemaphoreSlim messagingTransportGate = new(1, 1);
+    private readonly SemaphoreSlim contactUpdateRendezvousGate = new(1, 1);
     private readonly SemaphoreSlim contactResolvePrivacyGate = new(1, 1);
     private readonly SemaphoreSlim activationGate = new(1, 1);
     private SqliteDeepAccountStore? store;
     private SqliteContactStateStore? contactStore;
+    private SqliteContactAddressPublicationStore? contactAddressPublicationStore;
     private SqliteDeviceStateStore? deviceStateStore;
     private SqliteXpk1ClaimJournal? xpk1ClaimJournal;
     private ContactAddressImportService? contactImporter;
@@ -83,6 +103,7 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
     private SqliteGroupInvitationActivationStore? groupInvitationActivationStore;
     private DeepGroupV1RuntimeBinding? groupRuntimeBinding;
     private DeepDirectMessagingStorageFacade? directMessagingStorage;
+    private SqliteDeepMailboxStore? mailboxStore;
 #if DEEP_TEST_INTERNALS
     private DeepDirectMessagingStorageOwner? directMessagingStorageForTests;
 #endif
@@ -156,7 +177,234 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
             .ConfigureAwait(false);
         return identity is null
             ? null
-            : new AccountOwnedGroupDeviceCustodySigner(Accounts, secureStorage, identity);
+            : new AccountOwnedDeviceCustodySigner(Accounts, secureStorage, identity);
+    }
+
+    internal async Task<IContactDeviceCustodySigner?> TryGetContactDeviceCustodySignerAsync(
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(store is null, this);
+        var identity = await Accounts.GetLocalIdentityAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return identity is null
+            ? null
+            : new AccountOwnedDeviceCustodySigner(Accounts, secureStorage, identity);
+    }
+
+    internal async ValueTask<DeepDirectMessagingMetadataSealingPublicKey>
+        PrepareContactMetadataSealingKeyAsync(
+            VerifiedContactRouteProposalAuthority proposal,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+        var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+            .ConfigureAwait(false) ?? throw new CryptographicException(
+                "The current device is not active for XRA1 key authoring.");
+        return await messaging.PrepareMetadataSealingKeyAsync(
+            proposal, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async ValueTask<VerifiedContactUpdateRendezvous>
+        EnsureGenesisContactUpdateRendezvousAsync(
+            VerifiedContactRouteClosure route,
+            DeepDirectMessagingMetadataSealingPublicKey metadataKey,
+            ulong issuedAtUnixSeconds,
+            ulong expiresAtUnixSeconds,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(route);
+        ArgumentNullException.ThrowIfNull(metadataKey);
+        var activation = await EnsureGenesisDeviceActivatedAsync(cancellationToken)
+            .ConfigureAwait(false) ?? throw new CryptographicException(
+                "XUR1 authoring requires an activated current local device.");
+        var signer = await TryGetContactDeviceCustodySignerAsync(cancellationToken)
+            .ConfigureAwait(false) ?? throw new CryptographicException(
+                "XUR1 authoring requires the current device custody signer.");
+        var identity = await Accounts.GetLocalIdentityAsync(cancellationToken)
+            .ConfigureAwait(false) ?? throw new InvalidOperationException(
+                "No local Deep account exists.");
+        var slot = ScopedKeySlot(
+            identity.SecureSlots.MessageStoreInstanceId,
+            ContactUpdateRendezvousSuffix,
+            "ContactV1 update rendezvous");
+        var parsedRoute = ContactRouteClosureCodec.Decode(
+            ContactRouteClosureCodec.Encode(route));
+
+        await contactUpdateRendezvousGate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            using var existing = await secureStorage.ReadOwnedAsync(
+                    slot, cancellationToken)
+                .ConfigureAwait(false);
+            if (existing is not null)
+            {
+                byte[]? encoded = null;
+                try
+                {
+                    existing.Use(value => encoded = value.ToArray());
+                    var restored = DecodeContactUpdateRendezvous(encoded!);
+                    try
+                    {
+                        return ContactUpdateRendezvousAuthor.RecoverCurrent(
+                            restored.ExactXur1,
+                            activation.AddressBinding,
+                            activation.CurrentDirectory,
+                            parsedRoute,
+                            restored.KeyId,
+                            restored.PublicKey,
+                            issuedAtUnixSeconds);
+                    }
+                    finally
+                    {
+                        ZeroContactUpdateRendezvous(restored);
+                    }
+                }
+                finally
+                {
+                    if (encoded is not null)
+                        CryptographicOperations.ZeroMemory(encoded);
+                }
+            }
+
+            var authored = await ContactUpdateRendezvousAuthor.AuthorGenesisAsync(
+                    activation.AddressBinding,
+                    activation.CurrentDirectory,
+                    route,
+                    metadataKey.KeyId,
+                    metadataKey.X25519PublicKey,
+                    issuedAtUnixSeconds,
+                    expiresAtUnixSeconds,
+                    signer,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var bundle = EncodeContactUpdateRendezvous(
+                metadataKey.KeyId.Span,
+                metadataKey.X25519PublicKey.Span,
+                authored.ExactXur1.Span);
+            try
+            {
+                await secureStorage.WriteBatchAsync(
+                        [new DeepSecureStorageWrite(slot, bundle)],
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(bundle);
+            }
+            return authored;
+        }
+        finally
+        {
+            contactUpdateRendezvousGate.Release();
+        }
+    }
+
+    internal async ValueTask<VerifiedContactUpdateRendezvous?>
+        TryOpenCurrentContactUpdateRendezvousAsync(
+            ulong trustedUnixSeconds,
+            CancellationToken cancellationToken = default)
+    {
+        var activation = await EnsureGenesisDeviceActivatedAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (activation is null)
+            return null;
+        var identity = await Accounts.GetLocalIdentityAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (identity is null)
+            return null;
+        var publicationStore = await GetContactAddressPublicationStoreAsync(
+                cancellationToken)
+            .ConfigureAwait(false);
+        var publication = await publicationStore.ReadLatestConfirmedAsync(
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (publication is null)
+            return null;
+        var request = Xpu1Codec.Decode(publication.ExactXpu1.Span);
+        var route = ContactRouteClosureCodec.Decode(request.ExactRouteClosure.Span);
+        var slot = ScopedKeySlot(
+            identity.SecureSlots.MessageStoreInstanceId,
+            ContactUpdateRendezvousSuffix,
+            "ContactV1 update rendezvous");
+
+        await contactUpdateRendezvousGate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            using var stored = await secureStorage.ReadOwnedAsync(
+                    slot, cancellationToken)
+                .ConfigureAwait(false);
+            if (stored is null)
+                return null;
+            byte[]? encoded = null;
+            try
+            {
+                stored.Use(value => encoded = value.ToArray());
+                var restored = DecodeContactUpdateRendezvous(encoded!);
+                try
+                {
+                    return ContactUpdateRendezvousAuthor.RecoverCurrent(
+                        restored.ExactXur1,
+                        activation.AddressBinding,
+                        activation.CurrentDirectory,
+                        route,
+                        restored.KeyId,
+                        restored.PublicKey,
+                        trustedUnixSeconds);
+                }
+                finally
+                {
+                    ZeroContactUpdateRendezvous(restored);
+                }
+            }
+            finally
+            {
+                if (encoded is not null)
+                    CryptographicOperations.ZeroMemory(encoded);
+            }
+        }
+        finally
+        {
+            contactUpdateRendezvousGate.Release();
+        }
+    }
+
+    internal async ValueTask<DeepDirectMessagingInventoryPublication>
+        EnsureGenesisDirectMessagingInventoryAsync(
+            VerifiedContactPreKeyService preKeyService,
+            VerifiedContactServicePlacement placement,
+            ulong notBeforeUnixSeconds,
+            ulong issuedAtUnixSeconds,
+            ulong expiresAtUnixSeconds,
+            ReadOnlyMemory<byte> publicationOperationId,
+            ushort oneTimePreKeyCount,
+            ushort lastResortReuseLimit,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preKeyService);
+        ArgumentNullException.ThrowIfNull(placement);
+        var activation = await EnsureGenesisDeviceActivatedAsync(cancellationToken)
+            .ConfigureAwait(false) ?? throw new CryptographicException(
+                "DPK2 inventory requires an activated current local device.");
+        var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+            .ConfigureAwait(false) ?? throw new CryptographicException(
+                "DPK2 inventory requires an active direct-message store.");
+        var request = new DeepDirectMessagingInventoryRequest(
+            activation.CurrentDirectory,
+            preKeyService,
+            placement,
+            inventoryEpoch: 1,
+            notBeforeUnixSeconds,
+            issuedAtUnixSeconds,
+            expiresAtUnixSeconds,
+            predecessorXpi1Hash: new byte[32],
+            publicationOperationId.Span,
+            oneTimePreKeyCount,
+            lastResortReuseLimit);
+        return await messaging.EnsureInventoryAsync(request, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     internal async Task<DeepDirectMessagingStorageFacade?>
@@ -200,6 +448,322 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
         }
     }
 
+#if !DEEP_TEST_INTERNALS
+    internal async ValueTask<DeepDirectMessagingOpenedDeposit?>
+        TryOpenDirectInboundMailboxEntryAsync(
+            VerifiedContactRouteClosure currentLocalRoute,
+            ScopedMailboxResolvedRoute currentMailboxRoute,
+            ulong cursor,
+            ReadOnlyMemory<byte> exactMeo1,
+            ReadOnlyMemory<byte> externalEnvelopeDigest,
+            MailboxClientDecodePolicy decodePolicy,
+            CancellationToken cancellationToken = default)
+    {
+        var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return messaging is null ? null :
+            await messaging.OpenInboundMailboxEntryAsync(
+                    currentLocalRoute, currentMailboxRoute, cursor, exactMeo1,
+                    externalEnvelopeDigest, decodePolicy, cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Previews the exact received DPH2 using the account-owned local prekey,
+    /// then verifies its encrypted claim against live directory authority.
+    /// No session, inbox, contact or mailbox ACK is committed here.
+    /// </summary>
+    internal async ValueTask<VerifiedDph2InitialClaim?>
+        TryVerifyResponderInitialClaimAsync(
+            Dph2Record initiation,
+            VerifiedDpk2Offering localOffering,
+            Dmd1LineageState initiatorDirectory,
+            VerifiedAccountDirectoryFreshness initiatorFreshness,
+            VerifiedContactServicePlacement claimPlacement,
+            VerifiedContactNetworkAuthority recipientAuthority,
+            VerifiedContactBundleClosure recipientBundle,
+            OnionTrustedTimeAuthority trustedTimeAuthority,
+            int maximumMessagesWithoutPqInjection,
+            CancellationToken cancellationToken = default)
+    {
+        var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return messaging is null
+            ? null
+            : await messaging.TryVerifyResponderInitialClaimAsync(
+                    initiation, localOffering, initiatorDirectory,
+                    initiatorFreshness, claimPlacement, recipientAuthority,
+                    recipientBundle, trustedTimeAuthority,
+                    maximumMessagesWithoutPqInjection, cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    internal async ValueTask<VerifiedDph2InitialClaim?>
+        TryVerifyResponderInitialClaimAsync(
+            Dph2Record initiation,
+            Dmd1LineageState initiatorDirectory,
+            VerifiedAccountDirectoryFreshness initiatorFreshness,
+            VerifiedContactServicePlacement claimPlacement,
+            VerifiedContactNetworkAuthority recipientAuthority,
+            VerifiedContactBundleClosure recipientBundle,
+            OnionTrustedTimeAuthority trustedTimeAuthority,
+            int maximumMessagesWithoutPqInjection,
+            CancellationToken cancellationToken = default)
+    {
+        var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return messaging is null
+            ? null
+            : await messaging.TryVerifyResponderInitialClaimAsync(
+                    initiation, initiatorDirectory, initiatorFreshness,
+                    claimPlacement, recipientAuthority, recipientBundle,
+                    trustedTimeAuthority, maximumMessagesWithoutPqInjection,
+                    cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Stages an unsolicited DPH2 only after its verified ContactHello endpoint
+    /// is checked. Contact state, semantic inbox and mailbox ACK remain pending.
+    /// </summary>
+    internal async ValueTask<DeepDirectMessagingUnsolicitedCommitResult?>
+        TryCommitUnsolicitedResponderSessionAsync(
+            VerifiedDph2InitialClaim? verifiedInitial,
+            int maximumMessagesWithoutPqInjection,
+            CancellationToken cancellationToken = default)
+    {
+        var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return messaging is null ? null :
+            await messaging.TryCommitUnsolicitedResponderSessionAsync(
+                    verifiedInitial, maximumMessagesWithoutPqInjection,
+                    cancellationToken)
+                .ConfigureAwait(false);
+    }
+#endif
+
+    /// <summary>
+    /// Opens the clean account-wide mailbox and semantic inbox with a distinct
+    /// protected SQLCipher key. A pre-existing file without its key is never
+    /// silently replaced, because it may contain unacknowledged deposits.
+    /// </summary>
+    internal async Task<SqliteDeepMailboxStore?> TryGetMailboxStoreAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await mailboxGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(store is null, this);
+            if (mailboxStore is not null) return mailboxStore;
+            var identity = await Accounts.GetLocalIdentityAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (identity is null) return null;
+
+            var keySlot = ScopedKeySlot(identity.SecureSlots.MessageStoreInstanceId,
+                MailboxStateKeySuffix, "clean mailbox");
+            var path = Path.Combine(appDataDirectory, RelativeMailboxStatePath);
+            var existed = SqliteFamilyExists(path);
+            var key = await ReadScopedKeyAsync(keySlot, "clean mailbox",
+                    cancellationToken).ConfigureAwait(false);
+            if (key is null && existed)
+                throw InvalidScopedKey(
+                    "The clean mailbox database exists without its protected SQLCipher key.");
+            if (key is not null && !existed)
+            {
+                CryptographicOperations.ZeroMemory(key);
+                throw InvalidScopedKey(
+                    "The protected clean mailbox key exists without its database generation.");
+            }
+            var createdKey = key is null;
+            key ??= CreateNonzeroKey();
+            try
+            {
+                if (createdKey)
+                    await secureStorage.WriteBatchAsync(
+                            [new DeepSecureStorageWrite(keySlot, key)],
+                            cancellationToken).ConfigureAwait(false);
+                using var options = new SqliteDeepMailboxStoreOptions(path, key);
+                var opened = new SqliteDeepMailboxStore(options);
+                mailboxStore = opened;
+                return opened;
+            }
+            catch
+            {
+                if (createdKey && !existed)
+                {
+                    DeleteSqliteFamily(path);
+                    await secureStorage.DeleteBatchAsync([keySlot], CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                throw;
+            }
+            finally { CryptographicOperations.ZeroMemory(key); }
+        }
+        finally { mailboxGate.Release(); }
+    }
+
+    internal async ValueTask<ReachabilityMailboxHolderAuthority.ReachabilityMailboxHolderSigner?>
+        OpenReachabilityMailboxHolderAsync(
+            VerifiedContactRouteClosure route,
+            ReadOnlyMemory<byte> locatorHash,
+            MailboxCapabilityDomain domain,
+            CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(store is null, this);
+        var identity = await Accounts.GetLocalIdentityAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (identity is null)
+            return null;
+        return await new ReachabilityMailboxHolderAuthority(secureStorage)
+            .OpenOrCreateAsync(
+                identity,
+                route,
+                locatorHash,
+                domain,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal async Task<PrivacyRoutedInitialSessionDispatcher?>
+        CreateInitialSessionDispatcherAsync(
+            VerifiedCurrentMailboxGrant grant,
+            ReachabilityMailboxHolderAuthority.ReachabilityMailboxHolderSigner holder,
+            PrivacyMailboxRoute primaryRoute,
+            PrivacyMailboxRoute fallbackRoute,
+            PrivacyRoutingCodec codec,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(grant);
+        ArgumentNullException.ThrowIfNull(holder);
+        var mailbox = await TryGetMailboxStoreAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (mailbox is null)
+            return null;
+
+        await messagingTransportGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(store is null, this);
+            var identity = await Accounts.GetLocalIdentityAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (identity is null)
+                return null;
+            var seedSlot = ScopedKeySlot(
+                identity.SecureSlots.MessageStoreInstanceId,
+                MessagingDao1SeedSuffix,
+                "MSG-01 DAO1 sealing seed");
+            var seed = await ReadScopedKeyAsync(
+                    seedSlot,
+                    "MSG-01 DAO1 sealing seed",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var created = seed is null;
+            seed ??= CreateNonzeroKey();
+            try
+            {
+                if (created)
+                {
+                    await secureStorage.WriteBatchAsync(
+                            [new DeepSecureStorageWrite(seedSlot, seed)],
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                return PrivacyRoutedInitialSessionDispatcher.Create(
+                    identity,
+                    mailbox,
+                    grant,
+                    holder,
+                    primaryRoute,
+                    fallbackRoute,
+                    codec,
+                    seed);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(seed);
+            }
+        }
+        finally
+        {
+            messagingTransportGate.Release();
+        }
+    }
+
+    internal async Task<PrivacyRoutedMessagingReceiver?>
+        CreateMessagingReceiverAsync(
+            VerifiedCurrentMailboxGrant grant,
+            ReachabilityMailboxHolderAuthority.ReachabilityMailboxHolderSigner holder,
+            ParsedContactRouteClosure currentLocalRoute,
+            PrivacyMailboxRoute primaryRoute,
+            PrivacyMailboxRoute fallbackRoute,
+            PrivacyRoutingCodec codec,
+            ProductionContactResolvePathAuthoritySource pathAuthority,
+            VerifiedLocalMessagingRecipient localRecipient,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(grant);
+        ArgumentNullException.ThrowIfNull(holder);
+        ArgumentNullException.ThrowIfNull(currentLocalRoute);
+        ArgumentNullException.ThrowIfNull(pathAuthority);
+        ArgumentNullException.ThrowIfNull(localRecipient);
+        var mailbox = await TryGetMailboxStoreAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (mailbox is null || messaging is null)
+            return null;
+
+        await messagingTransportGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(store is null, this);
+            var identity = await Accounts.GetLocalIdentityAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (identity is null)
+                return null;
+            var seedSlot = ScopedKeySlot(
+                identity.SecureSlots.MessageStoreInstanceId,
+                MessagingDao1SeedSuffix,
+                "MSG-01 DAO1 sealing seed");
+            var seed = await ReadScopedKeyAsync(
+                    seedSlot,
+                    "MSG-01 DAO1 sealing seed",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var created = seed is null;
+            seed ??= CreateNonzeroKey();
+            try
+            {
+                if (created)
+                    await secureStorage.WriteBatchAsync(
+                            [new DeepSecureStorageWrite(seedSlot, seed)],
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                return PrivacyRoutedMessagingReceiver.Create(
+                    identity,
+                    mailbox,
+                    messaging,
+                    currentLocalRoute,
+                    grant,
+                    holder,
+                    primaryRoute,
+                    fallbackRoute,
+                    codec,
+                    seed,
+                    pathAuthority,
+                    localRecipient);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(seed);
+            }
+        }
+        finally
+        {
+            messagingTransportGate.Release();
+        }
+    }
+
     internal async ValueTask<DeepDirectMessagingInitiatorClaimStart?>
         TryBeginDirectMessagingInitiatorClaimAsync(
             ContactResolverReverifiedPeerAuthority? verifiedPeer,
@@ -226,6 +790,7 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                     verifiedPeer,
                     agreement,
                     activation.CurrentDirectory,
+                    activation.AddressBinding,
                     cancellationToken)
                 .ConfigureAwait(false);
     }
@@ -342,6 +907,35 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
         }
     }
 
+    internal async ValueTask<DeepDirectMessagingInitiatorCommitResult?>
+        TryCommitDirectMessagingInitiatorSessionAsync(
+            DeepDirectMessagingInitiatorClaimPreparation? preparedClaim,
+            VerifiedXpc1PreKeyClaimReceipt? verifiedClaim,
+            AuthoredVerifiedContactHello? contactHello,
+            CancellationToken cancellationToken = default)
+    {
+        var delegated = false;
+        try
+        {
+            var messaging = await TryGetDirectMessagingStorageAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (messaging is null)
+                return null;
+            delegated = true;
+            return await messaging.TryCommitInitiatorSessionAsync(
+                    preparedClaim,
+                    verifiedClaim,
+                    contactHello,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            if (!delegated)
+                preparedClaim?.Dispose();
+        }
+    }
+
 #if DEEP_TEST_INTERNALS
     internal async Task<DeepDirectMessagingStorageOwner?>
         TryGetDirectMessagingStorageAsync(
@@ -425,6 +1019,7 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                 verifiedPeer,
                 localAgreementAuthority,
                 activation?.CurrentDirectory,
+                activation?.AddressBinding,
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -520,9 +1115,8 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                 verifiedLocalAuthority,
                 cancellationToken)
             .ConfigureAwait(false);
-        return messaging is null
-            ? null
-            : await messaging.TryCommitResponderSessionAsync(
+        if (messaging is null) return null;
+        var result = await messaging.TryCommitResponderSessionAsync(
                     verifiedSession,
                     relationship,
                     verifiedClaim,
@@ -530,6 +1124,21 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                     maximumMessagesWithoutPqInjection,
                     cancellationToken)
                 .ConfigureAwait(false);
+        if (result?.Disposition is PreKeyV1InitialSessionSagaDisposition.Initialized or
+            PreKeyV1InitialSessionSagaDisposition.ExactReplay)
+        {
+            var inbox = await TryGetMailboxStoreAsync(cancellationToken)
+                .ConfigureAwait(false) ?? throw new CryptographicException(
+                    "The account inbox is unavailable after the initial session commit.");
+            var materialized = await messaging.TryMaterializeInitialReceiveAsync(
+                    verifiedSession, relationship, verifiedInitiation, inbox, cancellationToken)
+                .ConfigureAwait(false);
+            if (materialized is not (DirectDmc2InboxDisposition.Materialized or
+                    DirectDmc2InboxDisposition.ExactReplay))
+                throw new CryptographicException(
+                    "The initial authenticated DMC2 batch was not durably materialized.");
+        }
+        return result;
     }
 #endif
 
@@ -666,7 +1275,7 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                         new DeepGroupV1Runtime(
                             identity.Account.AccountIdentity.AccountId,
                             identity.Device.DeviceId,
-                            new AccountOwnedGroupDeviceCustodySigner(
+                            new AccountOwnedDeviceCustodySigner(
                                 Accounts,
                                 secureStorage,
                                 identity),
@@ -810,6 +1419,16 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                 ?? throw new ObjectDisposedException(nameof(DeepAccountRuntimeOwner)));
     }
 
+    internal async Task<SqliteContactAddressPublicationStore>
+        GetContactAddressPublicationStoreAsync(
+            CancellationToken cancellationToken = default)
+    {
+        await EnsureContactAddressPublicationStoreOpenAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return contactAddressPublicationStore ??
+            throw new ObjectDisposedException(nameof(DeepAccountRuntimeOwner));
+    }
+
     internal async Task<DeepContactResolvePrivacyHostBinding>
         GetContactResolvePrivacyHostBindingAsync(
             CancellationToken cancellationToken = default)
@@ -922,12 +1541,16 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                 if (localIdentity is null)
                 {
                     DeleteSqliteFamily(Path.Combine(root, RelativeContactStatePath));
+                    DeleteSqliteFamily(Path.Combine(
+                        root,
+                        RelativeContactAddressPublicationPath));
                     DeleteSqliteFamily(Path.Combine(root, RelativeDeviceStatePath));
                     DeleteSqliteFamily(Path.Combine(root, RelativeXpk1ClaimJournalPath));
                     DeleteSqliteFamily(Path.Combine(root, RelativeAccountDirectoryStatePath));
                     DeleteSqliteFamily(Path.Combine(root, RelativeXPointNetworkStatePath));
                     DeleteSqliteFamily(Path.Combine(root, RelativeEntryGuardStatePath));
                     DeleteSqliteFamily(Path.Combine(root, RelativeGroupStatePath));
+                    DeleteSqliteFamily(Path.Combine(root, RelativeMailboxStatePath));
                     DeleteSqliteFamily(Path.Combine(
                         root,
                         RelativeGroupInvitationActivationPath));
@@ -972,12 +1595,14 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
                 cancellationToken)
             .ConfigureAwait(false);
         DeleteSqliteFamily(Path.Combine(root, RelativeContactStatePath));
+        DeleteSqliteFamily(Path.Combine(root, RelativeContactAddressPublicationPath));
         DeleteSqliteFamily(Path.Combine(root, RelativeDeviceStatePath));
         DeleteSqliteFamily(Path.Combine(root, RelativeXpk1ClaimJournalPath));
         DeleteSqliteFamily(Path.Combine(root, RelativeAccountDirectoryStatePath));
         DeleteSqliteFamily(Path.Combine(root, RelativeXPointNetworkStatePath));
         DeleteSqliteFamily(Path.Combine(root, RelativeEntryGuardStatePath));
         DeleteSqliteFamily(Path.Combine(root, RelativeGroupStatePath));
+        DeleteSqliteFamily(Path.Combine(root, RelativeMailboxStatePath));
         DeleteSqliteFamily(Path.Combine(root, RelativeGroupInvitationActivationPath));
         DeepDirectMessagingStorageFacade.DeleteAccountState(root);
         DeleteProtectedStateFamily(
@@ -994,12 +1619,16 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
 
         await Task.WhenAll(
                 contactGate.WaitAsync(),
+                contactAddressPublicationGate.WaitAsync(),
                 deviceGate.WaitAsync(),
                 xpk1ClaimJournalGate.WaitAsync(),
                 accountDirectoryGate.WaitAsync(),
                 xPointGate.WaitAsync(),
                 groupGate.WaitAsync(),
                 directMessagingGate.WaitAsync(),
+                mailboxGate.WaitAsync(),
+                messagingTransportGate.WaitAsync(),
+                contactUpdateRendezvousGate.WaitAsync(),
                 contactResolvePrivacyGate.WaitAsync(),
                 activationGate.WaitAsync())
             .ConfigureAwait(false);
@@ -1008,6 +1637,8 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
             contactImporter = null;
             contactStore?.Dispose();
             contactStore = null;
+            contactAddressPublicationStore?.Dispose();
+            contactAddressPublicationStore = null;
             deviceStateStore?.Dispose();
             deviceStateStore = null;
             xpk1ClaimJournal?.Dispose();
@@ -1023,6 +1654,8 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
             groupInvitationActivationStore = null;
             groupStateStore?.Dispose();
             groupStateStore = null;
+            mailboxStore?.Dispose();
+            mailboxStore = null;
             if (directMessagingStorage is not null)
             {
                 await directMessagingStorage.DisposeAsync().ConfigureAwait(false);
@@ -1048,10 +1681,14 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
             xPointGate.Release();
             accountDirectoryGate.Release();
             contactGate.Release();
+            contactAddressPublicationGate.Release();
             deviceGate.Release();
             xpk1ClaimJournalGate.Release();
             groupGate.Release();
             directMessagingGate.Release();
+            mailboxGate.Release();
+            messagingTransportGate.Release();
+            contactUpdateRendezvousGate.Release();
             contactResolvePrivacyGate.Release();
             activationGate.Release();
             secureStorage.Dispose();
@@ -1099,6 +1736,95 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
         finally
         {
             contactGate.Release();
+        }
+    }
+
+    private async Task EnsureContactAddressPublicationStoreOpenAsync(
+        CancellationToken cancellationToken)
+    {
+        await contactAddressPublicationGate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(store is null, this);
+            if (contactAddressPublicationStore is not null) return;
+
+            var identity = await Accounts.GetLocalIdentityAsync(cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException("No local Deep account exists.");
+            var keySlot = ScopedKeySlot(
+                identity.SecureSlots.MessageStoreInstanceId,
+                ContactAddressPublicationKeySuffix,
+                "ContactV1 publication journal");
+            var contactKeySlot = ContactKeySlot(
+                identity.SecureSlots.MessageStoreInstanceId);
+            var key = await ReadScopedKeyAsync(
+                    keySlot,
+                    "ContactV1 publication journal",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var contactKey = await ReadScopedKeyAsync(
+                    contactKeySlot,
+                    "ContactV1",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var statePath = Path.Combine(
+                appDataDirectory,
+                RelativeContactAddressPublicationPath);
+            var databaseExisted = SqliteFamilyExists(statePath);
+            if (key is null && databaseExisted)
+                throw InvalidScopedKey(
+                    "The ContactV1 publication journal exists without its protected SQLCipher key.");
+            var createdKey = key is null;
+            key ??= CreateNonzeroKey();
+            SqliteContactAddressPublicationStore? opened = null;
+            try
+            {
+                if (contactKey is not null &&
+                    CryptographicOperations.FixedTimeEquals(key, contactKey))
+                {
+                    throw InvalidScopedKey(
+                        "The ContactV1 state and publication journal SQLCipher keys are not distinct.");
+                }
+                if (createdKey)
+                {
+                    await secureStorage.WriteBatchAsync(
+                            [new DeepSecureStorageWrite(keySlot, key)],
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                using var options = new SqliteContactAddressPublicationStoreOptions(
+                    statePath,
+                    key,
+                    ContactStoreScope.ForCurrentAccount(
+                        identity.Account.AccountIdentity.AccountId));
+                opened = new SqliteContactAddressPublicationStore(options);
+                contactAddressPublicationStore = opened;
+                opened = null;
+            }
+            catch
+            {
+                opened?.Dispose();
+                if (createdKey && !databaseExisted)
+                {
+                    await secureStorage.DeleteBatchAsync(
+                            [keySlot],
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    DeleteSqliteFamily(statePath);
+                }
+                throw;
+            }
+            finally
+            {
+                if (contactKey is not null)
+                    CryptographicOperations.ZeroMemory(contactKey);
+                CryptographicOperations.ZeroMemory(key);
+            }
+        }
+        finally
+        {
+            contactAddressPublicationGate.Release();
         }
     }
 
@@ -1578,6 +2304,66 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
             }
             CryptographicOperations.ZeroMemory(key);
         }
+    }
+
+    private static byte[] EncodeContactUpdateRendezvous(
+        ReadOnlySpan<byte> keyId,
+        ReadOnlySpan<byte> publicKey,
+        ReadOnlySpan<byte> exactXur1)
+    {
+        if (keyId.Length != 32 || publicKey.Length != 32 || exactXur1.IsEmpty ||
+            exactXur1.Length > 65_535)
+            throw new CryptographicException(
+                "The protected ContactV1 update rendezvous is malformed.");
+        var encoded = new byte[checked(4 + 2 + 32 + 32 + 4 + exactXur1.Length)];
+        "DXU1"u8.CopyTo(encoded);
+        BinaryPrimitives.WriteUInt16BigEndian(encoded.AsSpan(4), 1);
+        keyId.CopyTo(encoded.AsSpan(6, 32));
+        publicKey.CopyTo(encoded.AsSpan(38, 32));
+        BinaryPrimitives.WriteUInt32BigEndian(
+            encoded.AsSpan(70), checked((uint)exactXur1.Length));
+        exactXur1.CopyTo(encoded.AsSpan(74));
+        return encoded;
+    }
+
+    private static ProtectedContactUpdateRendezvous DecodeContactUpdateRendezvous(
+        ReadOnlySpan<byte> encoded)
+    {
+        if (encoded.Length < 75 || !encoded[..4].SequenceEqual("DXU1"u8) ||
+            BinaryPrimitives.ReadUInt16BigEndian(encoded.Slice(4, 2)) != 1)
+            throw InvalidScopedKey(
+                "The protected ContactV1 update rendezvous is invalid.");
+        var length = BinaryPrimitives.ReadUInt32BigEndian(encoded.Slice(70, 4));
+        if (length == 0 || length > 65_535 ||
+            encoded.Length != checked(74 + (int)length))
+            throw InvalidScopedKey(
+                "The protected ContactV1 update rendezvous is invalid.");
+        var keyId = encoded.Slice(6, 32).ToArray();
+        var publicKey = encoded.Slice(38, 32).ToArray();
+        var exact = encoded[74..].ToArray();
+        if (keyId.AsSpan().IndexOfAnyExcept((byte)0) < 0 ||
+            publicKey.AsSpan().IndexOfAnyExcept((byte)0) < 0)
+        {
+            CryptographicOperations.ZeroMemory(keyId);
+            CryptographicOperations.ZeroMemory(publicKey);
+            CryptographicOperations.ZeroMemory(exact);
+            throw InvalidScopedKey(
+                "The protected ContactV1 update rendezvous is invalid.");
+        }
+        return new ProtectedContactUpdateRendezvous(keyId, publicKey, exact);
+    }
+
+    private sealed record ProtectedContactUpdateRendezvous(
+        byte[] KeyId,
+        byte[] PublicKey,
+        byte[] ExactXur1);
+
+    private static void ZeroContactUpdateRendezvous(
+        ProtectedContactUpdateRendezvous value)
+    {
+        CryptographicOperations.ZeroMemory(value.KeyId);
+        CryptographicOperations.ZeroMemory(value.PublicKey);
+        CryptographicOperations.ZeroMemory(value.ExactXur1);
     }
 
     private static string ContactKeySlot(string messageStoreInstanceSlot)

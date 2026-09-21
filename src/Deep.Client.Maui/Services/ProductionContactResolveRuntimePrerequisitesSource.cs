@@ -21,7 +21,9 @@ internal sealed record ProductionContactResolveHostOptions(
     Func<PrivacyRoutingCodec?> PrivacyRoutingCodecFactory,
     Func<IContactResolvePlacementContextSource?> PlacementContextSourceFactory,
     ushort SupportedDirectoryReader = 1,
-    Func<IContactResolvePathAuthoritySource>? PathAuthoritySourceFactory = null);
+    Func<IContactResolvePathAuthoritySource>? PathAuthoritySourceFactory = null,
+    Func<PrivacyMailboxRoute?>? PrimaryMailboxRouteFactory = null,
+    Func<PrivacyMailboxRoute?>? FallbackMailboxRouteFactory = null);
 
 /// <summary>
 /// Production-capable but dormant unless every bootstrap-owned capability is
@@ -159,6 +161,17 @@ internal sealed class ProductionContactResolveRuntimePrerequisitesSource
                 return Unavailable(ContactResolveRuntimeUnavailableReason.AuthoritySource);
             }
 
+            PrivacyMailboxRoute? primaryMailboxRoute = null;
+            PrivacyMailboxRoute? fallbackMailboxRoute = null;
+            if (host.PrimaryMailboxRouteFactory is not null &&
+                host.FallbackMailboxRouteFactory is not null)
+            {
+                primaryMailboxRoute = host.PrimaryMailboxRouteFactory();
+                fallbackMailboxRoute = host.FallbackMailboxRouteFactory();
+                if (primaryMailboxRoute is null || fallbackMailboxRoute is null)
+                    return Unavailable(ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+            }
+
             return new ContactResolveRuntimePrerequisites(
                 genesis,
                 monotonicClock,
@@ -171,7 +184,12 @@ internal sealed class ProductionContactResolveRuntimePrerequisitesSource
                 () => verifier,
                 host.PlacementContextSourceFactory,
                 host.SupportedDirectoryReader,
-                PathAuthoritySourceFactory: host.PathAuthoritySourceFactory);
+                PathAuthoritySourceFactory: host.PathAuthoritySourceFactory,
+                PrimaryMailboxRouteFactory: primaryMailboxRoute is null
+                    ? null : () => primaryMailboxRoute,
+                FallbackMailboxRouteFactory: fallbackMailboxRoute is null
+                    ? null : () => fallbackMailboxRoute,
+                MailboxPrivacyCodecFactory: () => codec);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

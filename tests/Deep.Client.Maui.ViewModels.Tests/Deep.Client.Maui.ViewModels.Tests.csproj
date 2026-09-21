@@ -65,7 +65,7 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ProductionContactResolveVerifiedHostCapabilitiesSource.cs" Link="Services\ProductionContactResolveVerifiedHostCapabilitiesSource.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\DeepAccountRuntimeAccessor.cs" Link="Services\DeepAccountRuntimeAccessor.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\DeepAccountRuntimeOwner.cs" Link="Services\DeepAccountRuntimeOwner.cs" />
-    <Compile Include="..\..\src\Deep.Client.Maui\Services\GroupV1\AccountOwnedGroupDeviceCustodySigner.cs" Link="Services\GroupV1\AccountOwnedGroupDeviceCustodySigner.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\GroupV1\AccountOwnedDeviceCustodySigner.cs" Link="Services\GroupV1\AccountOwnedDeviceCustodySigner.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\GroupV1\ProductionGroupContactCapabilitySource.cs" Link="Services\GroupV1\ProductionGroupContactCapabilitySource.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\GroupV1\AccountScopedGroupV1Composer.cs" Link="Services\GroupV1\AccountScopedGroupV1Composer.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ContactResolvePrivacyHostState.cs" Link="Services\ContactResolvePrivacyHostState.cs" />

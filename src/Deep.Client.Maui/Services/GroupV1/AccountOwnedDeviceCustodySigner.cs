@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Deep.Client.Shared.Domain;
 using Deep.Client.Shared.Persistence;
 using Deep.Client.Shared.Services;
+using Deep.Protocol.ContactV1;
 using Deep.Protocol.GroupV1;
 using Deep.Protocol.Identity;
 using Sodium;
@@ -10,13 +11,14 @@ using Sodium;
 namespace Deep.Client.Maui.Services.GroupV1;
 
 /// <summary>
-/// Account-owned Group v1 signing boundary. The Ed25519 seed is read only from
-/// the reconciled current-device secure slot for the duration of one signature.
+/// Account-owned Group/Contact signing boundary. The Ed25519 seed is read only
+/// from the reconciled current-device secure slot for one protocol signature.
 /// </summary>
-internal sealed class AccountOwnedGroupDeviceCustodySigner : IGroupDeviceCustodySigner
+internal sealed class AccountOwnedDeviceCustodySigner :
+    IGroupDeviceCustodySigner, IContactDeviceCustodySigner
 {
     private static ReadOnlySpan<byte> CustodyDomain =>
-        "Deep/Client/MAUI/GroupV1/device-custody-domain/v1"u8;
+        "Deep/Client/MAUI/device-custody-domain/v1"u8;
 
     private readonly DeepAccountService accounts;
     private readonly IDeepSecureStorage secureStorage;
@@ -27,7 +29,7 @@ internal sealed class AccountOwnedGroupDeviceCustodySigner : IGroupDeviceCustody
     private readonly byte[] publicKey;
     private readonly byte[] custodyDomainHash;
 
-    internal AccountOwnedGroupDeviceCustodySigner(
+    internal AccountOwnedDeviceCustodySigner(
         DeepAccountService accounts,
         IDeepSecureStorage secureStorage,
         DeepLocalIdentitySnapshot expectedIdentity)
@@ -78,7 +80,38 @@ internal sealed class AccountOwnedGroupDeviceCustodySigner : IGroupDeviceCustody
         signature64.Span.Clear();
         cancellationToken.ThrowIfCancellationRequested();
         ValidateRequestBinding(request);
+        return await SignCurrentDeviceAsync(
+            request.SigningInput, signature64, cancellationToken).ConfigureAwait(false);
+    }
 
+    async ValueTask<int> IContactDeviceCustodySigner.SignAsync(
+        ContactDeviceSigningRequest request,
+        Memory<byte> signature64,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (signature64.Length != 64)
+            throw new ArgumentException(
+                "The ContactV1 signature destination must contain exactly 64 bytes.",
+                nameof(signature64));
+
+        signature64.Span.Clear();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!Enum.IsDefined(request.Purpose))
+            throw new CryptographicException("The ContactV1 signature purpose is unknown.");
+        RequireSame(request.NetworkId.Span, networkId, "network");
+        RequireSame(request.AccountId.Span, accountId, "account");
+        RequireSame(request.DeviceId.Span, deviceId, "device");
+        RequireSame(request.CustodyDomainHash.Span, custodyDomainHash, "custody domain");
+        return await SignCurrentDeviceAsync(
+            request.SigningInput, signature64, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<int> SignCurrentDeviceAsync(
+        ReadOnlyMemory<byte> protocolSigningInput,
+        Memory<byte> signature64,
+        CancellationToken cancellationToken)
+    {
         var current = await accounts.GetLocalIdentityAsync(cancellationToken)
             .ConfigureAwait(false)
             ?? throw new CryptographicException("No current Deep account owns this signer.");
@@ -109,10 +142,10 @@ internal sealed class AccountOwnedGroupDeviceCustodySigner : IGroupDeviceCustody
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            signingInput = request.SigningInput.ToArray();
+            signingInput = protocolSigningInput.ToArray();
             if (signingInput.Length == 0)
             {
-                throw new CryptographicException("The Group v1 signing input is empty.");
+                throw new CryptographicException("The protocol signing input is empty.");
             }
 
             using var keyPair = PublicKeyAuth.GenerateKeyPair(seed);
@@ -136,7 +169,7 @@ internal sealed class AccountOwnedGroupDeviceCustodySigner : IGroupDeviceCustody
                 || !PublicKeyAuth.VerifyDetached(signature, signingInput, publicKey))
             {
                 throw new CryptographicException(
-                    "The current-device Group v1 signature failed verification.");
+                    "The current-device protocol signature failed verification.");
             }
 
             current = await accounts.GetLocalIdentityAsync(cancellationToken)

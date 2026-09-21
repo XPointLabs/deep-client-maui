@@ -66,7 +66,7 @@ public sealed class GroupV1CustodyCapabilityTests
         _ = await CreateAccountAsync(await secondAccessor.GetAccountsAsync());
 
         using var firstStorage = firstFixture.CreateStorage();
-        var signer = new AccountOwnedGroupDeviceCustodySigner(
+        var signer = new AccountOwnedDeviceCustodySigner(
             await secondAccessor.GetAccountsAsync(),
             firstStorage,
             firstIdentity);

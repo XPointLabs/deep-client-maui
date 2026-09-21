@@ -108,9 +108,66 @@
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
     <ProjectReference Include="..\Deep.Client.Maui.Core\Deep.Client.Maui.Core.csproj" />
-    <ProjectReference Include="..\Deep.Client.Maui.Outbox\Deep.Client.Maui.Outbox.csproj" />
-    <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.csproj"
+    <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.Production.csproj"
                       GlobalPropertiesToRemove="RuntimeIdentifier;RuntimeIdentifiers;SelfContained" />
+  </ItemGroup>
+
+  <!--
+    Clean-break client composition.  The removed files are the pre-cutover
+    Session-derived shell/runtime and are retained only as offline source
+    evidence until the repository cleanup commit deletes them.  They are not
+    compiled, packaged, reflected or used as a compatibility path.
+  -->
+  <ItemGroup>
+    <MauiXaml Remove="App.xaml;AppShell.xaml;Pages\**\*.xaml;Styles\**\*.xaml" />
+    <Compile Remove="App.xaml.cs;AppShell.xaml.cs;MauiProgram.cs;DesktopWorkspaceContracts.cs" />
+    <Compile Remove="Controls\**\*.cs;Pages\**\*.xaml.cs" />
+    <Compile Remove="Services\ApplicationHttpTransportComposition.cs" />
+    <Compile Remove="Services\BackgroundSyncSchedulingCoordinator.cs" />
+    <Compile Remove="Services\CallSessionCoordinator.cs" />
+    <Compile Remove="Services\ClientRuntimeBootstrapper.cs" />
+    <Compile Remove="Services\ContactInvitationProvider.cs" />
+    <Compile Remove="Services\ContactAvatarStore.cs" />
+    <Compile Remove="Services\ContactProfileUpdateBus.cs" />
+    <Compile Remove="Services\DevelopmentMailboxHolderBootstrap.cs" />
+    <Compile Remove="Services\IncomingMessageNotificationCoordinator.cs" />
+    <Compile Remove="Services\MauiAccountLogoutCoordinator.cs" />
+    <Compile Remove="Services\MauiAttachmentPickerService.cs" />
+    <Compile Remove="Services\ProductionMailboxArtifactSetDigest.cs" />
+    <Compile Remove="Services\MauiPushNotificationService.cs" />
+    <Compile Remove="Services\MailboxRuntimeProvisioning.cs" />
+    <Compile Remove="Services\PersistentClientRuntimeComposer.cs" />
+    <Compile Remove="Services\PlatformBoundaryImplementations.cs" />
+    <Compile Remove="Services\PhysicalE2eAckCorrelationProvider.cs" />
+    <Compile Remove="Services\PhysicalE2eMessageDispatchFailureObserver.cs" />
+    <Compile Remove="Services\PhysicalMailboxRouteUsageTracker.cs" />
+    <Compile Remove="Services\ProductionMailboxContactStateStore.cs" />
+    <Compile Remove="Services\ProductionMailboxBuildTrustFloor.cs" />
+    <Compile Remove="Services\ProductionMailboxClientIdentityAttestor.cs" />
+    <Compile Remove="Services\ProductionMailboxCredentialAcquirer.cs" />
+    <Compile Remove="Services\ProductionMailboxLocalOwnerLifecycle.cs" />
+    <Compile Remove="Services\ProductionMailboxOwnerIdentityStore.cs" />
+    <Compile Remove="Services\ProductionMailboxRegistryClient.cs" />
+    <Compile Remove="Services\ProductionMailboxRegistryJsonCodec.cs" />
+    <Compile Remove="Services\ProtectedProductionMailboxTrustStateStore.cs" />
+    <Compile Remove="Services\ProductionMailboxRuntimeCoordinator.cs" />
+    <Compile Remove="Services\PushNotificationSecureStorage.cs" />
+    <Compile Remove="Services\PushNotificationKeyStateCodec.cs" />
+    <Compile Remove="Services\PushNotificationReplayCache.cs" />
+    <Compile Remove="Services\PushTokenBridge.cs" />
+    <Compile Remove="Services\PushRegistrationLifecycleCoordinator.cs" />
+    <Compile Remove="Services\PushUnsubscribeRetryBootstrapper.cs" />
+    <Compile Remove="Services\PushUnsubscribeRetryStateCodec.cs" />
+    <Compile Remove="Services\SyncPollingPolicy.cs" />
+    <Compile Remove="Services\SecureRecoverySessionStore.cs" />
+    <Compile Remove="Services\StoreBoundNativeMau2Transport.cs" />
+    <Compile Remove="Services\RuntimeTransportMode.cs" />
+    <Compile Remove="Platforms\Android\DeepFirebaseMessagingService.cs" />
+    <Compile Remove="Platforms\Android\DeepSyncJobService.cs" />
+    <Compile Remove="Platforms\Android\FirebaseTokenProvider.cs" />
+    <Compile Remove="Platforms\Android\ShareIngressActivity.cs" />
+    <Compile Remove="Platforms\Windows\WindowsPushNotificationService.cs" />
+    <Compile Remove="Platforms\Windows\WindowsShareTargetService.cs" />
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">

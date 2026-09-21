@@ -28,6 +28,8 @@ jobs:
   unit-tests:
     name: unit-tests-${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # The retired Session ViewModel/route-smoke projects are not release
+    # evidence. Physical device E2E is performed locally, outside CI.
     strategy:
       fail-fast: false
       matrix:
@@ -63,23 +65,23 @@ jobs:
           DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
         with:
           dotnet-version: 10.0.301
-      - name: ViewModel tests
+      - name: Clean account tests
         working-directory: deep-client-maui
         env:
           TMPDIR: ${{ runner.temp }}
-        run: dotnet test tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj --configuration Release -m:1 --logger "trx;LogFileName=viewmodels-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/viewmodels
-      - name: Smoke UI route tests
+        run: dotnet test tests/Deep.Client.Maui.Clean.Tests/Deep.Client.Maui.Clean.Tests.csproj --configuration Release -m:1 --logger "trx;LogFileName=clean-account-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/clean-account
+      - name: Clean mailbox store tests (Windows approved ML-KEM runtime)
         if: runner.os == 'Windows'
-        working-directory: deep-client-maui
+        working-directory: deep-client-shared
         env:
           TMPDIR: ${{ runner.temp }}
-        run: dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj --configuration Release -m:1 --filter "RequiresPhysicalHost!=true" --logger "trx;LogFileName=route-smoke-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/route-smoke
-      - name: Portable smoke UI route tests
+        run: dotnet test tests/Deep.Client.Shared.Production.Tests/Deep.Client.Shared.Production.Tests.csproj --configuration Release -m:1 --logger "trx;LogFileName=clean-mailbox-${{ matrix.os }}.trx" --results-directory ../deep-client-maui/artifacts/test-results/${{ matrix.os }}/clean-mailbox
+      - name: Clean portable mailbox store tests
         if: runner.os != 'Windows'
-        working-directory: deep-client-maui
+        working-directory: deep-client-shared
         env:
           TMPDIR: ${{ runner.temp }}
-        run: dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj --configuration Release -m:1 --filter "RequiresWindows!=true" --logger "trx;LogFileName=route-smoke-${{ matrix.os }}.trx" --results-directory artifacts/test-results/${{ matrix.os }}/route-smoke
+        run: dotnet test tests/Deep.Client.Shared.Production.Tests/Deep.Client.Shared.Production.Tests.csproj --configuration Release -m:1 --filter "RequiresApprovedMlKemRuntime!=true" --logger "trx;LogFileName=clean-mailbox-${{ matrix.os }}.trx" --results-directory ../deep-client-maui/artifacts/test-results/${{ matrix.os }}/clean-mailbox
       - name: Upload unit test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -315,7 +317,7 @@ jobs:
             generatedAt = (Get-Date).ToUniversalTime().ToString('o')
             commit = '${{ github.sha }}'
             acceptanceScope = @(
-              'unit-viewmodel-and-route-smoke-tests',
+              'clean-account-and-mailbox-unit-tests',
               'release-transport-no-stub-guard',
               'android-release-build',
               'windows-release-build'

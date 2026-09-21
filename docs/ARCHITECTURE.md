@@ -10,9 +10,8 @@ the sibling `deep-client-shared` repository.
 
 `Deep.Client.Shared` owns:
 
-- the currently active legacy 13-word recovery implementation, which is
-  disposable pre-production evidence and must be replaced by 24-word
-  `DeepRecoveryV1` plus device-scoped keys before a public release;
+- the clean-break 24-word `DeepRecoveryV1` and device-scoped keys; the retired
+  13-word Session composition is not a production compatibility surface;
 - end-to-end encrypted envelopes and replay protection;
 - three-hop binary Deep-native privacy routing for canonical MAU2;
 - SQLCipher repositories with exact v16 baseline attestation, durable
@@ -75,11 +74,37 @@ credential material. No failure path enables a direct or unpinned fallback.
 Release builds require real transports, at least three unique signed access
 seeds, encrypted local persistence, and the new ratcheted Deep E2EE generation.
 More access bridges may be learned from signed rotating catalogs. The Reality bootstrap
-does not register a Session message transport. Today mailbox delivery uses the
-separately provisioned Deep-native privacy routes, but its entry connection is
-still direct HTTPS. The Reality runtime is not the
-`IPrivacyManagedIngressTransport` used by MAU2, so anti-blocking message
-delivery remains a pre-release integration blocker.
+does not register a Session message transport. The clean-break composition does
+not yet register a 1:1 message sender or receiver. ContactResolve uses the
+verified privacy route; there is no direct HTTPS fallback for MSG-01.
+The clean startup opens the DMB1 generation-2 mailbox and direct-event inbox
+through the account owner with its own protected SQLCipher key. A successful
+responder initial-session saga also replays its staged SessionInit and first
+DMC2 into that inbox atomically. This still does not apply ContactHello state,
+mint a mailbox ACK, or register a 1:1 receive loop or message UI.
+The account-owned production API can now preview an incoming DPH2 with its
+protected local DPK2 secret and verify the encrypted XPK1/XPC1 transcript
+against a fresh initiator DMD1 checkpoint and current placement. This returns
+only a verified initial-claim capability; no prekey reservation, session,
+inbox event or ACK is created by this step. A production mailbox receiver must
+still supply those verified inputs and complete the later durable transitions.
+
+The current-device protected signer now serves both GroupV1 and ContactV1
+custody requests, with separate protocol request validation. XRA1 local
+authoring composes a verified route proposal, protected PMT2-scoped
+metadata-sealing key and that signer. No XRA1 publication/threshold completion
+or inbound DAO1 receive runtime has a startup/UI caller yet; local authoring
+alone is not device E2E evidence. The clean composition registers one
+bounded Registry route-authority client. The account-owned author can submit
+its exact XRA1, verify the nonce-bound PMS2/XRC1/XSS1 threshold response and
+finish XRR1/XIR1 with the same current-device signer. No startup/UI caller or
+durable DCR1/DCB1 publication uses this capability yet.
+The clean composition also registers a bounded publication-authority client.
+Protocol authors its request only through current device custody and
+independently re-verifies the returned exact XPA1/XPU1 against current
+placement. The account-owned author can authorize an already verified genesis
+DCR1/route closure, but no startup/UI caller or durable XPU1 publication uses
+that capability yet.
 
 ## Startup
 
