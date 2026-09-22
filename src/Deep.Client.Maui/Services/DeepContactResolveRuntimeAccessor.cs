@@ -201,11 +201,6 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var committed = await EstablishDirectMessagingSessionAsync(
-                peer, current, cancellationToken)
-            .ConfigureAwait(false);
-        if (committed is null)
-            return null;
         using var dispatcher = await accounts.CreateInitialSessionDispatcherAsync(
                 grant,
                 holder,
@@ -214,7 +209,12 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
                 codec,
                 cancellationToken)
             .ConfigureAwait(false);
-        return dispatcher is null
+        if (dispatcher is null)
+            return null;
+        using var committed = await EstablishDirectMessagingSessionAsync(
+                peer, current, cancellationToken)
+            .ConfigureAwait(false);
+        return committed is null
             ? null
             : await dispatcher.SendAsync(committed, peer, cancellationToken)
                 .ConfigureAwait(false);
