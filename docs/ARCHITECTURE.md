@@ -74,14 +74,18 @@ credential material. No failure path enables a direct or unpinned fallback.
 Release builds require real transports, at least three unique signed access
 seeds, encrypted local persistence, and the new ratcheted Deep E2EE generation.
 More access bridges may be learned from signed rotating catalogs. The Reality bootstrap
-does not register a Session message transport. The clean-break composition does
-not yet register a 1:1 message sender or receiver. ContactResolve uses the
-verified privacy route; there is no direct HTTPS fallback for MSG-01.
+does not register a Session message transport. The clean-break composition
+exposes verified-contact DPH2/DAO1 first-send and a manually invoked
+self-mailbox receive path. It does not yet expose text, attachment, or image
+composition. ContactResolve uses the verified privacy route; there is no direct
+HTTPS fallback for MSG-01.
 The clean startup opens the DMB1 generation-2 mailbox and direct-event inbox
 through the account owner with its own protected SQLCipher key. A successful
 responder initial-session saga also replays its staged SessionInit and first
-DMC2 into that inbox atomically. This still does not apply ContactHello state,
-mint a mailbox ACK, or register a 1:1 receive loop or message UI.
+DMC2 into that inbox atomically. The Contacts screen can initiate a verified
+first-contact DPH2 and manually poll the self mailbox. Its bounded poll grants
+ACK only after all retrieved DPH2/DPE2 entries commit and materialize; partial
+batches remain unacknowledged. There is no background receive loop or chat UI.
 The account-owned production API can now preview an incoming DPH2 with its
 protected local DPK2 secret and verify the encrypted XPK1/XPC1 transcript
 against a fresh initiator DMD1 checkpoint and current placement. This returns
@@ -92,19 +96,21 @@ still supply those verified inputs and complete the later durable transitions.
 The current-device protected signer now serves both GroupV1 and ContactV1
 custody requests, with separate protocol request validation. XRA1 local
 authoring composes a verified route proposal, protected PMT2-scoped
-metadata-sealing key and that signer. No XRA1 publication/threshold completion
-or inbound DAO1 receive runtime has a startup/UI caller yet; local authoring
-alone is not device E2E evidence. The clean composition registers one
+metadata-sealing key and that signer. Authenticated startup invokes the
+generation-zero publication bootstrap; the Contacts screen can invoke inbound
+receive. Neither path is physical device E2E evidence until exercised on two
+devices. The clean composition registers one
 bounded Registry route-authority client. The account-owned author can submit
 its exact XRA1, verify the nonce-bound PMS2/XRC1/XSS1 threshold response and
-finish XRR1/XIR1 with the same current-device signer. No startup/UI caller or
-durable DCR1/DCB1 publication uses this capability yet.
+finish XRR1/XIR1 with the same current-device signer. The bootstrap continues
+through durable DCB1/DCR1 publication.
 The clean composition also registers a bounded publication-authority client.
 Protocol authors its request only through current device custody and
 independently re-verifies the returned exact XPA1/XPU1 against current
 placement. The account-owned author can authorize an already verified genesis
-DCR1/route closure, but no startup/UI caller or durable XPU1 publication uses
-that capability yet.
+DCR1/route closure and stages the verified XPU1 for publication. The bootstrap
+is fail-closed on publication failure; successful device delivery remains to
+be verified physically.
 
 ## Startup
 

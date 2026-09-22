@@ -227,6 +227,7 @@ public sealed class AppShell : ContentPage
     private View CreateContactsView()
     {
         var viewModel = services.GetRequiredService<NewConversationViewModel>();
+        var messaging = services.GetRequiredService<DeepContactResolveRuntimeAccessor>();
         var address = new Editor
         {
             Placeholder = "Постоянный deep1… или deepinvite:DIA1",
@@ -234,6 +235,17 @@ public sealed class AppShell : ContentPage
             AutomationId = "Contacts.Address"
         };
         var status = StatusLabel("Contacts.Status");
+        var start = new Button
+        {
+            Text = "Установить защищённый канал",
+            AutomationId = "Contacts.StartSecureChannel",
+            IsEnabled = false
+        };
+        address.TextChanged += (_, _) =>
+        {
+            viewModel.AddressInput = address.Text ?? string.Empty;
+            start.IsEnabled = viewModel.HasVerifiedConversation;
+        };
         var resolve = new Button { Text = "Добавить контакт", AutomationId = "Contacts.Resolve" };
         resolve.Clicked += async (_, _) =>
         {
@@ -251,6 +263,7 @@ public sealed class AppShell : ContentPage
                     viewModel.ReportDirectRuntimeUnavailable();
                     status.Text = $"{viewModel.StatusTitle}\n{viewModel.StatusMessage}".Trim();
                 }
+                start.IsEnabled = viewModel.HasVerifiedConversation;
             }
             catch (Exception exception)
             {
@@ -259,6 +272,62 @@ public sealed class AppShell : ContentPage
             finally
             {
                 resolve.IsEnabled = true;
+            }
+        };
+        start.Clicked += async (_, _) =>
+        {
+            var target = viewModel.VerifiedConversation;
+            if (target is null) return;
+            start.IsEnabled = false;
+            try
+            {
+                var delivered = await messaging
+                    .TryEstablishAndDispatchDirectMessagingSessionAsync(target);
+                status.Text = delivered is null
+                    ? "Защищённый канал пока недоступен. Повторите после обновления публикации контакта."
+                    : "Первое защищённое сообщение доставлено в почтовый ящик контакта. Ожидаем подтверждения получателя.";
+            }
+            catch (Exception exception)
+            {
+                status.Text = UserSafeFailure(exception,
+                    "Не удалось установить защищённый канал.");
+            }
+            finally
+            {
+                start.IsEnabled = viewModel.HasVerifiedConversation;
+            }
+        };
+        var checkInbox = new Button
+        {
+            Text = "Проверить входящие",
+            AutomationId = "Contacts.CheckInbox"
+        };
+        checkInbox.Clicked += async (_, _) =>
+        {
+            checkInbox.IsEnabled = false;
+            try
+            {
+                using var receiver = await messaging.CreateMessagingReceiverAsync();
+                if (receiver is null)
+                {
+                    status.Text = "Входящий маршрут ещё не опубликован или недоступен.";
+                    return;
+                }
+                var result = await receiver.PollOnceAsync();
+                status.Text = result.RetrievedCount == 0
+                    ? "Новых входящих нет."
+                    : result.Acknowledged
+                        ? $"Защищённо сохранено входящих: {result.CommittedCount}."
+                        : "Входящие получены, но не все подтверждены. Они останутся в почтовом ящике для повторной проверки.";
+            }
+            catch (Exception exception)
+            {
+                status.Text = UserSafeFailure(exception,
+                    "Не удалось проверить входящие; неподтверждённые сообщения сохраняются для повтора.");
+            }
+            finally
+            {
+                checkInbox.IsEnabled = true;
             }
         };
         return Scroll(new VerticalStackLayout
@@ -296,6 +365,8 @@ public sealed class AppShell : ContentPage
                         new Label { Text = "Новый контакт", FontSize = 16, FontAttributes = FontAttributes.Bold },
                         address,
                         resolve,
+                        start,
+                        checkInbox,
                         status
                     }
                 })
