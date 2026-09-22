@@ -602,6 +602,26 @@ internal sealed class DeepAccountRuntimeOwner : IAsyncDisposable
         finally { mailboxGate.Release(); }
     }
 
+    internal async Task<IReadOnlyList<DirectMessageCreateSnapshot>>
+        ListDirectMessageCreatesAsync(
+            ContactConversationId32 conversationId,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(conversationId);
+        var identity = await Accounts.GetLocalIdentityAsync(cancellationToken)
+            .ConfigureAwait(false) ?? throw new InvalidOperationException(
+                "No local Deep account exists.");
+        var inbox = await TryGetMailboxStoreAsync(cancellationToken)
+            .ConfigureAwait(false) ?? throw new InvalidOperationException(
+                "The account-wide message inbox is unavailable.");
+        return await inbox.ListDirectMessageCreatesAsync(
+                identity.Account.AccountIdentity.AccountId.Bytes,
+                identity.Account.AccountIdentity.AccountGeneration,
+                conversationId.ToArray(),
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     internal async ValueTask<ReachabilityMailboxHolderAuthority.ReachabilityMailboxHolderSigner?>
         OpenReachabilityMailboxHolderAsync(
             VerifiedContactRouteClosure route,

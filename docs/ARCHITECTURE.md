@@ -85,7 +85,9 @@ responder initial-session saga also replays its staged SessionInit and first
 DMC2 into that inbox atomically. The Contacts screen can initiate a verified
 first-contact DPH2 and manually poll the self mailbox. Its bounded poll grants
 ACK only after all retrieved DPH2/DPE2 entries commit and materialize; partial
-batches remain unacknowledged. There is no background receive loop or chat UI.
+batches remain unacknowledged. For a selected verified conversation the screen
+can display canonical authenticated MessageCreate events from the local
+SQLCipher inbox; it does not yet provide a composer or background receive loop.
 The account-owned production API can now preview an incoming DPH2 with its
 protected local DPK2 secret and verify the encrypted XPK1/XPC1 transcript
 against a fresh initiator DMD1 checkpoint and current placement. This returns

@@ -63,6 +63,16 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
         CancellationToken cancellationToken = default) =>
         accounts.GetPermanentDeepIdAsync(cancellationToken);
 
+    internal Task<IReadOnlyList<DirectMessageCreateSnapshot>>
+        ListDirectMessageCreatesAsync(
+            VerifiedDirectConversationTarget target,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        return accounts.ListDirectMessageCreatesAsync(
+            target.ConversationId, cancellationToken);
+    }
+
     internal async ValueTask<VerifiedContactRouteProposalAuthority>
         MintLocalRouteProposalAsync(
             CancellationToken cancellationToken = default)

@@ -138,6 +138,30 @@ internal sealed class DeepAccountRuntimeAccessor :
         return identity.Account.PermanentId.CanonicalText;
     }
 
+    internal async Task<IReadOnlyList<DirectMessageCreateSnapshot>>
+        ListDirectMessageCreatesAsync(
+            ContactConversationId32 conversationId,
+            CancellationToken cancellationToken = default)
+    {
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            owner ??= await DeepAccountRuntimeOwner.OpenAsync(
+                    appDataDirectory,
+                    clock,
+                    networkIdFactory(),
+                    secureStorageFactory,
+                    privacyStateProtectorFactory,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return await owner.ListDirectMessageCreatesAsync(
+                    conversationId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally { gate.Release(); }
+    }
+
     internal async Task<DeepGroupV1RuntimeBinding?> TryGetGroupV1RuntimeBindingAsync(
         CancellationToken cancellationToken = default)
     {

@@ -235,6 +235,26 @@ public sealed class AppShell : ContentPage
             AutomationId = "Contacts.Address"
         };
         var status = StatusLabel("Contacts.Status");
+        var messages = new VerticalStackLayout
+        {
+            Spacing = 8,
+            AutomationId = "Contacts.MessageHistory"
+        };
+        async Task RefreshMessagesAsync()
+        {
+            messages.Children.Clear();
+            var selected = viewModel.VerifiedConversation;
+            if (selected is null) return;
+            var history = await messaging.ListDirectMessageCreatesAsync(selected);
+            foreach (var item in history)
+                messages.Children.Add(new Label
+                {
+                    Text = $"{(item.IsLocalAuthor ? "Вы" : "Контакт")} · " +
+                           $"{item.CreatedAt.ToLocalTime():g}\n{item.Text}",
+                    TextColor = DeepTheme.Text,
+                    AutomationId = "Contacts.Message"
+                });
+        }
         var start = new Button
         {
             Text = "Установить защищённый канал",
@@ -264,6 +284,7 @@ public sealed class AppShell : ContentPage
                     status.Text = $"{viewModel.StatusTitle}\n{viewModel.StatusMessage}".Trim();
                 }
                 start.IsEnabled = viewModel.HasVerifiedConversation;
+                await RefreshMessagesAsync();
             }
             catch (Exception exception)
             {
@@ -285,7 +306,7 @@ public sealed class AppShell : ContentPage
                     .TryEstablishAndDispatchDirectMessagingSessionAsync(target);
                 status.Text = delivered is null
                     ? "Защищённый канал пока недоступен. Повторите после обновления публикации контакта."
-                    : "Первое защищённое сообщение доставлено в почтовый ящик контакта. Ожидаем подтверждения получателя.";
+                    : "Защищённый запрос на установление канала доставлен в почтовый ящик контакта. Это ещё не текстовое сообщение.";
             }
             catch (Exception exception)
             {
@@ -319,6 +340,7 @@ public sealed class AppShell : ContentPage
                     : result.Acknowledged
                         ? $"Защищённо сохранено входящих: {result.CommittedCount}."
                         : "Входящие получены, но не все подтверждены. Они останутся в почтовом ящике для повторной проверки.";
+                await RefreshMessagesAsync();
             }
             catch (Exception exception)
             {
@@ -351,7 +373,7 @@ public sealed class AppShell : ContentPage
                         new Label { Text = "Диалоги пока недоступны", FontSize = 17, FontAttributes = FontAttributes.Bold },
                         new Label
                         {
-                            Text = "Проверка контакта доступна ниже. Отправка и получение сообщений в этой сборке ещё не подключены.",
+                            Text = "Входящие защищённые сообщения можно проверить ниже. Отправка нового текста и вложений пока не подключена.",
                             TextColor = DeepTheme.Secondary,
                             FontSize = 13
                         }
@@ -367,7 +389,8 @@ public sealed class AppShell : ContentPage
                         resolve,
                         start,
                         checkInbox,
-                        status
+                        status,
+                        messages
                     }
                 })
             }
