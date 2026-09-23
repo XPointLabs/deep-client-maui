@@ -48,6 +48,11 @@ the existing `client-state.sqlcipher-key.v1` SecureStorage slot, while
 removes and recreates only the active lane slot; it never deletes the shared
 SecureStorage backing file, probes the other lane, or falls back to another key.
 
+Android Release always applies `FLAG_SECURE` to the activity window. The
+retired privacy-screen preference is not a Release input; a stale preference
+cannot disable screenshot protection. Debug keeps the flag off for local UI
+diagnostics and physical test capture.
+
 Reality sidecars are exposed as one application-scoped
 `IRealityTransportRuntime`; `App` is the single idempotent shutdown owner.
 Endpoint catalog construction is synchronous and does not start native
@@ -76,8 +81,10 @@ seeds, encrypted local persistence, and the new ratcheted Deep E2EE generation.
 More access bridges may be learned from signed rotating catalogs. The Reality bootstrap
 does not register a Session message transport. The clean-break composition
 exposes verified-contact DPH2/DAO1 first-send and a manually invoked
-self-mailbox receive path. It does not yet expose text, attachment, or image
-composition. ContactResolve uses the verified privacy route; there is no direct
+self-mailbox receive path. The clean Contacts surface now exposes explicit
+secure-channel start, durable direct-text staging/dispatch, and manual inbox
+polling; attachment and image composition are not yet exposed. ContactResolve
+uses the verified privacy route; there is no direct
 HTTPS fallback for MSG-01.
 The clean startup opens the DMB1 generation-2 mailbox and direct-event inbox
 through the account owner with its own protected SQLCipher key. A successful
@@ -87,7 +94,10 @@ first-contact DPH2 and manually poll the self mailbox. Its bounded poll grants
 ACK only after all retrieved DPH2/DPE2 entries commit and materialize; partial
 batches remain unacknowledged. For a selected verified conversation the screen
 can display canonical authenticated MessageCreate events from the local
-SQLCipher inbox; it does not yet provide a composer or background receive loop.
+SQLCipher inbox. Text composition is available for that selected conversation,
+but background receive and incoming-conversation discovery remain open.
+This is still a DID1 diagnostic composition, not a DID2 release identity or
+physical Android↔Windows E2E proof.
 The account-owned production API can now preview an incoming DPH2 with its
 protected local DPK2 secret and verify the encrypted XPK1/XPC1 transcript
 against a fresh initiator DMD1 checkpoint and current placement. This returns
