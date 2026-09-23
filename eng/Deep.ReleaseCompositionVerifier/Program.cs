@@ -98,10 +98,8 @@ try
     var settings = program.GetMethod("ResolveRuntimeSetting",
         BindingFlags.NonPublic | BindingFlags.Static)
         ?? throw new InvalidOperationException("The release runtime-settings reader is missing.");
-    Require(ReadCalls(settings).All(call =>
-        !(call.Method.Name == "GetEnvironmentVariable" &&
-          call.Method.DeclaringType == typeof(Environment))),
-        "Release runtime settings can read mutable process environment variables.");
+    Require(!ReadsMutableRuntimeSettings(settings, new HashSet<MethodBase>()),
+        "Release runtime settings can read mutable external configuration.");
 
     var forbiddenTypes = new[]
     {
@@ -134,6 +132,11 @@ static void Require(bool condition, string message)
 
 static void AssertControlFlowFixtures()
 {
+    Require(ReadsMutableRuntimeSettings(
+            typeof(ControlFlowFixtures).GetMethod(
+                nameof(ControlFlowFixtures.IndirectMutable))!,
+            new HashSet<MethodBase>()),
+        "The compiled runtime-settings call-graph guard missed its indirect fixture.");
     foreach (var (methodName, expected) in new[]
              {
                  (nameof(ControlFlowFixtures.Unconditional), true),
@@ -153,8 +156,24 @@ static void AssertControlFlowFixtures()
     }
 }
 
-static IEnumerable<CompiledCall> ReadCalls(MethodBase method) =>
-    Calls(ReadInstructions(method));
+static bool ReadsMutableRuntimeSettings(MethodBase method,
+    HashSet<MethodBase> visited)
+{
+    if (!visited.Add(method)) return false;
+    foreach (var call in Calls(ReadInstructions(method, requireClosedControlFlow: false)))
+    {
+        if (call.Method.DeclaringType == typeof(Environment) &&
+            call.Method.Name is "GetEnvironmentVariable" or "GetEnvironmentVariables")
+            return true;
+        if (call.Method.DeclaringType == typeof(File) ||
+            call.Method.DeclaringType == typeof(Directory))
+            return true;
+        if (call.Method.DeclaringType == method.DeclaringType &&
+            ReadsMutableRuntimeSettings(call.Method, visited))
+            return true;
+    }
+    return false;
+}
 
 static IEnumerable<CompiledCall> Calls(IReadOnlyList<CompiledInstruction> instructions) =>
     instructions.Where(instruction => instruction.Method is not null)
@@ -197,11 +216,12 @@ static bool Walk(IReadOnlyList<CompiledInstruction> instructions,
     return false;
 }
 
-static IReadOnlyList<CompiledInstruction> ReadInstructions(MethodBase method)
+static IReadOnlyList<CompiledInstruction> ReadInstructions(MethodBase method,
+    bool requireClosedControlFlow = true)
 {
     var body = method.GetMethodBody()
         ?? throw new InvalidOperationException($"{method.Name} has no compiled IL body.");
-    Require(body.ExceptionHandlingClauses.Count == 0,
+    Require(!requireClosedControlFlow || body.ExceptionHandlingClauses.Count == 0,
         $"{method.Name} contains an unmodelled exception-control-flow edge.");
     var bytes = body.GetILAsByteArray()
         ?? throw new InvalidOperationException($"{method.Name} has no compiled IL bytes.");
@@ -279,6 +299,13 @@ internal readonly record struct CompiledInstruction(int Offset, int NextOffset,
 
 internal static class ControlFlowFixtures
 {
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static string? IndirectMutable() => ReadMutable();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static string? ReadMutable() =>
+        Environment.GetEnvironmentVariable("DEEP_VERIFIER_FIXTURE");
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     public static void Required() { }
 
