@@ -220,6 +220,86 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
                 .ConfigureAwait(false);
     }
 
+    internal async ValueTask<DirectTextOutboxEntry?> TryStageDirectTextAsync(
+        DeepDirectMessagingInitialDeliveryResult initialDelivery,
+        string text,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(initialDelivery);
+        var store = await accounts.TryGetMailboxStoreAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var messaging = await accounts.TryGetDirectMessagingStorageAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (store is null || messaging is null) return null;
+        return await messaging.TryStageDirectTextAsync(
+                initialDelivery.Session, store, text, DateTimeOffset.UtcNow,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal async ValueTask<DeepDirectTextDeliveryResult?>
+        TryDispatchStagedDirectTextAsync(
+            VerifiedDirectConversationTarget target,
+            DeepDirectMessagingInitialDeliveryResult initialDelivery,
+            ReadOnlyMemory<byte> logicalMessageId,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(initialDelivery);
+        var package = await TryLoadVerifiedPeerPackageAsync(target, cancellationToken)
+            .ConfigureAwait(false);
+        if (package is null) return null;
+        var current = await prerequisites.GetCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var peer = await ReverifyPeerAsync(target, package, current, cancellationToken)
+            .ConfigureAwait(false);
+        var primary = current.PrimaryMailboxRouteFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        var fallback = current.FallbackMailboxRouteFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        var codec = current.MailboxPrivacyCodecFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        using var holder = await accounts.OpenReachabilityMailboxHolderAsync(
+                peer.Route, peer.LocatorHash,
+                MailboxCapabilityDomain.Deposit, cancellationToken)
+            .ConfigureAwait(false);
+        if (holder is null) return null;
+        var contactTransport = current.PrivacyRoutedTransportFactory?.Invoke()
+            ?? throw new ContactPeerReverificationUnavailableException(
+                ContactResolveRuntimeUnavailableReason.PrivacyRoute);
+        VerifiedCurrentMailboxGrant grant;
+        try
+        {
+            grant = await new PrivacyRoutedMailboxGrantAcquisitionClient(
+                    contactTransport)
+                .AcquireDepositAsync(
+                    peer.Route, peer.LocatorHash, holder, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally { contactTransport.Dispose(); }
+        var store = await accounts.TryGetMailboxStoreAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var messaging = await accounts.TryGetDirectMessagingStorageAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (store is null || messaging is null) return null;
+        _ = await grant.InstallForHolderAsync(
+                store, MailboxCredentialScopeKind.Peer, holder,
+                cancellationToken)
+            .ConfigureAwait(false);
+        using var dispatcher = await accounts.CreateInitialSessionDispatcherAsync(
+                grant, holder, primary, fallback, codec, cancellationToken)
+            .ConfigureAwait(false);
+        return dispatcher is null
+            ? null
+            : await dispatcher.SendStagedTextAsync(
+                    initialDelivery, peer, messaging, logicalMessageId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+    }
+
     internal async ValueTask<PrivacyRoutedMessagingReceiver?>
         CreateMessagingReceiverAsync(
             CancellationToken cancellationToken = default)

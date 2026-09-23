@@ -1,7 +1,10 @@
+using System.Security.Cryptography;
 using Deep.Client.Maui.Core.Navigation;
+using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Maui.CleanUi;
 using Deep.Client.Maui.Services;
+using Deep.Client.Shared.Services.MessagingV1;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Controls.Shapes;
 
@@ -235,6 +238,21 @@ public sealed class AppShell : ContentPage
             AutomationId = "Contacts.Address"
         };
         var status = StatusLabel("Contacts.Status");
+        DeepDirectMessagingInitialDeliveryResult? initialDelivery = null;
+        VerifiedDirectConversationTarget? activeTarget = null;
+        byte[]? pendingLogicalMessageId = null;
+        var compose = new Editor
+        {
+            Placeholder = "Сообщение",
+            AutoSize = EditorAutoSizeOption.TextChanges,
+            AutomationId = "Contacts.ComposeText"
+        };
+        var sendText = new Button
+        {
+            Text = "Отправить сообщение",
+            AutomationId = "Contacts.SendText",
+            IsEnabled = false
+        };
         var messages = new VerticalStackLayout
         {
             Spacing = 8,
@@ -266,6 +284,10 @@ public sealed class AppShell : ContentPage
             viewModel.AddressInput = address.Text ?? string.Empty;
             start.IsEnabled = viewModel.HasVerifiedConversation;
         };
+        compose.TextChanged += (_, _) =>
+            sendText.IsEnabled = initialDelivery is not null &&
+                (pendingLogicalMessageId is not null ||
+                 !string.IsNullOrWhiteSpace(compose.Text));
         var resolve = new Button { Text = "Добавить контакт", AutomationId = "Contacts.Resolve" };
         resolve.Clicked += async (_, _) =>
         {
@@ -304,6 +326,12 @@ public sealed class AppShell : ContentPage
             {
                 var delivered = await messaging
                     .TryEstablishAndDispatchDirectMessagingSessionAsync(target);
+                initialDelivery = delivered;
+                activeTarget = delivered is null ? null : target;
+                address.IsEnabled = delivered is null;
+                resolve.IsEnabled = delivered is null;
+                sendText.IsEnabled = delivered is not null &&
+                    !string.IsNullOrWhiteSpace(compose.Text);
                 status.Text = delivered is null
                     ? "Защищённый канал пока недоступен. Повторите после обновления публикации контакта."
                     : "Защищённый запрос на установление канала доставлен в почтовый ящик контакта. Это ещё не текстовое сообщение.";
@@ -315,7 +343,52 @@ public sealed class AppShell : ContentPage
             }
             finally
             {
-                start.IsEnabled = viewModel.HasVerifiedConversation;
+                start.IsEnabled = initialDelivery is null &&
+                    viewModel.HasVerifiedConversation;
+            }
+        };
+        sendText.Clicked += async (_, _) =>
+        {
+            var target = activeTarget;
+            if (target is null || initialDelivery is null) return;
+            sendText.IsEnabled = false;
+            try
+            {
+                if (pendingLogicalMessageId is null)
+                {
+                    using var staged = await messaging.TryStageDirectTextAsync(
+                        initialDelivery, compose.Text ?? string.Empty);
+                    if (staged is null)
+                    {
+                        status.Text = "Сеанс отправки недоступен; сообщение не поставлено в очередь.";
+                        return;
+                    }
+                    pendingLogicalMessageId = staged.LogicalMessageId.ToArray();
+                    compose.IsEnabled = false;
+                }
+                var delivered = await messaging.TryDispatchStagedDirectTextAsync(
+                    target, initialDelivery, pendingLogicalMessageId);
+                if (delivered is null)
+                {
+                    status.Text = "Не удалось подтвердить отправку. Повтор сохранит то же сообщение.";
+                    return;
+                }
+                CryptographicOperations.ZeroMemory(pendingLogicalMessageId);
+                pendingLogicalMessageId = null;
+                compose.Text = string.Empty;
+                compose.IsEnabled = true;
+                status.Text = "Сообщение сохранено в почтовом ящике контакта. Получение подтвердится после проверки входящих на другом устройстве.";
+            }
+            catch (Exception exception)
+            {
+                status.Text = UserSafeFailure(exception,
+                    "Отправка не подтверждена. Повтор использует то же зашифрованное сообщение.");
+            }
+            finally
+            {
+                sendText.IsEnabled = initialDelivery is not null &&
+                    (pendingLogicalMessageId is not null ||
+                     !string.IsNullOrWhiteSpace(compose.Text));
             }
         };
         var checkInbox = new Button
@@ -370,10 +443,10 @@ public sealed class AppShell : ContentPage
                     Spacing = 8,
                     Children =
                     {
-                        new Label { Text = "Диалоги пока недоступны", FontSize = 17, FontAttributes = FontAttributes.Bold },
+                        new Label { Text = "Защищённый диалог", FontSize = 17, FontAttributes = FontAttributes.Bold },
                         new Label
                         {
-                            Text = "Входящие защищённые сообщения можно проверить ниже. Отправка нового текста и вложений пока не подключена.",
+                            Text = "После доставки запроса на установление канала можно отправлять текст. Вложения пока недоступны.",
                             TextColor = DeepTheme.Secondary,
                             FontSize = 13
                         }
@@ -388,6 +461,8 @@ public sealed class AppShell : ContentPage
                         address,
                         resolve,
                         start,
+                        compose,
+                        sendText,
                         checkInbox,
                         status,
                         messages
