@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
 
 if (args.Length != 1 || !File.Exists(args[0]))
@@ -10,6 +11,7 @@ if (args.Length != 1 || !File.Exists(args[0]))
 
 try
 {
+    AssertControlFlowFixtures();
     var assemblyPath = Path.GetFullPath(args[0]);
     var assemblyDirectory = Path.GetDirectoryName(assemblyPath)!;
     AssemblyLoadContext.Default.Resolving += (_, name) =>
@@ -30,19 +32,24 @@ try
         .All(method => method.Name != "ConfigureApplicationServices"),
         "The retired Session-era composition entrypoint is still compiled.");
 
-    var calls = ReadCalls(entrypoint).ToArray();
+    var instructions = ReadInstructions(entrypoint);
+    var calls = Calls(instructions).ToArray();
     var build = calls.Where(call => call.Method.Name == "Build" &&
         call.Method.DeclaringType?.FullName == "Microsoft.Maui.Hosting.MauiAppBuilder")
         .ToArray();
     Require(build.Length == 1, "The clean entrypoint must build exactly one MAUI application.");
+    Require(IsReachable(instructions, build[0].Offset),
+        "The compiled MAUI Build call is unreachable.");
     Require(calls.Any(call => call.Method.Name == "CreateBuilder" &&
         call.Method.DeclaringType?.FullName == "Microsoft.Maui.Hosting.MauiApp" &&
-        call.Offset < build[0].Offset),
+        call.Offset < build[0].Offset &&
+        Dominates(instructions, call.Offset, build[0].Offset)),
         "The clean entrypoint does not create its MAUI builder before Build.");
     Require(calls.Any(call => call.Method is MethodInfo method &&
         method.Name == "UseMauiApp" && method.IsGenericMethod &&
         method.GetGenericArguments().SingleOrDefault() == app &&
-        call.Offset < build[0].Offset),
+        call.Offset < build[0].Offset &&
+        Dominates(instructions, call.Offset, build[0].Offset)),
         "The clean entrypoint does not bind the compiled App before Build.");
 
     var requiredRegistrations = new[]
@@ -57,6 +64,7 @@ try
     foreach (var typeName in requiredRegistrations)
     {
         Require(calls.Any(call => call.Offset < build[0].Offset &&
+            Dominates(instructions, call.Offset, build[0].Offset) &&
             call.Method is MethodInfo method &&
             method.Name is "AddSingleton" or "TryAddSingleton" &&
             method.IsGenericMethod &&
@@ -64,17 +72,21 @@ try
             $"The compiled clean composition does not register {typeName} before Build.");
     }
     Require(calls.Any(call => call.Offset < build[0].Offset &&
+        Dominates(instructions, call.Offset, build[0].Offset) &&
         call.Method.Name == "AddProductionContactResolveRuntimePrerequisites"),
         "The compiled contact authority prerequisites are missing.");
     Require(calls.Any(call => call.Offset < build[0].Offset &&
+        Dominates(instructions, call.Offset, build[0].Offset) &&
         call.Method.Name == "Resolve" &&
         call.Method.DeclaringType?.Name == "RealityTransportBindingResolver"),
         "The compiled privacy-routed transport binding is missing.");
     Require(calls.Any(call => call.Offset < build[0].Offset &&
+        Dominates(instructions, call.Offset, build[0].Offset) &&
         call.Method.Name == "get_Production" &&
         call.Method.DeclaringType?.Name == "HttpServiceEndpointPolicy"),
         "The production HTTP endpoint policy is missing.");
     Require(calls.Any(call => call.Offset < build[0].Offset &&
+        Dominates(instructions, call.Offset, build[0].Offset) &&
         call.Method.Name == "get_Production" &&
         call.Method.DeclaringType?.Name == "RoutedRuntimeEndpointPolicy"),
         "The production routed endpoint policy is missing.");
@@ -120,10 +132,77 @@ static void Require(bool condition, string message)
     if (!condition) throw new InvalidOperationException(message);
 }
 
-static IEnumerable<CompiledCall> ReadCalls(MethodBase method)
+static void AssertControlFlowFixtures()
+{
+    foreach (var (methodName, expected) in new[]
+             {
+                 (nameof(ControlFlowFixtures.Unconditional), true),
+                 (nameof(ControlFlowFixtures.Conditional), false)
+             })
+    {
+        var method = typeof(ControlFlowFixtures).GetMethod(methodName,
+            BindingFlags.Public | BindingFlags.Static)!;
+        var instructions = ReadInstructions(method);
+        var calls = Calls(instructions).ToArray();
+        var required = calls.Single(call =>
+            call.Method.Name == nameof(ControlFlowFixtures.Required));
+        var build = calls.Single(call =>
+            call.Method.Name == nameof(ControlFlowFixtures.Build));
+        Require(Dominates(instructions, required.Offset, build.Offset) == expected,
+            "The compiled control-flow dominance verifier failed its negative fixture.");
+    }
+}
+
+static IEnumerable<CompiledCall> ReadCalls(MethodBase method) =>
+    Calls(ReadInstructions(method));
+
+static IEnumerable<CompiledCall> Calls(IReadOnlyList<CompiledInstruction> instructions) =>
+    instructions.Where(instruction => instruction.Method is not null)
+        .Select(instruction => new CompiledCall(
+            instruction.Offset, instruction.Method!));
+
+static bool IsReachable(IReadOnlyList<CompiledInstruction> instructions,
+    int target) => Walk(instructions, target, excluded: null);
+
+static bool Dominates(IReadOnlyList<CompiledInstruction> instructions,
+    int dominator, int target) =>
+    IsReachable(instructions, dominator) &&
+    !Walk(instructions, target, excluded: dominator);
+
+static bool Walk(IReadOnlyList<CompiledInstruction> instructions,
+    int target, int? excluded)
+{
+    var byOffset = instructions.ToDictionary(instruction => instruction.Offset);
+    var pending = new Stack<int>();
+    var visited = new HashSet<int>();
+    pending.Push(instructions[0].Offset);
+    while (pending.Count > 0)
+    {
+        var offset = pending.Pop();
+        if (offset == excluded || !visited.Add(offset)) continue;
+        if (offset == target) return true;
+        var instruction = byOffset[offset];
+        if (instruction.OpCode.FlowControl is FlowControl.Return or FlowControl.Throw)
+            continue;
+        foreach (var successor in instruction.BranchTargets)
+        {
+            Require(byOffset.ContainsKey(successor),
+                "The compiled IL contains an invalid branch target.");
+            pending.Push(successor);
+        }
+        if (instruction.OpCode.FlowControl != FlowControl.Branch &&
+            byOffset.ContainsKey(instruction.NextOffset))
+            pending.Push(instruction.NextOffset);
+    }
+    return false;
+}
+
+static IReadOnlyList<CompiledInstruction> ReadInstructions(MethodBase method)
 {
     var body = method.GetMethodBody()
         ?? throw new InvalidOperationException($"{method.Name} has no compiled IL body.");
+    Require(body.ExceptionHandlingClauses.Count == 0,
+        $"{method.Name} contains an unmodelled exception-control-flow edge.");
     var bytes = body.GetILAsByteArray()
         ?? throw new InvalidOperationException($"{method.Name} has no compiled IL bytes.");
     var opcodes = typeof(OpCodes).GetFields(BindingFlags.Public | BindingFlags.Static)
@@ -132,6 +211,7 @@ static IEnumerable<CompiledCall> ReadCalls(MethodBase method)
         .ToDictionary(opcode => unchecked((ushort)opcode.Value));
     var typeArguments = method.DeclaringType?.GetGenericArguments();
     var methodArguments = method.IsGenericMethod ? method.GetGenericArguments() : null;
+    var instructions = new List<CompiledInstruction>();
     for (var offset = 0; offset < bytes.Length;)
     {
         var instructionOffset = offset;
@@ -160,16 +240,63 @@ static IEnumerable<CompiledCall> ReadCalls(MethodBase method)
         };
         if (size < 0 || offset > bytes.Length - size)
             throw new InvalidOperationException("Truncated compiled IL operand.");
-        if (opcode.OperandType == OperandType.InlineMethod)
-        {
-            var token = BitConverter.ToInt32(bytes, offset);
-            var called = method.Module.ResolveMethod(token, typeArguments, methodArguments)
+        MethodBase? called = null;
+        if (opcode.OperandType == OperandType.InlineMethod &&
+            (opcode == OpCodes.Call || opcode == OpCodes.Callvirt ||
+             opcode == OpCodes.Newobj))
+            called = method.Module.ResolveMethod(BitConverter.ToInt32(bytes, offset),
+                typeArguments, methodArguments)
                 ?? throw new InvalidOperationException("Unresolvable compiled IL call.");
-            if (opcode == OpCodes.Call || opcode == OpCodes.Callvirt || opcode == OpCodes.Newobj)
-                yield return new CompiledCall(instructionOffset, called);
+        int[] branches = [];
+        if (opcode.OperandType == OperandType.ShortInlineBrTarget)
+            branches = [offset + 1 + unchecked((sbyte)bytes[offset])];
+        else if (opcode.OperandType == OperandType.InlineBrTarget)
+            branches = [offset + 4 + BitConverter.ToInt32(bytes, offset)];
+        else if (opcode.OperandType == OperandType.InlineSwitch)
+        {
+            var count = BitConverter.ToInt32(bytes, offset);
+            Require(count >= 0, "A compiled IL switch count is negative.");
+            var switchBase = offset + size;
+            branches = Enumerable.Range(0, count)
+                .Select(index => switchBase +
+                    BitConverter.ToInt32(bytes, offset + 4 + 4 * index))
+                .ToArray();
         }
         offset += size;
+        instructions.Add(new CompiledInstruction(instructionOffset, offset,
+            opcode, called, branches));
     }
+    var validOffsets = instructions.Select(instruction => instruction.Offset).ToHashSet();
+    Require(instructions.All(instruction =>
+        instruction.BranchTargets.All(validOffsets.Contains)),
+        "The compiled IL contains an invalid branch target.");
+    return instructions;
 }
 
 internal readonly record struct CompiledCall(int Offset, MethodBase Method);
+internal readonly record struct CompiledInstruction(int Offset, int NextOffset,
+    OpCode OpCode, MethodBase? Method, IReadOnlyList<int> BranchTargets);
+
+internal static class ControlFlowFixtures
+{
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static void Required() { }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static void Build() { }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static void Unconditional(bool condition)
+    {
+        Required();
+        if (condition) _ = Environment.TickCount;
+        Build();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static void Conditional(bool condition)
+    {
+        if (condition) Required();
+        Build();
+    }
+}
