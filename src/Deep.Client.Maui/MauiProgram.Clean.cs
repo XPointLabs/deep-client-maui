@@ -87,7 +87,12 @@ public static class MauiProgram
                     serviceProvider.GetRequiredService<HttpServiceClientOptions>());
             return new ContactPublicationAuthorityClient(transport);
         });
-        builder.Services.AddSingleton<AccountOwnedContactRouteAdvertisementAuthor>();
+        builder.Services.AddSingleton<AccountOwnedContactRouteAdvertisementAuthor>(serviceProvider =>
+            new AccountOwnedContactRouteAdvertisementAuthor(
+                serviceProvider.GetRequiredService<DeepAccountRuntimeAccessor>(),
+                serviceProvider.GetRequiredService<DeepContactResolveRuntimeAccessor>(),
+                serviceProvider.GetRequiredService<ContactRouteAuthorityClient>(),
+                serviceProvider.GetRequiredService<ContactPublicationAuthorityClient>()));
         builder.Services.AddSingleton<IDeepAccountDirectoryAdmissionCoordinator>(serviceProvider =>
             new DeepAccountDirectoryAdmissionCoordinator(
                 serviceProvider.GetRequiredService<IDeepAccountRuntimeAccessor>(),

@@ -241,6 +241,7 @@ public sealed class AppShell : ContentPage
         DeepDirectMessagingInitialDeliveryResult? initialDelivery = null;
         VerifiedDirectConversationTarget? activeTarget = null;
         byte[]? pendingLogicalMessageId = null;
+        var sendingText = false;
         var compose = new Editor
         {
             Placeholder = "Сообщение",
@@ -285,7 +286,7 @@ public sealed class AppShell : ContentPage
             start.IsEnabled = viewModel.HasVerifiedConversation;
         };
         compose.TextChanged += (_, _) =>
-            sendText.IsEnabled = initialDelivery is not null &&
+            sendText.IsEnabled = !sendingText && initialDelivery is not null &&
                 (pendingLogicalMessageId is not null ||
                  !string.IsNullOrWhiteSpace(compose.Text));
         var resolve = new Button { Text = "Добавить контакт", AutomationId = "Contacts.Resolve" };
@@ -350,8 +351,10 @@ public sealed class AppShell : ContentPage
         sendText.Clicked += async (_, _) =>
         {
             var target = activeTarget;
-            if (target is null || initialDelivery is null) return;
+            if (sendingText || target is null || initialDelivery is null) return;
+            sendingText = true;
             sendText.IsEnabled = false;
+            compose.IsEnabled = false;
             try
             {
                 if (pendingLogicalMessageId is null)
@@ -364,7 +367,6 @@ public sealed class AppShell : ContentPage
                         return;
                     }
                     pendingLogicalMessageId = staged.LogicalMessageId.ToArray();
-                    compose.IsEnabled = false;
                 }
                 var delivered = await messaging.TryDispatchStagedDirectTextAsync(
                     target, initialDelivery, pendingLogicalMessageId);
@@ -376,7 +378,6 @@ public sealed class AppShell : ContentPage
                 CryptographicOperations.ZeroMemory(pendingLogicalMessageId);
                 pendingLogicalMessageId = null;
                 compose.Text = string.Empty;
-                compose.IsEnabled = true;
                 status.Text = "Сообщение сохранено в почтовом ящике контакта. Получение подтвердится после проверки входящих на другом устройстве.";
             }
             catch (Exception exception)
@@ -386,6 +387,8 @@ public sealed class AppShell : ContentPage
             }
             finally
             {
+                sendingText = false;
+                compose.IsEnabled = pendingLogicalMessageId is null;
                 sendText.IsEnabled = initialDelivery is not null &&
                     (pendingLogicalMessageId is not null ||
                      !string.IsNullOrWhiteSpace(compose.Text));

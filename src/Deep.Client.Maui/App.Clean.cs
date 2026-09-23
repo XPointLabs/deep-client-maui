@@ -1,6 +1,7 @@
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.CleanUi;
 using Deep.Client.Maui.Services;
+using Deep.Client.Shared.Persistence;
 
 namespace Deep.Client.Maui;
 
@@ -54,14 +55,29 @@ public sealed class App : Application
                 await MainThread.InvokeOnMainThreadAsync(() =>
                     window.Page = services.GetRequiredService<AppShell>());
             }
+            catch (LocalStateResetRequiredException exception)
+            {
+                await PresentStartupFailureAsync(exception, resetRequired: true);
+            }
+            catch (ProtectedIdentityResetRequiredException exception)
+            {
+                await PresentStartupFailureAsync(exception, resetRequired: true);
+            }
             catch (Exception exception)
+            {
+                await PresentStartupFailureAsync(exception, resetRequired: false);
+            }
+
+            async Task PresentStartupFailureAsync(Exception exception, bool resetRequired)
             {
                 CrashDiagnostics.LogException("CleanApp.Startup", exception);
                 await MainThread.InvokeOnMainThreadAsync(() =>
                     loading.Content = new Label
                     {
                         Padding = 24,
-                        Text = "Защищённое локальное состояние не прошло проверку. Сбросьте данные приложения и повторите запуск.",
+                        Text = resetRequired
+                            ? "Защищённое локальное состояние не прошло проверку. Сохраните резервную копию сид-фразы, затем явно сбросьте данные приложения и повторите запуск."
+                            : "Не удалось запустить Deep. Не удаляйте данные приложения; повторите запуск и проверьте диагностику.",
                         AutomationId = "Startup.Error"
                     });
             }
