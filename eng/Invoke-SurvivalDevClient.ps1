@@ -167,6 +167,7 @@ if ($requireAndroidUatIdentity -and
         '-p:AndroidKeyStore=true',
         "-p:AndroidSigningKeyStore=$androidKeystore",
         "-p:AndroidSigningKeyAlias=$AndroidSigningKeyAlias",
+        "-p:AndroidSigningKeyPass=file:$androidSigningPasswordFile",
         "-p:AndroidSigningStorePass=file:$androidSigningPasswordFile")
 }
 

@@ -262,6 +262,26 @@ are never written to policy output and are zeroed by the issuer process.
 
 ## Physical Android ↔ Windows rendered flow (opt-in)
 
+The local production-like UAT build first verifies a live DEV mailbox authority
+checkpoint and issues six exact X25519 key records from the existing pinned
+node identities, key IDs, and topology epochs. The records are protected local
+inputs, not new node keys. If the DEV authority overlap has expired beyond its
+recovery window after an explicit UAT reset, archive its exact checkpoint and
+run `deep-devops/scripts/survival-dev.ps1 -Action RefreshAuthority` before the
+Android build. Never extend timestamps by hand or replace registered node keys.
+
+`eng/Invoke-PhysicalUatAndroidBuild.ps1 -StageOnly` completes APK signing,
+ACT1 verification, and successor authority staging without restarting the
+running UAT containers. Its output reports `serverActivated = false`; the
+staged trust floor is not device-E2E evidence. Full activation requires the
+production Contact Authority snapshot source consumed by XNode privacy
+routing. Do not enable privacy routing in the UAT overlay or claim transport
+coverage until that authority is configured and verified end to end.
+When rebuilding the Windows UAT MSIX with changed bytes, pass a monotonically
+higher `-PackageRevision` to `eng/Invoke-PhysicalUatWindowsMsix.ps1`; Windows
+rejects different content at an unchanged package identity/version. This
+revision affects only the test package, not the production client version.
+
 The physical runner `eng/Invoke-PhysicalMau2CrossPlatform.ps1`
 requires one explicit phase: `ProvisionIdentity`, `Attach`, `PayloadMatrix`, `Call`, `RestartDurability`,
 `PrivacyFallback`, `ManualResendAfterRestart`, `AutomaticRetryAfterRestart`, `AckCrashWindow`, or `NegativeRuntime`.

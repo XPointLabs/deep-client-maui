@@ -16,7 +16,8 @@ param(
     [string]$AaptPath,
     [string]$ZipAlignPath,
     [string]$JavaHome = $env:JAVA_HOME,
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+    [switch]$StageOnly
 )
 
 Set-StrictMode -Version Latest
@@ -100,6 +101,42 @@ function Restart-ProductionLikeUat {
             '-f', (Join-Path $devops 'docker-compose.survival.dev.yml'),
             '-f', (Join-Path $devops 'docker-compose.survival-uat-tls.dev.yml'),
             '-f', (Join-Path $devops 'docker-compose.production-mailbox-uat.dev.yml'))
+        # Existing XNode volume roots are root-owned. A networkless, pinned
+        # one-shot receives CHOWN only to create two missing UAT directories
+        # for the non-root state-init; existing node data is never rewritten.
+        $stateImage = 'mcr.microsoft.com/dotnet/aspnet:10.0.9@sha256:7644f992230d35cf230017189d4038c0ae0f7388b13f4f7ae1900a155bafb597'
+        foreach ($node in 1..6) {
+            $container = "deep-survival-dev-xnode-$node-1"
+            $mountsJson = @(& docker inspect $container --format '{{json .Mounts}}') -join ''
+            if ($LASTEXITCODE -ne 0) { throw 'UAT XNode volume inspection failed.' }
+            $mounts = @($mountsJson | ConvertFrom-Json)
+            $stateMount = @($mounts | Where-Object { $_.Destination -ceq '/state' })
+            if ($stateMount.Count -ne 1 -or
+                $stateMount[0].Name -cne "deep-survival-dev_xnode-$node-state") {
+                throw 'UAT XNode state volume differs from the exact development project.'
+            }
+            $prepare = @'
+set -eu
+for dir in /state/production-mailbox /state/production-mailbox-artifacts; do
+  if [ -L "$dir" ]; then exit 1; fi
+  if [ ! -e "$dir" ]; then
+    mkdir "$dir"
+    chmod 0700 "$dir"
+    chown 65532:65532 "$dir"
+  fi
+  [ -d "$dir" ]
+  [ "$(stat -c '%u:%g' "$dir")" = '65532:65532' ]
+  [ "$(stat -c '%a' "$dir")" = '700' ]
+done
+'@
+            Invoke-Checked docker @('run', '--rm', '--platform', 'linux/arm64',
+                '--network', 'none', '--cap-drop', 'ALL', '--cap-add', 'CHOWN',
+                '--security-opt', 'no-new-privileges:true', '--user', '0:0',
+                '--read-only', '--mount',
+                "type=volume,source=deep-survival-dev_xnode-$node-state,target=/state",
+                $stateImage, 'sh', '-ec', $prepare) `
+                'exact UAT volume subdirectory preparation'
+        }
         $stateInit = 'survival-uat-production-mailbox-state-init'
         Invoke-Checked docker ($compose + @('up', '--force-recreate', '--no-deps',
             '--abort-on-container-exit', '--exit-code-from', $stateInit, $stateInit)) `
@@ -213,12 +250,21 @@ if ($clientFloorGeneration -eq $serverPredecessorGeneration -and
 
 $routes = Join-Path $output 'privacy-routes'
 [void][IO.Directory]::CreateDirectory($routes)
-Invoke-Checked dotnet @(
+$routeTool = @(
     'run', '--project', (Join-Path $devops 'tools\survival-mailbox-driver\SurvivalMailboxDriver.csproj'),
-    '--configuration', 'Release', "-p:XNodeSource=$xnode", '--',
-    'publish-production-uat-routes', '--secrets-dir', $xnodeSecrets,
+    '--configuration', 'Release', "-p:XNodeSource=$xnode",
+    '-p:DeepProtocolSourceCutover=true', '-p:RecoveryTestSeam=true', '--')
+$routeInputs = @('--secrets-dir', $xnodeSecrets,
     '--private-dir', $mailboxSecrets, '--output-dir', $routes,
-    '--authority-state', $authorityState, '--public-host', $PublicHost) 'UAT privacy-route publication'
+    '--authority-state', $authorityState, '--public-host', $PublicHost)
+Invoke-Checked dotnet ($routeTool + @('issue-production-uat-route-key-records') +
+    $routeInputs) 'UAT X25519 issued-record preparation'
+. (Join-Path $devops 'scripts\survival-dev-private-secrets.ps1')
+foreach ($index in 1..6) {
+    Protect-SurvivalDevPrivateFile (Join-Path $xnodeSecrets "xnode-$index-x25519.record.v2.json")
+}
+Invoke-Checked dotnet ($routeTool + @('publish-production-uat-routes') +
+    $routeInputs) 'UAT privacy-route publication'
 $routesJson = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v2.json') 'UAT privacy-route JSON'
 $routesSignature = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v2.sig') 'UAT privacy-route signature'
 $routesPublicKey = Resolve-ExactFile (Join-Path $routes 'production-mailbox-privacy-routes.v2.pub') 'UAT privacy-route public key'
@@ -478,7 +524,9 @@ if ([uint64]$validatedServerTrust.DeepProductionAuthorityGeneration -ne
 }
 $serverTrustOutputPath = Join-Path $output 'server-trust-floor.json'
 Copy-Item -LiteralPath $serverTrustPath -Destination $serverTrustOutputPath
-Restart-ProductionLikeUat
+if (-not $StageOnly) {
+    Restart-ProductionLikeUat
+}
 
 $finalBadgingOutput = @(& $aapt dump badging $finalApk)
 $finalBadgingExitCode = $LASTEXITCODE
@@ -508,6 +556,7 @@ $finalApkSha256 = (Get-FileHash -LiteralPath $finalApk -Algorithm SHA256).Hash.T
     serverSuccessorTrustFloor = $serverTrustOutputPath
     serverSuccessorGeneration = $expectedServerGeneration
     serverTrustFloor = $serverTrustOutputPath
+    serverActivated = -not $StageOnly
     installed = $false
 } | Format-List
 } finally {

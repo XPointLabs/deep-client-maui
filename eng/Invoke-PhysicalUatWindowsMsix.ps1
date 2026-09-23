@@ -11,6 +11,8 @@ param(
     [string]$RuntimeIdentifier = 'win-arm64',
     [ValidateSet('network.xpoint.deep.e2e')]
     [string]$PackageIdentityName = 'network.xpoint.deep.e2e',
+    [ValidateRange(1, 65535)]
+    [int]$PackageRevision,
     [switch]$NoBuild,
     [switch]$NoInstall,
     [switch]$NoLaunch
@@ -153,7 +155,12 @@ if (-not $NoBuild) {
         $versionCode -notmatch '^\d+$') {
         throw 'Application version cannot be converted to a Windows UAT MSIX version.'
     }
-    $packageVersion = (@($parts + @('0', '0'))[0..2] + @($versionCode)) -join '.'
+    $revision = if ($PSBoundParameters.ContainsKey('PackageRevision')) {
+        $PackageRevision
+    } else {
+        [int]$versionCode
+    }
+    $packageVersion = (@($parts + @('0', '0'))[0..2] + @($revision)) -join '.'
     $targetNameOutput = @(& dotnet msbuild $project -nologo -verbosity:quiet `
         -getProperty:TargetName,TargetFramework -p:TargetFramework=$targetFramework -p:Configuration=Debug `
         -p:RuntimeIdentifierOverride=$RuntimeIdentifier -p:WindowsPackageType=MSIX @properties)
