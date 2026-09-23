@@ -79,6 +79,8 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
     {
         var current = await prerequisites.GetCurrentAsync(cancellationToken)
             .ConfigureAwait(false);
+        if (current.UnavailableReason is { } unavailable)
+            throw new ContactPeerReverificationUnavailableException(unavailable);
         var authority = current.PathAuthoritySourceFactory?.Invoke()
             as ProductionContactResolvePathAuthoritySource
             ?? throw new ContactPeerReverificationUnavailableException(
@@ -306,6 +308,8 @@ internal sealed class DeepContactResolveRuntimeAccessor : IDeepContactRuntimeAcc
     {
         var current = await prerequisites.GetCurrentAsync(cancellationToken)
             .ConfigureAwait(false);
+        if (current.UnavailableReason is { } unavailable)
+            throw new ContactPeerReverificationUnavailableException(unavailable);
         var pathAuthority = current.PathAuthoritySourceFactory?.Invoke()
             as ProductionContactResolvePathAuthoritySource
             ?? throw new ContactPeerReverificationUnavailableException(
