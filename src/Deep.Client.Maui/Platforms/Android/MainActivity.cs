@@ -4,7 +4,6 @@ using Android.Content.PM;
 using Android.OS;
 using Android.Views;
 using Microsoft.Maui;
-using Microsoft.Maui.Storage;
 
 namespace Deep.Client.Maui;
 
@@ -74,15 +73,7 @@ public sealed class MainActivity : MauiAppCompatActivity
 #if DEBUG
         Window.ClearFlags(WindowManagerFlags.Secure);
 #else
-        var screenSecurityEnabled = Preferences.Default.Get(ClientSettingKeys.PrivacyScreenSecurity, true);
-        if (screenSecurityEnabled)
-        {
-            Window.AddFlags(WindowManagerFlags.Secure);
-        }
-        else
-        {
-            Window.ClearFlags(WindowManagerFlags.Secure);
-        }
+        Window.AddFlags(WindowManagerFlags.Secure);
 #endif
     }
 }

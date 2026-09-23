@@ -63,6 +63,18 @@ public sealed class CleanStartupCompositionTests
         throw new FileNotFoundException("Windows UAT build script is unavailable.");
     }
 
+    [Fact]
+    public void AndroidReleasePrivacyScreenDoesNotDependOnRetiredSettings()
+    {
+        var activity = ReadSource(Path.Combine("Platforms", "Android", "MainActivity.cs"));
+        Assert.Contains("Window.AddFlags(WindowManagerFlags.Secure);", activity,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ClientSettingKeys.PrivacyScreenSecurity", activity,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Preferences.Default.Get", activity,
+            StringComparison.Ordinal);
+    }
+
     private static string ReadSource(string name)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
