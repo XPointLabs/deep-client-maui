@@ -13,8 +13,11 @@
     <Nullable>enable</Nullable>
     <ApplicationTitle>Deep</ApplicationTitle>
     <DeepLocalDev Condition="'$(DeepLocalDev)' == ''">false</DeepLocalDev>
+    <DeepDid2AccountProbe Condition="'$(DeepDid2AccountProbe)' == ''">false</DeepDid2AccountProbe>
     <ApplicationId Condition="('$(DeepPhysicalE2E)' != 'true' And '$(DeepLocalDev)' != 'true') Or '$(Configuration)' == 'Release'">network.xpoint.deep</ApplicationId>
     <ApplicationId Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">network.xpoint.deep.e2e</ApplicationId>
+    <ApplicationId Condition="'$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">network.xpoint.deep.did2probe</ApplicationId>
+    <ApplicationTitle Condition="'$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">Deep DID2 UAT</ApplicationTitle>
     <ApplicationDisplayVersion>0.2.9</ApplicationDisplayVersion>
     <ApplicationVersion>16</ApplicationVersion>
     <WindowsPackageType>None</WindowsPackageType>
@@ -88,6 +91,14 @@
     <DefineConstants>$(DefineConstants);DEEP_PHYSICAL_E2E</DefineConstants>
     <PhysicalLabTrustRootSource>$(BaseIntermediateOutputPath)deep-physical\$(TargetFramework)\$(RuntimeIdentifier)\PhysicalLabTrustRoot.g.cs</PhysicalLabTrustRootSource>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">
+    <DefineConstants>$(DefineConstants);DEEP_DID2_ACCOUNT_PROBE</DefineConstants>
+  </PropertyGroup>
+
+  <Target Name="RejectUnsafeDid2AccountProbe" BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepDid2AccountProbe)' == 'true' And ('$(DeepLocalDev)' != 'true' Or '$(Configuration)' == 'Release')">
+    <Error Text="DID2 account probe requires a non-Release DeepLocalDev build." />
+  </Target>
 
   <ItemGroup Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">
     <Compile Include="$(PhysicalLabTrustRootSource)" Visible="false" />

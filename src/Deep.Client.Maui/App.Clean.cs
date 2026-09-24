@@ -1,3 +1,4 @@
+#if !DEEP_DID2_ACCOUNT_PROBE
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.CleanUi;
 using Deep.Client.Maui.Services;
@@ -93,3 +94,4 @@ public sealed class App : Application
         return window;
     }
 }
+#endif

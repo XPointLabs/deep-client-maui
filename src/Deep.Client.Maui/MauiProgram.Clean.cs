@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Deep.Client.Maui;
 
-public static class MauiProgram
+public static partial class MauiProgram
 {
     internal const string TransportBaseUrlEnv = "DEEP_TRANSPORT_BASE_URL";
     internal const string RouterBaseUrlsEnv = "XNODE_URLS";
@@ -28,6 +28,9 @@ public static class MauiProgram
 
     public static MauiApp CreateMauiApp()
     {
+#if DEEP_DID2_ACCOUNT_PROBE
+        return CreateDid2AccountProbeMauiApp();
+#else
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>();
 
@@ -145,6 +148,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<AppShell>();
 
         return builder.Build();
+#endif
     }
 
     internal static string ResolveAppDataDirectory() => AppDataPath.Resolve();

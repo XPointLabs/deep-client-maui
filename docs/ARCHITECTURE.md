@@ -57,6 +57,15 @@ exercises real DPAPI plus the V2 SQLCipher generation across restart, retaining
 the exact DID2 after the local phrase is deleted; this does not count as a
 physical messaging E2E result.
 
+`DeepDid2AccountProbe=true` with a Debug `DeepLocalDev=true` build selects an
+isolated `network.xpoint.deep.did2probe` account-only app, separate from both
+production and the existing `.e2e` UAT package. It uses the V2 account model and candidate
+ML-DSA verifier explicitly, never composes V1 network/account services, and
+marks contacts, messages, attachments and groups unavailable. Release or a
+non-local build rejects this switch. Probe results may establish the local
+Windows/Android account gate, not production provider approval or messaging
+E2E evidence.
+
 The SQLCipher key uses a compile-time lane namespace. Ordinary packages retain
 the existing `client-state.sqlcipher-key.v1` SecureStorage slot, while
 `DeepPhysicalE2E=true` packages use the distinct stable

@@ -1,3 +1,4 @@
+#if !DEEP_DID2_ACCOUNT_PROBE
 using System.Security.Cryptography;
 using Deep.Client.Maui.Core.Navigation;
 using Deep.Client.Maui.Core.Services;
@@ -760,3 +761,4 @@ public sealed class AppShell : ContentPage
             ? exception.Message
             : fallback;
 }
+#endif
