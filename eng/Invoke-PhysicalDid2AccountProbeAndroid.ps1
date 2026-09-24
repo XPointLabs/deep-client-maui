@@ -8,6 +8,8 @@ param(
     [string]$ExpectedApkSha256,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')]
     [string]$ExpectedSignerSha256,
+    [ValidateSet('default', 'android-arm64')]
+    [string]$ApkVariant = 'default',
     [switch]$AllowProbeUpdate,
     [switch]$Execute
 )
@@ -16,7 +18,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$apk = Join-Path $repo 'src\Deep.Client.Maui\bin\Debug\net10.0-android\network.xpoint.deep.did2probe-Signed.apk'
+$apkRoot = Join-Path $repo 'src\Deep.Client.Maui\bin\Debug\net10.0-android'
+$apk = if ($ApkVariant -eq 'android-arm64') {
+    Join-Path $apkRoot 'android-arm64\network.xpoint.deep.did2probe-Signed.apk'
+} else {
+    Join-Path $apkRoot 'network.xpoint.deep.did2probe-Signed.apk'
+}
 $sdk = 'C:\Program Files (x86)\Android\android-sdk'
 $adb = Join-Path $sdk 'platform-tools\adb.exe'
 $aapt = Join-Path $sdk 'build-tools\36.0.0\aapt.exe'
@@ -168,6 +175,7 @@ $result = [ordered]@{
     signerSha256 = $ExpectedSignerSha256
     androidSerial = $AndroidSerial
     package = $probePackage
+    apkVariant = $ApkVariant
     execute = [bool]$Execute
     allowProbeUpdate = [bool]$AllowProbeUpdate
     status = 'preflight'
