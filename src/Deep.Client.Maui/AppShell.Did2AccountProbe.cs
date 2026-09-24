@@ -294,6 +294,49 @@ public sealed class AppShell : ContentPage
                 status
             }
         };
+        var networkStatus = Status("Did2Probe.NetworkStatus");
+        networkStatus.Text = "Сетевая DID2-регистрация ещё не проверена на этом устройстве.";
+        var verifyNetwork = DeepTheme.SecondaryButton(
+            "Проверить регистрацию DID2", "Did2Probe.VerifyNetwork");
+        verifyNetwork.Clicked += async (_, _) =>
+        {
+            verifyNetwork.IsEnabled = false;
+            networkStatus.Text = "Проверяем подписанный каталог и регистрацию…";
+            try
+            {
+                await account.VerifyNetworkAsync();
+                networkStatus.Text = account.ErrorMessage is null &&
+                                     account.IsNetworkVerified
+                    ? "DID2-аккаунт зарегистрирован; текущий подписанный proof проверен и защищённое состояние сохранено."
+                    : "Не удалось проверить регистрацию. Локальный аккаунт сохранён; повторите попытку позже.";
+            }
+            finally
+            {
+                verifyNetwork.IsEnabled = true;
+            }
+        };
+        var network = Card(new VerticalStackLayout
+        {
+            Spacing = 11,
+            Children =
+            {
+                new Label
+                {
+                    Text = "Проверка сети DID2",
+                    FontSize = 16,
+                    FontAttributes = FontAttributes.Bold
+                },
+                new Label
+                {
+                    Text = "Изолированная диагностическая проверка через локальный туннель. Она не включает сообщения и не является релизной сборкой.",
+                    TextColor = DeepTheme.Secondary,
+                    FontSize = 13
+                },
+                verifyNetwork,
+                networkStatus
+            }
+        });
+        network.IsVisible = account.HasNetworkAdmission;
         var unavailable = new VerticalStackLayout
         {
             Spacing = 6,
@@ -310,7 +353,8 @@ public sealed class AppShell : ContentPage
             }
         };
         return Surface("Page.Settings", "ПРОФИЛЬ", "Настройки аккаунта",
-            profile, Card(identity), Card(recovery), Card(unavailable));
+            profile, Card(identity), Card(recovery), network,
+            Card(unavailable));
     }
 
     private static View Surface(string pageId, string eyebrow, string heading,

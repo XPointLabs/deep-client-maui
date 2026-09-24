@@ -12,14 +12,18 @@ namespace Deep.Client.Maui.Core.ViewModels;
 public sealed class DeepIdV2AccountViewModel : ViewModelBase
 {
     private readonly IDeepIdV2AccountRuntimeAccessor runtime;
+    private readonly IDeepIdV2NetworkAdmission? networkAdmission;
     private string displayName = string.Empty;
     private DeepIdV2AccountSnapshot? account;
     private string revealedRecoveryPhrase = string.Empty;
     private bool hasRetainedRecoveryPhrase;
+    private bool isNetworkVerified;
 
-    public DeepIdV2AccountViewModel(IDeepIdV2AccountRuntimeAccessor runtime)
+    public DeepIdV2AccountViewModel(IDeepIdV2AccountRuntimeAccessor runtime,
+        IDeepIdV2NetworkAdmission? networkAdmission = null)
     {
         this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        this.networkAdmission = networkAdmission;
         CreateAccountCommand = new AsyncCommand(CreateAccountAsync,
             () => Account is null && !string.IsNullOrWhiteSpace(DisplayName));
         RevealRecoveryPhraseCommand = new AsyncCommand(RevealRecoveryPhraseAsync,
@@ -31,6 +35,8 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         }, () => IsRecoveryPhraseRevealed);
         DeleteRecoveryPhraseCommand = new AsyncCommand(DeleteRecoveryPhraseAsync,
             () => HasRetainedRecoveryPhrase);
+        VerifyNetworkCommand = new AsyncCommand(VerifyNetworkAsync,
+            () => Account is not null && networkAdmission is not null);
     }
 
     public string DisplayName
@@ -49,7 +55,10 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         private set
         {
             if (SetProperty(ref account, value))
+            {
                 CreateAccountCommand.RaiseCanExecuteChanged();
+                VerifyNetworkCommand.RaiseCanExecuteChanged();
+            }
         }
     }
 
@@ -83,15 +92,25 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         }
     }
 
+    public bool HasNetworkAdmission => networkAdmission is not null;
+
+    public bool IsNetworkVerified
+    {
+        get => isNetworkVerified;
+        private set => SetProperty(ref isNetworkVerified, value);
+    }
+
     public AsyncCommand CreateAccountCommand { get; }
     public AsyncCommand RevealRecoveryPhraseCommand { get; }
     public AsyncCommand HideRecoveryPhraseCommand { get; }
     public AsyncCommand DeleteRecoveryPhraseCommand { get; }
+    public AsyncCommand VerifyNetworkCommand { get; }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
         {
             HideRecoveryPhrase();
+            IsNetworkVerified = false;
             var accounts = await runtime.GetAccountsAsync(ct);
             Account = await accounts.GetCurrentAsync(ct);
             DisplayName = Account?.DisplayName ?? string.Empty;
@@ -104,10 +123,23 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         RunBusyAsync(async ct =>
         {
             HideRecoveryPhrase();
+            IsNetworkVerified = false;
             var accounts = await runtime.GetAccountsAsync(ct);
             Account = await accounts.CreateAsync(DisplayName, ct);
             DisplayName = Account.DisplayName;
             HasRetainedRecoveryPhrase = true;
+        }, cancellationToken);
+
+    public Task VerifyNetworkAsync(CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            IsNetworkVerified = false;
+            if (networkAdmission is null || Account is null)
+                throw new InvalidOperationException(
+                    "DID2 network admission is unavailable for this account.");
+            var accounts = await runtime.GetAccountsAsync(ct);
+            await networkAdmission.VerifyAsync(accounts, ct);
+            IsNetworkVerified = true;
         }, cancellationToken);
 
     public Task RevealRecoveryPhraseAsync(

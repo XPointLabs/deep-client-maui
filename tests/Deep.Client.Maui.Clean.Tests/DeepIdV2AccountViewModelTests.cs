@@ -9,6 +9,47 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class DeepIdV2AccountViewModelTests
 {
     [Fact]
+    public async Task CanaryAdmissionIsExplicitAndNeverReplacesLocalAccount()
+    {
+        if (!SupportedProvider()) return;
+        var directory = Path.Combine(Path.GetTempPath(),
+            "deep-did2-admission-ui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var runtime = new TestRuntime(directory);
+            var admission = new TestAdmission();
+            var view = new DeepIdV2AccountViewModel(runtime, admission)
+            {
+                DisplayName = "Alice"
+            };
+            Assert.False(view.VerifyNetworkCommand.CanExecute(null));
+            await view.CreateAccountAsync();
+            var permanentId = view.Account!.PermanentId;
+            Assert.True(view.VerifyNetworkCommand.CanExecute(null));
+
+            admission.FailNext = true;
+            await view.VerifyNetworkAsync();
+            Assert.False(view.IsNetworkVerified);
+            Assert.NotNull(view.ErrorMessage);
+            Assert.Equal(permanentId, view.Account.PermanentId);
+
+            await view.VerifyNetworkAsync();
+            Assert.Null(view.ErrorMessage);
+            Assert.True(view.IsNetworkVerified);
+            Assert.Equal(2, admission.Calls);
+            Assert.Equal(permanentId, view.Account.PermanentId);
+            await view.RefreshAsync();
+            Assert.False(view.IsNetworkVerified);
+            Assert.Equal(permanentId, view.Account?.PermanentId);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task OneClickCreateRestartRevealAndDeleteUseOnlyDid2()
     {
         if (!SupportedProvider()) return;
@@ -99,6 +140,26 @@ public sealed class DeepIdV2AccountViewModelTests
         {
             storage.Dispose();
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class TestAdmission : IDeepIdV2NetworkAdmission
+    {
+        internal bool FailNext { get; set; }
+        internal int Calls { get; private set; }
+
+        public Task VerifyAsync(DeepIdV2AccountService accounts,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ArgumentNullException.ThrowIfNull(accounts);
+            Calls++;
+            if (FailNext)
+            {
+                FailNext = false;
+                throw new IOException("Diagnostic network unavailable.");
+            }
+            return Task.CompletedTask;
         }
     }
 }

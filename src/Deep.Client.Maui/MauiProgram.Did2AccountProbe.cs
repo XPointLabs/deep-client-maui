@@ -21,6 +21,10 @@ public static partial class MauiProgram
                 DeepMlDsa65CandidateVerifierFactory.OpenForCurrentProcess));
         builder.Services.AddSingleton<IDeepIdV2AccountRuntimeAccessor>(services =>
             services.GetRequiredService<DeepIdV2AccountRuntimeAccessor>());
+#if DEEP_DID2_CANARY_ADMISSION
+        builder.Services.AddSingleton<IDeepIdV2NetworkAdmission,
+            DeepIdV2CanaryNetworkAdmission>();
+#endif
         builder.Services.AddSingleton<DeepIdV2AccountViewModel>();
         builder.Services.AddSingleton<AppShell>();
         return builder.Build();

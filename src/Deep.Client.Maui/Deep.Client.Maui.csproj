@@ -95,9 +95,34 @@
     <DefineConstants>$(DefineConstants);DEEP_DID2_ACCOUNT_PROBE</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(DeepDid2CanaryAdmission)' == 'true' And '$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">
+    <DefineConstants>$(DefineConstants);DEEP_DID2_CANARY_ADMISSION</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(DeepDid2CanaryAdmission)' == 'true' And '$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">
+    <AssemblyMetadata Include="DeepDid2CanaryOrigin" Value="$(DeepDid2CanaryOrigin)" />
+    <AssemblyMetadata Include="DeepDid2CanaryXna1Pin" Value="$(DeepDid2CanaryXna1Pin)" />
+    <AssemblyMetadata Include="DeepDid2CanaryAdh1Pin" Value="$(DeepDid2CanaryAdh1Pin)" />
+    <MauiAsset Include="$(DeepDid2BootstrapDirectory)\xna1.0000.bin" LogicalName="did2_xna1.bin" />
+    <MauiAsset Include="$(DeepDid2BootstrapDirectory)\dts1.0000.bin" LogicalName="did2_dts1.bin" />
+    <MauiAsset Include="$(DeepDid2BootstrapDirectory)\did2-genesis-adh1.bin" LogicalName="did2_adh1.bin" />
+  </ItemGroup>
+
   <Target Name="RejectUnsafeDid2AccountProbe" BeforeTargets="PrepareForBuild"
           Condition="'$(DeepDid2AccountProbe)' == 'true' And ('$(DeepLocalDev)' != 'true' Or '$(Configuration)' == 'Release')">
     <Error Text="DID2 account probe requires a non-Release DeepLocalDev build." />
+  </Target>
+
+  <Target Name="RejectUnsafeDid2CanaryAdmission" BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepDid2CanaryAdmission)' == 'true'">
+    <Error Condition="'$(DeepDid2AccountProbe)' != 'true' Or '$(DeepLocalDev)' != 'true' Or '$(Configuration)' == 'Release'"
+           Text="DID2 canary admission is available only in a non-Release isolated account probe." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2CanaryOrigin)', '^http://127\.0\.0\.1:[0-9]{1,5}/$'))"
+           Text="DID2 canary admission requires an explicit loopback tunnel origin." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2CanaryXna1Pin)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2CanaryAdh1Pin)', '^[0-9a-f]{64}$'))"
+           Text="DID2 canary admission requires exact lowercase public bootstrap pins." />
+    <Error Condition="'$(DeepDid2BootstrapDirectory)' == '' Or !Exists('$(DeepDid2BootstrapDirectory)\xna1.0000.bin') Or !Exists('$(DeepDid2BootstrapDirectory)\dts1.0000.bin') Or !Exists('$(DeepDid2BootstrapDirectory)\did2-genesis-adh1.bin')"
+           Text="DID2 canary admission requires the three exact signed public bootstrap assets." />
   </Target>
 
   <ItemGroup Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">

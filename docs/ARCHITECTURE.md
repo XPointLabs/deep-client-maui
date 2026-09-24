@@ -73,6 +73,17 @@ the local Windows/Android account gate, not production provider approval or
 messaging E2E evidence. The probe stages the exact-hash Android ML-DSA
 candidate from its APK before opening DID2 state; an absent or changed native
 asset fails closed without enabling the V1 runtime.
+An additional non-Release `DeepDid2CanaryAdmission=true` switch may be used
+only with that isolated account probe. It requires an explicit loopback-tunnel
+origin, separately pinned XNA1 and DID2 genesis-head hashes, and three exact
+signed public bootstrap assets supplied at build time. The probe verifies the
+XNA1/DTS1 authority lineage and empty V2 head before opening the account-owned
+SQLCipher LKG. Its explicit settings action then performs real DGA1 admission,
+independent nonce-bound ADP1/DTT1 verification, and durable LKG commit through
+the bounded owned transport. Failed network verification leaves the local
+account intact and offers retry. This diagnostic does not compose contact,
+message, attachment or group services; a local HTTP hop over an authenticated
+SSH tunnel is not the release HTTPS transport or device messaging E2E gate.
 If this isolated probe finds an incompatible pre-clean-break DID2 account,
 startup stays closed and offers a dedicated reset button with an in-app
 confirmation. The reset invokes STORE-V2's explicit account reset only for the
