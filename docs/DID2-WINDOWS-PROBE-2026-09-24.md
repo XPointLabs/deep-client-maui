@@ -20,3 +20,10 @@ On a later retry, the same isolated executable did expose one targetable
 window. The captured surface was the Windows lock screen, not the MAUI
 application. Computer-use stopped without input; no unlock or account action
 was attempted. The gate remains pending an unlocked interactive desktop.
+
+On 2026-09-24, the desktop was unlocked and the already-running isolated
+`win-arm64` probe exposed its MAUI welcome window. The observed accessibility
+tree and screenshot showed the display-name field and local account-creation
+button. No account-creation action had been taken at this observation, so this
+is a UI-availability result only; it does not close the Windows physical
+account, contact, message, attachment or group gates.
