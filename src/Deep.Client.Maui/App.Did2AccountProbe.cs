@@ -52,11 +52,9 @@ public sealed class App : Application
                     window.Page = CreateRecoveryPage(window));
             }
         };
-        window.Destroying += async (_, _) =>
-        {
-            if (services.GetService<IDeepIdV2AccountRuntimeAccessor>() is { } runtime)
-                await runtime.DisposeAsync();
-        };
+        // Android can destroy and recreate a Window without ending the app
+        // process. The DI singleton remains process-scoped; disposing it here
+        // makes the next Window report a false incompatible-account error.
         return window;
     }
 

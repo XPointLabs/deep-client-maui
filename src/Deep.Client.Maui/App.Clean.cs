@@ -83,14 +83,8 @@ public sealed class App : Application
                     });
             }
         };
-        window.Destroying += async (_, _) =>
-        {
-            await realityTransportRuntime.DisposeAsync();
-            if (services.GetService<Core.Services.IDeepAccountRuntimeAccessor>() is { } accountRuntime)
-            {
-                await accountRuntime.DisposeAsync();
-            }
-        };
+        // A Window may be recreated inside the same Android process. These
+        // DI singletons belong to the process, not to the Window lifetime.
         return window;
     }
 }

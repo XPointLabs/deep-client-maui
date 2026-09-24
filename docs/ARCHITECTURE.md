@@ -84,6 +84,10 @@ the bounded owned transport. Failed network verification leaves the local
 account intact and offers retry. This diagnostic does not compose contact,
 message, attachment or group services; a local HTTP hop over an authenticated
 SSH tunnel is not the release HTTPS transport or device messaging E2E gate.
+The MAUI account and transport runtimes are process-scoped DI singletons.
+Android may destroy a Window and create another without ending that process,
+so Window destruction must not dispose those runtimes or turn a valid account
+into an apparent incompatible-account startup failure.
 If this isolated probe finds an incompatible pre-clean-break DID2 account,
 startup stays closed and offers a dedicated reset button with an in-app
 confirmation. The reset invokes STORE-V2's explicit account reset only for the
