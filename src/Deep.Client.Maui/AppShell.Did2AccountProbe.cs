@@ -2,12 +2,16 @@
 using Deep.Client.Maui.CleanUi;
 using Deep.Client.Maui.Core.ViewModels;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
+using Microsoft.Maui.Controls.Shapes;
 
 namespace Deep.Client.Maui;
 
+// The probe deliberately has no navigation into pre-clean-break conversations.
+// Its visual language is shared with the client, not its retired runtime.
 public sealed class AppShell : ContentPage
 {
     private readonly DeepIdV2AccountViewModel account;
+    private Action? hideSensitive;
 
     public AppShell(DeepIdV2AccountViewModel account)
     {
@@ -17,9 +21,18 @@ public sealed class AppShell : ContentPage
         Render();
     }
 
-    private void Render() => Content = account.Account is null
-        ? CreateWelcome()
-        : CreateAccountSettings();
+    protected override void OnDisappearing()
+    {
+        hideSensitive?.Invoke();
+        base.OnDisappearing();
+    }
+
+    private void Render()
+    {
+        hideSensitive?.Invoke();
+        hideSensitive = null;
+        Content = account.Account is null ? CreateWelcome() : CreateAccountSettings();
+    }
 
     private View CreateWelcome()
     {
@@ -29,93 +42,158 @@ public sealed class AppShell : ContentPage
             AutomationId = "Welcome.DisplayName",
             Text = account.DisplayName
         };
-        name.TextChanged += (_, _) => account.DisplayName = name.Text ?? string.Empty;
         var status = Status("Welcome.Status");
         var create = new Button
         {
             Text = "Создать аккаунт",
-            AutomationId = "Welcome.CreateAccount"
+            AutomationId = "Welcome.CreateAccount",
+            IsEnabled = !string.IsNullOrWhiteSpace(account.DisplayName)
+        };
+        name.TextChanged += (_, _) =>
+        {
+            account.DisplayName = name.Text ?? string.Empty;
+            create.IsEnabled = !string.IsNullOrWhiteSpace(account.DisplayName);
         };
         create.Clicked += async (_, _) =>
         {
             create.IsEnabled = false;
-            account.DisplayName = name.Text ?? string.Empty;
-            await account.CreateAccountAsync();
-            if (account.ErrorMessage is null && account.Account is not null)
-                Render();
-            else
-                status.Text = "Не удалось создать DID2-аккаунт. Проверьте имя и локальное хранилище.";
-            create.IsEnabled = true;
+            name.IsEnabled = false;
+            status.Text = "Создаём аккаунт на этом устройстве…";
+            try
+            {
+                account.DisplayName = name.Text ?? string.Empty;
+                await account.CreateAccountAsync();
+                if (account.ErrorMessage is null && account.Account is not null)
+                    Render();
+                else
+                    status.Text = "Не удалось создать локальный аккаунт. Проверьте имя и защищённое хранилище устройства.";
+            }
+            finally
+            {
+                name.IsEnabled = true;
+                create.IsEnabled = account.Account is null &&
+                    !string.IsNullOrWhiteSpace(account.DisplayName);
+            }
         };
-        return Scroll(new VerticalStackLayout
+
+        var form = new VerticalStackLayout
         {
-            Spacing = 14,
-            MaximumWidthRequest = 420,
-            VerticalOptions = LayoutOptions.Center,
+            Spacing = 16,
             Children =
             {
-                Brand(),
                 new Label
                 {
-                    Text = "Аккаунт создаётся локально в одно нажатие, без подключения к сети.",
+                    Text = "Ваш профиль",
+                    FontSize = 18,
+                    FontAttributes = FontAttributes.Bold
+                },
+                new Label
+                {
+                    Text = "Для начала достаточно имени. Аккаунт создаётся локально, без подключения к сети.",
                     TextColor = DeepTheme.Secondary,
-                    HorizontalTextAlignment = TextAlignment.Center
+                    FontSize = 14
                 },
-                name, create,
-                new Label
-                {
-                    Text = "Фраза восстановления сохранится на устройстве. Позже сохраните её отдельно в безопасном месте.",
-                    TextColor = DeepTheme.Secondary
-                },
+                name,
+                create,
                 status
             }
-        });
+        };
+        var recovery = new VerticalStackLayout
+        {
+            Spacing = 7,
+            Children =
+            {
+                new Label { Text = "Восстановление", FontSize = 16, FontAttributes = FontAttributes.Bold },
+                new Label
+                {
+                    Text = "Фраза восстановления сохранится на устройстве. Позже откройте её в настройках и сохраните отдельно в безопасном месте.",
+                    TextColor = DeepTheme.Secondary,
+                    FontSize = 13
+                }
+            }
+        };
+        return Surface("Page.Welcome", "ДОБРО ПОЖАЛОВАТЬ", "Создайте аккаунт Deep",
+            Card(form), Card(recovery));
     }
 
     private View CreateAccountSettings()
     {
         var current = account.Account!;
-        var phrase = new Label
+        var phrase = new Editor
         {
             AutomationId = "Settings.RecoveryPhrase",
-            LineBreakMode = LineBreakMode.WordWrap
+            IsReadOnly = true,
+            IsSpellCheckEnabled = false,
+            IsTextPredictionEnabled = false,
+            AutoSize = EditorAutoSizeOption.TextChanges,
+            MinimumHeightRequest = 110,
+            IsVisible = false
         };
         var status = Status("Settings.Status");
-        var reveal = new Button
+        var phraseStatus = new Label
         {
-            Text = "Показать фразу",
-            AutomationId = "Settings.RevealPhrase",
-            IsEnabled = account.HasRetainedRecoveryPhrase
+            AutomationId = "Settings.RecoveryPhraseStatus",
+            Text = account.HasRetainedRecoveryPhrase
+                ? "Зашифрованная копия хранится на этом устройстве."
+                : "Копия удалена с устройства. Аккаунт остаётся доступным здесь.",
+            TextColor = DeepTheme.Secondary,
+            FontSize = 13
         };
-        var copy = DeepTheme.SecondaryButton("Скопировать фразу", "Settings.CopyPhrase");
-        copy.IsEnabled = false;
+        var reveal = DeepTheme.SecondaryButton("Показать фразу", "Settings.RevealPhrase");
+        reveal.IsEnabled = account.HasRetainedRecoveryPhrase;
+        var copy = new Button
+        {
+            Text = "Скопировать",
+            AutomationId = "Settings.CopyPhrase",
+            IsVisible = false
+        };
+        var hide = DeepTheme.SecondaryButton("Скрыть", "Settings.HidePhrase");
+        hide.IsVisible = false;
+        void HidePhrase()
+        {
+            account.HideRecoveryPhrase();
+            phrase.Text = string.Empty;
+            phrase.IsVisible = false;
+            copy.IsVisible = false;
+            hide.IsVisible = false;
+            reveal.IsEnabled = account.HasRetainedRecoveryPhrase;
+        }
+        hideSensitive = HidePhrase;
         reveal.Clicked += async (_, _) =>
         {
+            reveal.IsEnabled = false;
             await account.RevealRecoveryPhraseAsync();
+            if (account.ErrorMessage is not null)
+            {
+                status.Text = "Фразу не удалось открыть.";
+                reveal.IsEnabled = account.HasRetainedRecoveryPhrase;
+                return;
+            }
+            if (!account.IsRecoveryPhraseRevealed)
+            {
+                phraseStatus.Text = "Защищённая копия уже удалена.";
+                return;
+            }
             phrase.Text = account.RevealedRecoveryPhrase;
-            copy.IsEnabled = account.IsRecoveryPhraseRevealed;
-            status.Text = account.ErrorMessage is null
-                ? account.IsRecoveryPhraseRevealed
-                    ? "Сохраните фразу вне этого устройства."
-                    : "Защищённая копия уже удалена."
-                : "Фразу не удалось открыть.";
-            reveal.IsEnabled = account.HasRetainedRecoveryPhrase &&
-                !account.IsRecoveryPhraseRevealed;
+            phrase.IsVisible = true;
+            copy.IsVisible = true;
+            hide.IsVisible = true;
+            status.Text = "Сохраните 24 слова вне этого устройства. Никому их не отправляйте.";
         };
         copy.Clicked += async (_, _) =>
         {
             if (!account.IsRecoveryPhraseRevealed) return;
-            await Clipboard.Default.SetTextAsync(account.RevealedRecoveryPhrase);
-            status.Text = "Фраза скопирована. Очистите буфер обмена после сохранения.";
+            try
+            {
+                await Clipboard.Default.SetTextAsync(account.RevealedRecoveryPhrase);
+                status.Text = "Фраза скопирована. Очистите буфер обмена после сохранения.";
+            }
+            catch
+            {
+                status.Text = "Не удалось скопировать фразу. Сохраните её другим безопасным способом.";
+            }
         };
-        var hide = DeepTheme.SecondaryButton("Скрыть фразу", "Settings.HidePhrase");
-        hide.Clicked += (_, _) =>
-        {
-            account.HideRecoveryPhrase();
-            phrase.Text = string.Empty;
-            copy.IsEnabled = false;
-            reveal.IsEnabled = account.HasRetainedRecoveryPhrase;
-        };
+        hide.Clicked += (_, _) => HidePhrase();
         var delete = DeepTheme.SecondaryButton(
             "Удалить фразу с устройства", "Settings.DeletePhrase");
         delete.TextColor = DeepTheme.Danger;
@@ -126,73 +204,233 @@ public sealed class AppShell : ContentPage
                     "После удаления её нельзя будет посмотреть на этом устройстве. Сначала сохраните отдельную копию.",
                     "Удалить", "Отмена"))
                 return;
+            delete.IsEnabled = false;
+            HidePhrase();
+            reveal.IsEnabled = false;
             await account.DeleteRecoveryPhraseAsync();
             if (account.ErrorMessage is not null)
             {
                 status.Text = "Не удалось удалить защищённую копию.";
+                delete.IsEnabled = account.HasRetainedRecoveryPhrase;
+                reveal.IsEnabled = account.HasRetainedRecoveryPhrase;
                 return;
             }
-            phrase.Text = string.Empty;
-            copy.IsEnabled = false;
             reveal.IsEnabled = false;
-            delete.IsEnabled = false;
-            status.Text = "Защищённая копия удалена с устройства. DID2-аккаунт сохранён.";
+            phraseStatus.Text = "Копия удалена с устройства. Аккаунт остаётся доступным здесь.";
+            status.Text = "Фраза удалена с этого устройства. DID2-аккаунт сохранён.";
         };
-        return Scroll(new VerticalStackLayout
+
+        var profile = new VerticalStackLayout
         {
-            Spacing = 16,
-            MaximumWidthRequest = 560,
+            Spacing = 13,
             Children =
             {
-                Brand(),
-                new Label { Text = current.DisplayName, FontSize = 25, FontAttributes = FontAttributes.Bold },
+                new Border
+                {
+                    AutomationId = "Settings.Avatar",
+                    WidthRequest = 72,
+                    HeightRequest = 72,
+                    Padding = 0,
+                    StrokeThickness = 0,
+                    BackgroundColor = DeepTheme.AccentMuted,
+                    StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(36) },
+                    HorizontalOptions = LayoutOptions.Center,
+                    Content = new Label
+                    {
+                        Text = current.DisplayName.Trim().Length == 0
+                            ? "D" : current.DisplayName.Trim()[0].ToString().ToUpperInvariant(),
+                        FontSize = 28,
+                        FontAttributes = FontAttributes.Bold,
+                        HorizontalTextAlignment = TextAlignment.Center,
+                        VerticalTextAlignment = TextAlignment.Center
+                    }
+                },
+                new Label
+                {
+                    AutomationId = "Settings.DisplayName",
+                    Text = current.DisplayName,
+                    FontSize = 23,
+                    FontAttributes = FontAttributes.Bold,
+                    HorizontalTextAlignment = TextAlignment.Center
+                }
+            }
+        };
+        var identity = new VerticalStackLayout
+        {
+            Spacing = 8,
+            Children =
+            {
+                new Label { Text = "Постоянный Deep ID", FontSize = 16, FontAttributes = FontAttributes.Bold },
                 new Label
                 {
                     Text = current.PermanentId.CanonicalText,
                     AutomationId = "Settings.Identity",
-                    LineBreakMode = LineBreakMode.CharacterWrap
+                    LineBreakMode = LineBreakMode.CharacterWrap,
+                    FontSize = 13
                 },
-                new BoxView { Color = DeepTheme.Divider, HeightRequest = 1 },
-                new Label { Text = "Фраза восстановления", FontSize = 18, FontAttributes = FontAttributes.Bold },
-                reveal, phrase, copy, hide, delete, status,
-                new BoxView { Color = DeepTheme.Divider, HeightRequest = 1 },
                 new Label
                 {
-                    Text = "Контакты, сообщения, вложения и группы пока недоступны в DID2 UAT-проверке. Этот экран не подключает V1-транспорт.",
+                    Text = "Этот адрес останется тем же после удаления локальной копии фразы. Обмен контактами в этой DID2-проверке ещё не включён.",
                     TextColor = DeepTheme.Secondary,
+                    FontSize = 12
+                }
+            }
+        };
+        var actions = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 10 };
+        actions.Children.Add(copy);
+        actions.Children.Add(hide);
+        Grid.SetColumn(hide, 1);
+        var recovery = new VerticalStackLayout
+        {
+            Spacing = 11,
+            Children =
+            {
+                new Label { Text = "Фраза восстановления", FontSize = 16, FontAttributes = FontAttributes.Bold },
+                phraseStatus,
+                reveal,
+                phrase,
+                actions,
+                delete,
+                status
+            }
+        };
+        var unavailable = new VerticalStackLayout
+        {
+            Spacing = 6,
+            Children =
+            {
+                new Label { Text = "Пока только локальный аккаунт", FontSize = 15, FontAttributes = FontAttributes.Bold },
+                new Label
+                {
+                    Text = "Контакты, сообщения, вложения и группы недоступны в этой DID2-проверке. Здесь не используется прежний транспорт.",
+                    TextColor = DeepTheme.Secondary,
+                    FontSize = 13,
                     AutomationId = "Did2Probe.TransportUnavailable"
                 }
             }
-        });
+        };
+        return Surface("Page.Settings", "ПРОФИЛЬ", "Настройки аккаунта",
+            profile, Card(identity), Card(recovery), Card(unavailable));
     }
 
-    private static ScrollView Scroll(View content) => new()
+    private static View Surface(string pageId, string eyebrow, string heading,
+        params View[] sections)
     {
-        Content = content,
-        BackgroundColor = DeepTheme.Background,
-        Padding = new Thickness(16, 24, 16, 12)
-    };
+        var content = new VerticalStackLayout
+        {
+            Spacing = 18,
+            MaximumWidthRequest = 610,
+            HorizontalOptions = LayoutOptions.Center,
+            Children =
+            {
+                BrandHeader(),
+                new Label
+                {
+                    Text = eyebrow,
+                    TextColor = DeepTheme.Accent,
+                    FontSize = 11,
+                    FontAttributes = FontAttributes.Bold
+                },
+                new Label
+                {
+                    Text = heading,
+                    FontSize = 27,
+                    FontAttributes = FontAttributes.Bold
+                },
+                new BoxView { Color = DeepTheme.Divider, HeightRequest = 1 }
+            }
+        };
+        foreach (var section in sections)
+            content.Children.Add(section);
+        var scroll = new ScrollView
+        {
+            Content = content,
+            Padding = new Thickness(18, 24, 18, 24),
+            BackgroundColor = DeepTheme.Background
+        };
+        var sidebar = new Border
+        {
+            AutomationId = "Did2Probe.DesktopBrandPanel",
+            BackgroundColor = DeepTheme.Panel,
+            StrokeThickness = 0,
+            Padding = new Thickness(28, 36),
+            IsVisible = false,
+            Content = new VerticalStackLayout
+            {
+                Spacing = 16,
+                Children =
+                {
+                    new Image { Source = "deep_mark.png", WidthRequest = 72, HeightRequest = 72, HorizontalOptions = LayoutOptions.Start },
+                    new Label { Text = "Deep", FontSize = 30, FontAttributes = FontAttributes.Bold },
+                    new Label
+                    {
+                        Text = "Локальная проверка нового Deep ID",
+                        TextColor = DeepTheme.Secondary,
+                        FontSize = 15
+                    },
+                    new BoxView { Color = DeepTheme.Divider, HeightRequest = 1 },
+                    new Label
+                    {
+                        Text = "Ваш профиль и фраза восстановления принадлежат этому устройству. Сетевые возможности появятся только после завершения DID2 clean-break.",
+                        TextColor = DeepTheme.Secondary,
+                        FontSize = 13
+                    }
+                }
+            }
+        };
+        var root = new Grid
+        {
+            AutomationId = pageId,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(new GridLength(0)),
+                new ColumnDefinition(GridLength.Star)
+            },
+            Children = { sidebar, scroll }
+        };
+        Grid.SetColumn(scroll, 1);
+        root.SizeChanged += (_, _) =>
+        {
+            var desktop = root.Width >= 900;
+            root.ColumnDefinitions[0].Width = new GridLength(desktop ? 300 : 0);
+            sidebar.IsVisible = desktop;
+        };
+        return root;
+    }
 
-    private static View Brand() => new VerticalStackLayout
+    private static View BrandHeader() => new HorizontalStackLayout
     {
-        Spacing = 8,
+        Spacing = 10,
         Children =
         {
-            new Image { Source = "deep_mark.png", HeightRequest = 90 },
-            new Label
+            new Image { Source = "deep_mark.png", WidthRequest = 36, HeightRequest = 36 },
+            new VerticalStackLayout
             {
-                Text = "Deep",
-                FontSize = 32,
-                FontAttributes = FontAttributes.Bold,
-                HorizontalTextAlignment = TextAlignment.Center
+                Spacing = 0,
+                Children =
+                {
+                    new Label { Text = "Deep", FontSize = 18, FontAttributes = FontAttributes.Bold },
+                    new Label { Text = "DID2 · локальный аккаунт", FontSize = 11, TextColor = DeepTheme.Tertiary }
+                }
             }
         }
+    };
+
+    private static Border Card(View content) => new()
+    {
+        Content = content,
+        Padding = new Thickness(16),
+        BackgroundColor = DeepTheme.Panel,
+        Stroke = new SolidColorBrush(DeepTheme.Divider),
+        StrokeThickness = 1,
+        StrokeShape = new RoundRectangle { CornerRadius = new CornerRadius(14) }
     };
 
     private static Label Status(string automationId) => new()
     {
         AutomationId = automationId,
         TextColor = DeepTheme.Secondary,
+        FontSize = 13,
         LineBreakMode = LineBreakMode.WordWrap
     };
 }

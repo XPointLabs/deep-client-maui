@@ -25,7 +25,7 @@ internal static class DeepTheme
             Setters =
             {
                 new Setter { Property = Label.TextColorProperty, Value = Text },
-                new Setter { Property = Label.FontAutoScalingEnabledProperty, Value = false }
+                new Setter { Property = Label.FontAutoScalingEnabledProperty, Value = true }
             }
         });
         resources.Add(new Style(typeof(Entry))
@@ -36,8 +36,8 @@ internal static class DeepTheme
                 new Setter { Property = Entry.PlaceholderColorProperty, Value = Secondary },
                 new Setter { Property = VisualElement.BackgroundColorProperty, Value = PanelAlt },
                 new Setter { Property = Entry.FontSizeProperty, Value = 16.0 },
-                new Setter { Property = VisualElement.HeightRequestProperty, Value = 44.0 },
-                new Setter { Property = Entry.FontAutoScalingEnabledProperty, Value = false }
+                new Setter { Property = VisualElement.MinimumHeightRequestProperty, Value = 44.0 },
+                new Setter { Property = Entry.FontAutoScalingEnabledProperty, Value = true }
             }
         });
         resources.Add(new Style(typeof(Editor))
@@ -48,7 +48,7 @@ internal static class DeepTheme
                 new Setter { Property = Editor.PlaceholderColorProperty, Value = Secondary },
                 new Setter { Property = VisualElement.BackgroundColorProperty, Value = PanelAlt },
                 new Setter { Property = Editor.FontSizeProperty, Value = 15.0 },
-                new Setter { Property = Editor.FontAutoScalingEnabledProperty, Value = false }
+                new Setter { Property = Editor.FontAutoScalingEnabledProperty, Value = true }
             }
         });
         resources.Add(new Style(typeof(Button))
@@ -58,9 +58,9 @@ internal static class DeepTheme
                 new Setter { Property = Button.BackgroundColorProperty, Value = Accent },
                 new Setter { Property = Button.TextColorProperty, Value = Background },
                 new Setter { Property = Button.CornerRadiusProperty, Value = 22 },
-                new Setter { Property = VisualElement.HeightRequestProperty, Value = 44.0 },
+                new Setter { Property = VisualElement.MinimumHeightRequestProperty, Value = 44.0 },
                 new Setter { Property = Button.FontAttributesProperty, Value = FontAttributes.Bold },
-                new Setter { Property = Button.FontAutoScalingEnabledProperty, Value = false }
+                new Setter { Property = Button.FontAutoScalingEnabledProperty, Value = true }
             }
         });
         return resources;

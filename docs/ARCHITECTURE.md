@@ -62,6 +62,12 @@ isolated `network.xpoint.deep.did2probe` account-only app, separate from both
 production and the existing `.e2e` UAT package. It uses the V2 account model
 and candidate ML-DSA verifier explicitly, never composes V1 network/account
 services, and marks contacts, messages, attachments and groups unavailable.
+Its account and settings surfaces reuse the existing Deep palette and responsive
+mobile/Windows visual language without compiling the retired XAML, code-behind,
+or SessionId ViewModels. Existing probe automation IDs remain stable. The
+recovery phrase is hidden on page disappearance, can be copied only while
+revealed, and still requires confirmation before device-local deletion. The
+probe presents no actionable chat, contact, attachment, or group controls.
 Release or a non-local build rejects this switch. Probe results may establish
 the local Windows/Android account gate, not production provider approval or
 messaging E2E evidence. The probe stages the exact-hash Android ML-DSA
