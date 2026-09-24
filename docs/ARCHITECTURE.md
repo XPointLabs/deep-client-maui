@@ -67,6 +67,9 @@ the local Windows/Android account gate, not production provider approval or
 messaging E2E evidence. The probe stages the exact-hash Android ML-DSA
 candidate from its APK before opening DID2 state; an absent or changed native
 asset fails closed without enabling the V1 runtime.
+On Windows, the probe uses a dedicated private
+`%LOCALAPPDATA%/XPointLabs/DeepDid2AccountProbe` root for both account state
+and diagnostics, never the normal MAUI application-data root.
 
 The Android physical probe uses `eng/Invoke-PhysicalDid2AccountProbeAndroid.ps1`
 with explicit serial, committed SHA, APK SHA-256 and signer SHA-256. A call

@@ -11,6 +11,19 @@ internal static class AppDataPath
 
     internal static string Resolve()
     {
+#if DEEP_DID2_ACCOUNT_PROBE && WINDOWS
+        var localAppData = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(localAppData))
+            throw new InvalidOperationException(
+                "DID2 Windows probe has no local application-data root.");
+        var probeRoot = Path.GetFullPath(Path.Combine(localAppData,
+            "XPointLabs", "DeepDid2AccountProbe"));
+        Directory.CreateDirectory(probeRoot);
+        RejectReparsePoints(probeRoot);
+        WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(probeRoot);
+        return probeRoot;
+#else
 #if DEBUG
         if (string.Equals(
                 Environment.GetEnvironmentVariable(StrictWindowsEnvironment),
@@ -46,6 +59,7 @@ internal static class AppDataPath
         }
 #endif
         return FileSystem.AppDataDirectory;
+#endif
     }
 
     private static bool IsSameOrDescendant(string relativePath)
