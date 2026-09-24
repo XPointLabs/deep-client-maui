@@ -2,6 +2,7 @@
 using Deep.Client.Maui.CleanUi;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Core.ViewModels;
+using Deep.Client.Maui.Services;
 
 namespace Deep.Client.Maui;
 
