@@ -17,6 +17,10 @@ $expected = [ordered]@{
         bytes = 612376L
         sha256 = 'dd51b21ddd836c84a978616596a749c34bf6258532e2ae2f931f235a124cacff'
     }
+    'assets/deep-native/libdeep_mldsa.so' = [ordered]@{
+        bytes = 79112L
+        sha256 = '6e46e4df970f5376416af3c50fb39e580487a616d2541aa26d1d90eddf918cc9'
+    }
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -57,4 +61,4 @@ finally {
     $archive.Dispose()
 }
 
-Write-Output "PASS Android APK contains the exact approved ML-KEM runtime asset set"
+Write-Output "PASS Android APK contains the exact pinned ML-KEM and ML-DSA runtime asset set"
