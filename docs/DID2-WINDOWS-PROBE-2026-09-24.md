@@ -1,4 +1,4 @@
-# DID2 Windows account probe — pending physical UI
+# DID2 Windows account probe — account surface observed
 
 The isolated Windows Debug probe at `deep-client-maui` commit
 `2e1869ba40dfcde1806f858805f3e0d97633758e` built for
@@ -27,3 +27,11 @@ tree and screenshot showed the display-name field and local account-creation
 button. No account-creation action had been taken at this observation, so this
 is a UI-availability result only; it does not close the Windows physical
 account, contact, message, attachment or group gates.
+
+At a subsequent read-only inspection on the same date, the isolated probe
+showed an existing `Windows QA` account and recovery-phrase show/copy/hide/delete
+controls. The phrase was not revealed or copied during inspection. This proves
+only that the account/settings surface is visible in the running process; the
+inspector did not witness creation or restart persistence. The screen itself
+states that contacts, messages, attachments and groups are unavailable in this
+account-only probe. None of those Windows↔Android device E2E gates is closed.
