@@ -52,3 +52,32 @@ it references removed V1 `Deep.Client.Shared.State` types; it is not a passing
 release gate. Contacts, messages, attachments, groups, Windows physical UI,
 production authority and production transport remain unverified by this
 account-only test.
+
+## DR-0007 capability-commitment retest
+
+- Source: `deep-client-maui` commit
+  `d36c0e6a4515fd7f8fe38e904853b40e772a4244`, with the platform root
+  pinning the clean-break `deep-protocol` and `deep-client-shared` commits.
+- Debug DID2-probe APK SHA-256:
+  `673a93b39a9dda64db309b88fff79afaefa7e191185f2943ce58410db7e6a0ba`;
+  Debug signer certificate SHA-256 unchanged at
+  `9fc17b2ba9e799700fa60f198da0defab5806f51db763a7a1fc321dc2f5886b9`.
+  The Android build passed with 0 warnings and 0 errors.
+- Read-only preflight and bounded dedicated-package update succeeded on
+  `RF8M2082TFF`. Production `network.xpoint.deep` and UAT
+  `network.xpoint.deep.e2e` package path/metadata digests were identical
+  before and after; neither package or its data was cleared or reinstalled.
+- The old raw-capability DID2 account failed closed. The probe's own reset
+  button and confirmation removed only its isolated test account. A new
+  `Android QA DR7` account was created from a display name and one tap.
+- The new compact Deep ID was 90 characters. Its SHA-256 was
+  `b544ddfa361e8dee214ed25e137155d158f243c4dcd4acb594548641bd9caeb3`
+  on creation, after force-stop/relaunch, and after deleting the retained
+  phrase through the application's confirmation followed by another
+  force-stop/relaunch. Reveal and Delete were then both disabled. No phrase,
+  raw resolver capability or address text was logged or committed; temporary
+  UI hierarchy files were removed from the device after each observation.
+
+This closes the physical Android **local account** continuity gate for
+DR-0007 only. Windows account continuity, live Registry admission/proof and
+Windows↔Android contact/message/media/group E2E are still open.
