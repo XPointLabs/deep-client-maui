@@ -15,3 +15,8 @@ that launch artifact was stopped. The existing packaged `.e2e` client process
 was not stopped or modified. No Windows account was created, and no Windows
 contacts, messages, attachments or groups were tested. Re-run the physical
 Windows probe from a targetable interactive window before counting this gate.
+
+On a later retry, the same isolated executable did expose one targetable
+window. The captured surface was the Windows lock screen, not the MAUI
+application. Computer-use stopped without input; no unlock or account action
+was attempted. The gate remains pending an unlocked interactive desktop.
