@@ -47,7 +47,10 @@ V2 Android Keystore alias. Its envelopes are tagged `WDS2`/`ADS2`; V1
 protectors reject them. This is not yet the MAUI production account
 composition: the current `DeepAccountRuntimeOwner` still uses V1, and the
 client cannot claim DID2 device E2E until account, contact and messaging
-consumers switch together without fallback.
+consumers switch together without fallback. The Windows clean integration gate
+exercises real DPAPI plus the V2 SQLCipher generation across restart, retaining
+the exact DID2 after the local phrase is deleted; this does not count as a
+physical messaging E2E result.
 
 The SQLCipher key uses a compile-time lane namespace. Ordinary packages retain
 the existing `client-state.sqlcipher-key.v1` SecureStorage slot, while

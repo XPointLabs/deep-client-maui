@@ -1,4 +1,7 @@
 using System.Security.Cryptography;
+#if WINDOWS
+using System.Runtime.Versioning;
+#endif
 using Deep.Client.Shared.Persistence;
 
 #if ANDROID
@@ -62,6 +65,9 @@ internal sealed class PlatformDeepSecretProtector : IDeepSecretProtector
     private ReadOnlySpan<byte> AndroidEnvelopeMagic => useV2 ? "ADS2"u8 : "ADS1"u8;
 #endif
 
+#if WINDOWS
+    [SupportedOSPlatform("windows")]
+#endif
     public byte[] Protect(ReadOnlySpan<byte> plaintext)
     {
         if (plaintext.IsEmpty)
@@ -131,6 +137,9 @@ internal sealed class PlatformDeepSecretProtector : IDeepSecretProtector
 #endif
     }
 
+#if WINDOWS
+    [SupportedOSPlatform("windows")]
+#endif
     public byte[] Unprotect(ReadOnlySpan<byte> protectedBytes)
     {
 #if WINDOWS
