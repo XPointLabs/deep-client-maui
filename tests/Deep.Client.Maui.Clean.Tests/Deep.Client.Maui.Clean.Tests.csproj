@@ -26,6 +26,8 @@
              Link="DeepIdV2AccountRuntimeOwner.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\DeepIdV2AccountRuntimeAccessor.cs"
              Link="DeepIdV2AccountRuntimeAccessor.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\ApprovedAndroidNativeCryptoAssetStager.cs"
+             Link="ApprovedAndroidNativeCryptoAssetStager.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\GroupV1\AccountOwnedDeviceCustodySigner.cs"
              Link="AccountOwnedDeviceCustodySigner.cs" />
   </ItemGroup>

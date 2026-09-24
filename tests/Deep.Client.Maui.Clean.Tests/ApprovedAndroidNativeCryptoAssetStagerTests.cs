@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using Deep.Client.Maui.Services;
 
-namespace Deep.Client.Maui.ViewModels.Tests.Services;
+namespace Deep.Client.Maui.Clean.Tests;
 
 public sealed class ApprovedAndroidNativeCryptoAssetStagerTests
 {
