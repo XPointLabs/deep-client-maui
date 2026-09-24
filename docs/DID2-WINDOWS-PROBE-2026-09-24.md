@@ -35,3 +35,24 @@ only that the account/settings surface is visible in the running process; the
 inspector did not witness creation or restart persistence. The screen itself
 states that contacts, messages, attachments and groups are unavailable in this
 account-only probe. None of those Windows↔Android device E2E gates is closed.
+
+## Current-source restart and rebuild check
+
+The operator explicitly reset the isolated incompatible probe account and
+created a new test account through the application UI. The inspector did not
+witness those two actions and makes no creation-flow claim. Before and after a
+window close/relaunch, the probe showed the same 90-character DID2 in
+`Settings.Identity`; the retained phrase remained hidden and its Reveal
+control remained enabled. The phrase was not opened, and neither value was
+printed or persisted in evidence.
+
+The exact current source at `0a76c1af089836033cedc3164d8f118e4d980fb4`
+then built as Debug `net10.0-windows10.0.19041.0/win-arm64` with
+`DeepLocalDev=true`, `DeepDid2AccountProbe=true`, sequential compilation and
+zero warnings/errors. The rebuilt executable SHA-256 is
+`b9cc7d976be490d73cec53ed3791620212b7c7e2b69d64db69df3c799b6ef02d`.
+Launching that exact executable reopened the same DID2, with no startup error;
+the recovery phrase remained hidden and transport-unavailable status remained
+explicit. This closes the Windows local-account **restart continuity** check
+only. It does not prove observed account creation, production composition,
+Registry admission/proof, contact, messaging, attachments or groups.
