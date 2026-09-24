@@ -27,7 +27,12 @@ internal static class ApprovedAndroidNativeCryptoAssetStager
             "deep-native/libdeep_mlkem_braid.so",
             "runtimes/android-arm64/native/libdeep_mlkem_braid.so",
             612_376,
-            "dd51b21ddd836c84a978616596a749c34bf6258532e2ae2f931f235a124cacff")
+            "dd51b21ddd836c84a978616596a749c34bf6258532e2ae2f931f235a124cacff"),
+        new(
+            "deep-native/libdeep_mldsa.so",
+            "runtimes/android-arm64/native/libdeep_mldsa.so",
+            79_112,
+            "6e46e4df970f5376416af3c50fb39e580487a616d2541aa26d1d90eddf918cc9")
     ];
 
     internal static async Task StageAsync(
@@ -75,7 +80,7 @@ internal static class ApprovedAndroidNativeCryptoAssetStager
                 staged.Add(new StagedAsset(temporary, destination));
             }
 
-            // No destination is changed until the complete pair has passed its exact
+            // No destination is changed until the complete set has passed its exact
             // size and digest checks. Each final rename is atomic and idempotent.
             cancellationToken.ThrowIfCancellationRequested();
             foreach (var item in staged)

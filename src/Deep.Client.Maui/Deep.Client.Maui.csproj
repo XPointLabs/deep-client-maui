@@ -186,6 +186,8 @@
                   Link="deep-native\libdeep_mlkem.so" />
     <AndroidAsset Include="..\..\..\deep-protocol\src\Deep.Protocol\runtimes\android-arm64\native\libdeep_mlkem_braid.so"
                   Link="deep-native\libdeep_mlkem_braid.so" />
+    <AndroidAsset Include="..\..\..\deep-protocol\src\Deep.Protocol\runtimes\android-arm64\native\libdeep_mldsa.so"
+                  Link="deep-native\libdeep_mldsa.so" />
     <PackageReference Include="Xamarin.Firebase.Messaging" Version="124.1.2" />
     <GoogleServicesJson Include="$(DeepGoogleServicesJson)" Condition="'$(DeepGoogleServicesJson)' != '' And Exists('$(DeepGoogleServicesJson)')" />
   </ItemGroup>

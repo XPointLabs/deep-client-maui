@@ -34,6 +34,8 @@ public sealed class App : Application
         {
             try
             {
+                await ApprovedNativeCryptoAssetBootstrap.StageAsync(
+                    CancellationToken.None);
                 await account.RefreshAsync();
                 if (account.ErrorMessage is not null)
                     throw new InvalidOperationException(
@@ -43,7 +45,8 @@ public sealed class App : Application
             }
             catch (Exception exception)
             {
-                CrashDiagnostics.LogException("Did2AccountProbe.Startup", exception);
+                CrashDiagnostics.LogException("Did2AccountProbe.Startup", exception,
+                    account.ErrorMessage);
                 await MainThread.InvokeOnMainThreadAsync(() =>
                     loading.Content = new Label
                     {

@@ -64,12 +64,19 @@ and candidate ML-DSA verifier explicitly, never composes V1 network/account
 services, and marks contacts, messages, attachments and groups unavailable.
 Release or a non-local build rejects this switch. Probe results may establish
 the local Windows/Android account gate, not production provider approval or
-messaging E2E evidence.
+messaging E2E evidence. The probe stages the exact-hash Android ML-DSA
+candidate from its APK before opening DID2 state; an absent or changed native
+asset fails closed without enabling the V1 runtime.
+
 The Android physical probe uses `eng/Invoke-PhysicalDid2AccountProbeAndroid.ps1`
 with explicit serial, committed SHA, APK SHA-256 and signer SHA-256. A call
 without `-Execute` is a read-only preflight; execution installs only the
 dedicated probe package and compares production/`.e2e` package metadata
-snapshots before and after. It never clears or uninstalls either existing app.
+snapshots before and after. An existing probe requires explicit
+`-AllowProbeUpdate`; this updates only that package without clearing its data.
+The snapshots cover public package identity, install metadata and data inode,
+not the contents of another app's private data. The script never clears or
+uninstalls either existing app.
 
 The SQLCipher key uses a compile-time lane namespace. Ordinary packages retain
 the existing `client-state.sqlcipher-key.v1` SecureStorage slot, while

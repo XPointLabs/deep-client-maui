@@ -8,6 +8,7 @@ param(
     [string]$ExpectedApkSha256,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')]
     [string]$ExpectedSignerSha256,
+    [switch]$AllowProbeUpdate,
     [switch]$Execute
 )
 
@@ -82,10 +83,33 @@ function Get-PackageSnapshot([string]$Package) {
     }
     $details = Invoke-Adb @('shell', 'dumpsys', 'package', $Package) `
         "Package metadata $Package"
+    $marker = [regex]::Escape($Package)
+    $section = [regex]::Match($details,
+        "(?ms)^  Package \[$marker\] \([^)]+\):`r?`n(?<body>.*?)(?=^  Package \[|\z)")
+    if (-not $section.Success) {
+        throw "Installed package $Package has no exact metadata section."
+    }
+    $stable = [ordered]@{}
+    foreach ($name in @('userId', 'codePath', 'resourcePath', 'versionCode',
+        'versionName', 'dataDir', 'timeStamp', 'firstInstallTime',
+        'lastUpdateTime')) {
+        $field = [regex]::Match($section.Groups['body'].Value,
+            "(?m)^    $name=(.+)`r?$")
+        if (-not $field.Success) {
+            throw "Installed package $Package lacks required $name metadata."
+        }
+        $stable[$name] = $field.Groups[1].Value.Trim()
+    }
+    $dataInode = [regex]::Match($section.Groups['body'].Value,
+        '(?m)^    User 0: ceDataInode=([0-9]+)')
+    if (-not $dataInode.Success) {
+        throw "Installed package $Package lacks a user-0 data inode."
+    }
+    $stable['ceDataInode'] = $dataInode.Groups[1].Value
     return [ordered]@{
         installed = $true
         pathSha256 = Get-TextHash $path
-        metadataSha256 = Get-TextHash $details
+        metadataSha256 = Get-TextHash ($stable | ConvertTo-Json -Compress)
     }
 }
 
@@ -134,8 +158,8 @@ foreach ($package in $protectedPackages) {
     $before[$package] = Get-PackageSnapshot $package
 }
 $probeBefore = Get-PackageSnapshot $probePackage
-if ($probeBefore.installed) {
-    throw 'The dedicated DID2 probe package already exists; no overwrite is allowed.'
+if ($probeBefore.installed -and -not $AllowProbeUpdate) {
+    throw 'The dedicated DID2 probe package already exists; explicit -AllowProbeUpdate is required.'
 }
 $result = [ordered]@{
     schema = 'deep.did2-account-android-probe.v1'
@@ -145,12 +169,19 @@ $result = [ordered]@{
     androidSerial = $AndroidSerial
     package = $probePackage
     execute = [bool]$Execute
+    allowProbeUpdate = [bool]$AllowProbeUpdate
     status = 'preflight'
     protectedBefore = $before
+    probeBefore = $probeBefore
 }
 if ($Execute) {
     try {
-        $install = Invoke-Adb @('install', $apk) 'Dedicated DID2 probe install' 120000
+        $installArguments = if ($probeBefore.installed) {
+            @('install', '-r', $apk)
+        } else {
+            @('install', $apk)
+        }
+        $install = Invoke-Adb $installArguments 'Dedicated DID2 probe install' 120000
         if ($install -notmatch 'Success') {
             throw 'The dedicated DID2 probe install was not acknowledged.'
         }
