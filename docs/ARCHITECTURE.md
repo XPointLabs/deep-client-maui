@@ -59,12 +59,17 @@ physical messaging E2E result.
 
 `DeepDid2AccountProbe=true` with a Debug `DeepLocalDev=true` build selects an
 isolated `network.xpoint.deep.did2probe` account-only app, separate from both
-production and the existing `.e2e` UAT package. It uses the V2 account model and candidate
-ML-DSA verifier explicitly, never composes V1 network/account services, and
-marks contacts, messages, attachments and groups unavailable. Release or a
-non-local build rejects this switch. Probe results may establish the local
-Windows/Android account gate, not production provider approval or messaging
-E2E evidence.
+production and the existing `.e2e` UAT package. It uses the V2 account model
+and candidate ML-DSA verifier explicitly, never composes V1 network/account
+services, and marks contacts, messages, attachments and groups unavailable.
+Release or a non-local build rejects this switch. Probe results may establish
+the local Windows/Android account gate, not production provider approval or
+messaging E2E evidence.
+The Android physical probe uses `eng/Invoke-PhysicalDid2AccountProbeAndroid.ps1`
+with explicit serial, committed SHA, APK SHA-256 and signer SHA-256. A call
+without `-Execute` is a read-only preflight; execution installs only the
+dedicated probe package and compares production/`.e2e` package metadata
+snapshots before and after. It never clears or uninstalls either existing app.
 
 The SQLCipher key uses a compile-time lane namespace. Ordinary packages retain
 the existing `client-state.sqlcipher-key.v1` SecureStorage slot, while
