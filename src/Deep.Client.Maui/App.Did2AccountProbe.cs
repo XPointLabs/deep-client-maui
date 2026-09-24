@@ -49,12 +49,7 @@ public sealed class App : Application
                 CrashDiagnostics.LogException("Did2AccountProbe.Startup", exception,
                     account.ErrorMessage);
                 await MainThread.InvokeOnMainThreadAsync(() =>
-                    loading.Content = new Label
-                    {
-                        Padding = 24,
-                        Text = "DID2-аккаунт не прошёл локальную проверку. Не удаляйте данные приложения; проверьте диагностику.",
-                        AutomationId = "Startup.Error"
-                    });
+                    window.Page = CreateRecoveryPage(window));
             }
         };
         window.Destroying += async (_, _) =>
@@ -63,6 +58,55 @@ public sealed class App : Application
                 await runtime.DisposeAsync();
         };
         return window;
+    }
+
+    private ContentPage CreateRecoveryPage(Window window)
+    {
+        var status = new Label
+        {
+            Text = "Тестовый DID2-аккаунт не прошёл локальную проверку. Возможно, он создан до clean-break. Данные других приложений не затронуты.",
+            AutomationId = "Startup.Error"
+        };
+        var reset = new Button
+        {
+            Text = "Сбросить тестовый DID2-аккаунт",
+            AutomationId = "Startup.ResetIncompatibleDid2"
+        };
+        var page = new ContentPage
+        {
+            Content = new VerticalStackLayout
+            {
+                Padding = 24,
+                Spacing = 16,
+                Children = { status, reset }
+            }
+        };
+        reset.Clicked += async (_, _) =>
+        {
+            if (!await page.DisplayAlertAsync("Удалить тестовый аккаунт?",
+                    "Будут удалены только данные этого отдельного DID2 probe. Старая сид-фраза и адрес не восстановятся.",
+                    "Удалить", "Отмена"))
+                return;
+            reset.IsEnabled = false;
+            try
+            {
+                await DeepIdV2AccountRuntimeOwner
+                    .ResetIsolatedProbeAfterConfirmationAsync(
+                        CancellationToken.None);
+                await account.RefreshAsync();
+                if (account.ErrorMessage is not null)
+                    throw new InvalidOperationException(
+                        "DID2 probe verification failed after explicit reset.");
+                window.Page = services.GetRequiredService<AppShell>();
+            }
+            catch (Exception exception)
+            {
+                CrashDiagnostics.LogException("Did2AccountProbe.Reset", exception);
+                status.Text = "Сброс тестового аккаунта не завершён. Проверьте диагностику; другие данные не затронуты.";
+                reset.IsEnabled = true;
+            }
+        };
+        return page;
     }
 }
 #endif

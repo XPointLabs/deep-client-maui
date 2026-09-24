@@ -67,6 +67,11 @@ the local Windows/Android account gate, not production provider approval or
 messaging E2E evidence. The probe stages the exact-hash Android ML-DSA
 candidate from its APK before opening DID2 state; an absent or changed native
 asset fails closed without enabling the V1 runtime.
+If this isolated probe finds an incompatible pre-clean-break DID2 account,
+startup stays closed and offers a dedicated reset button with an in-app
+confirmation. The reset invokes STORE-V2's explicit account reset only for the
+probe root; it never silently migrates the old 2036-byte credential or touches
+the normal `.e2e` and production packages.
 On Windows, the probe uses a dedicated private
 `%LOCALAPPDATA%/XPointLabs/DeepDid2AccountProbe` root for both account state
 and diagnostics, never the normal MAUI application-data root.

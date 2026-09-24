@@ -23,6 +23,26 @@ internal sealed class DeepIdV2AccountRuntimeOwner : IAsyncDisposable
 
     internal DeepIdV2AccountService Accounts { get; }
 
+#if DEEP_DID2_ACCOUNT_PROBE
+    /// <summary>
+    /// The isolated probe can reset a retired, unreadable test generation only
+    /// after its own visible confirmation UI. Normal UAT/production builds do
+    /// not contain this entry point.
+    /// </summary>
+    internal static async Task ResetIsolatedProbeAfterConfirmationAsync(
+        CancellationToken cancellationToken)
+    {
+        var root = Path.GetFullPath(MauiProgram.ResolveAppDataDirectory());
+        using var storage = PlatformDeepSecureStorage.CreateV2(root);
+        var accounts = new DeepIdV2AccountService(storage,
+            Path.Combine(root, "deep-store-v2"),
+            ActiveBuildNetworkId.Load().Span, 1, new SystemClock(),
+            DeepMlDsa65CandidateVerifierFactory.OpenForCurrentProcess);
+        await accounts.ResetExplicitlyAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+#endif
+
     internal static async Task<DeepIdV2AccountRuntimeOwner> OpenAsync(
         string appDataDirectory, ReadOnlyMemory<byte> networkId,
         ushort deploymentProfileId, IClock clock,
