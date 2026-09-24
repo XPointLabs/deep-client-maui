@@ -67,11 +67,23 @@ function Get-TextHash([string]$Value) {
 }
 
 function Get-PackageSnapshot([string]$Package) {
+    $packages = Invoke-Adb @('shell', 'pm', 'list', 'packages', $Package) `
+        "Package list $Package"
+    if ($packages -notmatch "(?m)^package:$([regex]::Escape($Package))`r?$") {
+        return [ordered]@{
+            installed = $false
+            pathSha256 = $null
+            metadataSha256 = $null
+        }
+    }
     $path = Invoke-Adb @('shell', 'pm', 'path', $Package) "Package path $Package"
+    if ([string]::IsNullOrWhiteSpace($path)) {
+        throw "Installed package $Package has no readable path."
+    }
     $details = Invoke-Adb @('shell', 'dumpsys', 'package', $Package) `
         "Package metadata $Package"
     return [ordered]@{
-        installed = -not [string]::IsNullOrWhiteSpace($path)
+        installed = $true
         pathSha256 = Get-TextHash $path
         metadataSha256 = Get-TextHash $details
     }
