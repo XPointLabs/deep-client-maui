@@ -46,8 +46,11 @@ domain: `deep-store-v2/secure-storage.dss`, V2 DPAPI entropy on Windows and a
 V2 Android Keystore alias. Its envelopes are tagged `WDS2`/`ADS2`; V1
 protectors reject them. `DeepIdV2AccountRuntimeOwner` now opens and verifies
 that isolated state without a network callback, rejects a different network,
-and never creates the V1 store. It is not yet wired into the MAUI production
-UI composition: the current `DeepAccountRuntimeOwner` still uses V1, and the
+and never creates the V1 store. `DeepIdV2AccountRuntimeAccessor` and
+`DeepIdV2AccountViewModel` expose one-button offline creation, restart, phrase
+reveal/hide and irreversible local deletion without a V1 identity or network
+callback. They are not yet wired into the MAUI production UI composition: the
+current `DeepAccountRuntimeOwner` still uses V1, and the
 client cannot claim DID2 device E2E until account, contact and messaging
 consumers switch together without fallback. The Windows clean integration gate
 exercises real DPAPI plus the V2 SQLCipher generation across restart, retaining
