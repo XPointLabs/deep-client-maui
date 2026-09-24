@@ -41,6 +41,14 @@ explicit copy, hide and irreversible device-local deletion actions. An absent
 secure phrase is a normal state: the account and device keys remain usable, and
 the phrase is never populated from SQLite or another wrapped store.
 
+The staged DID2/STORE-V2 account owner has a separate platform protection
+domain: `deep-store-v2/secure-storage.dss`, V2 DPAPI entropy on Windows and a
+V2 Android Keystore alias. Its envelopes are tagged `WDS2`/`ADS2`; V1
+protectors reject them. This is not yet the MAUI production account
+composition: the current `DeepAccountRuntimeOwner` still uses V1, and the
+client cannot claim DID2 device E2E until account, contact and messaging
+consumers switch together without fallback.
+
 The SQLCipher key uses a compile-time lane namespace. Ordinary packages retain
 the existing `client-state.sqlcipher-key.v1` SecureStorage slot, while
 `DeepPhysicalE2E=true` packages use the distinct stable

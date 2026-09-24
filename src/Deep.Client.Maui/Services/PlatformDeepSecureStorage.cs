@@ -12,27 +12,54 @@ namespace Deep.Client.Maui.Services;
 
 internal static class PlatformDeepSecureStorage
 {
-    private const string RelativeDirectory = "deep-store-v1";
     private const string StateFileName = "secure-storage.dss";
 
     internal static JournaledDeepSecureStorage Create(string appDataDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
         var root = Path.GetFullPath(appDataDirectory);
-        var statePath = Path.Combine(root, RelativeDirectory, StateFileName);
+        var statePath = Path.Combine(root, "deep-store-v1", StateFileName);
         return new JournaledDeepSecureStorage(statePath, new PlatformDeepSecretProtector());
+    }
+
+    internal static JournaledDeepSecureStorage CreateV2(string appDataDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
+        var root = Path.GetFullPath(appDataDirectory);
+        var statePath = Path.Combine(root, "deep-store-v2", StateFileName);
+        return new JournaledDeepSecureStorage(statePath,
+            new PlatformDeepSecretProtector(useV2: true));
     }
 }
 
 internal sealed class PlatformDeepSecretProtector : IDeepSecretProtector
 {
 #if WINDOWS
-    private static readonly byte[] Entropy =
+    private static readonly byte[] V1Entropy =
         "Deep/Store/V1/Windows-DPAPI/aggregate"u8.ToArray();
+    private static readonly byte[] V2Entropy =
+        "Deep/Store/V2/Windows-DPAPI/aggregate"u8.ToArray();
 #elif ANDROID
     private const string KeyStoreName = "AndroidKeyStore";
-    private const string KeyAlias = "network.xpoint.deep.store.v1.aggregate";
     private const string Transformation = "AES/GCM/NoPadding";
+#endif
+    private readonly bool useV2;
+
+    internal PlatformDeepSecretProtector(bool useV2 = false) =>
+        this.useV2 = useV2;
+
+#if WINDOWS
+    private byte[] Entropy => useV2 ? V2Entropy : V1Entropy;
+#elif ANDROID
+    private string KeyAlias => useV2
+        ? "network.xpoint.deep.store.v2.aggregate"
+        : "network.xpoint.deep.store.v1.aggregate";
+#endif
+
+    private ReadOnlySpan<byte> EnvelopeMagic => useV2 ? "WDS2"u8 : "WDS1"u8;
+
+#if ANDROID
+    private ReadOnlySpan<byte> AndroidEnvelopeMagic => useV2 ? "ADS2"u8 : "ADS1"u8;
 #endif
 
     public byte[] Protect(ReadOnlySpan<byte> plaintext)
@@ -51,7 +78,7 @@ internal sealed class PlatformDeepSecretProtector : IDeepSecretProtector
                 Entropy,
                 DataProtectionScope.CurrentUser);
             var output = new byte[4 + protectedPayload.Length];
-            "WDS1"u8.CopyTo(output);
+            EnvelopeMagic.CopyTo(output);
             protectedPayload.CopyTo(output, 4);
             CryptographicOperations.ZeroMemory(protectedPayload);
             return output;
@@ -84,7 +111,7 @@ internal sealed class PlatformDeepSecretProtector : IDeepSecretProtector
                 throw new CryptographicException("Android Keystore returned an invalid AES-GCM payload.");
             }
             var output = new byte[4 + nonce.Length + ciphertext.Length];
-            "ADS1"u8.CopyTo(output);
+            AndroidEnvelopeMagic.CopyTo(output);
             nonce.CopyTo(output, 4);
             ciphertext.CopyTo(output, 16);
             return output;
@@ -107,7 +134,8 @@ internal sealed class PlatformDeepSecretProtector : IDeepSecretProtector
     public byte[] Unprotect(ReadOnlySpan<byte> protectedBytes)
     {
 #if WINDOWS
-        if (protectedBytes.Length <= 4 || !protectedBytes[..4].SequenceEqual("WDS1"u8))
+        if (protectedBytes.Length <= 4 ||
+            !protectedBytes[..4].SequenceEqual(EnvelopeMagic))
         {
             throw new CryptographicException("Windows secure-storage envelope is invalid.");
         }
@@ -125,7 +153,7 @@ internal sealed class PlatformDeepSecretProtector : IDeepSecretProtector
         }
 #elif ANDROID
         if (protectedBytes.Length < 4 + 12 + 16
-            || !protectedBytes[..4].SequenceEqual("ADS1"u8))
+            || !protectedBytes[..4].SequenceEqual(AndroidEnvelopeMagic))
         {
             throw new CryptographicException("Android secure-storage envelope is invalid.");
         }
@@ -159,7 +187,7 @@ internal sealed class PlatformDeepSecretProtector : IDeepSecretProtector
     }
 
 #if ANDROID
-    private static Java.Security.IKey GetOrCreateAndroidKey()
+    private Java.Security.IKey GetOrCreateAndroidKey()
     {
         using var keyStore = LoadAndroidKeyStore();
         if (keyStore.ContainsAlias(KeyAlias))
@@ -183,7 +211,7 @@ internal sealed class PlatformDeepSecretProtector : IDeepSecretProtector
             ?? throw new CryptographicException("Android Keystore did not generate an AES key.");
     }
 
-    private static Java.Security.IKey GetExistingAndroidKey()
+    private Java.Security.IKey GetExistingAndroidKey()
     {
         using var keyStore = LoadAndroidKeyStore();
         if (!keyStore.ContainsAlias(KeyAlias))
