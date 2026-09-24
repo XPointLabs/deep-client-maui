@@ -21,36 +21,38 @@ public sealed class PlatformDeepSecureStorageV2Tests
                 (byte)value).ToArray();
             var clock = new FrozenClock(
                 DateTimeOffset.FromUnixTimeSeconds(1_900_000_000));
-            var privateDirectory = Path.Combine(root, "deep-store-v2");
             string exactDeepId;
-            using (var firstStore = PlatformDeepSecureStorage.CreateV2(root))
+            await using (var first = await DeepIdV2AccountRuntimeOwner.OpenAsync(
+                root, network, 1, clock,
+                DeepMlDsa65CandidateVerifierFactory.OpenForCurrentProcess))
             {
-                var first = new DeepIdV2AccountService(firstStore,
-                    privateDirectory, network, 1, clock,
-                    DeepMlDsa65CandidateVerifierFactory.OpenForCurrentProcess);
-                var created = await first.CreateAsync(" Alice ");
+                var created = await first.Accounts.CreateAsync(" Alice ");
                 exactDeepId = created.PermanentId.CanonicalText;
-                using var phrase = await first.ReadRetainedRecoveryPhraseAsync();
+                using var phrase = await first.Accounts.ReadRetainedRecoveryPhraseAsync();
                 Assert.NotNull(phrase);
             }
-            using (var reopenedStore = PlatformDeepSecureStorage.CreateV2(root))
+            Assert.False(Directory.Exists(Path.Combine(root, "deep-store-v1")));
+            var wrongNetwork = network.ToArray();
+            wrongNetwork[0] ^= 1;
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                DeepIdV2AccountRuntimeOwner.OpenAsync(root, wrongNetwork, 1,
+                    clock, DeepMlDsa65CandidateVerifierFactory.OpenForCurrentProcess));
+            await using (var reopened = await DeepIdV2AccountRuntimeOwner.OpenAsync(
+                root, network, 1, clock,
+                DeepMlDsa65CandidateVerifierFactory.OpenForCurrentProcess))
             {
-                var reopened = new DeepIdV2AccountService(reopenedStore,
-                    privateDirectory, network, 1, clock,
-                    DeepMlDsa65CandidateVerifierFactory.OpenForCurrentProcess);
                 Assert.Equal(exactDeepId,
-                    (await reopened.GetCurrentAsync())!.PermanentId.CanonicalText);
-                await reopened.DeleteRetainedRecoveryPhraseAsync();
-                Assert.Null(await reopened.ReadRetainedRecoveryPhraseAsync());
+                    (await reopened.Accounts.GetCurrentAsync())!.PermanentId.CanonicalText);
+                await reopened.Accounts.DeleteRetainedRecoveryPhraseAsync();
+                Assert.Null(await reopened.Accounts.ReadRetainedRecoveryPhraseAsync());
             }
-            using (var finalStore = PlatformDeepSecureStorage.CreateV2(root))
+            await using (var final = await DeepIdV2AccountRuntimeOwner.OpenAsync(
+                root, network, 1, clock,
+                DeepMlDsa65CandidateVerifierFactory.OpenForCurrentProcess))
             {
-                var final = new DeepIdV2AccountService(finalStore,
-                    privateDirectory, network, 1, clock,
-                    DeepMlDsa65CandidateVerifierFactory.OpenForCurrentProcess);
                 Assert.Equal(exactDeepId,
-                    (await final.GetCurrentAsync())!.PermanentId.CanonicalText);
-                Assert.Null(await final.ReadRetainedRecoveryPhraseAsync());
+                    (await final.Accounts.GetCurrentAsync())!.PermanentId.CanonicalText);
+                Assert.Null(await final.Accounts.ReadRetainedRecoveryPhraseAsync());
             }
         }
         finally { DeleteOwnFiles(root); }
