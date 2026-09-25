@@ -15,7 +15,7 @@ integration.
 
 - `src/Deep.Client.Maui.Core`: testable MVVM layer, route catalog, commands, attachment picker abstraction.
 - `src/Deep.Client.Maui`: MAUI app targeting Android, iOS, Windows, and Mac Catalyst.
-- `tests/Deep.Client.Maui.ViewModels.Tests`: onboarding, chat, groups, attachment/notification viewmodel tests.
+- `tests/Deep.Client.Maui.Clean.Tests`: current DID2 account and clean-break UI contracts.
 - `tests/Deep.Client.Maui.SmokeTests`: shell route smoke tests.
 - `tests/Deep.Client.Maui.DeviceTests`: Android/iOS target smoke tests for DID2 account creation and persistence plus device-bound app services.
 - `tests/Deep.Client.Maui.UiTests`: Windows UI automation smoke tests (Appium/WinAppDriver) that verify real rendered controls and onboarding->chats flow.
@@ -27,7 +27,7 @@ Validated in this workspace:
 ```powershell
 dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 -c Release -p:RuntimeIdentifierOverride=win-x64
 dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android
-dotnet test tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj
+dotnet test tests/Deep.Client.Maui.Clean.Tests/Deep.Client.Maui.Clean.Tests.csproj
 dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj
 
 # Optional Windows UI automation (requires WinAppDriver and published MAUI exe)
