@@ -297,63 +297,6 @@ provider retained in the app graph serves diagnostics and adjacent transport
 work only. It is not an MAU2 message transport and no Session/onion storage
 message transport is registered by the MAUI composition.
 
-### External persistent-outbox execution boundary
-
-The portable persistent outbox can be requested with
-`DEEP_PERSISTENT_TRANSPORT_OUTBOX=1`, but MAUI enables it only after a
-platform supervisor has passed both binary attestation and a live protocol
-probe. A failed or missing supervisor clears the effective outbox feature flag
-and continues with the existing message runtime; it does not pass a dormant
-executor to `ClientRuntime`.
-
-The current Windows boundary is a bounded, per-dispatch child-process
-supervisor in `Deep.Client.Maui.Outbox`. The worker executable must live at the
-fixed app-relative path
-`outbox-worker/Deep.Client.Maui.OutboxWorker.exe`, remain below a non-reparse
-trusted root that the client principal cannot add to, modify, or delete from.
-The parent directory and trusted root are held open with write/delete sharing
-denied from verification through Job termination, preventing root
-rename/recreate races even when the parent grants `FILE_DELETE_CHILD`.
-Production activation also rejects a principal that can add, delete, change
-ownership/DACLs, or write attributes in either directory. The executable must
-match `DEEP_OUTBOX_WORKER_SHA256`; every regular file under
-the bounded deployment root must also match the deterministic digest supplied
-in `DEEP_OUTBOX_WORKER_BUNDLE_SHA256`. All attested files remain open with
-write/delete sharing denied from verification through worker termination.
-The bundle digest is SHA-256 over the ASCII domain
-`Deep.ExternalTransportOutbox.Bundle.v1\0`, followed for each ordinally sorted
-root-relative `/` path by its big-endian UTF-8 path length, big-endian file
-length, UTF-8 path bytes, and file bytes.
-Each invocation inherits only its three private standard handles, uses a fresh
-256-bit session key and nonce, HMAC-SHA-256 request/response binding, and
-fixed-width/length-prefixed binary request and response payloads. A maximum
-1 MiB ciphertext therefore produces a mathematically bounded 1,048,759-byte
-authenticated request frame without base64 expansion. The process is created
-suspended, assigned to a preconfigured
-kill-on-close Windows Job Object, and only then resumed; worker or descendant
-code cannot execute before Job membership. Timeout, cancellation, crash,
-malformed receipt, failed receipt, executor disposal, or hash drift returns no
-trusted receipt. Termination uses a bounded native Job accounting check; if an
-empty Job cannot be proven, the executor permanently poisons its admission
-capacity instead of releasing it. Worker
-stderr is drained without retention. No worker is resident while the app is
-idle.
-
-This is a platform execution boundary, not production outbox activation.
-There is currently no production worker binary, packaged worker hash, or
-versioned adapter definition for interpreting the opaque ciphertext bundle and
-dispatching it through the routed transport. Consequently both checked-in
-Debug and Release configurations leave the feature disabled.
-
-Android is explicitly fail-closed. A `Task`, thread, `JobService`, or foreground
-service in the MAUI process is not an independently killable boundary and is
-not registered as an executor. Android activation requires a separately
-declared process, authenticated length-bounded Binder IPC, package/signature
-binding, bounded admission, Binder-death confirmation after forced termination,
-and physical-device hostile-worker/battery evidence. Until that exists, an
-Android request resolves to `UnsupportedPlatform` and the normal runtime
-continues with persistent transport outbox disabled.
-
 ## Development transport diagnostics
 
 The optional Reality/VLESS runtime is currently adjacent transport diagnostics only. It

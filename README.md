@@ -68,15 +68,9 @@ Runtime transport behavior:
 - `XNODE_URLS` and the Reality runtime support node diagnostics and adjacent
   transport work only; they are not the mailbox message path.
 
-Persistent transport outbox is fail-closed. `DEEP_PERSISTENT_TRANSPORT_OUTBOX=1`
-is accepted only when the fixed Windows worker
-`outbox-worker/Deep.Client.Maui.OutboxWorker.exe` matches the exact
-`DEEP_OUTBOX_WORKER_SHA256` value, the complete worker directory matches
-`DEEP_OUTBOX_WORKER_BUNDLE_SHA256`, the deployment root is not writable by the
-client principal, and the worker completes an authenticated live probe.
-Otherwise the effective feature remains disabled and normal message transport
-continues. No production worker is packaged yet, and Android intentionally has
-no executor registration; see `docs/ARCHITECTURE.md`.
+The retired external outbox-worker prototype is not part of the DID2 release.
+Durable direct-message outbox and authenticated ACK remain release gates in the
+account-owned protocol store, with no legacy worker fallback.
 
 Legacy pre-cutover call signaling endpoint (UAT evidence only; deleted by the
 clean-break release and never a target fallback):
