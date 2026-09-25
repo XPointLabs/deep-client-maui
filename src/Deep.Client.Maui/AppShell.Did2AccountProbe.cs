@@ -312,6 +312,13 @@ public sealed class AppShell : ContentPage
         };
         var contactStatus = Status("Did2Probe.ContactStatus");
         contactStatus.Text = "Контактный proof ещё не проверен.";
+        void ContactInputChanged(object? _, TextChangedEventArgs __)
+        {
+            account.InvalidateContactProof();
+            contactStatus.Text = "Данные контакта изменены; требуется новая проверка proof.";
+        }
+        contactDescriptor.TextChanged += ContactInputChanged;
+        exactContactDid2.TextChanged += ContactInputChanged;
 #if DEEP_DID2_PEER_FIXTURE
         var loadPeerFixture = DeepTheme.SecondaryButton(
             "Загрузить публичный тестовый контакт", "Did2Probe.LoadPeerFixture");
@@ -349,6 +356,8 @@ public sealed class AppShell : ContentPage
         {
             verifyNetwork.IsEnabled = false;
             networkStatus.Text = "Проверяем подписанный каталог и регистрацию…";
+            account.InvalidateContactProof();
+            contactStatus.Text = "После проверки сети требуется новая проверка контакта.";
             try
             {
                 await account.VerifyNetworkAsync();

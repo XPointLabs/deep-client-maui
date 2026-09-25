@@ -51,6 +51,19 @@ public sealed class DeepIdV2AccountViewModelTests
             await view.VerifyContactProofAsync("descriptor", "credential");
             Assert.True(view.IsContactProofVerified);
             Assert.Equal(2, discovery.Calls);
+            view.InvalidateContactProof();
+            Assert.False(view.IsContactProofVerified);
+            discovery.Entered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            discovery.PendingResult = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var inFlight = view.VerifyContactProofAsync("descriptor", "credential");
+            await discovery.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            view.InvalidateContactProof();
+            discovery.PendingResult.SetResult();
+            await inFlight;
+            Assert.False(view.IsContactProofVerified);
+            Assert.Contains("changed during", view.ErrorMessage);
             await view.RefreshAsync();
             Assert.False(view.IsNetworkVerified);
             Assert.False(view.IsContactProofVerified);
@@ -180,6 +193,8 @@ public sealed class DeepIdV2AccountViewModelTests
     {
         internal bool FailNext { get; set; }
         internal int Calls { get; private set; }
+        internal TaskCompletionSource? Entered { get; set; }
+        internal TaskCompletionSource? PendingResult { get; set; }
 
         public Task VerifyAsync(DeepIdV2AccountService accounts,
             string compactDescriptor, string exactDid2Hex,
@@ -190,12 +205,13 @@ public sealed class DeepIdV2AccountViewModelTests
             Assert.Equal("descriptor", compactDescriptor);
             Assert.Equal("credential", exactDid2Hex);
             Calls++;
+            Entered?.TrySetResult();
             if (FailNext)
             {
                 FailNext = false;
                 throw new IOException("Diagnostic peer proof unavailable.");
             }
-            return Task.CompletedTask;
+            return PendingResult?.Task ?? Task.CompletedTask;
         }
     }
 }

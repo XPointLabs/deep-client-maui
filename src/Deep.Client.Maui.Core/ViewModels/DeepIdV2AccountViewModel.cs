@@ -20,6 +20,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
     private bool hasRetainedRecoveryPhrase;
     private bool isNetworkVerified;
     private bool isContactProofVerified;
+    private int contactInputRevision;
 
     public DeepIdV2AccountViewModel(IDeepIdV2AccountRuntimeAccessor runtime,
         IDeepIdV2NetworkAdmission? networkAdmission = null,
@@ -122,7 +123,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         {
             HideRecoveryPhrase();
             IsNetworkVerified = false;
-            IsContactProofVerified = false;
+            InvalidateContactProof();
             var accounts = await runtime.GetAccountsAsync(ct);
             Account = await accounts.GetCurrentAsync(ct);
             DisplayName = Account?.DisplayName ?? string.Empty;
@@ -136,7 +137,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         {
             HideRecoveryPhrase();
             IsNetworkVerified = false;
-            IsContactProofVerified = false;
+            InvalidateContactProof();
             var accounts = await runtime.GetAccountsAsync(ct);
             Account = await accounts.CreateAsync(DisplayName, ct);
             DisplayName = Account.DisplayName;
@@ -147,7 +148,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         RunBusyAsync(async ct =>
         {
             IsNetworkVerified = false;
-            IsContactProofVerified = false;
+            InvalidateContactProof();
             if (networkAdmission is null || Account is null)
                 throw new InvalidOperationException(
                     "DID2 network admission is unavailable for this account.");
@@ -162,6 +163,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         RunBusyAsync(async ct =>
         {
             IsContactProofVerified = false;
+            var inputRevision = Volatile.Read(ref contactInputRevision);
             if (contactDiscovery is null || Account is null ||
                 !IsNetworkVerified)
                 throw new InvalidOperationException(
@@ -169,8 +171,17 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
             var accounts = await runtime.GetAccountsAsync(ct);
             await contactDiscovery.VerifyAsync(accounts, compactDescriptor,
                 exactDid2Hex, ct);
+            if (inputRevision != Volatile.Read(ref contactInputRevision))
+                throw new InvalidOperationException(
+                    "Contact input changed during DID2 proof verification.");
             IsContactProofVerified = true;
         }, cancellationToken);
+
+    public void InvalidateContactProof()
+    {
+        Interlocked.Increment(ref contactInputRevision);
+        IsContactProofVerified = false;
+    }
 
     public Task RevealRecoveryPhraseAsync(
         CancellationToken cancellationToken = default) =>
