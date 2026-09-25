@@ -18,7 +18,7 @@ integration.
 - `tests/Deep.Client.Maui.Clean.Tests`: current DID2 account and clean-break UI contracts.
 - `tests/Deep.Client.Maui.SmokeTests`: shell route smoke tests.
 - `tests/Deep.Client.Maui.DeviceTests`: Android/iOS target smoke tests for DID2 account creation and persistence plus device-bound app services.
-- `tests/Deep.Client.Maui.UiTests`: Windows UI automation smoke tests (Appium/WinAppDriver) that verify real rendered controls and onboarding->chats flow.
+- `tests/Deep.Client.Maui.UiTests`: retired SessionId-era physical harness, outside the clean solution; it cannot approve a DID2 release.
 
 ## Local Verification
 
@@ -29,14 +29,10 @@ dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0
 dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-android
 dotnet test tests/Deep.Client.Maui.Clean.Tests/Deep.Client.Maui.Clean.Tests.csproj
 dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj
-
-# Optional Windows UI automation (requires WinAppDriver and published MAUI exe)
-$env:DEEP_UI_TESTS = "1"
-$env:DEEP_MAUI_EXE = "C:\\Work\\Deep\\deep-client-maui\\src\\Deep.Client.Maui\\bin\\ARM64\\Release\\net10.0-windows10.0.19041.0\\win-arm64\\publish\\Deep.Client.Maui.exe"
-# Optional: defaults to http://127.0.0.1:4723
-# $env:WINAPPDRIVER_URL = "http://127.0.0.1:4723"
-dotnet test tests/Deep.Client.Maui.UiTests/Deep.Client.Maui.UiTests.csproj
 ```
+
+The retired SessionId UI automation must not be run as release evidence.
+A DID2 Android↔Windows physical messaging lane remains a release gate.
 
 Implemented E2 platform contour coverage:
 
