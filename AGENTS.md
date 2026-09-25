@@ -25,7 +25,7 @@ Portable message, attachment, call, persistence and transport semantics belong i
 ## Verify
 
 ```powershell
-dotnet test tests/Deep.Client.Maui.ViewModels.Tests/Deep.Client.Maui.ViewModels.Tests.csproj
+dotnet test tests/Deep.Client.Maui.Clean.Tests/Deep.Client.Maui.Clean.Tests.csproj
 dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj
 dotnet test tests/Deep.Client.Maui.UiTests/Deep.Client.Maui.UiTests.csproj
 dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0

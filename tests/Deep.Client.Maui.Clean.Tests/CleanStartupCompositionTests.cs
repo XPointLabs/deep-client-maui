@@ -75,6 +75,22 @@ public sealed class CleanStartupCompositionTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AndroidClearsNativeInputFocusBeforeMauiActivityPause()
+    {
+        var activity = ReadSource(Path.Combine("Platforms", "Android", "MainActivity.cs"));
+        var pauseStart = activity.IndexOf("protected override void OnPause()",
+            StringComparison.Ordinal);
+        var pauseEnd = activity.IndexOf("private void ApplyPrivacyScreenSetting()",
+            pauseStart, StringComparison.Ordinal);
+        Assert.True(pauseStart >= 0 && pauseEnd > pauseStart);
+        var pause = activity[pauseStart..pauseEnd];
+        var clearFocus = pause.IndexOf("CurrentFocus?.ClearFocus();",
+            StringComparison.Ordinal);
+        var basePause = pause.IndexOf("base.OnPause();", StringComparison.Ordinal);
+        Assert.True(clearFocus >= 0 && basePause > clearFocus);
+    }
+
     private static string ReadSource(string name)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

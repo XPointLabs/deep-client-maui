@@ -55,9 +55,9 @@ global counters. The bounded install script now hashes only stable exact-package
 fields; the successful update matched those fields before and after.
 
 Focused clean DID2 tests passed (3/3). The legacy
-`Deep.Client.Maui.ViewModels.Tests` project currently does not compile because
-it references removed V1 `Deep.Client.Shared.State` types; it is not a passing
-release gate. Contacts, messages, attachments, groups, Windows physical UI,
+`Deep.Client.Maui.ViewModels.Tests` project did not compile because it
+referenced removed V1 `Deep.Client.Shared.State` types; it has since been
+removed from the release checkout. Contacts, messages, attachments, groups, Windows physical UI,
 production authority and production transport remain unverified by this
 account-only test.
 
