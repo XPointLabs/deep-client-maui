@@ -60,8 +60,14 @@ internal sealed class DeepIdV2AccountRuntimeOwner : IAsyncDisposable
             var accounts = new DeepIdV2AccountService(storage,
                 Path.Combine(root, "deep-store-v2"), networkId.Span,
                 deploymentProfileId, clock, verifierFactory);
-            _ = await accounts.GetCurrentAsync(cancellationToken)
+            var current = await accounts.GetCurrentAsync(cancellationToken)
                 .ConfigureAwait(false);
+            if (current is not null)
+            {
+                using var deviceState = await accounts
+                    .OpenCurrentDeviceStateStoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
             return new DeepIdV2AccountRuntimeOwner(storage, accounts);
         }
         catch
