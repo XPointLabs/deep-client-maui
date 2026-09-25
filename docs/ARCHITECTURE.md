@@ -67,7 +67,7 @@ mobile/Windows visual language without compiling the retired XAML, code-behind,
 or SessionId ViewModels. Existing probe automation IDs remain stable. The
 recovery phrase is hidden on page disappearance, can be copied only while
 revealed, and still requires confirmation before device-local deletion. The
-probe presents no actionable chat, contact, attachment, or group controls.
+The base probe presents no actionable chat, contact, attachment, or group controls.
 Release or a non-local build rejects this switch. Probe results may establish
 the local Windows/Android account gate, not production provider approval or
 messaging E2E evidence. The probe stages the exact-hash Android ML-DSA
@@ -81,9 +81,13 @@ XNA1/DTS1 authority lineage and empty V2 head before opening the account-owned
 SQLCipher LKG. Its explicit settings action then performs real DGA1 admission,
 independent nonce-bound ADP1/DTT1 verification, and durable LKG commit through
 the bounded owned transport. Failed network verification leaves the local
-account intact and offers retry. This diagnostic does not compose contact,
-message, attachment or group services; a local HTTP hop over an authenticated
-SSH tunnel is not the release HTTPS transport or device messaging E2E gate.
+account intact and offers retry. The optional DID2 peer-lookup control repeats
+the local admission proof before every peer proof: an earlier successful UI
+state is never treated as an unexpired authority. A failed local recheck blocks
+the peer request and clears its verified UI state. This diagnostic does not
+accept a relationship or compose message, attachment or group services; a
+local HTTP hop over an authenticated SSH tunnel is not the release HTTPS
+transport or device messaging E2E gate.
 The MAUI account and transport runtimes are process-scoped DI singletons.
 Android may destroy a Window and create another without ending that process,
 so Window destruction must not dispose those runtimes or turn a valid account

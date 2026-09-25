@@ -51,8 +51,17 @@ public sealed class DeepIdV2AccountViewModelTests
             await view.VerifyContactProofAsync("descriptor", "credential");
             Assert.True(view.IsContactProofVerified);
             Assert.Equal(2, discovery.Calls);
+            Assert.Equal(4, admission.Calls);
             view.InvalidateContactProof();
             Assert.False(view.IsContactProofVerified);
+            admission.FailNext = true;
+            await view.VerifyContactProofAsync("descriptor", "credential");
+            Assert.False(view.IsNetworkVerified);
+            Assert.False(view.IsContactProofVerified);
+            Assert.Equal(2, discovery.Calls);
+            Assert.NotNull(view.ErrorMessage);
+            await view.VerifyNetworkAsync();
+            Assert.True(view.IsNetworkVerified);
             discovery.Entered = new TaskCompletionSource(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             discovery.PendingResult = new TaskCompletionSource(

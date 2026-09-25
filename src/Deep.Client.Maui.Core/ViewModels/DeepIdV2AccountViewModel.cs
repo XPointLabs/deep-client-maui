@@ -98,7 +98,8 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
     }
 
     public bool HasNetworkAdmission => networkAdmission is not null;
-    public bool HasContactDiscovery => contactDiscovery is not null;
+    public bool HasContactDiscovery =>
+        contactDiscovery is not null && networkAdmission is not null;
 
     public bool IsNetworkVerified
     {
@@ -164,11 +165,19 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         {
             IsContactProofVerified = false;
             var inputRevision = Volatile.Read(ref contactInputRevision);
-            if (contactDiscovery is null || Account is null ||
-                !IsNetworkVerified)
+            if (contactDiscovery is null || networkAdmission is null ||
+                Account is null || !IsNetworkVerified)
                 throw new InvalidOperationException(
                     "DID2 contact proof requires a verified local network account.");
             var accounts = await runtime.GetAccountsAsync(ct);
+            // A previous UI success is not a freshness capability. Recheck
+            // the local DID2 admission before each independent peer lookup.
+            IsNetworkVerified = false;
+            await networkAdmission.VerifyAsync(accounts, ct);
+            if (inputRevision != Volatile.Read(ref contactInputRevision))
+                throw new InvalidOperationException(
+                    "Contact input changed during DID2 proof verification.");
+            IsNetworkVerified = true;
             await contactDiscovery.VerifyAsync(accounts, compactDescriptor,
                 exactDid2Hex, ct);
             if (inputRevision != Volatile.Read(ref contactInputRevision))
