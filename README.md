@@ -17,7 +17,7 @@ integration.
 - `src/Deep.Client.Maui`: MAUI app targeting Android, iOS, Windows, and Mac Catalyst.
 - `tests/Deep.Client.Maui.ViewModels.Tests`: onboarding, chat, groups, attachment/notification viewmodel tests.
 - `tests/Deep.Client.Maui.SmokeTests`: shell route smoke tests.
-- `tests/Deep.Client.Maui.DeviceTests`: Android/iOS target smoke tests for device-bound app services.
+- `tests/Deep.Client.Maui.DeviceTests`: Android/iOS target smoke tests for DID2 account creation and persistence plus device-bound app services.
 - `tests/Deep.Client.Maui.UiTests`: Windows UI automation smoke tests (Appium/WinAppDriver) that verify real rendered controls and onboarding->chats flow.
 
 ## Local Verification
