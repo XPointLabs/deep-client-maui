@@ -13,17 +13,21 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
 {
     private readonly IDeepIdV2AccountRuntimeAccessor runtime;
     private readonly IDeepIdV2NetworkAdmission? networkAdmission;
+    private readonly IDeepIdV2ContactDiscovery? contactDiscovery;
     private string displayName = string.Empty;
     private DeepIdV2AccountSnapshot? account;
     private string revealedRecoveryPhrase = string.Empty;
     private bool hasRetainedRecoveryPhrase;
     private bool isNetworkVerified;
+    private bool isContactProofVerified;
 
     public DeepIdV2AccountViewModel(IDeepIdV2AccountRuntimeAccessor runtime,
-        IDeepIdV2NetworkAdmission? networkAdmission = null)
+        IDeepIdV2NetworkAdmission? networkAdmission = null,
+        IDeepIdV2ContactDiscovery? contactDiscovery = null)
     {
         this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         this.networkAdmission = networkAdmission;
+        this.contactDiscovery = contactDiscovery;
         CreateAccountCommand = new AsyncCommand(CreateAccountAsync,
             () => Account is null && !string.IsNullOrWhiteSpace(DisplayName));
         RevealRecoveryPhraseCommand = new AsyncCommand(RevealRecoveryPhraseAsync,
@@ -93,11 +97,18 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
     }
 
     public bool HasNetworkAdmission => networkAdmission is not null;
+    public bool HasContactDiscovery => contactDiscovery is not null;
 
     public bool IsNetworkVerified
     {
         get => isNetworkVerified;
         private set => SetProperty(ref isNetworkVerified, value);
+    }
+
+    public bool IsContactProofVerified
+    {
+        get => isContactProofVerified;
+        private set => SetProperty(ref isContactProofVerified, value);
     }
 
     public AsyncCommand CreateAccountCommand { get; }
@@ -111,6 +122,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         {
             HideRecoveryPhrase();
             IsNetworkVerified = false;
+            IsContactProofVerified = false;
             var accounts = await runtime.GetAccountsAsync(ct);
             Account = await accounts.GetCurrentAsync(ct);
             DisplayName = Account?.DisplayName ?? string.Empty;
@@ -124,6 +136,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         {
             HideRecoveryPhrase();
             IsNetworkVerified = false;
+            IsContactProofVerified = false;
             var accounts = await runtime.GetAccountsAsync(ct);
             Account = await accounts.CreateAsync(DisplayName, ct);
             DisplayName = Account.DisplayName;
@@ -134,12 +147,29 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         RunBusyAsync(async ct =>
         {
             IsNetworkVerified = false;
+            IsContactProofVerified = false;
             if (networkAdmission is null || Account is null)
                 throw new InvalidOperationException(
                     "DID2 network admission is unavailable for this account.");
             var accounts = await runtime.GetAccountsAsync(ct);
             await networkAdmission.VerifyAsync(accounts, ct);
             IsNetworkVerified = true;
+        }, cancellationToken);
+
+    public Task VerifyContactProofAsync(string compactDescriptor,
+        string exactDid2Hex,
+        CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            IsContactProofVerified = false;
+            if (contactDiscovery is null || Account is null ||
+                !IsNetworkVerified)
+                throw new InvalidOperationException(
+                    "DID2 contact proof requires a verified local network account.");
+            var accounts = await runtime.GetAccountsAsync(ct);
+            await contactDiscovery.VerifyAsync(accounts, compactDescriptor,
+                exactDid2Hex, ct);
+            IsContactProofVerified = true;
         }, cancellationToken);
 
     public Task RevealRecoveryPhraseAsync(

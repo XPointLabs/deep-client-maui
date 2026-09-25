@@ -108,6 +108,20 @@
     <MauiAsset Include="$(DeepDid2BootstrapDirectory)\did2-genesis-adh1.bin" LogicalName="did2_adh1.bin" />
   </ItemGroup>
 
+  <PropertyGroup Condition="'$(DeepDid2PeerContactFile)' != '' And '$(DeepDid2CanaryAdmission)' == 'true' And '$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">
+    <DefineConstants>$(DefineConstants);DEEP_DID2_PEER_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(DeepDid2PeerContactFile)' != '' And '$(DeepDid2CanaryAdmission)' == 'true' And '$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">
+    <MauiAsset Include="$(DeepDid2PeerContactFile)" LogicalName="did2_peer_contact.txt" />
+  </ItemGroup>
+  <Target Name="RejectUnsafeDid2PeerContactFile" BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepDid2PeerContactFile)' != ''">
+    <Error Condition="'$(DeepDid2CanaryAdmission)' != 'true' Or '$(DeepDid2AccountProbe)' != 'true' Or '$(DeepLocalDev)' != 'true' Or '$(Configuration)' == 'Release'"
+           Text="The DID2 peer fixture is allowed only in a non-Release isolated canary probe." />
+    <Error Condition="!Exists('$(DeepDid2PeerContactFile)')"
+           Text="The DID2 peer fixture file is missing." />
+  </Target>
+
   <Target Name="RejectUnsafeDid2AccountProbe" BeforeTargets="PrepareForBuild"
           Condition="'$(DeepDid2AccountProbe)' == 'true' And ('$(DeepLocalDev)' != 'true' Or '$(Configuration)' == 'Release')">
     <Error Text="DID2 account probe requires a non-Release DeepLocalDev build." />

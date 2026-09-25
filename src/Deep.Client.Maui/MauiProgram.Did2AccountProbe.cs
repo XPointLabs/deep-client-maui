@@ -24,6 +24,9 @@ public static partial class MauiProgram
 #if DEEP_DID2_CANARY_ADMISSION
         builder.Services.AddSingleton<IDeepIdV2NetworkAdmission,
             DeepIdV2CanaryNetworkAdmission>();
+        builder.Services.AddSingleton<IDeepIdV2ContactDiscovery>(services =>
+            (DeepIdV2CanaryNetworkAdmission)services.GetRequiredService<
+                IDeepIdV2NetworkAdmission>());
 #endif
         builder.Services.AddSingleton<DeepIdV2AccountViewModel>();
         builder.Services.AddSingleton<AppShell>();

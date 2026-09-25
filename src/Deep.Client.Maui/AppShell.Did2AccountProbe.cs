@@ -296,6 +296,53 @@ public sealed class AppShell : ContentPage
         };
         var networkStatus = Status("Did2Probe.NetworkStatus");
         networkStatus.Text = "Сетевая DID2-регистрация ещё не проверена на этом устройстве.";
+        var contactDescriptor = new Entry
+        {
+            Placeholder = "Короткий Deep ID другого аккаунта",
+            AutomationId = "Did2Probe.ContactDescriptor"
+        };
+        var exactContactDid2 = new Editor
+        {
+            Placeholder = "Точный публичный DID2 credential (hex)",
+            AutomationId = "Did2Probe.ContactCredential",
+            AutoSize = EditorAutoSizeOption.Disabled,
+            HeightRequest = 120,
+            IsSpellCheckEnabled = false,
+            IsTextPredictionEnabled = false
+        };
+        var contactStatus = Status("Did2Probe.ContactStatus");
+        contactStatus.Text = "Контактный proof ещё не проверен.";
+#if DEEP_DID2_PEER_FIXTURE
+        var loadPeerFixture = DeepTheme.SecondaryButton(
+            "Загрузить публичный тестовый контакт", "Did2Probe.LoadPeerFixture");
+        loadPeerFixture.Clicked += async (_, _) =>
+        {
+            try
+            {
+                await using var fixture = await FileSystem.Current
+                    .OpenAppPackageFileAsync("did2_peer_contact.txt");
+                using var reader = new StreamReader(fixture);
+                var descriptor = await reader.ReadLineAsync();
+                var credential = await reader.ReadLineAsync();
+                if (descriptor is null || credential is null ||
+                    descriptor.Length is < 1 or > 256 ||
+                    credential.Length != 4104 ||
+                    await reader.ReadLineAsync() is not null)
+                    throw new InvalidDataException(
+                        "The public DID2 peer fixture is malformed.");
+                contactDescriptor.Text = descriptor;
+                exactContactDid2.Text = credential;
+                contactStatus.Text = "Публичный тестовый контакт загружен; proof ещё не проверен.";
+            }
+            catch (Exception exception)
+            {
+                contactStatus.Text = $"Тестовый контакт отклонён: {exception.Message}";
+            }
+        };
+#endif
+        var verifyContact = DeepTheme.SecondaryButton(
+            "Проверить DID2 контакта", "Did2Probe.VerifyContact");
+        verifyContact.IsEnabled = false;
         var verifyNetwork = DeepTheme.SecondaryButton(
             "Проверить регистрацию DID2", "Did2Probe.VerifyNetwork");
         verifyNetwork.Clicked += async (_, _) =>
@@ -309,6 +356,7 @@ public sealed class AppShell : ContentPage
                                      account.IsNetworkVerified
                     ? "DID2-аккаунт зарегистрирован; текущий подписанный proof проверен и защищённое состояние сохранено."
                     : $"Не удалось проверить регистрацию: {account.ErrorMessage ?? "неизвестная ошибка"}. Локальный аккаунт сохранён.";
+                verifyContact.IsEnabled = account.IsNetworkVerified;
             }
             finally
             {
@@ -337,6 +385,52 @@ public sealed class AppShell : ContentPage
             }
         });
         network.IsVisible = account.HasNetworkAdmission;
+        verifyContact.Clicked += async (_, _) =>
+        {
+            verifyContact.IsEnabled = false;
+            contactStatus.Text = "Проверяем текущий подписанный DID2 proof контакта…";
+            try
+            {
+                await account.VerifyContactProofAsync(
+                    contactDescriptor.Text ?? string.Empty,
+                    exactContactDid2.Text ?? string.Empty);
+                contactStatus.Text = account.ErrorMessage is null &&
+                                     account.IsContactProofVerified
+                    ? "Точный DID2 контакта подтверждён текущим подписанным каталогом. Контакт ещё не добавлен и сообщения недоступны."
+                    : $"Контактный proof отклонён: {account.ErrorMessage ?? "неизвестная ошибка"}.";
+            }
+            finally
+            {
+                verifyContact.IsEnabled = account.IsNetworkVerified;
+            }
+        };
+        var contact = Card(new VerticalStackLayout
+        {
+            Spacing = 11,
+            Children =
+            {
+                new Label
+                {
+                    Text = "Диагностика DID2 контакта",
+                    FontSize = 16,
+                    FontAttributes = FontAttributes.Bold
+                },
+                new Label
+                {
+                    Text = "Проверяет только привязку адреса и публичного credential к подписанному каталогу. Не принимает контакт и не открывает чат.",
+                    TextColor = DeepTheme.Secondary,
+                    FontSize = 13
+                },
+                contactDescriptor,
+                exactContactDid2,
+#if DEEP_DID2_PEER_FIXTURE
+                loadPeerFixture,
+#endif
+                verifyContact,
+                contactStatus
+            }
+        });
+        contact.IsVisible = account.HasContactDiscovery;
         var unavailable = new VerticalStackLayout
         {
             Spacing = 6,
@@ -353,7 +447,7 @@ public sealed class AppShell : ContentPage
             }
         };
         return Surface("Page.Settings", "ПРОФИЛЬ", "Настройки аккаунта",
-            profile, Card(identity), Card(recovery), network,
+            profile, Card(identity), Card(recovery), network, contact,
             Card(unavailable));
     }
 

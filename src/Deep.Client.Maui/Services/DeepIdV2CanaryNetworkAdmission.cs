@@ -7,6 +7,7 @@ using Deep.Client.Shared.Services;
 using Deep.Protocol.AccountDirectoryV1;
 using Deep.Protocol.ApplicationCore;
 using Deep.Protocol.DeepExtension.PrivacyRouting;
+using Deep.Protocol.Identity;
 using Deep.Protocol.XPointNetworkV1;
 using Microsoft.Maui.Storage;
 
@@ -18,7 +19,7 @@ namespace Deep.Client.Maui.Services;
 /// remain authoritative. This is not a release transport composition.
 /// </summary>
 internal sealed class DeepIdV2CanaryNetworkAdmission :
-    IDeepIdV2NetworkAdmission
+    IDeepIdV2NetworkAdmission, IDeepIdV2ContactDiscovery
 {
     private const string OriginKey = "DeepDid2CanaryOrigin";
     private const string XnaPinKey = "DeepDid2CanaryXna1Pin";
@@ -28,30 +29,9 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(accounts);
-        var origin = Metadata(OriginKey);
-        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) ||
-            uri.Scheme != Uri.UriSchemeHttp || uri.Host != "127.0.0.1" ||
-            uri.Port is < 1 or > 65535 || uri.AbsolutePath != "/" ||
-            uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
-            uri.UserInfo.Length != 0)
-            throw new InvalidOperationException(
-                "The DID2 canary must use an explicit loopback tunnel origin.");
-
-        var network = ActiveBuildNetworkId.Load();
-        var xnaPin = Pin(XnaPinKey);
-        var headPin = Pin(HeadPinKey);
-        var exactXna = await ReadAssetAsync("did2_xna1.bin", 65_535,
+        var origin = ValidatedOrigin();
+        var (authority, exactHead, headPin) = await ReadBootstrapAsync(
             cancellationToken);
-        var exactDts = await ReadAssetAsync("did2_dts1.bin", 65_535,
-            cancellationToken);
-        var exactHead = await ReadAssetAsync("did2_adh1.bin", 4096,
-            cancellationToken);
-        var authority = XPointNetworkAuthorityVerifier.Verify(
-            new XPointNetworkGenesisPin(network.Span, xnaPin),
-            [(ReadOnlyMemory<byte>)exactXna],
-            [(ReadOnlyMemory<byte>)exactDts]);
-        _ = DeepIdV2DirectoryBootstrapVerifier.RestoreGenesis(authority,
-            exactHead, headPin);
         var protectedFloor = await accounts.OpenDirectoryLkgStoreAsync(
             authority, exactHead, headPin, cancellationToken);
 
@@ -69,6 +49,75 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
             verified.NextProtectedLkg.TreeSize == 0)
             throw new CryptographicException(
                 "The DID2 canary did not prove the current account genesis.");
+    }
+
+    public async Task VerifyAsync(DeepIdV2AccountService accounts,
+        string compactDescriptor, string exactDid2Hex,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(accounts);
+        ArgumentException.ThrowIfNullOrWhiteSpace(compactDescriptor);
+        ArgumentException.ThrowIfNullOrWhiteSpace(exactDid2Hex);
+        var descriptor = DeepPermanentIdV2.ParseCanonical(
+            compactDescriptor.Trim());
+        var hex = exactDid2Hex.Trim();
+        if (hex.Length != 2 * DeepIdV2Codec.Did2Length)
+            throw new FormatException(
+                "The exact DID2 contact credential has the wrong length.");
+        var exactDid2 = DeepIdV2Codec.DecodeDid2(Convert.FromHexString(hex));
+        if (!descriptor.MatchesExactCredential(exactDid2))
+            throw new CryptographicException(
+                "The contact descriptor does not bind the exact DID2 credential.");
+
+        var origin = ValidatedOrigin();
+        var (authority, exactHead, headPin) = await ReadBootstrapAsync(
+            cancellationToken);
+        var protectedFloor = await accounts.OpenDirectoryLkgStoreAsync(
+            authority, exactHead, headPin, cancellationToken);
+        var factory = new HttpServiceTransportFactory(
+            HttpServiceEndpointPolicy.Production);
+        using var verifier = DeepMlDsa65CandidateVerifierFactory
+            .OpenForCurrentProcess();
+        using var proof = factory.CreateDeepIdV2DirectoryProofClient(origin,
+            new CanaryMonotonicClock(), verifier, protectedFloor);
+        _ = await proof.FetchByContactDescriptorAsync(descriptor,
+            exactDid2, authority, deploymentProfileId: 1,
+            supportedReader: 2, cancellationToken: cancellationToken);
+    }
+
+    private static string ValidatedOrigin()
+    {
+        var origin = Metadata(OriginKey);
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttp || uri.Host != "127.0.0.1" ||
+            uri.Port is < 1 or > 65535 || uri.AbsolutePath != "/" ||
+            uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
+            uri.UserInfo.Length != 0)
+            throw new InvalidOperationException(
+                "The DID2 canary must use an explicit loopback tunnel origin.");
+        return origin;
+    }
+
+    private static async Task<(VerifiedXPointNetworkAuthority Authority,
+        byte[] ExactHead, byte[] HeadPin)> ReadBootstrapAsync(
+        CancellationToken cancellationToken)
+    {
+        var network = ActiveBuildNetworkId.Load();
+        var xnaPin = Pin(XnaPinKey);
+        var headPin = Pin(HeadPinKey);
+        var exactXna = await ReadAssetAsync("did2_xna1.bin", 65_535,
+            cancellationToken);
+        var exactDts = await ReadAssetAsync("did2_dts1.bin", 65_535,
+            cancellationToken);
+        var exactHead = await ReadAssetAsync("did2_adh1.bin", 4096,
+            cancellationToken);
+        var authority = XPointNetworkAuthorityVerifier.Verify(
+            new XPointNetworkGenesisPin(network.Span, xnaPin),
+            [(ReadOnlyMemory<byte>)exactXna],
+            [(ReadOnlyMemory<byte>)exactDts]);
+        _ = DeepIdV2DirectoryBootstrapVerifier.RestoreGenesis(authority,
+            exactHead, headPin);
+        return (authority, exactHead, headPin);
     }
 
     private static string Metadata(string key)

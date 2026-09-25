@@ -19,7 +19,9 @@ public sealed class DeepIdV2AccountViewModelTests
         {
             await using var runtime = new TestRuntime(directory);
             var admission = new TestAdmission();
-            var view = new DeepIdV2AccountViewModel(runtime, admission)
+            var discovery = new TestContactDiscovery();
+            var view = new DeepIdV2AccountViewModel(runtime, admission,
+                discovery)
             {
                 DisplayName = "Alice"
             };
@@ -33,14 +35,25 @@ public sealed class DeepIdV2AccountViewModelTests
             Assert.False(view.IsNetworkVerified);
             Assert.NotNull(view.ErrorMessage);
             Assert.Equal(permanentId, view.Account.PermanentId);
+            await view.VerifyContactProofAsync("descriptor", "credential");
+            Assert.False(view.IsContactProofVerified);
+            Assert.Equal(0, discovery.Calls);
 
             await view.VerifyNetworkAsync();
             Assert.Null(view.ErrorMessage);
             Assert.True(view.IsNetworkVerified);
             Assert.Equal(2, admission.Calls);
             Assert.Equal(permanentId, view.Account.PermanentId);
+            discovery.FailNext = true;
+            await view.VerifyContactProofAsync("descriptor", "credential");
+            Assert.False(view.IsContactProofVerified);
+            Assert.NotNull(view.ErrorMessage);
+            await view.VerifyContactProofAsync("descriptor", "credential");
+            Assert.True(view.IsContactProofVerified);
+            Assert.Equal(2, discovery.Calls);
             await view.RefreshAsync();
             Assert.False(view.IsNetworkVerified);
+            Assert.False(view.IsContactProofVerified);
             Assert.Equal(permanentId, view.Account?.PermanentId);
         }
         finally
@@ -158,6 +171,29 @@ public sealed class DeepIdV2AccountViewModelTests
             {
                 FailNext = false;
                 throw new IOException("Diagnostic network unavailable.");
+            }
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestContactDiscovery : IDeepIdV2ContactDiscovery
+    {
+        internal bool FailNext { get; set; }
+        internal int Calls { get; private set; }
+
+        public Task VerifyAsync(DeepIdV2AccountService accounts,
+            string compactDescriptor, string exactDid2Hex,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ArgumentNullException.ThrowIfNull(accounts);
+            Assert.Equal("descriptor", compactDescriptor);
+            Assert.Equal("credential", exactDid2Hex);
+            Calls++;
+            if (FailNext)
+            {
+                FailNext = false;
+                throw new IOException("Diagnostic peer proof unavailable.");
             }
             return Task.CompletedTask;
         }
