@@ -1,5 +1,13 @@
 # DID2 Windows account probe — account surface observed
 
+## 2026-09-25 — current-source device-state and phrase-deletion check
+
+- The dedicated `win-arm64` Debug probe built from MAUI code commit `3802d50bd4fe8d9cf0082031ddb8a47445ebe127` with `DeepLocalDev=true` and `DeepDid2AccountProbe=true`: zero warnings and zero errors. The exact executable SHA-256 was `f25cd5a2b95710af9384187a7e587a5f071df6e7013cf573ac48777a14810702`.
+- The previously isolated probe account failed closed because its protected DID2 current-account index had an incompatible scope/version. After explicit operator approval, only this probe account was reset through its confirmation UI. The production and `.e2e` applications were not touched.
+- A new test account was created by entering a display name and pressing Create. The private probe root contained both `deep-store-v2-account.dsv2` and `deep-store-v2-account.dsv2.devices.dvs1`. After closing and relaunching the exact executable, the same 90-character DID2 was displayed (SHA-256 of its UI text `d0bb4b61e0b3f4540bd2ffc119be83ec5f186c36f8f3da79eab8b989ce2b0799`).
+- With separate operator approval, the retained local recovery phrase was deleted through the probe UI without revealing it. A further close/relaunch kept the same DID2 and showed the deleted status with Reveal and Delete disabled. No phrase was printed, copied or logged.
+- This closes only Windows local-account/device-state restart and phrase-deletion continuity. This account-only probe explicitly disables contacts, messaging, attachments and groups; no Windows↔Android device E2E is claimed.
+
 The isolated Windows Debug probe at `deep-client-maui` commit
 `2e1869ba40dfcde1806f858805f3e0d97633758e` built for
 `net10.0-windows10.0.19041.0/win-arm64` with `DeepLocalDev=true` and
