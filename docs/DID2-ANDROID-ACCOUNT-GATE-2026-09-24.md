@@ -1,5 +1,13 @@
 # DID2 Android physical account gate — 2026-09-24
 
+## 2026-09-25 — account-scoped device-state remount
+
+- The current dedicated Debug probe at MAUI commit `3802d50bd4fe8d9cf0082031ddb8a47445ebe127` built for Android with `DeepLocalDev=true` and `DeepDid2AccountProbe=true`: zero errors; one warning because the production Firebase configuration has no entry for the isolated probe application ID.
+- Exact signed APK SHA-256: `81acc42fceae937a6e451a7fe24d3e8c6073ea45186e7dec5f36c1fe3353dca8`; the dedicated UAT signer remained `9fc17b2ba9e799700fa60f198da0defab5806f51db763a7a1fc321dc2f5886b9`. The bounded install script passed preflight, updated and launched only `network.xpoint.deep.did2probe`, and found the production and `.e2e` package snapshots unchanged.
+- The prior isolated probe account failed closed with an incompatible protected current-account index. After explicit probe-only UI reset, a new local account was created by entering a test name and pressing Create. The app-private `deep-store-v2` directory contained both the DID2 SQLCipher account database and the separate encrypted device-state database. No recovery phrase was displayed.
+- A physical force-stop/relaunch retained the same 90-character DID2 (SHA-256 of its UI text `27b693080ef9b58816e4b08c1782046d298426c4b8850b375a33f6d2fd71adb1`) and returned to Settings without an account error. The temporary Android UI hierarchy dump was deleted after verification.
+- This closes only Android account/device-state restart continuity for this source/APK. The probe intentionally does not expose messaging, attachments, groups or production transport; none of those device E2E gates is claimed.
+
 This is an account-only UAT result, not a messaging, production-provider, or
 release E2E result. No GitHub Release was published.
 
