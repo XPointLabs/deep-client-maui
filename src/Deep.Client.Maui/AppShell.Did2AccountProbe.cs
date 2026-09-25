@@ -308,7 +308,7 @@ public sealed class AppShell : ContentPage
                 networkStatus.Text = account.ErrorMessage is null &&
                                      account.IsNetworkVerified
                     ? "DID2-аккаунт зарегистрирован; текущий подписанный proof проверен и защищённое состояние сохранено."
-                    : "Не удалось проверить регистрацию. Локальный аккаунт сохранён; повторите попытку позже.";
+                    : $"Не удалось проверить регистрацию: {account.ErrorMessage ?? "неизвестная ошибка"}. Локальный аккаунт сохранён.";
             }
             finally
             {
