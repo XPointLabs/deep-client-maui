@@ -156,7 +156,7 @@ if ($signer -notmatch 'Signer #1 certificate SHA-256 digest: ([0-9a-f]{64})' -or
     throw 'DID2 probe APK signer differs from the approved preflight input.'
 }
 $devices = Invoke-Bounded $adb @('devices') 'ADB device list'
-if ($devices -notmatch "(?m)^$([regex]::Escape($AndroidSerial))`tdevice$") {
+if ($devices -notmatch "(?m)^$([regex]::Escape($AndroidSerial))`tdevice\r?$") {
     throw 'The exact Android serial is not attached and authorized.'
 }
 
