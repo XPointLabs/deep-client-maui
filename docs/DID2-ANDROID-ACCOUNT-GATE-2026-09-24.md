@@ -1,5 +1,31 @@
 # DID2 Android physical account gate — 2026-09-24
 
+## 2026-09-28 — closed UAT admission/proof diagnostic
+
+- The first canary APK was built with the development network ID while its
+  signed Registry bootstrap belonged to the production network. The physical
+  app correctly rejected that mismatch before HTTP. The canary now has a
+  separate mandatory `DeepDid2CanaryNetworkId` build pin; it does not borrow
+  the mailbox physical-UAT trust floor or change the default client network.
+- The corrected Debug probe built with 0 warnings/errors from MAUI commit
+  `c5de7befcd798b8f69f0f5e46b6f3bbf7a3ff015`. Signed APK SHA-256:
+  `F34CF54F8CFD976AAFE098DDC41935153E294FE9B2CC8F962B10D421BEE02037`;
+  signer certificate SHA-256 remains
+  `9FC17B2BA9E799700FA60F198DA0DEFAB5806F51DB763A7A1FC321DC2F5886B9`.
+  The bounded install preflight/upgrade succeeded after fixing its CRLF ADB
+  serial matcher. Exact package snapshots confirmed that the production and
+  `.e2e` apps did not change.
+- The network-scoped probe rejected its former dev-network test account. Only
+  this isolated probe was reset through its confirmation UI; a new account was
+  created with a name and one tap, without exposing the recovery phrase.
+  The first live attempt committed the DID2 genesis to the Registry and
+  independent floor, but proof returned `proof-authority-unavailable` because
+  protected-time uncertainty exceeded the signed XNA1 maximum. After a
+  guarded time rotation, the retry reached proof authoring and failed closed
+  because the exact XNV1 had expired. Its XVP1/XND1 closure is likewise
+  expired. No physical current proof, contact, message, media or group E2E
+  is claimed. The local test account and the Registry/floor state were kept.
+
 ## 2026-09-25 — account-scoped device-state remount
 
 - The current dedicated Debug probe at MAUI commit `3802d50bd4fe8d9cf0082031ddb8a47445ebe127` built for Android with `DeepLocalDev=true` and `DeepDid2AccountProbe=true`: zero errors; one warning because the production Firebase configuration has no entry for the isolated probe application ID.
