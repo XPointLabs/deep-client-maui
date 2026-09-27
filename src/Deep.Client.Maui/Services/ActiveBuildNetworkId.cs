@@ -8,10 +8,13 @@ internal static class ActiveBuildNetworkId
     internal const string DevelopmentNetworkIdHex = "3e078ce750768322d79079ef97b85b56";
     internal const string ProductionKey = "DeepProductionNetworkId";
     internal const string PhysicalUatKey = "DeepPhysicalUatNetworkId";
+    internal const string Did2CanaryKey = "DeepDid2CanaryNetworkId";
 
     internal static ReadOnlyMemory<byte> Load()
     {
-#if DEBUG && DEEP_PHYSICAL_E2E
+#if DEBUG && DEEP_DID2_CANARY_ADMISSION
+        const string activeKey = Did2CanaryKey;
+#elif DEBUG && DEEP_PHYSICAL_E2E
         const string activeKey = PhysicalUatKey;
 #elif DEBUG
         const string activeKey = DevelopmentKey;
@@ -29,7 +32,7 @@ internal static class ActiveBuildNetworkId
         }
 
         var activeValue = matches[0].Value;
-#if DEBUG && !DEEP_PHYSICAL_E2E
+#if DEBUG && !DEEP_PHYSICAL_E2E && !DEEP_DID2_CANARY_ADMISSION
         if (!string.Equals(activeValue, DevelopmentNetworkIdHex, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
