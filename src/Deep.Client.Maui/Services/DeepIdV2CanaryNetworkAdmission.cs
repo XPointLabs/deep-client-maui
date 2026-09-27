@@ -1,4 +1,4 @@
-#if DEEP_DID2_CANARY_ADMISSION
+#if DEEP_DID2_CANARY_ADMISSION || DEEP_DID2_HTTPS_ADMISSION
 using System.Diagnostics;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -14,9 +14,9 @@ using Microsoft.Maui.Storage;
 namespace Deep.Client.Maui.Services;
 
 /// <summary>
-/// Debug-only, loopback-tunnel DID2 admission diagnostic. Its bootstrap inputs
-/// are public signed artifacts; the compiled pins and full protocol verifiers
-/// remain authoritative. This is not a release transport composition.
+/// DID2 physical diagnostic. The loopback probe and HTTPS UAT package use the
+/// same pinned public authority and proof verifier, but neither is a release
+/// transport composition.
 /// </summary>
 internal sealed class DeepIdV2CanaryNetworkAdmission :
     IDeepIdV2NetworkAdmission, IDeepIdV2ContactDiscovery
@@ -24,6 +24,9 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
     private const string OriginKey = "DeepDid2CanaryOrigin";
     private const string XnaPinKey = "DeepDid2CanaryXna1Pin";
     private const string HeadPinKey = "DeepDid2CanaryAdh1Pin";
+#if DEEP_DID2_HTTPS_ADMISSION
+    private const string HttpsOriginKey = "DeepDid2HttpsOrigin";
+#endif
 
     public async Task VerifyAsync(DeepIdV2AccountService accounts,
         CancellationToken cancellationToken = default)
@@ -87,6 +90,17 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
 
     private static string ValidatedOrigin()
     {
+#if DEEP_DID2_HTTPS_ADMISSION
+        var origin = Metadata(HttpsOriginKey);
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps || uri.IsLoopback ||
+            uri.IsDefaultPort is false || uri.AbsolutePath != "/" ||
+            uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
+            uri.UserInfo.Length != 0 || uri.HostNameType != UriHostNameType.Dns)
+            throw new InvalidOperationException(
+                "The DID2 physical UAT build requires a canonical HTTPS authority origin.");
+        return origin;
+#else
         var origin = Metadata(OriginKey);
         if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) ||
             uri.Scheme != Uri.UriSchemeHttp || uri.Host != "127.0.0.1" ||
@@ -96,6 +110,7 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
             throw new InvalidOperationException(
                 "The DID2 canary must use an explicit loopback tunnel origin.");
         return origin;
+#endif
     }
 
     private static async Task<(VerifiedXPointNetworkAuthority Authority,

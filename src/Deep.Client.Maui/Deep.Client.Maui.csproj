@@ -99,8 +99,13 @@
     <DefineConstants>$(DefineConstants);DEEP_DID2_CANARY_ADMISSION</DefineConstants>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(DeepDid2CanaryAdmission)' == 'true' And '$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">
+  <PropertyGroup Condition="'$(DeepDid2HttpsAdmission)' == 'true' And '$(DeepPhysicalE2E)' == 'true' And '$(DeepDid2AccountProbe)' != 'true' And '$(Configuration)' != 'Release'">
+    <DefineConstants>$(DefineConstants);DEEP_DID2_HTTPS_ADMISSION</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="('$(DeepDid2CanaryAdmission)' == 'true' Or '$(DeepDid2HttpsAdmission)' == 'true') And '$(Configuration)' != 'Release'">
     <AssemblyMetadata Include="DeepDid2CanaryOrigin" Value="$(DeepDid2CanaryOrigin)" />
+    <AssemblyMetadata Include="DeepDid2HttpsOrigin" Value="$(DeepDid2HttpsOrigin)" />
     <AssemblyMetadata Include="DeepDid2CanaryXna1Pin" Value="$(DeepDid2CanaryXna1Pin)" />
     <AssemblyMetadata Include="DeepDid2CanaryAdh1Pin" Value="$(DeepDid2CanaryAdh1Pin)" />
     <MauiAsset Include="$(DeepDid2BootstrapDirectory)\xna1.0000.bin" LogicalName="did2_xna1.bin" />
@@ -137,6 +142,18 @@
            Text="DID2 canary admission requires exact lowercase public bootstrap pins." />
     <Error Condition="'$(DeepDid2BootstrapDirectory)' == '' Or !Exists('$(DeepDid2BootstrapDirectory)\xna1.0000.bin') Or !Exists('$(DeepDid2BootstrapDirectory)\dts1.0000.bin') Or !Exists('$(DeepDid2BootstrapDirectory)\did2-genesis-adh1.bin')"
            Text="DID2 canary admission requires the three exact signed public bootstrap assets." />
+  </Target>
+
+  <Target Name="RejectUnsafeDid2HttpsAdmission" BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepDid2HttpsAdmission)' == 'true'">
+    <Error Condition="'$(DeepPhysicalE2E)' != 'true' Or '$(DeepDid2AccountProbe)' == 'true' Or '$(DeepDid2CanaryAdmission)' == 'true' Or '$(Configuration)' == 'Release'"
+           Text="DID2 HTTPS admission is available only in the non-Release physical E2E package, without the loopback probe." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2HttpsOrigin)', '^https://[a-z0-9.-]+/$'))"
+           Text="DID2 physical UAT admission requires a canonical DNS HTTPS origin." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2CanaryXna1Pin)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2CanaryAdh1Pin)', '^[0-9a-f]{64}$'))"
+           Text="DID2 physical UAT admission requires exact lowercase public bootstrap pins." />
+    <Error Condition="'$(DeepDid2BootstrapDirectory)' == '' Or !Exists('$(DeepDid2BootstrapDirectory)\xna1.0000.bin') Or !Exists('$(DeepDid2BootstrapDirectory)\dts1.0000.bin') Or !Exists('$(DeepDid2BootstrapDirectory)\did2-genesis-adh1.bin')"
+           Text="DID2 physical UAT admission requires the three exact signed public bootstrap assets." />
   </Target>
 
   <ItemGroup Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">

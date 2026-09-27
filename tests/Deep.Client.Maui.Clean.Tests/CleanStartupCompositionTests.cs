@@ -29,6 +29,30 @@ public sealed class CleanStartupCompositionTests
     }
 
     [Fact]
+    public void Did2HttpsDiagnosticRequiresPhysicalUatAndCannotEnterRelease()
+    {
+        var project = ReadSource("Deep.Client.Maui.csproj");
+        var startup = ReadSource("MauiProgram.Did2.cs");
+        var admission = ReadSource(Path.Combine("Services",
+            "DeepIdV2CanaryNetworkAdmission.cs"));
+
+        Assert.Contains("Target Name=\"RejectUnsafeDid2HttpsAdmission\"", project,
+            StringComparison.Ordinal);
+        Assert.Contains("'$(DeepPhysicalE2E)' != 'true'", project,
+            StringComparison.Ordinal);
+        Assert.Contains("'$(Configuration)' == 'Release'", project,
+            StringComparison.Ordinal);
+        Assert.Contains("'$(DeepDid2AccountProbe)' == 'true'", project,
+            StringComparison.Ordinal);
+        Assert.Contains("#if DEEP_DID2_CANARY_ADMISSION || DEEP_DID2_HTTPS_ADMISSION",
+            startup, StringComparison.Ordinal);
+        Assert.Contains("uri.Scheme != Uri.UriSchemeHttps || uri.IsLoopback",
+            admission, StringComparison.Ordinal);
+        Assert.Contains("DeepIdV2DirectoryBootstrapVerifier.RestoreGenesis",
+            admission, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WindowsUatPackageCanAdvanceRevisionWithoutChangingProductionVersion()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

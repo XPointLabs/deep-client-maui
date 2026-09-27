@@ -92,6 +92,14 @@ the peer request and clears its verified UI state. This diagnostic does not
 accept a relationship or compose message, attachment or group services; a
 local HTTP hop over an authenticated SSH tunnel is not the release HTTPS
 transport or device messaging E2E gate.
+For the normal non-Release physical `.e2e` package, an explicit
+`DeepDid2HttpsAdmission=true` build input instead connects the same
+signed-authority and nonce-bound proof verifier to a canonical DNS HTTPS
+origin. The exact XNA1/DTS1/genesis-head assets and two public hash pins are
+still mandatory build inputs. This switch is rejected for the isolated probe,
+loopback canary and Release; it does not authorize contact acceptance,
+prekey publication, messaging, files or groups. The default build still shows
+these capabilities as unavailable when the physical UAT inputs are absent.
 The MAUI account and transport runtimes are process-scoped DI singletons.
 Android may destroy a Window and create another without ending that process,
 so Window destruction must not dispose those runtimes or turn a valid account

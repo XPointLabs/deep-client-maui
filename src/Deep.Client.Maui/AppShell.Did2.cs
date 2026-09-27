@@ -384,7 +384,11 @@ public sealed class AppShell : ContentPage
                 },
                 new Label
                 {
+#if DEEP_DID2_HTTPS_ADMISSION
+                    Text = "Диагностическая проверка подписанного DID2-каталога через HTTPS. Она не включает сообщения и не является релизной сборкой.",
+#else
                     Text = "Изолированная диагностическая проверка через локальный туннель. Она не включает сообщения и не является релизной сборкой.",
+#endif
                     TextColor = DeepTheme.Secondary,
                     FontSize = 13
                 },
