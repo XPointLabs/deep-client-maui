@@ -53,6 +53,30 @@ public sealed class Did2ProbeVisualShellTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void CleanWorkspaceRestoresNavigationWithoutPresentingUnwiredMessageActions()
+    {
+        var shell = ReadSource("AppShell.Did2.cs");
+
+        foreach (var id in new[]
+        {
+            "Did2Workspace.Root", "Did2Workspace.Sidebar",
+            "Did2Workspace.Chats", "Did2Workspace.Contacts",
+            "Did2Workspace.Groups", "Did2Workspace.Settings",
+            "Did2Workspace.MobileChats", "Did2Workspace.MobileContacts",
+            "Did2Workspace.MobileGroups", "Did2Workspace.MobileSettings",
+            "Did2Workspace.ConversationList", "Did2Workspace.EmptyConversation",
+            "Page.Conversations", "Page.Contacts", "Page.Groups"
+        })
+            Assert.Contains($"\"{id}\"", shell, StringComparison.Ordinal);
+
+        Assert.Contains("section = destination;", shell, StringComparison.Ordinal);
+        Assert.Contains("Переписка станет доступна после подключения проверенного DID2-транспорта.",
+            shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("AutomationId = \"Message.Send\"", shell,
+            StringComparison.Ordinal);
+    }
+
     private static string ReadSource(string name)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

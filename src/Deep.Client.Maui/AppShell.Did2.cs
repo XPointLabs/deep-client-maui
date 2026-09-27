@@ -9,8 +9,15 @@ namespace Deep.Client.Maui;
 // The diagnostic package adds proof controls, but neither package owns a V1 runtime.
 public sealed class AppShell : ContentPage
 {
+    private enum WorkspaceSection { Chats, Contacts, Groups, Settings }
+
     private readonly DeepIdV2AccountViewModel account;
     private Action? hideSensitive;
+#if DEEP_DID2_ACCOUNT_PROBE
+    private WorkspaceSection section = WorkspaceSection.Settings;
+#else
+    private WorkspaceSection section = WorkspaceSection.Chats;
+#endif
 
     public AppShell(DeepIdV2AccountViewModel account)
     {
@@ -30,8 +37,203 @@ public sealed class AppShell : ContentPage
     {
         hideSensitive?.Invoke();
         hideSensitive = null;
-        Content = account.Account is null ? CreateWelcome() : CreateAccountSettings();
+        Content = account.Account is null ? CreateWelcome() : CreateWorkspace();
     }
+
+    private View CreateWorkspace()
+    {
+        var current = account.Account!;
+        var sidebar = new Border
+        {
+            AutomationId = "Did2Workspace.Sidebar",
+            BackgroundColor = DeepTheme.Panel,
+            StrokeThickness = 0,
+            Padding = new Thickness(12, 18),
+            Content = new VerticalStackLayout
+            {
+                Spacing = 10,
+                Children =
+                {
+                    BrandHeader(),
+                    new BoxView { Color = DeepTheme.Divider, HeightRequest = 1,
+                        Margin = new Thickness(0, 8) },
+                    WorkspaceNavigationButton("Диалоги", WorkspaceSection.Chats,
+                        "Did2Workspace.Chats"),
+                    WorkspaceNavigationButton("Контакты", WorkspaceSection.Contacts,
+                        "Did2Workspace.Contacts"),
+                    WorkspaceNavigationButton("Группы", WorkspaceSection.Groups,
+                        "Did2Workspace.Groups"),
+                    WorkspaceNavigationButton("Настройки", WorkspaceSection.Settings,
+                        "Did2Workspace.Settings"),
+                    new Label
+                    {
+                        Text = current.DisplayName,
+                        TextColor = DeepTheme.Secondary,
+                        FontSize = 13,
+                        Margin = new Thickness(10, 20, 10, 0)
+                    }
+                }
+            }
+        };
+        var mobileNavigation = new ScrollView
+        {
+            Orientation = ScrollOrientation.Horizontal,
+            BackgroundColor = DeepTheme.Panel,
+            Content = new HorizontalStackLayout
+            {
+                Padding = new Thickness(10, 6),
+                Spacing = 8,
+                Children =
+                {
+                    WorkspaceNavigationButton("Чаты", WorkspaceSection.Chats,
+                        "Did2Workspace.MobileChats"),
+                    WorkspaceNavigationButton("Контакты", WorkspaceSection.Contacts,
+                        "Did2Workspace.MobileContacts"),
+                    WorkspaceNavigationButton("Группы", WorkspaceSection.Groups,
+                        "Did2Workspace.MobileGroups"),
+                    WorkspaceNavigationButton("Профиль", WorkspaceSection.Settings,
+                        "Did2Workspace.MobileSettings")
+                }
+            }
+        };
+        var sectionContent = section switch
+        {
+            WorkspaceSection.Chats => CreateChatsSection(),
+            WorkspaceSection.Contacts => CreateUnavailableSection(
+                "Page.Contacts", "КОНТАКТЫ", "Ваши контакты", "Контактов пока нет",
+                "Добавление контакта откроется после проверки DID2-публикации и защищённого принятия."),
+            WorkspaceSection.Groups => CreateUnavailableSection(
+                "Page.Groups", "ГРУППЫ", "Ваши группы", "Групп пока нет",
+                "Создание группы откроется после проверки доставки и смены состава на DID2-устройствах."),
+            _ => CreateAccountSettings()
+        };
+        var root = new Grid
+        {
+            AutomationId = "Did2Workspace.Root",
+            BackgroundColor = DeepTheme.Background,
+            RowDefinitions =
+            {
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Star)
+            },
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(new GridLength(0)),
+                new ColumnDefinition(GridLength.Star)
+            },
+            Children = { sidebar, mobileNavigation, sectionContent }
+        };
+        Grid.SetRowSpan(sidebar, 2);
+        Grid.SetColumn(sectionContent, 1);
+        Grid.SetRow(sectionContent, 1);
+        Grid.SetColumn(mobileNavigation, 1);
+        root.SizeChanged += (_, _) =>
+        {
+            var desktop = root.Width >= 800;
+            root.ColumnDefinitions[0].Width = new GridLength(desktop ? 268 : 0);
+            sidebar.IsVisible = desktop;
+            mobileNavigation.IsVisible = !desktop;
+            Grid.SetRow(sectionContent, desktop ? 0 : 1);
+            Grid.SetRowSpan(sectionContent, desktop ? 2 : 1);
+        };
+        return root;
+    }
+
+    private Button WorkspaceNavigationButton(string label,
+        WorkspaceSection destination, string automationId)
+    {
+        var selected = section == destination;
+        var button = DeepTheme.SecondaryButton(label, automationId);
+        button.HorizontalOptions = LayoutOptions.Fill;
+        button.Padding = new Thickness(16, 8);
+        button.BackgroundColor = selected ? DeepTheme.AccentMuted : DeepTheme.Panel;
+        button.TextColor = selected ? DeepTheme.Text : DeepTheme.Secondary;
+        button.Clicked += (_, _) =>
+        {
+            if (section == destination) return;
+            section = destination;
+            Render();
+        };
+        return button;
+    }
+
+    private View CreateChatsSection()
+    {
+        var list = new VerticalStackLayout
+        {
+            AutomationId = "Did2Workspace.ConversationList",
+            Spacing = 12,
+            Padding = new Thickness(22, 28),
+            Children =
+            {
+                new Label { Text = "Диалоги", FontSize = 25,
+                    FontAttributes = FontAttributes.Bold },
+                new Label { Text = "Нет диалогов", FontSize = 17,
+                    FontAttributes = FontAttributes.Bold,
+                    Margin = new Thickness(0, 36, 0, 0) },
+                new Label
+                {
+                    Text = "Переписка станет доступна после подключения проверенного DID2-транспорта.",
+                    TextColor = DeepTheme.Secondary,
+                    FontSize = 13
+                }
+            }
+        };
+        var detail = new VerticalStackLayout
+        {
+            AutomationId = "Did2Workspace.EmptyConversation",
+            Spacing = 8,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center,
+            Children =
+            {
+                new Image { Source = "deep_mark.png", WidthRequest = 52,
+                    HeightRequest = 52, HorizontalOptions = LayoutOptions.Center },
+                new Label { Text = "Deep", FontSize = 24,
+                    FontAttributes = FontAttributes.Bold,
+                    HorizontalTextAlignment = TextAlignment.Center },
+                new Label { Text = "Выберите диалог", FontSize = 13,
+                    TextColor = DeepTheme.Secondary,
+                    HorizontalTextAlignment = TextAlignment.Center }
+            }
+        };
+        var canvas = new Grid
+        {
+            AutomationId = "Page.Conversations",
+            BackgroundColor = DeepTheme.Background,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(new GridLength(0))
+            },
+            Children = { list, detail }
+        };
+        Grid.SetColumn(detail, 1);
+        canvas.SizeChanged += (_, _) =>
+        {
+            var split = canvas.Width >= 650;
+            canvas.ColumnDefinitions[0].Width = split
+                ? new GridLength(320) : GridLength.Star;
+            canvas.ColumnDefinitions[1].Width = split
+                ? GridLength.Star : new GridLength(0);
+            detail.IsVisible = split;
+        };
+        return canvas;
+    }
+
+    private static View CreateUnavailableSection(string pageId,
+        string eyebrow, string heading, string emptyTitle, string explanation) =>
+        Surface(pageId, eyebrow, heading, Card(new VerticalStackLayout
+        {
+            Spacing = 9,
+            Children =
+            {
+                new Label { Text = emptyTitle, FontSize = 17,
+                    FontAttributes = FontAttributes.Bold },
+                new Label { Text = explanation, TextColor = DeepTheme.Secondary,
+                    FontSize = 13 }
+            }
+        }));
 
     private View CreateWelcome()
     {
@@ -494,58 +696,12 @@ public sealed class AppShell : ContentPage
             content.Children.Add(section);
         var scroll = new ScrollView
         {
+            AutomationId = pageId,
             Content = content,
             Padding = new Thickness(18, 24, 18, 24),
             BackgroundColor = DeepTheme.Background
         };
-        var sidebar = new Border
-        {
-            AutomationId = "Did2Probe.DesktopBrandPanel",
-            BackgroundColor = DeepTheme.Panel,
-            StrokeThickness = 0,
-            Padding = new Thickness(28, 36),
-            IsVisible = false,
-            Content = new VerticalStackLayout
-            {
-                Spacing = 16,
-                Children =
-                {
-                    new Image { Source = "deep_mark.png", WidthRequest = 72, HeightRequest = 72, HorizontalOptions = LayoutOptions.Start },
-                    new Label { Text = "Deep", FontSize = 30, FontAttributes = FontAttributes.Bold },
-                    new Label
-                    {
-                        Text = "Ваш защищённый Deep ID",
-                        TextColor = DeepTheme.Secondary,
-                        FontSize = 15
-                    },
-                    new BoxView { Color = DeepTheme.Divider, HeightRequest = 1 },
-                    new Label
-                    {
-                        Text = "Профиль и фраза восстановления принадлежат этому устройству. Сетевые действия откроются только после проверки DID2 authority и транспорта.",
-                        TextColor = DeepTheme.Secondary,
-                        FontSize = 13
-                    }
-                }
-            }
-        };
-        var root = new Grid
-        {
-            AutomationId = pageId,
-            ColumnDefinitions =
-            {
-                new ColumnDefinition(new GridLength(0)),
-                new ColumnDefinition(GridLength.Star)
-            },
-            Children = { sidebar, scroll }
-        };
-        Grid.SetColumn(scroll, 1);
-        root.SizeChanged += (_, _) =>
-        {
-            var desktop = root.Width >= 900;
-            root.ColumnDefinitions[0].Width = new GridLength(desktop ? 300 : 0);
-            sidebar.IsVisible = desktop;
-        };
-        return root;
+        return scroll;
     }
 
     private static View BrandHeader() => new HorizontalStackLayout

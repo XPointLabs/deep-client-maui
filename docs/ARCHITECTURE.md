@@ -61,6 +61,14 @@ exercises real DPAPI plus the V2 SQLCipher generation across restart, retaining
 the exact DID2 after the local phrase is deleted; this does not count as a
 physical messaging E2E result.
 
+The clean shell restores the responsive conversation-list/detail layout and
+navigation to chats, contacts, groups and settings using DID2-only views.
+Those sections intentionally show empty or explicitly unavailable states:
+there is no send, attachment, contact-accept or group mutation control until
+the respective verified V2 runtime is composed. The probe starts in settings
+to preserve account diagnostics; the normal package starts in chats. This is
+a visual/navigation baseline, not functional messaging or device-E2E evidence.
+
 `DeepDid2AccountProbe=true` with a Debug `DeepLocalDev=true` build selects an
 isolated `network.xpoint.deep.did2probe` account-only app, separate from both
 production and the existing `.e2e` UAT package. It uses the V2 account model
