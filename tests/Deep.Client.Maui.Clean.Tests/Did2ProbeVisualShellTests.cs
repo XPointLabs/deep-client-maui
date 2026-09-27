@@ -5,7 +5,7 @@ public sealed class Did2ProbeVisualShellTests
     [Fact]
     public void ProbePreservesAccountAndRecoveryAutomationWithoutLegacyNavigation()
     {
-        var shell = ReadSource("AppShell.Did2AccountProbe.cs");
+        var shell = ReadSource("AppShell.Did2.cs");
         var project = ReadSource("Deep.Client.Maui.csproj");
 
         foreach (var id in new[]
@@ -30,7 +30,7 @@ public sealed class Did2ProbeVisualShellTests
     [Fact]
     public void PhraseIsExplicitlyHiddenAndUnavailableActionsAreNotPresented()
     {
-        var shell = ReadSource("AppShell.Did2AccountProbe.cs");
+        var shell = ReadSource("AppShell.Did2.cs");
         var theme = ReadSource(Path.Combine("CleanUi", "DeepTheme.cs"));
 
         Assert.Contains("protected override void OnDisappearing()", shell,

@@ -1,4 +1,3 @@
-#if DEEP_DID2_ACCOUNT_PROBE
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Core.ViewModels;
 using Deep.Client.Maui.Services;
@@ -7,9 +6,10 @@ using Deep.Protocol.ApplicationCore;
 
 namespace Deep.Client.Maui;
 
+// The default client and the isolated UAT package share one DID2-only graph.
 public static partial class MauiProgram
 {
-    private static MauiApp CreateDid2AccountProbeMauiApp()
+    private static MauiApp CreateDid2MauiApp()
     {
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>();
@@ -33,4 +33,3 @@ public static partial class MauiProgram
         return builder.Build();
     }
 }
-#endif

@@ -49,10 +49,14 @@ that isolated state without a network callback, rejects a different network,
 and never creates the V1 store. `DeepIdV2AccountRuntimeAccessor` and
 `DeepIdV2AccountViewModel` expose one-button offline creation, restart, phrase
 reveal/hide and irreversible local deletion without a V1 identity or network
-callback. They are not yet wired into the MAUI production UI composition: the
-current `DeepAccountRuntimeOwner` still uses V1, and the
-client cannot claim DID2 device E2E until account, contact and messaging
-consumers switch together without fallback. The Windows clean integration gate
+callback. The default MAUI Windows/Android startup now selects this DID2 owner
+and shell rather than the V1 account/message graph. The app references a
+minimal DID2 UI-core assembly and excludes the retired V1 MAUI services and
+platform transport classes from its binary. Until production DID2
+authority, contact, messaging and group consumers are composed, the shell
+shows these network actions as unavailable; no V1 fallback is offered and this
+is not device E2E. This graph still loads the hash-pinned ML-DSA candidate;
+it is not a production-approved crypto provider or a release claim. The Windows clean integration gate
 exercises real DPAPI plus the V2 SQLCipher generation across restart, retaining
 the exact DID2 after the local phrase is deleted; this does not count as a
 physical messaging E2E result.
@@ -67,7 +71,7 @@ mobile/Windows visual language without compiling the retired XAML, code-behind,
 or SessionId ViewModels. Existing probe automation IDs remain stable. The
 recovery phrase is hidden on page disappearance, can be copied only while
 revealed, and still requires confirmation before device-local deletion. The
-The base probe presents no actionable chat, contact, attachment, or group controls.
+base probe presents no actionable chat, contact, attachment, or group controls.
 Release or a non-local build rejects this switch. Probe results may establish
 the local Windows/Android account gate, not production provider approval or
 messaging E2E evidence. The probe stages the exact-hash Android ML-DSA

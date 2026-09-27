@@ -3,45 +3,29 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
-    public void ContactAdvertisementAuthorUsesExplicitDependencyFactory()
+    public void DefaultClientStartsDid2OwnerWithoutLegacyRuntime()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        string? source = null;
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(directory.FullName, "src", "Deep.Client.Maui",
-                "MauiProgram.Clean.cs");
-            if (File.Exists(candidate))
-            {
-                source = File.ReadAllText(candidate);
-                break;
-            }
-            directory = directory.Parent;
-        }
+        var project = ReadSource("Deep.Client.Maui.csproj");
+        var startup = ReadSource("MauiProgram.Clean.cs");
+        var did2 = ReadSource("MauiProgram.Did2.cs");
+        var app = ReadSource("App.Did2.cs");
 
-        Assert.NotNull(source);
-        Assert.DoesNotContain(
-            "AddSingleton<AccountOwnedContactRouteAdvertisementAuthor>();",
-            source, StringComparison.Ordinal);
-        Assert.Contains(
-            "new AccountOwnedContactRouteAdvertisementAuthor(",
-            source, StringComparison.Ordinal);
-        Assert.Contains(
-            "GetRequiredService<DeepContactResolveRuntimeAccessor>()",
-            source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void GenericStartupFailureDoesNotTellUserToDeleteAccountData()
-    {
-        var app = ReadSource("App.Clean.cs");
-        Assert.Contains("catch (LocalStateResetRequiredException exception)", app,
+        Assert.Contains("Deep.Client.Maui.Core.Did2.csproj", project,
             StringComparison.Ordinal);
-        Assert.Contains("catch (ProtectedIdentityResetRequiredException exception)", app,
+        Assert.DoesNotContain("<ProjectReference Include=\"..\\Deep.Client.Maui.Core\\Deep.Client.Maui.Core.csproj\"",
+            project, StringComparison.Ordinal);
+        Assert.Contains("<Compile Remove=\"Services\\**\\*.cs\" />", project,
             StringComparison.Ordinal);
-        Assert.Contains("PresentStartupFailureAsync(exception, resetRequired: false)", app,
+        Assert.Contains("public static MauiApp CreateMauiApp() => CreateDid2MauiApp();",
+            startup, StringComparison.Ordinal);
+        Assert.Contains("new DeepIdV2AccountRuntimeAccessor(", did2,
             StringComparison.Ordinal);
-        Assert.Contains("Не удаляйте данные приложения", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("DeepAccountRuntimeAccessor", did2,
+            StringComparison.Ordinal);
+        Assert.Contains("#if DEEP_DID2_ACCOUNT_PROBE", app,
+            StringComparison.Ordinal);
+        Assert.Contains("Не удаляйте данные приложения", app,
+            StringComparison.Ordinal);
     }
 
     [Fact]

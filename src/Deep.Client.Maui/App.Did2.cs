@@ -1,4 +1,3 @@
-#if DEEP_DID2_ACCOUNT_PROBE
 using Deep.Client.Maui.CleanUi;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Core.ViewModels;
@@ -6,6 +5,7 @@ using Deep.Client.Maui.Services;
 
 namespace Deep.Client.Maui;
 
+// Production and UAT enter the same local DID2 account owner.
 public sealed class App : Application
 {
     private readonly IServiceProvider services;
@@ -46,7 +46,7 @@ public sealed class App : Application
             }
             catch (Exception exception)
             {
-                CrashDiagnostics.LogException("Did2AccountProbe.Startup", exception,
+                CrashDiagnostics.LogException("Did2Runtime.Startup", exception,
                     account.ErrorMessage);
                 await MainThread.InvokeOnMainThreadAsync(() =>
                     window.Page = CreateRecoveryPage(window));
@@ -60,6 +60,7 @@ public sealed class App : Application
 
     private ContentPage CreateRecoveryPage(Window window)
     {
+#if DEEP_DID2_ACCOUNT_PROBE
         var status = new Label
         {
             Text = "Тестовый DID2-аккаунт не прошёл локальную проверку. Возможно, он создан до clean-break. Данные других приложений не затронуты.",
@@ -105,6 +106,23 @@ public sealed class App : Application
             }
         };
         return page;
+#else
+        return new ContentPage
+        {
+            Content = new VerticalStackLayout
+            {
+                Padding = 24,
+                Spacing = 16,
+                Children =
+                {
+                    new Label
+                    {
+                        Text = "DID2-аккаунт не прошёл проверку. Не удаляйте данные приложения; проверьте диагностику и повторите запуск.",
+                        AutomationId = "Startup.Error"
+                    }
+                }
+            }
+        };
+#endif
     }
 }
-#endif

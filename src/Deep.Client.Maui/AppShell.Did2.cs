@@ -1,4 +1,3 @@
-#if DEEP_DID2_ACCOUNT_PROBE
 using Deep.Client.Maui.CleanUi;
 using Deep.Client.Maui.Core.ViewModels;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
@@ -6,8 +5,8 @@ using Microsoft.Maui.Controls.Shapes;
 
 namespace Deep.Client.Maui;
 
-// The probe deliberately has no navigation into pre-clean-break conversations.
-// Its visual language is shared with the client, not its retired runtime.
+// The DID2 shell never navigates into pre-clean-break conversations.
+// The diagnostic package adds proof controls, but neither package owns a V1 runtime.
 public sealed class AppShell : ContentPage
 {
     private readonly DeepIdV2AccountViewModel account;
@@ -270,7 +269,7 @@ public sealed class AppShell : ContentPage
                 },
                 new Label
                 {
-                    Text = "Этот адрес останется тем же после удаления локальной копии фразы. Обмен контактами в этой DID2-проверке ещё не включён.",
+                    Text = "Этот адрес останется тем же после удаления локальной копии фразы. Контакты станут доступны после подключения проверенного DID2-транспорта.",
                     TextColor = DeepTheme.Secondary,
                     FontSize = 12
                 }
@@ -448,7 +447,7 @@ public sealed class AppShell : ContentPage
                 new Label { Text = "Пока только локальный аккаунт", FontSize = 15, FontAttributes = FontAttributes.Bold },
                 new Label
                 {
-                    Text = "Контакты, сообщения, вложения и группы недоступны в этой DID2-проверке. Здесь не используется прежний транспорт.",
+                    Text = "Контакты, сообщения, вложения и группы недоступны до подключения проверенного DID2-транспорта. Прежний транспорт не используется.",
                     TextColor = DeepTheme.Secondary,
                     FontSize = 13,
                     AutomationId = "Did2Probe.TransportUnavailable"
@@ -511,14 +510,14 @@ public sealed class AppShell : ContentPage
                     new Label { Text = "Deep", FontSize = 30, FontAttributes = FontAttributes.Bold },
                     new Label
                     {
-                        Text = "Локальная проверка нового Deep ID",
+                        Text = "Ваш защищённый Deep ID",
                         TextColor = DeepTheme.Secondary,
                         FontSize = 15
                     },
                     new BoxView { Color = DeepTheme.Divider, HeightRequest = 1 },
                     new Label
                     {
-                        Text = "Ваш профиль и фраза восстановления принадлежат этому устройству. Сетевые возможности появятся только после завершения DID2 clean-break.",
+                        Text = "Профиль и фраза восстановления принадлежат этому устройству. Сетевые действия откроются только после проверки DID2 authority и транспорта.",
                         TextColor = DeepTheme.Secondary,
                         FontSize = 13
                     }
@@ -557,7 +556,7 @@ public sealed class AppShell : ContentPage
                 Children =
                 {
                     new Label { Text = "Deep", FontSize = 18, FontAttributes = FontAttributes.Bold },
-                    new Label { Text = "DID2 · локальный аккаунт", FontSize = 11, TextColor = DeepTheme.Tertiary }
+                    new Label { Text = "DID2 · защищённый аккаунт", FontSize = 11, TextColor = DeepTheme.Tertiary }
                 }
             }
         }
@@ -581,4 +580,3 @@ public sealed class AppShell : ContentPage
         LineBreakMode = LineBreakMode.WordWrap
     };
 }
-#endif

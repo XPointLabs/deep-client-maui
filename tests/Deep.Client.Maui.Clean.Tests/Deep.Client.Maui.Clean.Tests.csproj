@@ -15,7 +15,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
-    <ProjectReference Include="..\..\src\Deep.Client.Maui.Core\Deep.Client.Maui.Core.csproj" />
+    <ProjectReference Include="..\..\src\Deep.Client.Maui.Core.Did2\Deep.Client.Maui.Core.Did2.csproj" />
     <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.Production.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -28,7 +28,5 @@
              Link="DeepIdV2AccountRuntimeAccessor.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ApprovedAndroidNativeCryptoAssetStager.cs"
              Link="ApprovedAndroidNativeCryptoAssetStager.cs" />
-    <Compile Include="..\..\src\Deep.Client.Maui\Services\GroupV1\AccountOwnedDeviceCustodySigner.cs"
-             Link="AccountOwnedDeviceCustodySigner.cs" />
   </ItemGroup>
 </Project>

@@ -157,17 +157,13 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
-    <ProjectReference Include="..\Deep.Client.Maui.Core\Deep.Client.Maui.Core.csproj" />
+    <ProjectReference Include="..\Deep.Client.Maui.Core.Did2\Deep.Client.Maui.Core.Did2.csproj" />
     <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.Production.csproj"
                       GlobalPropertiesToRemove="RuntimeIdentifier;RuntimeIdentifiers;SelfContained" />
   </ItemGroup>
 
-  <!--
-    Clean-break client composition.  The removed files are the pre-cutover
-    Session-derived shell/runtime and are retained only as offline source
-    evidence until the repository cleanup commit deletes them.  They are not
-    compiled, packaged, reflected or used as a compatibility path.
-  -->
+  <!-- Clean-break composition: retired Session XAML and source files are not
+       compiled or packaged. Only the DID2 account shell is an app entry point. -->
   <ItemGroup>
     <MauiXaml Remove="App.xaml;AppShell.xaml;Pages\**\*.xaml;Styles\**\*.xaml" />
     <Compile Remove="App.xaml.cs;AppShell.xaml.cs;MauiProgram.cs;DesktopWorkspaceContracts.cs" />
@@ -218,6 +214,29 @@
     <Compile Remove="Platforms\Android\ShareIngressActivity.cs" />
     <Compile Remove="Platforms\Windows\WindowsPushNotificationService.cs" />
     <Compile Remove="Platforms\Windows\WindowsShareTargetService.cs" />
+  </ItemGroup>
+
+  <!-- Only DID2 account custody and its platform primitives enter the app.
+       Retired MAUI ContactV1/Session services remain outside the binary. -->
+  <ItemGroup>
+    <Compile Remove="Services\**\*.cs" />
+    <Compile Remove="CleanUi\CleanAccountLogoutCoordinator.cs" />
+    <Compile Remove="GlobalAliases.DirectMessaging.cs" />
+    <Compile Include="Services\ActiveBuildNetworkId.cs" />
+    <Compile Include="Services\AppDataPath.cs" />
+    <Compile Include="Services\ApprovedAndroidNativeCryptoAssetStager.cs" />
+    <Compile Include="Services\ApprovedNativeCryptoAssetBootstrap.cs" />
+    <Compile Include="Services\DeepIdV2AccountRuntimeAccessor.cs" />
+    <Compile Include="Services\DeepIdV2AccountRuntimeOwner.cs" />
+    <Compile Include="Services\DeepIdV2CanaryNetworkAdmission.cs" />
+    <Compile Include="Services\PlatformDeepSecureStorage.cs" />
+    <Compile Include="Services\WindowsMailboxAccessControl.cs" />
+    <Compile Remove="Platforms\Android\AndroidAppLockService.cs" />
+    <Compile Remove="Platforms\Android\AndroidArchivePackageSignerVerifier.cs" />
+    <Compile Remove="Platforms\Android\AndroidNearbyRadioScaffolding.cs" />
+    <Compile Remove="Platforms\Android\AndroidXrayDialerController.cs" />
+    <Compile Remove="Platforms\Windows\WindowsAppLockService.cs" />
+    <Compile Remove="Platforms\Windows\WindowsRealityTransport.cs" />
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
