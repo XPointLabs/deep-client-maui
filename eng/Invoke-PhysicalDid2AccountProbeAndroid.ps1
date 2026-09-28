@@ -217,7 +217,7 @@ function Click-ProbeControl($Ui, [string]$Id) {
     if ($Ui.ImeShowing -and $Id -cne 'Welcome.DisplayName') {
         throw 'Dismiss the observed probe keyboard before tapping another control.'
     }
-    $nodes = if ($Id -ceq 'Did2Probe.ConfirmReset') {
+    $nodes = @(if ($Id -ceq 'Did2Probe.ConfirmReset') {
         if (-not $Ui.Summary.resetConfirmationVisible) {
             throw 'The exact owned diagnostic reset dialog is required.'
         }
@@ -230,7 +230,7 @@ function Click-ProbeControl($Ui, [string]$Id) {
     } else { @($Ui.Nodes | Where-Object {
         ($_.GetAttribute('resource-id') -ceq "${probePackage}:id/$Id" -or
             $_.GetAttribute('content-desc') -ceq $Id) -and $_.GetAttribute('enabled') -ceq 'true'
-    }) }
+    }) })
     if ($nodes.Count -ne 1) { throw 'An exact enabled DID2 control is required.' }
     $bounds = [regex]::Match($nodes[0].GetAttribute('bounds'), '^\[(\d{1,5}),(\d{1,5})\]\[(\d{1,5}),(\d{1,5})\]$')
     if (-not $bounds.Success) { throw 'DID2 control bounds are invalid.' }
