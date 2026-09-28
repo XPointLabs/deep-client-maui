@@ -190,6 +190,9 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("$Ui.Summary.resetConfirmationVisible", installer);
         Assert.Contains("'android:id/button1'", installer);
         Assert.Contains("'Удалить тестовый аккаунт'", installer);
+        Assert.Contains("Test-OwnedResetDialogFocus $focus $packageOwner", installer);
+        Assert.Contains("mOwnerUid=(?<uid>", installer);
+        Assert.Contains("$ownedResetDialog -and -not $resetConfirmationVisible", installer);
         Assert.Contains("${probePackage}:id/Page.Settings", installer);
         Assert.Contains("'android.widget.ScrollView'", installer);
         Assert.DoesNotContain("uninstall", installer);

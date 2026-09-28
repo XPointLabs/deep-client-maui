@@ -165,10 +165,33 @@ function Assert-SameSnapshot($Before, $After, [string]$Package) {
     }
 }
 
+function Test-OwnedResetDialogFocus([string]$WindowDump, [string]$PackageDump) {
+    $focused = [regex]::Match($WindowDump,
+        '(?m)^\s*mCurrentFocus=Window\{(?<token>[a-f0-9]{1,16}) u0 Сброс тестового аккаунта\}\s*$')
+    if (-not $focused.Success) { return $false }
+    $section = [regex]::Match($WindowDump,
+        '(?ms)^  Window #\d+ Window\{' + [regex]::Escape($focused.Groups['token'].Value) +
+        ' .*?(?=^  Window #|\z)')
+    if (-not $section.Success) { return $false }
+    $owner = [regex]::Match($section.Value, '\bmOwnerUid=(?<uid>\d{1,10})\b')
+    $package = [regex]::Match($PackageDump,
+        '(?ms)^  Package \[' + [regex]::Escape($probePackage) +
+        '\] \([^)]+\):\r?\n(?<body>.*?)(?=^  Package \[|\z)')
+    if (-not $owner.Success -or -not $package.Success) { return $false }
+    $uid = [regex]::Match($package.Groups['body'].Value,
+        '(?m)^    userId=(?<uid>\d{1,10})\r?$')
+    return $uid.Success -and $owner.Groups['uid'].Value -ceq $uid.Groups['uid'].Value
+}
+
 function Read-ProbeUi {
     $focus = Invoke-Adb @('shell', 'dumpsys', 'window') 'DID2 foreground owner'
+    $ownedResetDialog = $false
     if ($focus -notmatch "mCurrentFocus=.*$([regex]::Escape($probePackage))/") {
-        throw 'The exact DID2 package does not own the foreground window.'
+        $packageOwner = Invoke-Adb @('shell', 'dumpsys', 'package', $probePackage) 'DID2 dialog owner'
+        $ownedResetDialog = Test-OwnedResetDialogFocus $focus $packageOwner
+        if (-not $ownedResetDialog) {
+            throw 'The exact DID2 package does not own the foreground window.'
+        }
     }
     $raw = Invoke-Adb @('exec-out', 'uiautomator', 'dump', '/dev/tty') 'DID2 UI inspection'
     $start = $raw.IndexOf('<hierarchy', [StringComparison]::Ordinal)
@@ -195,6 +218,12 @@ function Read-ProbeUi {
         }
     }
     $text = ($nodes | ForEach-Object { $_.GetAttribute('text') }) -join "`n"
+    $resetConfirmationVisible = $text.Contains('Сброс тестового аккаунта') -and
+        $text.Contains('Будут удалены только локальный аккаунт этого диагностического приложения') -and
+        $text.Contains('Удалить тестовый аккаунт')
+    if ($ownedResetDialog -and -not $resetConfirmationVisible) {
+        throw 'The owned reset window lacks the exact diagnostic confirmation UI.'
+    }
     $failure = [regex]::Match($text, 'DID2 (AccountProof|NetworkVerification|PreKeyStaging|PreKeyPublication) failed \(([A-Za-z0-9; ]{1,160}|network-(stale-or-fork|history-mismatch|genesis-required|rehydration-mismatch|fork|verification-rejected))\)')
     return [pscustomobject]@{
         Nodes=$nodes
@@ -206,9 +235,7 @@ function Read-ProbeUi {
             recoveryRetained=($text.Contains('Зашифрованная копия хранится на этом устройстве.'))
             verifying=($text.Contains('Проверяем подписанный каталог и регистрацию'))
             stageFailure=$(if ($failure.Success) { $failure.Value } else { $null })
-            resetConfirmationVisible=($text.Contains('Сброс тестового аккаунта') -and
-                $text.Contains('Будут удалены только локальный аккаунт этого диагностического приложения') -and
-                $text.Contains('Удалить тестовый аккаунт'))
+            resetConfirmationVisible=$resetConfirmationVisible
         }
     }
 }

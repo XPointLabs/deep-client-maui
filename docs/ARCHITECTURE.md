@@ -96,6 +96,10 @@ The Android HTTPS diagnostic harness separates `BeginReset` (open and inspect
 the dialog) from `ConfirmReset` (requires `-ConfirmIsolatedAccountReset` and
 the exact owned dialog/button). Every phase keeps the existing other-package
 before/after audit and rejects a missing or changed dialog before input.
+Android identifies this owned alert by its fixed title rather than an Activity
+path. The harness verifies the focused window's OS-reported owner UID against
+the exact installed package and requires the package-owned warning and exact
+confirmation control. A matching title alone or another app's dialog rejects.
 An additional non-Release `DeepDid2CanaryAdmission=true` switch may be used
 only with that isolated account probe. It requires an explicit loopback-tunnel
 origin, separately pinned XNA1 and DID2 genesis-head hashes, and three exact
