@@ -177,3 +177,36 @@ Registry renewed its existing head to generation 21/tree 7 without resetting
 genesis or account history. Durable client DNH2 custody for advancing a changed
 tip after restart, the actual ingress rejection, two-replica publication and
 the contact/message/file/image/group vertical remain open release prerequisites.
+
+## Atomic marker correction: committed device candidates
+
+Shared `9485198325fa38a66993d76cf8fe16442a80ddbd` passed the complete Release
+gate (181/181), including repeated slot replacement, independent-writer CAS,
+rollback and marker-before-SQL crash rejection. MAUI
+`c88f8cd4dc67b22fb4efadf61d4dc145271dda24` passed clean tests (35/35) and smoke
+tests (119/119); both supported device builds completed without warnings/errors.
+Windows apphost SHA-256:
+`a93d50b3ec9f7ddb52d76c6261ea7269d125fbcbb84520fa188ed9ac147659bf`;
+assembly: `295fd829c5c9dc82eb315a48d19e9c238bfa8857276e78abec313986e9b7d8e1`.
+The retained Windows account reached the real ingress again; its canonical
+closed error class is `Unavailable`, with `BeforeForward` certainty. The prior
+local entropy-marker error did not recur in this run. This is not a publication
+receipt or confirmation that the transport is ready.
+
+Android APK SHA-256:
+`69950838d451b51c87693840c6384b5711352a8bb7131536ff9e870333d9ee81`.
+Guarded update retained the account and encrypted recovery; the other three
+packages' before/after hashes remained equal. Two bounded verification actions
+followed by fresh Inspect reported `DID2 AccountProof failed (Timeout)` rather
+than a successful TLS/proof exchange. The exact CRL-host diagnostic exception
+has therefore not established either the root cause or a successful workaround.
+Do not extrapolate Android trust or message delivery from the build results.
+
+Read-only inspection found all three actual production XNode containers running
+but unhealthy. On the first seed, readiness reports `privacyRouting=unavailable`;
+required terminals remain ready. Diagnose the live receive-authority/proof path
+before another publication attempt; no floor reset or permissive fallback was
+performed. Protected Registry time advanced through strict expected-hash CAS
+to generation 12 after independent UTC, synchronized-clock and no-reboot checks.
+Directory genesis and account history remained intact. Physical two-replica
+publication and the contact/message/file/image/group vertical remain unverified.
