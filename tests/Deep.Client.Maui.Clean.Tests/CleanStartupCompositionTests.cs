@@ -56,6 +56,8 @@ public sealed class CleanStartupCompositionTests
             admission, StringComparison.Ordinal);
         Assert.Contains("networkSource.VerifyCurrentNetworkAsync(",
             admission, StringComparison.Ordinal);
+        Assert.Contains("accounts.EnsureOwnInitialPreKeyInventoryAsync(networkSource,",
+            admission, StringComparison.Ordinal);
         // Shape/composition guard only; real signature, freshness and floor
         // behavior is exercised by the Shared native/SQLCipher fixture.
         Assert.Contains("clock, verifier, protectedFloor)", admission,

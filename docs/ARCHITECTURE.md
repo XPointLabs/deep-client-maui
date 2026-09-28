@@ -111,7 +111,12 @@ network closure through the owned HTTPS adapter and invokes Shared's
 The account-owned SQLCipher network floor must commit and reauthenticate
 before the action succeeds. A missing, stale, altered or incomplete closure
 fails closed while retaining the local account; the HTTP loopback probe remains
-admission-only. This diagnostic does not authorize contact acceptance,
+admission-only. HTTPS UAT then asks the account owner to author and seal its
+first complete V2 pre-key inventory from a newly obtained proof. Private keys
+stay in account-owned SQLCipher; repeats return exact protected staged public
+bytes without regenerating keys or treating cached state as current authority.
+This preparation has no remote dispatch or receipt and is not yet physical
+ML-KEM evidence. This diagnostic does not authorize contact acceptance,
 prekey publication, messaging, files or groups. The default build still shows
 these capabilities as unavailable when the physical UAT inputs are absent.
 The MAUI account and transport runtimes are process-scoped DI singletons.

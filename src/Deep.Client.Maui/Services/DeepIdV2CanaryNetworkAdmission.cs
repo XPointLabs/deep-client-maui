@@ -66,6 +66,10 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
         var network = await networkSource.VerifyCurrentNetworkAsync(
             genesisPin.NetworkId, cancellationToken);
         network.EnsureCurrent();
+        // Seal all local pre-key capabilities before any future publication.
+        // An exact staged retry is historical state, not a delivery authority.
+        _ = await accounts.EnsureOwnInitialPreKeyInventoryAsync(networkSource,
+            cancellationToken);
 #endif
     }
 
