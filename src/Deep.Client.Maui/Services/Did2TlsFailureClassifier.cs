@@ -67,7 +67,7 @@ internal static class Did2TlsFailureClassifier
                 (_, _, chain, errors) => ObserveAndReject(errors,
                     chain?.ChainStatus.Aggregate(X509ChainStatusFlags.NoError,
                         (flags, status) => flags | status.Status) ?? X509ChainStatusFlags.NoError,
-                    value => observed = value));
+                    value => observed = value + ClassifyRevocationDetail(chain?.ChainStatus ?? [])));
             await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
             {
                 TargetHost = origin.DnsSafeHost,
@@ -81,5 +81,22 @@ internal static class Did2TlsFailureClassifier
         catch (IOException) { return observed; }
         catch (SocketException) { return "DiagnosticTransportFailure"; }
         return observed;
+    }
+
+    internal static string ClassifyRevocationDetail(IEnumerable<X509ChainStatus> statuses)
+    {
+        foreach (var status in statuses)
+        {
+            if ((status.Status & X509ChainStatusFlags.RevocationStatusUnknown) == 0 ||
+                status.StatusInformation is not { Length: > 0 and <= 4096 } detail) continue;
+            if (detail.Contains("cleartext", StringComparison.OrdinalIgnoreCase))
+                return " CleartextBlocked";
+            if (detail.Contains("No CRLs found", StringComparison.OrdinalIgnoreCase) ||
+                detail.Contains("no valid CRL found", StringComparison.OrdinalIgnoreCase))
+                return " CrlUnavailable";
+            if (detail.Contains("Could not determine revocation status", StringComparison.OrdinalIgnoreCase))
+                return " RevocationUndetermined";
+        }
+        return string.Empty;
     }
 }

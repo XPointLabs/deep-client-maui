@@ -142,3 +142,38 @@ through ordinary renewal. Protected time was renewed with strict expected-hash
 CAS to generation 11 after independent UTC/no-reboot checks. Neither genesis nor
 account history was reset. Authenticated two-replica publication, contacts,
 messages, files/images and groups on physical devices remain unverified.
+
+## Full-history correction and physical publication boundary
+
+Shared `14d7a9dbc0421f8b28b7218f0c3dbf404a247ce0` passed the complete Release
+gate (172/172), including repeated full signed successor history. MAUI
+`343ac23e780c21867caa588c5224e621693def6d` passed 119 smoke tests and built both
+device candidates. Windows apphost SHA-256:
+`232aa583aae50c9881fdfbe2fdd7a37e91fcd52f73f2d6990f4aca385f227832`;
+assembly: `e7884598ef7cba9af4f994aab05c81ad3a25fcf0fb592dbbbc86a4ec88989fdf`.
+The real retained account passed network verification and reached pre-key
+publication, then received a canonical rejection before forwarding. A later
+attempt failed locally with `entropy-ledger-failed`: the two rotating ONION
+marker slots incorrectly used the create-only secure-storage write API when
+reusing a slot. This does not establish an authenticated receipt pair. Exact
+slot replacement is being corrected with atomic expected-value CAS, not
+delete/recreate, custody reset or unconditional overwrite.
+
+Android signed APK SHA-256:
+`55cca6c780a20cdfa6a61b4175d7d7653ee7ed94f7cfdd46f43333cd41ecbcdf`.
+Guarded update preserved the account and retained recovery; all three protected
+packages remained unchanged. Fresh Inspect after a transient hierarchy-capture
+failure reported `RevocationStatusUnknown` from the always-rejected TLS
+diagnostic. The current public Registry edge certificate is issued by Google
+Trust Services WE1 and advertises a CRL at `c.pki.goog` over HTTP. The next
+diagnostic build gives only that exact host (no subdomains) a cleartext resource
+exception to test CRL reachability. Default cleartext remains forbidden, trust
+anchors remain system-only, all application service origins remain HTTPS-only,
+and revocation checks remain enabled. The resource is excluded outside the
+explicit non-Release DID2 HTTPS physical lane. This is an isolated diagnostic
+change, not proof of the failure's root cause or of Android TLS success.
+
+Registry renewed its existing head to generation 21/tree 7 without resetting
+genesis or account history. Durable client DNH2 custody for advancing a changed
+tip after restart, the actual ingress rejection, two-replica publication and
+the contact/message/file/image/group vertical remain open release prerequisites.

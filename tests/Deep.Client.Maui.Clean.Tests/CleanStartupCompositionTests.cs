@@ -3,6 +3,28 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
+    public void HttpsAndroidDiagnosticHasOnlySystemTrustAndExactPublicCaCrlHostException()
+    {
+        var config = System.Xml.Linq.XDocument.Parse(ReadSource(Path.Combine("Platforms", "Android", "Resources", "xml", "network_security_config_did2_https.xml")));
+        var root = config.Root!;
+        Assert.Equal("false", (string?)root.Element("base-config")!.Attribute("cleartextTrafficPermitted"));
+        Assert.Equal("system", (string?)Assert.Single(root.Descendants("certificates")).Attribute("src"));
+        var domain = Assert.Single(root.Elements("domain-config"));
+        Assert.Equal("true", (string?)domain.Attribute("cleartextTrafficPermitted"));
+        var host = Assert.Single(domain.Elements("domain"));
+        Assert.Equal("false", (string?)host.Attribute("includeSubdomains"));
+        Assert.Equal("c.pki.goog", host.Value);
+        Assert.Equal(2, root.Elements().Count());
+        var project = System.Xml.Linq.XDocument.Parse(ReadSource("Deep.Client.Maui.csproj"));
+        var item = Assert.Single(project.Descendants("AndroidResource"), value =>
+            (string?)value.Attribute("Include") == "Platforms\\Android\\Resources\\xml\\network_security_config_did2_https.xml");
+        var condition = (string?)item.Parent!.Attribute("Condition");
+        Assert.Contains("'$(DeepDid2HttpsAdmission)' == 'true'", condition);
+        Assert.Contains("'$(DeepPhysicalE2E)' == 'true'", condition);
+        Assert.Contains("'$(Configuration)' != 'Release'", condition);
+    }
+
+    [Fact]
     public void DefaultClientStartsDid2OwnerWithoutLegacyRuntime()
     {
         var project = ReadSource("Deep.Client.Maui.csproj");

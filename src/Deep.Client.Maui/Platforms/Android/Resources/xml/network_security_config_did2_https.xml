@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors><certificates src="system" /></trust-anchors>
+  </base-config>
+  <!-- Only the current public Registry CA's signed CRL distribution host.
+       Application service origins remain HTTPS-only in code. This diagnostic
+       resource never adds a private CA or disables revocation validation. -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">c.pki.goog</domain>
+  </domain-config>
+</network-security-config>

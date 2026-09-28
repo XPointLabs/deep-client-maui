@@ -8,6 +8,21 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class Did2TlsFailureClassifierTests
 {
     [Theory]
+    [InlineData("Cleartext HTTP traffic to private.example is not permitted", " CleartextBlocked")]
+    [InlineData("No CRLs found for issuer private certificate", " CrlUnavailable")]
+    [InlineData("Could not determine revocation status for private certificate", " RevocationUndetermined")]
+    [InlineData("private certificate and request details", "")]
+    public void RevocationDetailsEmitOnlyClosedLabels(string privateDetail, string expected)
+    {
+        Assert.Equal(expected, Did2TlsFailureClassifier.ClassifyRevocationDetail([
+            new X509ChainStatus { Status = X509ChainStatusFlags.RevocationStatusUnknown, StatusInformation = privateDetail }]));
+        Assert.Empty(Did2TlsFailureClassifier.ClassifyRevocationDetail([
+            new X509ChainStatus { Status = X509ChainStatusFlags.PartialChain, StatusInformation = privateDetail }]));
+        Assert.Empty(Did2TlsFailureClassifier.ClassifyRevocationDetail([
+            new X509ChainStatus { Status = X509ChainStatusFlags.RevocationStatusUnknown, StatusInformation = new string('a', 4097) }]));
+    }
+
+    [Theory]
     [InlineData(SslPolicyErrors.None, X509ChainStatusFlags.NoError, "PlatformChainAccepted")]
     [InlineData(SslPolicyErrors.RemoteCertificateChainErrors, X509ChainStatusFlags.PartialChain | X509ChainStatusFlags.RevocationStatusUnknown, "PartialChain RevocationStatusUnknown")]
     [InlineData(SslPolicyErrors.RemoteCertificateNameMismatch, X509ChainStatusFlags.NoError, "RemoteCertificateNameMismatch")]
