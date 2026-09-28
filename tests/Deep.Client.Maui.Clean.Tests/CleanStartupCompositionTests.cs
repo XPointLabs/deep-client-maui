@@ -174,6 +174,10 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("$settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit", installer);
         Assert.Contains("$field.Count -ne 1", installer);
         Assert.Contains("$result.uiAfter = (Read-ProbeUi).Summary", installer);
+        Assert.Contains("networkOutcome=(Get-ProbeNetworkOutcome $text)", installer);
+        Assert.Contains("return 'verified-publication'", installer);
+        Assert.Contains("return 'proof-authority-unavailable'", installer);
+        Assert.Contains("return 'failure-redacted'", installer);
         Assert.Contains("Click-ProbeControl $ui 'Welcome.CreateAccount'", installer);
         Assert.DoesNotContain("Click-ProbeControl $ui 'Welcome.Create'", installer);
         Assert.Contains("merge-base --is-ancestor $apkSourceCommit $commit", installer);

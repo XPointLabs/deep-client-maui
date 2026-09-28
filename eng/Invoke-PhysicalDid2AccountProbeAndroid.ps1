@@ -183,6 +183,19 @@ function Test-OwnedResetDialogFocus([string]$WindowDump, [string]$PackageDump) {
     return $uid.Success -and $owner.Groups['uid'].Value -ceq $uid.Groups['uid'].Value
 }
 
+function Get-ProbeNetworkOutcome([string]$Text) {
+    # A null stageFailure does not mean success: some bounded transport
+    # rejections are IOException rather than the adapter's stage wrapper.
+    if ($Text.Contains('Проверяем подписанный каталог и регистрацию')) { return 'verifying' }
+    if ($Text.Contains('DID2-аккаунт зарегистрирован; текущий подписанный proof проверен и защищённое состояние сохранено.')) { return 'verified-publication' }
+    if ($Text.Contains('The DID2 directory proof authority is unavailable.')) { return 'proof-authority-unavailable' }
+    if ($Text.Contains('The DID2 directory is temporarily unavailable.')) { return 'admission-authority-unavailable' }
+    if ($Text.Contains('Privacy ingress rejected the request before forwarding (Unavailable).')) { return 'ingress-unavailable-before-forward' }
+    if ($Text.Contains('The request was aborted.')) { return 'request-aborted' }
+    if ($Text.Contains('Не удалось проверить регистрацию:')) { return 'failure-redacted' }
+    return 'not-observed';
+}
+
 function Read-ProbeUi {
     $focus = Invoke-Adb @('shell', 'dumpsys', 'window') 'DID2 foreground owner'
     $ownedResetDialog = $false
@@ -235,6 +248,7 @@ function Read-ProbeUi {
             recoveryRetained=($text.Contains('Зашифрованная копия хранится на этом устройстве.'))
             verifying=($text.Contains('Проверяем подписанный каталог и регистрацию'))
             stageFailure=$(if ($failure.Success) { $failure.Value } else { $null })
+            networkOutcome=(Get-ProbeNetworkOutcome $text)
             resetConfirmationVisible=$resetConfirmationVisible
         }
     }

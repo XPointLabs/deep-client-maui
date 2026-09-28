@@ -210,3 +210,28 @@ performed. Protected Registry time advanced through strict expected-hash CAS
 to generation 12 after independent UTC, synchronized-clock and no-reboot checks.
 Directory genesis and account history remained intact. Physical two-replica
 publication and the contact/message/file/image/group vertical remain unverified.
+
+## Fresh-account diagnostic and closed result reporting
+
+After Mr. X removed both disposable accounts, the physical Windows and Android
+HTTPS candidates created new accounts with name/Create. Encrypted recovery was
+retained; neither phrase was revealed. These are device account-creation results,
+not message-delivery evidence. Both candidates use Shared `7c5ee552` with the
+corrected pre-key authoring bounds; Android APK SHA-256 is
+`03aff095deca5695106e68e35f5002b08eb53681981b5328751cc0684f34e9f6`.
+
+Further verification stopped at unavailable directory authority. Production
+inspection identified checkpoint coverage and proof-budget pressure from idle
+XNode polling. The continued checkpoint chain and service observations belong
+to the [DevOps floor runbook](../../deep-devops/docs/DID2_FLOOR_PRODUCTION_CANDIDATE.md).
+No signed staged inventory, account floor or genesis was silently replaced.
+
+The Android harness now reports a closed `networkOutcome` separately from
+`stageFailure`: a null wrapped-stage failure is not success. Fixed categories
+distinguish verified publication, in-progress verification, unavailable proof or
+admission authority, ingress rejection before forwarding, aborted requests,
+unclassified redacted failure and no observation. UI error text is not exported.
+The harness change passed all 35 clean tests and eight synthetic classifier
+cases; it does not establish a successful physical publication. The required
+next result remains a verified durable two-replica receipt pair, then the
+Windows/Android contact and message vertical.
