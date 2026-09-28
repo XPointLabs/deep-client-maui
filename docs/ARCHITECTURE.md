@@ -115,9 +115,16 @@ admission-only. HTTPS UAT then asks the account owner to author and seal its
 first complete V2 pre-key inventory from a newly obtained proof. Private keys
 stay in account-owned SQLCipher; repeats return exact protected staged public
 bytes without regenerating keys or treating cached state as current authority.
-This preparation has no remote dispatch or receipt and is not yet physical
-ML-KEM evidence. This diagnostic does not authorize contact acceptance,
-prekey publication, messaging, files or groups. The default build still shows
+The HTTPS diagnostic now opens account-owned ONION custody and dispatches
+that exact inventory through the two independently selected replicas, using
+the selected-entry transport frozen in
+[`DR-0009`](../../docs/survival-program/decisions/DR-0009-did2-selected-entry-transport.md).
+The action completes only after independently verified XIC1 signatures and
+durable account-owned receipt-pair recording. Registry proof, staging or HTTP
+success alone cannot satisfy it. The loopback probe remains admission-only.
+This candidate has not yet proved live publication or physical ML-KEM.
+It does not authorize contact acceptance, messaging, files or groups.
+The default build still shows
 these capabilities as unavailable when the physical UAT inputs are absent.
 The MAUI account and transport runtimes are process-scoped DI singletons.
 Android may destroy a Window and create another without ending that process,

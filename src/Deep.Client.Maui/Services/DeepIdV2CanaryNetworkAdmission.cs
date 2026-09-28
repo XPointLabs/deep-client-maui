@@ -66,10 +66,16 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
         var network = await networkSource.VerifyCurrentNetworkAsync(
             genesisPin.NetworkId, cancellationToken);
         network.EnsureCurrent();
-        // Seal all local pre-key capabilities before any future publication.
+        // Seal all local pre-key capabilities before publication.
         // An exact staged retry is historical state, not a delivery authority.
         _ = await accounts.EnsureOwnInitialPreKeyInventoryAsync(networkSource,
             cancellationToken);
+        var custody = await accounts.OpenOwnOnionClientCustodyAsync(cancellationToken);
+        // Success requires authenticated replies from both selected exits,
+        // independently verified XIC1 signatures and durable pair recording.
+        // A Registry proof or local staging alone cannot complete this action.
+        _ = await accounts.PublishOwnStagedPreKeyInventoryAsync(networkSource,
+            custody, cancellationToken);
 #endif
     }
 
