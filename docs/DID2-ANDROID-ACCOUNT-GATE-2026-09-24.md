@@ -115,3 +115,17 @@ account-only test.
 This closes the physical Android **local account** continuity gate for
 DR-0007 only. Windows account continuity, live Registry admission/proof and
 Windows↔Android contact/message/media/group E2E are still open.
+## 2026-09-28 — closed-UAT proof and restart continuity
+
+On the physical USB Android device, the isolated DID2 probe verified its
+registered account against the refreshed signed UAT directory/network view.
+The UI reported successful current proof verification and protected-state
+persistence. After force-stop/relaunch of only that probe package, another
+nonce-fresh verification succeeded; Registry returned HTTP 200 for the proof.
+The retained recovery phrase was not revealed, copied or logged.
+
+This diagnostic used an adb loopback reverse and an authenticated SSH tunnel
+to the closed UAT listener. It does not prove production HTTPS/carrier routing,
+contacts, text delivery, attachments or groups, and cannot satisfy their
+release-evidence gates. Production and the separate messaging E2E package
+were not reset or changed.

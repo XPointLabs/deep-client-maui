@@ -19,6 +19,10 @@ internal static class AppDataPath
                 "DID2 Windows probe has no local application-data root.");
         var probeRoot = Path.GetFullPath(Path.Combine(localAppData,
             "XPointLabs", "DeepDid2AccountProbe"));
+#if DEEP_DID2_CANARY_ADMISSION
+        probeRoot = Did2ProbeStorageScope.ResolveCanaryRoot(
+            localAppData, ActiveBuildNetworkId.Load().Span);
+#endif
         Directory.CreateDirectory(probeRoot);
         RejectReparsePoints(probeRoot);
         WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(probeRoot);

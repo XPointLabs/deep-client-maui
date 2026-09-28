@@ -28,5 +28,7 @@
              Link="DeepIdV2AccountRuntimeAccessor.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ApprovedAndroidNativeCryptoAssetStager.cs"
              Link="ApprovedAndroidNativeCryptoAssetStager.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\Did2ProbeStorageScope.cs"
+             Link="Did2ProbeStorageScope.cs" />
   </ItemGroup>
 </Project>

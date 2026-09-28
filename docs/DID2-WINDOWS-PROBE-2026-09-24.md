@@ -1,5 +1,23 @@
 # DID2 Windows account probe — account surface observed
 
+## Windows canary network isolation
+
+The loopback canary now uses a separate `DeepDid2CanaryProbe/<network-id>`
+local custody root. The ordinary development account probe still uses its own
+root; neither mode reads, migrates, resets or aliases the other mode's account.
+Switching a build from the development network to a canary must not reuse its
+STORE-V2 state. A canary account is created separately after operator approval.
+This diagnostic remains account/proof-only, not a messaging release candidate.
+
+The corrected canary built for Debug Windows ARM64 with zero warnings/errors.
+Its apphost SHA-256 is
+`4B76713F0FA257DED9AF3E437909A7D70F19257838975248C266AA7C2AAFB8F6`;
+the application DLL SHA-256 is
+`AEFEDEA58BC3CC233017821695D4AA60E921D516402DD6A10B4379AC7E3A792A`.
+The observed interactive window displayed the empty welcome/create-account
+screen without an incompatible-account error. No canary account was created
+at this observation; Windows live admission/proof remains unverified.
+
 ## 2026-09-25 — current-source device-state and phrase-deletion check
 
 - The dedicated `win-arm64` Debug probe built from MAUI code commit `3802d50bd4fe8d9cf0082031ddb8a47445ebe127` with `DeepLocalDev=true` and `DeepDid2AccountProbe=true`: zero warnings and zero errors. The exact executable SHA-256 was `f25cd5a2b95710af9384187a7e587a5f071df6e7013cf573ac48777a14810702`.
