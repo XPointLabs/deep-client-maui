@@ -15,7 +15,7 @@ param(
     [ValidateSet('Did2Account', 'Did2Https')]
     [string]$Lane = 'Did2Account',
     [string]$ApkPath,
-    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'VerifyNetwork', 'Restart')]
+    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart')]
     [string]$Phase = 'Install',
     [switch]$AllowProbeUpdate,
     [switch]$Execute
@@ -346,6 +346,25 @@ if ($Execute) {
                         'Did2Workspace.MobileSettings'
                     } else { 'Did2Workspace.Settings' }
                     Click-ProbeControl $ui $settingsId
+                }
+                'ScrollSettings' {
+                    if ($ui.ImeShowing) { throw 'Dismiss the probe keyboard before scrolling settings.' }
+                    $pane = @($ui.Nodes | Where-Object {
+                        $_.GetAttribute('resource-id') -ceq "${probePackage}:id/Page.Settings" -and
+                        $_.GetAttribute('scrollable') -ceq 'true' -and
+                        $_.GetAttribute('class') -ceq 'android.widget.ScrollView'
+                    })
+                    if ($pane.Count -ne 1) { throw 'One exact owned vertical settings pane is required.' }
+                    $bounds = [regex]::Match($pane[0].GetAttribute('bounds'), '^\[(\d{1,5}),(\d{1,5})\]\[(\d{1,5}),(\d{1,5})\]$')
+                    if (-not $bounds.Success) { throw 'Settings pane bounds are invalid.' }
+                    $left=[int]$bounds.Groups[1].Value; $top=[int]$bounds.Groups[2].Value
+                    $right=[int]$bounds.Groups[3].Value; $bottom=[int]$bounds.Groups[4].Value
+                    if ($right -le $left -or $bottom - $top -lt 200 -or $right -gt 20000 -or $bottom -gt 20000) {
+                        throw 'Settings pane bounds are outside the screen limit.'
+                    }
+                    $x=[string][int](($left+$right)/2)
+                    [void](Invoke-Adb @('shell', 'input', 'swipe', $x, [string]($bottom-100),
+                        $x, [string]($top+100), '450') 'Scroll exact owned settings pane')
                 }
                 'VerifyNetwork' { Click-ProbeControl $ui 'Did2Probe.VerifyNetwork' }
             }

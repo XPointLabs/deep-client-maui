@@ -164,6 +164,8 @@ Mobile settings uses its actual mobile AutomationId. When the probe reports
 a shown keyboard, other control taps reject until the explicit
 `DismissKeyboard` phase closes that observed keyboard; this avoids tapping an
 IME key through a stale application layout.
+`ScrollSettings` swipes only inside one exact owned vertical `Page.Settings`
+pane with validated bounds, then requires a fresh observation before a tap.
 HTTP diagnostic failures identify one of the fixed account-proof,
 network-verification, pre-key-staging or publication stages using exception
 classifications only. They preserve the cause without exposing private request

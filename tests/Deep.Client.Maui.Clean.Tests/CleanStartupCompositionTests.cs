@@ -138,7 +138,7 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("[ValidateSet('Did2Account', 'Did2Https')]", installer);
         Assert.Contains("'network.xpoint.deep.did2https'", installer);
         Assert.Contains("Assert-SameSnapshot $before[$package] $after[$package] $package", installer);
-        Assert.Contains("'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'VerifyNetwork', 'Restart'", installer);
+        Assert.Contains("'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart'", installer);
         Assert.Contains("$Lane -ne 'Did2Https'", installer);
         Assert.Contains("mCurrentFocus=", installer);
         Assert.Contains("@('shell', 'dumpsys', 'window')", installer);
@@ -156,6 +156,9 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("$Ui.ImeShowing -and $Id -cne 'Welcome.DisplayName'", installer);
         Assert.Contains("'DismissKeyboard'", installer);
         Assert.Contains("'Did2Workspace.MobileSettings'", installer);
+        Assert.Contains("'ScrollSettings'", installer);
+        Assert.Contains("${probePackage}:id/Page.Settings", installer);
+        Assert.Contains("'android.widget.ScrollView'", installer);
         Assert.DoesNotContain("uninstall", installer);
         Assert.DoesNotContain("pm clear", installer);
     }
