@@ -95,6 +95,11 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
                 $"{exception.InnerException?.GetType().Name ?? "None"}).",
                 exception);
         }
+        catch (TimeoutException exception)
+        {
+            throw new InvalidOperationException(
+                $"DID2 {stage} failed (Timeout).", exception);
+        }
     }
 
     public async Task VerifyAsync(DeepIdV2AccountService accounts,

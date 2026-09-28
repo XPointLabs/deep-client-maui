@@ -67,6 +67,8 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("HttpStageAsync(\"PreKeyStaging\"", admission);
         Assert.Contains("HttpStageAsync(\"PreKeyPublication\"", admission);
         Assert.Contains("exception.HttpRequestError", admission);
+        Assert.Contains("catch (TimeoutException exception)", admission);
+        Assert.Contains("DID2 {stage} failed (Timeout).", admission);
         Assert.DoesNotContain("new PrivacyRoutedContactResolverTransport", admission,
             StringComparison.Ordinal);
         // Shape/composition guard only; real signature, freshness and floor
