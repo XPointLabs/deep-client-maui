@@ -15,7 +15,7 @@ param(
     [ValidateSet('Did2Account', 'Did2Https')]
     [string]$Lane = 'Did2Account',
     [string]$ApkPath,
-    [ValidateSet('Install', 'Inspect', 'SetName', 'CreateAccount', 'Settings', 'VerifyNetwork', 'Restart')]
+    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'VerifyNetwork', 'Restart')]
     [string]$Phase = 'Install',
     [switch]$AllowProbeUpdate,
     [switch]$Execute
@@ -177,7 +177,7 @@ function Read-ProbeUi {
     $nodes = @($document.SelectNodes('//node') | Where-Object { $_.GetAttribute('package') -ceq $probePackage })
     if ($nodes.Count -eq 0 -or $nodes.Count -gt 10000) { throw 'DID2 UI node bounds rejected.' }
     $controls = @()
-    foreach ($id in @('Welcome.DisplayName', 'Welcome.CreateAccount', 'Did2Workspace.Settings',
+    foreach ($id in @('Welcome.DisplayName', 'Welcome.CreateAccount', 'Did2Workspace.Settings', 'Did2Workspace.MobileSettings',
         'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus')) {
         $matches = @($nodes | Where-Object {
             $_.GetAttribute('resource-id') -ceq "${probePackage}:id/$id" -or
@@ -191,8 +191,10 @@ function Read-ProbeUi {
     $failure = [regex]::Match($text, 'DID2 (AccountProof|NetworkVerification|PreKeyStaging|PreKeyPublication) failed \(([A-Za-z0-9; ]+)\)')
     return [pscustomobject]@{
         Nodes=$nodes
+        ImeShowing=($focus -match 'mImeShowing=true')
         Summary=[ordered]@{
             controls=$controls
+            keyboardShown=($focus -match 'mImeShowing=true')
             accountVisible=($text -match '(?m)^deep1[a-z0-9]+$')
             recoveryRetained=($text.Contains('Зашифрованная копия хранится на этом устройстве.'))
             verifying=($text.Contains('Проверяем подписанный каталог и регистрацию'))
@@ -202,6 +204,9 @@ function Read-ProbeUi {
 }
 
 function Click-ProbeControl($Ui, [string]$Id) {
+    if ($Ui.ImeShowing -and $Id -cne 'Welcome.DisplayName') {
+        throw 'Dismiss the observed probe keyboard before tapping another control.'
+    }
     $nodes = @($Ui.Nodes | Where-Object {
         ($_.GetAttribute('resource-id') -ceq "${probePackage}:id/$Id" -or
             $_.GetAttribute('content-desc') -ceq $Id) -and $_.GetAttribute('enabled') -ceq 'true'
@@ -331,8 +336,17 @@ if ($Execute) {
                     if ($field.Count -ne 1) { throw 'DID2 name field did not receive focus.' }
                     [void](Invoke-Adb @('shell', 'input', 'text', 'Android%sHTTPS%sQA') 'Fill disposable DID2 test name')
                 }
+                'DismissKeyboard' {
+                    if (-not $ui.ImeShowing) { throw 'The exact probe must have a shown keyboard.' }
+                    [void](Invoke-Adb @('shell', 'input', 'keyevent', '4') 'Dismiss observed probe keyboard')
+                }
                 'CreateAccount' { Click-ProbeControl $ui 'Welcome.CreateAccount' }
-                'Settings' { Click-ProbeControl $ui 'Did2Workspace.Settings' }
+                'Settings' {
+                    $settingsId = if (@($ui.Summary.controls | Where-Object { $_.id -ceq 'Did2Workspace.MobileSettings' }).Count -eq 1) {
+                        'Did2Workspace.MobileSettings'
+                    } else { 'Did2Workspace.Settings' }
+                    Click-ProbeControl $ui $settingsId
+                }
                 'VerifyNetwork' { Click-ProbeControl $ui 'Did2Probe.VerifyNetwork' }
             }
             $result.uiAfter = (Read-ProbeUi).Summary

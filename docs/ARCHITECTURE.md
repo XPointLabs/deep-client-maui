@@ -160,6 +160,10 @@ the exact changed-file allowlist contains that UI script, its composition test
 or its two architecture/evidence documents. Install cannot use this exception;
 application/build-source changes reject. Results record the APK source and
 harness commits separately, retaining the same pinned APK and signer.
+Mobile settings uses its actual mobile AutomationId. When the probe reports
+a shown keyboard, other control taps reject until the explicit
+`DismissKeyboard` phase closes that observed keyboard; this avoids tapping an
+IME key through a stale application layout.
 HTTP diagnostic failures identify one of the fixed account-proof,
 network-verification, pre-key-staging or publication stages using exception
 classifications only. They preserve the cause without exposing private request
