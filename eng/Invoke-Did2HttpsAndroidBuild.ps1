@@ -85,15 +85,23 @@ if ($Execute) {
         "-p:DeepDid2CanaryXna1Pin=$Xna1Pin", "-p:DeepDid2CanaryAdh1Pin=$GenesisHeadPin",
         "-p:DeepDid2BootstrapDirectory=$BootstrapDirectory", "-p:DeepSurvivalRuntimeEnv=$RuntimeEnvironmentPath",
         "-p:DeepMrXPublicKeySha256=$MrXPublicKeySha256", "-p:BaseOutputPath=$output\build-bin\",
-        '-p:AndroidKeyStore=true', "-p:AndroidSigningKeyStore=$keyStore",
-        "-p:AndroidSigningKeyAlias=$SigningAlias", "-p:AndroidSigningKeyPass=file:$passwordFile",
-        "-p:AndroidSigningStorePass=file:$passwordFile", '-p:DeepProtocolSourceCutover=true',
+        '-p:AndroidKeyStore=false', '-p:JavaSdkDirectory=C:\Program Files\Android\openjdk\jdk-21.0.8',
+        '-p:AndroidSdkDirectory=C:\Program Files (x86)\Android\android-sdk',
+        '-p:DeepProtocolSourceCutover=true',
         '-p:BuildInParallel=false', '-p:UseSharedCompilation=false',
         '-p:Aapt2DaemonMaxInstanceCount=1', '-nodeReuse:false', '-m:1')
     & dotnet @arguments
     if ($LASTEXITCODE -ne 0) { throw 'DID2 Android build failed; no package was installed.' }
-    $apk = Join-Path $output 'build-bin\Debug\net10.0-android\android-arm64\network.xpoint.deep.did2https-Signed.apk'
-    if (-not (Test-Path -LiteralPath $apk -PathType Leaf)) { throw 'Exact DID2 HTTPS APK is absent.' }
+    $unsigned = Join-Path $output 'build-bin\Debug\net10.0-android\android-arm64\network.xpoint.deep.did2https.apk'
+    if (-not (Test-Path -LiteralPath $unsigned -PathType Leaf)) { throw 'Exact DID2 HTTPS APK is absent.' }
+    # Keep production key arguments outside MSBuild. Match the existing SDK
+    # signing workflow, using explicit PKCS12 and file-based passwords only.
+    $apk = Join-Path $output 'network.xpoint.deep.did2https-Signed.apk'
+    $signArguments = @('-jar', $signer, 'sign', '--out', $apk, '--ks', $keyStore,
+        '--ks-type', 'PKCS12', '--ks-key-alias', $SigningAlias,
+        '--ks-pass', "file:$passwordFile", '--key-pass', "file:$passwordFile", $unsigned)
+    $signingOutput = (& $java @signArguments 2>&1) -join "`n"
+    if ($LASTEXITCODE -ne 0) { throw 'Explicit pinned SDK APK signing failed; no package was installed.' }
     $verified = (& $java '-jar' $signer 'verify' '--print-certs' $apk 2>&1) -join "`n"
     if ($LASTEXITCODE -ne 0 -or
         $verified -notmatch 'Signer #1 certificate SHA-256 digest: ([0-9a-f]{64})' -or

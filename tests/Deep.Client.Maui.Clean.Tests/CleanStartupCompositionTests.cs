@@ -127,13 +127,21 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("'$(DeepDid2HttpsAdmission)' != 'true'", (string?)physicalCa.Attribute("Condition"));
         var builder = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-Did2HttpsAndroidBuild.ps1"));
         Assert.Contains("Invoke-Did2HttpsWindowsBuild.ps1", builder);
-        Assert.Contains("AndroidSigningKeyPass=file:$passwordFile", builder);
+        Assert.Contains("'--ks-pass', \"file:$passwordFile\"", builder);
+        Assert.Contains("'--ks-type', 'PKCS12'", builder);
+        Assert.DoesNotContain("AndroidSigningKeyPass=", builder);
         Assert.Contains("$Matches[1] -cne $ExpectedSignerSha256", builder);
         Assert.DoesNotContain("pm clear", builder);
         var installer = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1"));
         Assert.Contains("[ValidateSet('Did2Account', 'Did2Https')]", installer);
         Assert.Contains("'network.xpoint.deep.did2https'", installer);
         Assert.Contains("Assert-SameSnapshot $before[$package] $after[$package] $package", installer);
+        Assert.Contains("'Inspect', 'SetName', 'CreateAccount', 'Settings', 'VerifyNetwork', 'Restart'", installer);
+        Assert.Contains("$Lane -ne 'Did2Https'", installer);
+        Assert.Contains("mCurrentFocus=", installer);
+        Assert.Contains("$settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit", installer);
+        Assert.Contains("$field.Count -ne 1", installer);
+        Assert.Contains("$result.uiAfter = (Read-ProbeUi).Summary", installer);
         Assert.DoesNotContain("uninstall", installer);
         Assert.DoesNotContain("pm clear", installer);
     }

@@ -143,6 +143,14 @@ is retained, without the older physical lab CA. The existing guarded Android
 installer accepts this lane only with `-Lane Did2Https`, an exact build-artifact
 path and APK/signing/source pins; it audits production, older E2E and account
 probe packages before and after, and performs no reset or uninstall.
+The SDK build uses its disposable debug signer; a separate explicit PKCS12
+SDK step signs the final APK with file-based passwords and verifies its pinned
+signer before any installation. Private signing arguments never enter MSBuild.
+Guarded `Inspect`, `SetName`, `CreateAccount`, `Settings`, `VerifyNetwork` and
+`Restart` phases apply only to that installed HTTPS package. They require its
+foreground ownership and exact enabled AutomationIds, retain bounded XML in
+memory only, and return fixed controls/classifications instead of identity or
+recovery text. Restart preserves account and device state.
 HTTP diagnostic failures identify one of the fixed account-proof,
 network-verification, pre-key-staging or publication stages using exception
 classifications only. They preserve the cause without exposing private request

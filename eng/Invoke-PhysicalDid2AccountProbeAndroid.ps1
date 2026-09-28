@@ -13,6 +13,8 @@ param(
     [ValidateSet('Did2Account', 'Did2Https')]
     [string]$Lane = 'Did2Account',
     [string]$ApkPath,
+    [ValidateSet('Install', 'Inspect', 'SetName', 'CreateAccount', 'Settings', 'VerifyNetwork', 'Restart')]
+    [string]$Phase = 'Install',
     [switch]$AllowProbeUpdate,
     [switch]$Execute
 )
@@ -154,6 +156,65 @@ function Assert-SameSnapshot($Before, $After, [string]$Package) {
     }
 }
 
+function Read-ProbeUi {
+    $focus = Invoke-Adb @('shell', 'dumpsys', 'window', 'windows') 'DID2 foreground owner'
+    if ($focus -notmatch "mCurrentFocus=.*$([regex]::Escape($probePackage))/") {
+        throw 'The exact DID2 package does not own the foreground window.'
+    }
+    $raw = Invoke-Adb @('exec-out', 'uiautomator', 'dump', '/dev/tty') 'DID2 UI inspection'
+    $start = $raw.IndexOf('<hierarchy', [StringComparison]::Ordinal)
+    $end = $raw.LastIndexOf('</hierarchy>', [StringComparison]::Ordinal)
+    if ($start -lt 0 -or $end -lt $start) { throw 'DID2 UI hierarchy is unavailable.' }
+    $settings = [Xml.XmlReaderSettings]::new()
+    $settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit
+    $settings.XmlResolver = $null
+    $settings.MaxCharactersInDocument = 1048576
+    $reader = [Xml.XmlReader]::Create([IO.StringReader]::new($raw.Substring($start, $end + 12 - $start)), $settings)
+    try { $document = [Xml.XmlDocument]::new(); $document.XmlResolver = $null; $document.Load($reader) }
+    finally { $reader.Dispose() }
+    $nodes = @($document.SelectNodes('//node') | Where-Object { $_.GetAttribute('package') -ceq $probePackage })
+    if ($nodes.Count -eq 0 -or $nodes.Count -gt 10000) { throw 'DID2 UI node bounds rejected.' }
+    $controls = @()
+    foreach ($id in @('Welcome.DisplayName', 'Welcome.Create', 'Did2Workspace.Settings',
+        'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus')) {
+        $matches = @($nodes | Where-Object {
+            $_.GetAttribute('resource-id') -ceq "${probePackage}:id/$id" -or
+            $_.GetAttribute('content-desc') -ceq $id
+        })
+        if ($matches.Count -eq 1) {
+            $controls += [ordered]@{id=$id; enabled=($matches[0].GetAttribute('enabled') -ceq 'true'); bounds=$matches[0].GetAttribute('bounds')}
+        }
+    }
+    $text = ($nodes | ForEach-Object { $_.GetAttribute('text') }) -join "`n"
+    $failure = [regex]::Match($text, 'DID2 (AccountProof|NetworkVerification|PreKeyStaging|PreKeyPublication) failed \(([A-Za-z0-9; ]+)\)')
+    return [pscustomobject]@{
+        Nodes=$nodes
+        Summary=[ordered]@{
+            controls=$controls
+            accountVisible=($text -match '(?m)^deep1[a-z0-9]+$')
+            recoveryRetained=($text.Contains('Зашифрованная копия хранится на этом устройстве.'))
+            verifying=($text.Contains('Проверяем подписанный каталог и регистрацию'))
+            stageFailure=$(if ($failure.Success) { $failure.Value } else { $null })
+        }
+    }
+}
+
+function Click-ProbeControl($Ui, [string]$Id) {
+    $nodes = @($Ui.Nodes | Where-Object {
+        ($_.GetAttribute('resource-id') -ceq "${probePackage}:id/$Id" -or
+            $_.GetAttribute('content-desc') -ceq $Id) -and $_.GetAttribute('enabled') -ceq 'true'
+    })
+    if ($nodes.Count -ne 1) { throw 'An exact enabled DID2 control is required.' }
+    $bounds = [regex]::Match($nodes[0].GetAttribute('bounds'), '^\[(\d{1,5}),(\d{1,5})\]\[(\d{1,5}),(\d{1,5})\]$')
+    if (-not $bounds.Success) { throw 'DID2 control bounds are invalid.' }
+    $left = [int]$bounds.Groups[1].Value; $top = [int]$bounds.Groups[2].Value
+    $right = [int]$bounds.Groups[3].Value; $bottom = [int]$bounds.Groups[4].Value
+    if ($right -le $left -or $bottom -le $top -or $right -gt 20000 -or $bottom -gt 20000) {
+        throw 'DID2 control bounds are outside the screen limit.'
+    }
+    [void](Invoke-Adb @('shell', 'input', 'tap', [string][int](($left+$right)/2), [string][int](($top+$bottom)/2)) 'DID2 control tap')
+}
+
 foreach ($tool in @($adb, $aapt, $apksignerJar, $java, $apk)) {
     if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
         throw 'A required pinned Android probe tool or APK is unavailable.'
@@ -191,7 +252,10 @@ foreach ($package in $protectedPackages) {
     $before[$package] = Get-PackageSnapshot $package
 }
 $probeBefore = Get-PackageSnapshot $probePackage
-if ($probeBefore.installed -and -not $AllowProbeUpdate) {
+if ($Phase -ne 'Install' -and ($Lane -ne 'Did2Https' -or -not $probeBefore.installed)) {
+    throw 'UI phases require the installed dedicated DID2 HTTPS package.'
+}
+if ($Phase -eq 'Install' -and $probeBefore.installed -and -not $AllowProbeUpdate) {
     throw 'The dedicated DID2 probe package already exists; explicit -AllowProbeUpdate is required.'
 }
 $result = [ordered]@{
@@ -202,6 +266,7 @@ $result = [ordered]@{
     androidSerial = $AndroidSerial
     package = $probePackage
     lane = $Lane
+    phase = $Phase
     apkVariant = $ApkVariant
     execute = [bool]$Execute
     allowProbeUpdate = [bool]$AllowProbeUpdate
@@ -211,6 +276,7 @@ $result = [ordered]@{
 }
 if ($Execute) {
     try {
+        if ($Phase -eq 'Install') {
         $installArguments = if ($probeBefore.installed) {
             @('install', '-r', $apk)
         } else {
@@ -227,6 +293,33 @@ if ($Execute) {
             throw 'The dedicated DID2 probe launch was not acknowledged.'
         }
         $result.status = 'installed-and-launched'
+        } elseif ($Phase -eq 'Restart') {
+            [void](Invoke-Adb @('shell', 'am', 'force-stop', $probePackage) 'Stop dedicated DID2 HTTPS process')
+            [void](Invoke-Adb @('shell', 'monkey', '-p', $probePackage, '-c', 'android.intent.category.LAUNCHER', '1') 'Restart dedicated DID2 HTTPS process')
+            $result.status = 'restarted-without-reset'
+        } else {
+            $ui = Read-ProbeUi
+            $result.uiBefore = $ui.Summary
+            switch ($Phase) {
+                'Inspect' { }
+                'SetName' {
+                    Click-ProbeControl $ui 'Welcome.DisplayName'
+                    $focused = Read-ProbeUi
+                    $field = @($focused.Nodes | Where-Object {
+                        $_.GetAttribute('focused') -ceq 'true' -and
+                        ($_.GetAttribute('resource-id') -ceq "${probePackage}:id/Welcome.DisplayName" -or
+                            $_.GetAttribute('content-desc') -ceq 'Welcome.DisplayName')
+                    })
+                    if ($field.Count -ne 1) { throw 'DID2 name field did not receive focus.' }
+                    [void](Invoke-Adb @('shell', 'input', 'text', 'Android%sHTTPS%sQA') 'Fill disposable DID2 test name')
+                }
+                'CreateAccount' { Click-ProbeControl $ui 'Welcome.Create' }
+                'Settings' { Click-ProbeControl $ui 'Did2Workspace.Settings' }
+                'VerifyNetwork' { Click-ProbeControl $ui 'Did2Probe.VerifyNetwork' }
+            }
+            $result.uiAfter = (Read-ProbeUi).Summary
+            $result.status = 'ui-phase-observed'
+        }
     } finally {
         $after = [ordered]@{}
         foreach ($package in $protectedPackages) {
