@@ -188,7 +188,7 @@ function Read-ProbeUi {
         }
     }
     $text = ($nodes | ForEach-Object { $_.GetAttribute('text') }) -join "`n"
-    $failure = [regex]::Match($text, 'DID2 (AccountProof|NetworkVerification|PreKeyStaging|PreKeyPublication) failed \(([A-Za-z0-9; ]+)\)')
+    $failure = [regex]::Match($text, 'DID2 (AccountProof|NetworkVerification|PreKeyStaging|PreKeyPublication) failed \(([A-Za-z0-9; ]{1,160}|network-(stale-or-fork|history-mismatch|genesis-required|rehydration-mismatch|fork|verification-rejected))\)')
     return [pscustomobject]@{
         Nodes=$nodes
         ImeShowing=($focus -match 'mImeShowing=true')

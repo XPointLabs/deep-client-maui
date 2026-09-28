@@ -1,10 +1,37 @@
 using System.Security.Authentication;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using Deep.Client.Maui.Services;
 
 namespace Deep.Client.Maui.Clean.Tests;
 
 public sealed class Did2TlsFailureClassifierTests
 {
+    [Theory]
+    [InlineData(SslPolicyErrors.None, X509ChainStatusFlags.NoError, "PlatformChainAccepted")]
+    [InlineData(SslPolicyErrors.RemoteCertificateChainErrors, X509ChainStatusFlags.PartialChain | X509ChainStatusFlags.RevocationStatusUnknown, "PartialChain RevocationStatusUnknown")]
+    [InlineData(SslPolicyErrors.RemoteCertificateNameMismatch, X509ChainStatusFlags.NoError, "RemoteCertificateNameMismatch")]
+    [InlineData(SslPolicyErrors.RemoteCertificateChainErrors, X509ChainStatusFlags.InvalidBasicConstraints, "OtherChainError")]
+    public void SeparateDiagnosticAlwaysRejectsAndReportsOnlyClosedFlags(
+        SslPolicyErrors errors, X509ChainStatusFlags flags, string expected)
+    {
+        string? result = null;
+        Assert.False(Did2TlsFailureClassifier.ObserveAndReject(errors, flags, value => result = value));
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public async Task SeparateDiagnosticRejectsNonPublicOrNonCanonicalOriginBeforeConnect()
+    {
+        foreach (var address in new[] { "http://registry.example/", "https://localhost/", "https://registry.example:8443/", "https://registry.example/private" })
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                Did2TlsFailureClassifier.ObserveRejectedHandshakeAsync(new Uri(address), default));
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Did2TlsFailureClassifier.ObserveRejectedHandshakeAsync(new Uri("https://registry.example/"), cancelled.Token));
+    }
+
     [Fact]
     public void KnownChainFlagsAreClosedAndPrivateMessagesNeverEscape()
     {

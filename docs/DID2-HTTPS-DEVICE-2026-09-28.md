@@ -102,6 +102,21 @@ next diagnostic candidate requests fresh public-service connections through
 the existing positive lifetime option. It does not retry a failed operation,
 downgrade HTTPS/H2, change selected-entry transport, or relax TLS/signatures.
 Its physical result remains to be observed; this is not a release-wide fix claim.
+The `b5fcaea52282c5a7e58a1ff206c54fdab94ff2af` Windows build reopened the
+same account and completed both HTTP proof reads using fresh connections.
+It then rejected NETCODEC policy lineage (stale-or-fork), before a verified
+publication pair could be produced. Review found full genesis-to-successor
+history was passed as an incremental successor suffix on repeated live mint.
+The Shared correction uses the existing DR-0012 full-history boundary; it must
+pass local and device checks before this gate can close. No floor was reset.
+
+The next Android diagnostic adds an independent five-second TLS observation
+only after an unclassified secure-connection failure. Its certificate callback
+always returns false, including for a platform-valid chain; it cannot send an
+application request, admit an account or provide transport authority. Only
+closed chain flags are retained, never certificates, names or exception text.
+The actual request path still uses unchanged platform trust and online
+revocation. This is diagnosis, not an alternate trust path or TLS success.
 
 Android candidate `31bda1a599167cb5a53ad7d9698424f290b98583` was built and
 signed through the corrected supported script. APK SHA-256:

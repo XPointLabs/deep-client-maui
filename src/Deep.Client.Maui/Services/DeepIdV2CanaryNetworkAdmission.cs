@@ -51,7 +51,7 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
             clock, verifier, protectedFloor, clientOptions: publicClientOptions);
         var verified = await HttpStageAsync("AccountProof", () =>
             accounts.AdmitAndVerifyGenesisAsync(admission,
-                proof, authority, cancellationToken: cancellationToken));
+                proof, authority, cancellationToken: cancellationToken), cancellationToken);
         if (verified.CurrentCheckpoint is null ||
             verified.NextProtectedLkg.TreeSize == 0)
             throw new CryptographicException(
@@ -68,20 +68,20 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
             accounts, proof, closure, networkFloor, clock);
         var network = await HttpStageAsync("NetworkVerification", () =>
             networkSource.VerifyCurrentNetworkAsync(
-                genesisPin.NetworkId, cancellationToken).AsTask());
+                genesisPin.NetworkId, cancellationToken).AsTask(), cancellationToken);
         network.EnsureCurrent();
         // Seal all local pre-key capabilities before publication.
         // An exact staged retry is historical state, not a delivery authority.
         _ = await HttpStageAsync("PreKeyStaging", () =>
             accounts.EnsureOwnInitialPreKeyInventoryAsync(networkSource,
-                cancellationToken));
+                cancellationToken), cancellationToken);
         var custody = await accounts.OpenOwnOnionClientCustodyAsync(cancellationToken);
         // Success requires authenticated replies from both selected exits,
         // independently verified XIC1 signatures and durable pair recording.
         // A Registry proof or local staging alone cannot complete this action.
         _ = await HttpStageAsync("PreKeyPublication", () =>
             accounts.PublishOwnStagedPreKeyInventoryAsync(networkSource,
-                custody, cancellationToken));
+                custody, cancellationToken), cancellationToken);
 #endif
     }
 
@@ -100,13 +100,23 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
 
     // Only fixed stage labels and exception classifications enter the UI.
     // URLs, credentials, request bytes and private exception messages do not.
-    private static async Task<T> HttpStageAsync<T>(string stage, Func<Task<T>> action)
+    private static async Task<T> HttpStageAsync<T>(string stage, Func<Task<T>> action,
+        CancellationToken cancellationToken)
     {
         try { return await action(); }
         catch (HttpRequestException exception)
         {
-            var tls = exception.HttpRequestError == HttpRequestError.SecureConnectionError
-                ? $"; Chain {Did2TlsFailureClassifier.Classify(exception)}" : string.Empty;
+            var tls = string.Empty;
+            if (exception.HttpRequestError == HttpRequestError.SecureConnectionError)
+            {
+                var chain = Did2TlsFailureClassifier.Classify(exception);
+#if DEEP_DID2_HTTPS_ADMISSION
+                if (chain == "Unknown")
+                    chain = await Did2TlsFailureClassifier.ObserveRejectedHandshakeAsync(
+                        new Uri(ValidatedOrigin()), cancellationToken).ConfigureAwait(false);
+#endif
+                tls = $"; Chain {chain}";
+            }
             throw new InvalidOperationException(
                 $"DID2 {stage} failed ({exception.HttpRequestError}; " +
                 $"{exception.InnerException?.GetType().Name ?? "None"}{tls}).",
@@ -116,6 +126,13 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
         {
             throw new InvalidOperationException(
                 $"DID2 {stage} failed (Timeout).", exception);
+        }
+        catch (OnionBoundaryException exception)
+        {
+            var code = exception.Code is "network-stale-or-fork" or "network-history-mismatch" or
+                "network-genesis-required" or "network-rehydration-mismatch" or "network-fork"
+                ? exception.Code : "network-verification-rejected";
+            throw new InvalidOperationException($"DID2 {stage} failed ({code}).", exception);
         }
     }
 
