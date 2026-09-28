@@ -3,6 +3,22 @@ namespace Deep.Client.Maui.SmokeTests.Smoke;
 public sealed class WindowsPackagingContractSmokeTests
 {
     [Fact]
+    public void PortableWindowsBuildCarriesBothRuntimesWithoutPackageDeployment()
+    {
+        var project = System.Xml.Linq.XDocument.Parse(ReadWorkspaceFile(
+            "src", "Deep.Client.Maui", "Deep.Client.Maui.csproj"));
+        var group = Assert.Single(project.Root!.Elements("PropertyGroup"),
+            element => ((string?)element.Attribute("Condition")) ==
+                "$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' And '$(WindowsPackageType)' == 'None'");
+        Assert.Equal("true", (string?)group.Element("SelfContained"));
+        Assert.Equal("true", (string?)group.Element("WindowsAppSDKSelfContained"));
+        Assert.Equal("false", (string?)group.Element("WindowsAppSdkDeploymentManagerInitialize"));
+        // Registration-free WinRT activation must remain under the SDK's ownership.
+        Assert.Null(group.Element("WindowsAppSdkUndockedRegFreeWinRTInitialize"));
+        Assert.Null(group.Element("WindowsAppSdkBootstrapInitialize"));
+    }
+
+    [Fact]
     public void ManifestUsesTheExecutableResolvedByTheReleaseScript()
     {
         var manifest = ReadWorkspaceFile(

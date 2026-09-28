@@ -82,3 +82,26 @@ the recovery phrase remained hidden and transport-unavailable status remained
 explicit. This closes the Windows local-account **restart continuity** check
 only. It does not prove observed account creation, production composition,
 Registry admission/proof, contact, messaging, attachments or groups.
+
+## Portable runtime startup check — 2026-09-28
+
+The previously framework-dependent ARM64 publish failed before MAUI startup
+with `REGDB_E_CLASSNOTREG` in the Windows App SDK Deployment Manager initializer.
+The unpackaged project now carries both .NET and Windows App SDK, omits package
+deployment initialization and retains SDK-owned registration-free activation.
+MSBuild evaluation confirms those properties are scoped to the Windows `None`
+profile, not Android or the optional MSIX lane.
+
+The Debug ARM64 account-only probe built with zero warnings/errors. Its exact
+executable SHA-256 is
+`05a6ef73cdb7586e75704e8ff5a73bcd662ae08de372fd5672bf2b9f038c2092`.
+The real Windows window opened after runtime loading and displayed the existing
+local test account. Recovery remained deleted and both recovery controls remained
+disabled; no phrase was revealed, no account was reset or created. The identifier
+is omitted from this evidence. The UI still explicitly states that verified
+DID2 transport is unavailable.
+
+The complete smoke assembly passes 119 tests, including the portable runtime
+configuration contract; the clean account assembly passes 19 tests. This closes
+local Windows startup and account-state continuity only. It is not an APK test,
+signed portable release, TLS publication, messaging or cross-device E2E claim.

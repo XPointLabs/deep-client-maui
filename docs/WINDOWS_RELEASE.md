@@ -1,6 +1,34 @@
 # Windows release
 
-Deep ships as a signed, framework-dependent MSIX for x64 or ARM64. The release
+## Current release target: portable ZIP
+
+The first public Windows release targets an unpackaged self-contained ZIP,
+not MSIX. The application project carries both .NET and Windows App SDK for
+`WindowsPackageType=None`, with Deployment Manager auto-initialization disabled.
+SDK-owned registration-free WinRT initialization remains enabled. A framework-
+dependent publish directory is not a portable release payload: it can fail
+before the MAUI entry point with `REGDB_E_CLASSNOTREG`.
+
+This deployment choice follows Microsoft's
+[self-contained deployment guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps)
+and [initializer requirements](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/project-properties).
+Package/Main/Singleton-dependent WNS is not a capability of the portable profile;
+no-push foreground/resume polling must pass device E2E before release. A single
+EXE is only a later packaging optimization, not permission to omit runtime,
+crypto, carrier or resource files from the ZIP.
+
+Build a separate native x64/ARM64 artifact; verify startup, signing, embedded
+authority, manifest digests and physical messaging against that exact artifact.
+The current project settings fix runtime custody, but do not establish a signed
+release bundle, live transport readiness or device messaging evidence. The
+supported portable release authoring/evidence lane still needs completion.
+
+## Deferred MSIX profile
+
+The following existing MSIX authoring lane is not the current release target
+and must not be used as evidence for the portable ZIP.
+
+The optional MSIX lane creates a signed, framework-dependent MSIX for x64 or ARM64. The release
 artifact is a complete sideload ZIP containing the application MSIX, signing
 certificate, install scripts, and the architecture-specific Windows App Runtime
 dependency packages. Packaging binds the executable and bundled Xray binary to

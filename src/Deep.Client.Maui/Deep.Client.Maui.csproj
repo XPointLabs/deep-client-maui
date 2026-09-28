@@ -42,6 +42,13 @@
     <DeepGoogleServicesJson Condition="'$(DeepGoogleServicesJson)' == '' And '$(Configuration)' != 'Release'">Platforms\Android\google-services.json</DeepGoogleServicesJson>
   </PropertyGroup>
 
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' And '$(WindowsPackageType)' == 'None'">
+    <!-- Portable Windows builds carry both runtimes; no package deployment occurs at startup. -->
+    <SelfContained>true</SelfContained>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
+  </PropertyGroup>
+
   <ItemGroup>
     <AssemblyMetadata Include="DeepDevelopmentNetworkId" Value="$(DeepDevelopmentNetworkId)" />
     <AssemblyMetadata Include="DeepProductionMrXPublicKeySha256" Value="$(DeepProductionMrXPublicKeySha256)" />
