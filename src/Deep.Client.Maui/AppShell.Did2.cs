@@ -660,9 +660,44 @@ public sealed class AppShell : ContentPage
                 }
             }
         };
+#if DEEP_DID2_ACCOUNT_PROBE || DEEP_DID2_HTTPS_ADMISSION
+        // Only the isolated diagnostic package exposes this destructive
+        // control. It uses the account-owned STORE-V2 reset, never OS data wipe.
+        var reset = DeepTheme.SecondaryButton(
+            "Сбросить тестовый аккаунт", "Did2Probe.ResetAccount");
+        var resetStatus = Status("Did2Probe.ResetStatus");
+        reset.Clicked += async (_, _) =>
+        {
+            if (account.IsBusy) return;
+            hideSensitive?.Invoke();
+            if (!await DisplayAlertAsync("Сброс тестового аккаунта",
+                    "Будут удалены только локальный аккаунт этого диагностического приложения, его ключи и сохранённая фраза. Другие приложения и данные нод не затрагиваются. Продолжить?",
+                    "Удалить тестовый аккаунт", "Отмена"))
+                return;
+            if (account.IsBusy) return;
+            reset.IsEnabled = false;
+            try
+            {
+                await account.ResetAccountAfterConfirmationAsync();
+                if (account.ErrorMessage is null && account.Account is null)
+                    Render();
+                else
+                    resetStatus.Text = "Сброс не завершён; новый аккаунт не создан.";
+            }
+            finally { reset.IsEnabled = true; }
+        };
+        return Surface("Page.Settings", "ПРОФИЛЬ", "Настройки аккаунта",
+            profile, Card(identity), Card(recovery), network, contact,
+            Card(new VerticalStackLayout
+            {
+                Spacing = 11,
+                Children = { reset, resetStatus }
+            }), Card(unavailable));
+#else
         return Surface("Page.Settings", "ПРОФИЛЬ", "Настройки аккаунта",
             profile, Card(identity), Card(recovery), network, contact,
             Card(unavailable));
+#endif
     }
 
     private static View Surface(string pageId, string eyebrow, string heading,

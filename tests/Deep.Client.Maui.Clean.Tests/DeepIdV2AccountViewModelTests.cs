@@ -131,6 +131,23 @@ public sealed class DeepIdV2AccountViewModelTests
             Assert.Equal(exactDid2, restarted.Account?.PermanentId.CanonicalText);
             Assert.False(restarted.HasRetainedRecoveryPhrase);
             Assert.False(restarted.RevealRecoveryPhraseCommand.CanExecute(null));
+
+            await restarted.ResetAccountAfterConfirmationAsync();
+            Assert.Null(restarted.ErrorMessage);
+            Assert.Null(restarted.Account);
+            Assert.Empty(restarted.DisplayName);
+            Assert.False(restarted.HasRetainedRecoveryPhrase);
+            Assert.False(restarted.IsRecoveryPhraseRevealed);
+            Assert.False(restarted.IsNetworkVerified);
+            Assert.False(restarted.IsContactProofVerified);
+            await restarted.RefreshAsync();
+            Assert.Null(restarted.Account);
+            restarted.DisplayName = "New diagnostic account";
+            await restarted.CreateAccountAsync();
+            Assert.Null(restarted.ErrorMessage);
+            Assert.NotEqual(exactDid2,
+                restarted.Account?.PermanentId.CanonicalText);
+            Assert.True(restarted.HasRetainedRecoveryPhrase);
         }
         finally
         {

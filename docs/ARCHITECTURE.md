@@ -85,6 +85,13 @@ the local Windows/Android account gate, not production provider approval or
 messaging E2E evidence. The probe stages the exact-hash Android ML-DSA
 candidate from its APK before opening DID2 state; an absent or changed native
 asset fails closed without enabling the V1 runtime.
+The isolated account-probe and HTTPS-diagnostic settings additionally expose
+an explicit test-account reset with a destructive confirmation dialog. It uses
+the current account's STORE-V2 purge and clears all UI verification state before
+returning to name-only onboarding. It does not rewrite expired signed prekeys,
+erase another package, reset a node, or migrate old data; the normal client build
+does not contain this diagnostic reset control. A recreated account has a new
+identity and is never presented as continuation of the erased account.
 An additional non-Release `DeepDid2CanaryAdmission=true` switch may be used
 only with that isolated account probe. It requires an explicit loopback-tunnel
 origin, separately pinned XNA1 and DID2 genesis-head hashes, and three exact

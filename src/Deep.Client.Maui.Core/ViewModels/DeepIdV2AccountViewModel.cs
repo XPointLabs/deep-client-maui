@@ -145,6 +145,24 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
             HasRetainedRecoveryPhrase = true;
         }, cancellationToken);
 
+    /// <summary>
+    /// The caller must obtain visible confirmation before erasing this local
+    /// account. This is not an automatic expiry or incompatible-state repair.
+    /// </summary>
+    public Task ResetAccountAfterConfirmationAsync(
+        CancellationToken cancellationToken = default) =>
+        RunBusyAsync(async ct =>
+        {
+            HideRecoveryPhrase();
+            IsNetworkVerified = false;
+            InvalidateContactProof();
+            var accounts = await runtime.GetAccountsAsync(ct);
+            await accounts.ResetExplicitlyAsync(ct);
+            Account = null;
+            DisplayName = string.Empty;
+            HasRetainedRecoveryPhrase = false;
+        }, cancellationToken);
+
     public Task VerifyNetworkAsync(CancellationToken cancellationToken = default) =>
         RunBusyAsync(async ct =>
         {
