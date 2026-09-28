@@ -146,6 +146,13 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("$settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit", installer);
         Assert.Contains("$field.Count -ne 1", installer);
         Assert.Contains("$result.uiAfter = (Read-ProbeUi).Summary", installer);
+        Assert.Contains("Click-ProbeControl $ui 'Welcome.CreateAccount'", installer);
+        Assert.DoesNotContain("Click-ProbeControl $ui 'Welcome.Create'", installer);
+        Assert.Contains("merge-base --is-ancestor $apkSourceCommit $commit", installer);
+        Assert.Contains("$Phase -eq 'Install'", installer);
+        Assert.Contains("$_ -cnotin $harnessOnly", installer);
+        Assert.Contains("commit = $apkSourceCommit", installer);
+        Assert.Contains("harnessCommit = $commit", installer);
         Assert.DoesNotContain("uninstall", installer);
         Assert.DoesNotContain("pm clear", installer);
     }

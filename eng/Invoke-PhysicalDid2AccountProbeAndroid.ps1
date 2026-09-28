@@ -4,6 +4,8 @@ param(
     [string]$AndroidSerial,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')]
     [string]$ExpectedCommit,
+    [ValidatePattern('^[0-9a-f]{40}$')]
+    [string]$ExpectedApkSourceCommit,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')]
     [string]$ExpectedApkSha256,
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{64}$')]
@@ -175,7 +177,7 @@ function Read-ProbeUi {
     $nodes = @($document.SelectNodes('//node') | Where-Object { $_.GetAttribute('package') -ceq $probePackage })
     if ($nodes.Count -eq 0 -or $nodes.Count -gt 10000) { throw 'DID2 UI node bounds rejected.' }
     $controls = @()
-    foreach ($id in @('Welcome.DisplayName', 'Welcome.Create', 'Did2Workspace.Settings',
+    foreach ($id in @('Welcome.DisplayName', 'Welcome.CreateAccount', 'Did2Workspace.Settings',
         'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus')) {
         $matches = @($nodes | Where-Object {
             $_.GetAttribute('resource-id') -ceq "${probePackage}:id/$id" -or
@@ -224,6 +226,20 @@ $commit = (& git -C $repo rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $commit -cne $ExpectedCommit) {
     throw 'DID2 probe source commit does not match the expected revision.'
 }
+$apkSourceCommit = if ([string]::IsNullOrWhiteSpace($ExpectedApkSourceCommit)) { $commit } else { $ExpectedApkSourceCommit }
+if ($apkSourceCommit -cne $commit) {
+    & git -C $repo merge-base --is-ancestor $apkSourceCommit $commit
+    if ($LASTEXITCODE -ne 0) { throw 'APK source must be a committed ancestor of this harness.' }
+    $changed = @(& git -C $repo diff --name-only $apkSourceCommit $commit)
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to check APK/harness source separation.' }
+    $harnessOnly = @('eng/Invoke-PhysicalDid2AccountProbeAndroid.ps1',
+        'tests/Deep.Client.Maui.Clean.Tests/CleanStartupCompositionTests.cs',
+        'docs/ARCHITECTURE.md', 'docs/DID2-HTTPS-DEVICE-2026-09-28.md')
+    if ($Lane -ne 'Did2Https' -or $Phase -eq 'Install' -or
+        @($changed | Where-Object { $_ -cnotin $harnessOnly }).Count -ne 0) {
+        throw 'Older APKs are allowed only for UI phases with strictly harness/documentation-only changes.'
+    }
+}
 $dirty = @(& git -C $repo status --porcelain)
 if ($LASTEXITCODE -ne 0 -or $dirty.Count -ne 0) {
     throw 'DID2 probe requires a clean committed MAUI worktree.'
@@ -260,7 +276,8 @@ if ($Phase -eq 'Install' -and $probeBefore.installed -and -not $AllowProbeUpdate
 }
 $result = [ordered]@{
     schema = $(if ($Lane -eq 'Did2Https') { 'deep.did2-https-android-diagnostic.v1' } else { 'deep.did2-account-android-probe.v1' })
-    commit = $commit
+    commit = $apkSourceCommit
+    harnessCommit = $commit
     apkSha256 = $apkSha256
     signerSha256 = $ExpectedSignerSha256
     androidSerial = $AndroidSerial
@@ -314,7 +331,7 @@ if ($Execute) {
                     if ($field.Count -ne 1) { throw 'DID2 name field did not receive focus.' }
                     [void](Invoke-Adb @('shell', 'input', 'text', 'Android%sHTTPS%sQA') 'Fill disposable DID2 test name')
                 }
-                'CreateAccount' { Click-ProbeControl $ui 'Welcome.Create' }
+                'CreateAccount' { Click-ProbeControl $ui 'Welcome.CreateAccount' }
                 'Settings' { Click-ProbeControl $ui 'Did2Workspace.Settings' }
                 'VerifyNetwork' { Click-ProbeControl $ui 'Did2Probe.VerifyNetwork' }
             }

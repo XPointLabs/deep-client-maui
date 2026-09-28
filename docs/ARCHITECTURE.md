@@ -154,6 +154,12 @@ Guarded `Inspect`, `SetName`, `CreateAccount`, `Settings`, `VerifyNetwork` and
 foreground ownership and exact enabled AutomationIds, retain bounded XML in
 memory only, and return fixed controls/classifications instead of identity or
 recovery text. Restart preserves account and device state.
+UI-only harness corrections need not rebuild an identical application: an
+explicit `ExpectedApkSourceCommit` may refer to a committed ancestor only when
+the exact changed-file allowlist contains that UI script, its composition test
+or its two architecture/evidence documents. Install cannot use this exception;
+application/build-source changes reject. Results record the APK source and
+harness commits separately, retaining the same pinned APK and signer.
 HTTP diagnostic failures identify one of the fixed account-proof,
 network-verification, pre-key-staging or publication stages using exception
 classifications only. They preserve the cause without exposing private request
