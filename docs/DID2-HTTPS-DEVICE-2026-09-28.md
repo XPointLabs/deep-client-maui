@@ -255,3 +255,33 @@ revealed. Android's post-restart network status was `not-observed`, not a new
 publication success. The other Android packages were not reset or replaced.
 No contact acceptance, XPK1 claim, DPH2, text, image/file or group delivery was
 performed in these runs. Those physical release gates remain open.
+
+## Protected completion reuse on both updated devices
+
+MAUI `a4f56b3ae09bc6094a1c71b644597160b2025d06`, with Shared
+`c5b97ef406ee9f949a80c31e06d7d5a484b5057d`, built both diagnostic clients.
+The Android build completed with zero warnings/errors and the same verified
+production-custody signer above. APK SHA-256:
+`a6cec3d5f0db89cc5869f54700667fd7d0298155e0beda7990472fc36959ae1f`.
+Windows apphost SHA-256:
+`604f40af3de559c8a47428d1019484f50b51aeb919726c1dd9a7d3a398289503`;
+assembly: `f5d8fb5e11a520e92d4a91d981f239387232fc044776875f324b8ff350d50f6d`.
+Clean tests passed 35/35 and smoke tests passed 119/119 against the new Shared
+source. These remain diagnostic Debug builds, not release packages.
+
+The old isolated Windows application was closed through its UI; the new local
+build reopened the same observed ID and retained hidden encrypted recovery.
+The Android supported installer passed preflight, updated only its dedicated
+HTTPS package without reset, and verified unchanged path/metadata hashes for
+the three protected packages. Settings showed the retained account and recovery.
+
+At approximately 18:57 UTC Windows network verification completed successfully;
+at approximately 18:58 UTC a fresh Android Inspect returned
+`verified-publication`. Two earlier Android hierarchy reads were unavailable
+after the one verification tap; the tap was not blindly repeated. The updated
+account-owned source reauthenticates an existing exact protected XIC1 pair with
+fresh account/device and network authority instead of redispatching inventory.
+This tests completed-operation reuse after process/build replacement, not new
+replica retention or current service availability. No signed interval is extended
+and no account, staged inventory, registered node key or rollback floor is reset.
+Contacts, atomic V2 claim, DPH2, text, files/images and groups remain unverified.
