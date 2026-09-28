@@ -114,6 +114,31 @@ public sealed class CleanStartupCompositionTests
     }
 
     [Fact]
+    public void Did2HttpsAndroidUsesSeparatePackageAndSystemTrust()
+    {
+        var project = System.Xml.Linq.XDocument.Parse(ReadSource("Deep.Client.Maui.csproj"));
+        var package = project.Descendants("ApplicationId").Single(value =>
+            value.Value == "network.xpoint.deep.did2https");
+        Assert.Contains("'$(DeepDid2HttpsAdmission)' == 'true'", (string?)package.Attribute("Condition"));
+        Assert.Contains("'$(Configuration)' != 'Release'", (string?)package.Attribute("Condition"));
+        var physicalCa = project.Root!.Elements("ItemGroup").Single(group =>
+            group.Elements("AndroidResource").Any(value =>
+                (string?)value.Attribute("Include") == "Platforms\\Android\\Resources\\raw\\deep_physical_uat_ca.crt"));
+        Assert.Contains("'$(DeepDid2HttpsAdmission)' != 'true'", (string?)physicalCa.Attribute("Condition"));
+        var builder = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-Did2HttpsAndroidBuild.ps1"));
+        Assert.Contains("Invoke-Did2HttpsWindowsBuild.ps1", builder);
+        Assert.Contains("AndroidSigningKeyPass=file:$passwordFile", builder);
+        Assert.Contains("$Matches[1] -cne $ExpectedSignerSha256", builder);
+        Assert.DoesNotContain("pm clear", builder);
+        var installer = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1"));
+        Assert.Contains("[ValidateSet('Did2Account', 'Did2Https')]", installer);
+        Assert.Contains("'network.xpoint.deep.did2https'", installer);
+        Assert.Contains("Assert-SameSnapshot $before[$package] $after[$package] $package", installer);
+        Assert.DoesNotContain("uninstall", installer);
+        Assert.DoesNotContain("pm clear", installer);
+    }
+
+    [Fact]
     public void WindowsUatPackageCanAdvanceRevisionWithoutChangingProductionVersion()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

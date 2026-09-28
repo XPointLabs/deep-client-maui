@@ -10,6 +10,9 @@ param(
     [string]$ExpectedSignerSha256,
     [ValidateSet('default', 'android-arm64')]
     [string]$ApkVariant = 'default',
+    [ValidateSet('Did2Account', 'Did2Https')]
+    [string]$Lane = 'Did2Account',
+    [string]$ApkPath,
     [switch]$AllowProbeUpdate,
     [switch]$Execute
 )
@@ -19,7 +22,29 @@ $ErrorActionPreference = 'Stop'
 
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $apkRoot = Join-Path $repo 'src\Deep.Client.Maui\bin\Debug\net10.0-android'
-$apk = if ($ApkVariant -eq 'android-arm64') {
+$apk = if ($Lane -eq 'Did2Https') {
+    if ([string]::IsNullOrWhiteSpace($ApkPath) -or
+        -not [IO.Path]::IsPathFullyQualified($ApkPath)) {
+        throw 'DID2 HTTPS install requires its explicit built APK path.'
+    }
+    $full = [IO.Path]::GetFullPath($ApkPath)
+    $allowedRoot = [IO.Path]::GetFullPath((Join-Path $repo 'artifacts\did2-https-android')) + [IO.Path]::DirectorySeparatorChar
+    if (-not $full.StartsWith($allowedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'DID2 HTTPS APK must belong to the supported build artifact lane.'
+    }
+    for ($cursor = $full; -not [string]::IsNullOrWhiteSpace($cursor);
+        $cursor = [IO.Path]::GetDirectoryName($cursor)) {
+        if ((Test-Path -LiteralPath $cursor) -and
+            (((Get-Item -LiteralPath $cursor -Force).Attributes -band
+                [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+            throw 'DID2 HTTPS APK must not traverse a reparse point.'
+        }
+        if ([IO.Path]::GetDirectoryName($cursor) -ceq $cursor) { break }
+    }
+    $full
+} elseif (-not [string]::IsNullOrWhiteSpace($ApkPath)) {
+    throw 'An arbitrary APK path is not accepted by the account-only lane.'
+} elseif ($ApkVariant -eq 'android-arm64') {
     Join-Path $apkRoot 'android-arm64\network.xpoint.deep.did2probe-Signed.apk'
 } else {
     Join-Path $apkRoot 'network.xpoint.deep.did2probe-Signed.apk'
@@ -29,8 +54,9 @@ $adb = Join-Path $sdk 'platform-tools\adb.exe'
 $aapt = Join-Path $sdk 'build-tools\36.0.0\aapt.exe'
 $apksignerJar = Join-Path $sdk 'build-tools\36.0.0\lib\apksigner.jar'
 $java = 'C:\Program Files\Android\openjdk\jdk-21.0.8\bin\java.exe'
-$probePackage = 'network.xpoint.deep.did2probe'
-$protectedPackages = @('network.xpoint.deep', 'network.xpoint.deep.e2e')
+$probePackage = if ($Lane -eq 'Did2Https') { 'network.xpoint.deep.did2https' } else { 'network.xpoint.deep.did2probe' }
+$protectedPackages = @('network.xpoint.deep', 'network.xpoint.deep.e2e',
+    $(if ($Lane -eq 'Did2Https') { 'network.xpoint.deep.did2probe' } else { 'network.xpoint.deep.did2https' }))
 
 function Invoke-Bounded([string]$File, [string[]]$Arguments,
     [string]$Label, [int]$DeadlineMs = 30000) {
@@ -146,7 +172,7 @@ if ($apkSha256 -cne $ExpectedApkSha256) {
     throw 'DID2 probe APK hash differs from the approved preflight input.'
 }
 $badging = Invoke-Bounded $aapt @('dump', 'badging', $apk) 'APK manifest'
-if ($badging -notmatch "(?m)^package: name='network\.xpoint\.deep\.did2probe'") {
+if ($badging -notmatch "(?m)^package: name='$([regex]::Escape($probePackage))'") {
     throw 'DID2 probe APK has an unexpected application ID.'
 }
 $signer = Invoke-Bounded $java @('-jar', $apksignerJar, 'verify',
@@ -175,6 +201,7 @@ $result = [ordered]@{
     signerSha256 = $ExpectedSignerSha256
     androidSerial = $AndroidSerial
     package = $probePackage
+    lane = $Lane
     apkVariant = $ApkVariant
     execute = [bool]$Execute
     allowProbeUpdate = [bool]$AllowProbeUpdate

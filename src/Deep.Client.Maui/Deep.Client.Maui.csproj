@@ -17,6 +17,7 @@
     <ApplicationId Condition="('$(DeepPhysicalE2E)' != 'true' And '$(DeepLocalDev)' != 'true') Or '$(Configuration)' == 'Release'">network.xpoint.deep</ApplicationId>
     <ApplicationId Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">network.xpoint.deep.e2e</ApplicationId>
     <ApplicationId Condition="'$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">network.xpoint.deep.did2probe</ApplicationId>
+    <ApplicationId Condition="'$(DeepDid2HttpsAdmission)' == 'true' And '$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">network.xpoint.deep.did2https</ApplicationId>
     <ApplicationTitle Condition="'$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">Deep DID2 UAT</ApplicationTitle>
     <ApplicationDisplayVersion>0.2.9</ApplicationDisplayVersion>
     <ApplicationVersion>16</ApplicationVersion>
@@ -368,7 +369,7 @@
     <AndroidResource Remove="Platforms\Android\Resources\raw\deep_physical_uat_ca.crt" />
   </ItemGroup>
 
-  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release'">
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(DeepPhysicalE2E)' == 'true' And '$(DeepDid2HttpsAdmission)' != 'true' And '$(Configuration)' != 'Release'">
     <AndroidResource Remove="Platforms\Android\Resources\xml\network_security_config.xml" />
     <AndroidResource Include="Platforms\Android\Resources\xml\network_security_config_physical_e2e.xml">
       <Link>Resources\xml\network_security_config.xml</Link>

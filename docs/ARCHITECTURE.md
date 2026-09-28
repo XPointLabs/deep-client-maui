@@ -135,6 +135,14 @@ source as an unpackaged portable Debug candidate, with preflight by default and
 not a release-signing shortcut. Windows custody resides in a compile-time
 per-network `XPointLabs/DeepDid2Physical` lane, separate from normal application
 data and both isolated account/canary probes; no existing account is migrated.
+`eng/Invoke-Did2HttpsAndroidBuild.ps1` reuses the same no-write source and
+bootstrap preflight, builds an ARM64 APK with file-based signing inputs and
+verifies its explicitly pinned signer. Its dedicated Android package is
+`network.xpoint.deep.did2https`; the normal Android system-root configuration
+is retained, without the older physical lab CA. The existing guarded Android
+installer accepts this lane only with `-Lane Did2Https`, an exact build-artifact
+path and APK/signing/source pins; it audits production, older E2E and account
+probe packages before and after, and performs no reset or uninstall.
 HTTP diagnostic failures identify one of the fixed account-proof,
 network-verification, pre-key-staging or publication stages using exception
 classifications only. They preserve the cause without exposing private request
