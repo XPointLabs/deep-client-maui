@@ -67,6 +67,10 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("HttpStageAsync(\"PreKeyStaging\"", admission);
         Assert.Contains("HttpStageAsync(\"PreKeyPublication\"", admission);
         Assert.Contains("exception.HttpRequestError", admission);
+        Assert.Contains("<Compile Include=\"Services\\Did2TlsFailureClassifier.cs\" />", project,
+            StringComparison.Ordinal);
+        Assert.Contains("Did2TlsFailureClassifier.Classify(exception)", admission,
+            StringComparison.Ordinal);
         Assert.Contains("catch (TimeoutException exception)", admission);
         Assert.Contains("DID2 {stage} failed (Timeout).", admission);
         Assert.DoesNotContain("new PrivacyRoutedContactResolverTransport", admission,
