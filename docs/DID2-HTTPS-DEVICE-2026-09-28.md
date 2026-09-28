@@ -232,6 +232,26 @@ distinguish verified publication, in-progress verification, unavailable proof or
 admission authority, ingress rejection before forwarding, aborted requests,
 unclassified redacted failure and no observation. UI error text is not exported.
 The harness change passed all 35 clean tests and eight synthetic classifier
-cases; it does not establish a successful physical publication. The required
-next result remains a verified durable two-replica receipt pair, then the
-Windows/Android contact and message vertical.
+cases; those synthetic results alone are not physical publication evidence.
+
+## Authenticated physical publication and restart
+
+After the production proof-budget rollout recorded in the DevOps runbook,
+Windows HTTPS QA completed verification at approximately 17:49 UTC; Android
+HTTPS QA completed it at approximately 17:55 UTC. The Windows success status
+and Android closed `verified-publication` outcome follow the account-owned
+completion path, which verifies both selected XIC1 replica signatures and
+records the exact pair durably before returning. The exact source used by both
+devices is
+`753ab13d87c93dbb45061cd19b7d66d585dd284b`.
+Android used the APK hash above. Windows apphost SHA-256:
+`701a8d9b513729c2a8385f3e73848f20a4d824e6678e8748f00159d5578b532e`;
+assembly: `d3e7116cf81f5b409bc42c595f1009243731cd0e8f1554870755f93c7ed8c63e`.
+
+Both diagnostic applications restarted without reset or another creation.
+Windows retained the same observed identity; both settings panes showed the
+retained account and hidden encrypted recovery. Recovery phrases were never
+revealed. Android's post-restart network status was `not-observed`, not a new
+publication success. The other Android packages were not reset or replaced.
+No contact acceptance, XPK1 claim, DPH2, text, image/file or group delivery was
+performed in these runs. Those physical release gates remain open.
