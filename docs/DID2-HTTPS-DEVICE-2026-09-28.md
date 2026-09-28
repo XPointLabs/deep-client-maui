@@ -69,3 +69,61 @@ The harness now queries full `dumpsys window`; the signer now mirrors the
 existing working helper and uses an aligned input. Clean tests passed 22/22,
 smoke tests 119/119, and the revised seven composition guards passed. Actual
 UI phases on the corrected harness remain to be completed.
+
+## Follow-up: physical accounts and repeated HTTPS responses
+
+Windows candidate `8cb27125509461e10f3ae2bb45579b1933166dd0` completed
+AccountProof, then failed at NetworkVerification. A private, bounded runtime
+trace showed HTTP 200 for admission, first proof and public closure. The second
+proof declared 11,224 bytes but left its final 1,172 bytes unread until the
+existing HTTP deadline. No account/SQL lease timeout was observed; changing
+account-lock behavior would not address this evidence.
+
+Shared candidate `2c5c387c3d5547bff91144fec0f147e6ed0d587c` selects exact HTTP/2
+for public binary requests, with no HTTP/1 downgrade or application retry.
+Focused transport/proof/closure tests passed 14/14; the full Shared Release
+gate passed 171/171. These are local tests, not device delivery evidence.
+
+MAUI candidate `167280c82dff342b0368c5ae142a07f47d2f2062` includes the closed
+TLS classifier in the actual DID2 compile graph (the first attempted build
+detected a missing include). Clean tests passed 25/25 and smoke tests 119/119.
+The supported Windows build reopened the existing physical account. Apphost
+SHA-256: `5e1bea9feb73fa0b00b77409ddd2fd538fcff57d83a1f70b56ba1436aced2aef`;
+assembly SHA-256: `6401ed0986fa9be3d81d600741e2e4c1ad20ea8002c73591c0dcbb37a6be66a1`.
+HTTP/2 did not resolve the failure: second-proof headers returned 200, followed
+by an aborted body read with a socket-close exception chain. A separate
+identity-neutral three-request closure diagnostic reproduced the second-request
+failure on the reused connection, including with plain HttpClient. Three fresh
+clients received complete untrusted closure responses in 376/234/231 ms.
+This narrows diagnosis to connection reuse along the real HTTPS path; it does
+not establish which runtime, network or proxy component caused the close.
+IPv4-first acquisition also reproduced the reused-connection failure. The
+next diagnostic candidate requests fresh public-service connections through
+the existing positive lifetime option. It does not retry a failed operation,
+downgrade HTTPS/H2, change selected-entry transport, or relax TLS/signatures.
+Its physical result remains to be observed; this is not a release-wide fix claim.
+
+Android candidate `31bda1a599167cb5a53ad7d9698424f290b98583` was built and
+signed through the corrected supported script. APK SHA-256:
+`3a4f72523a99be50ae57c530c45928d6d16679ca29b06ea0230640bed84f91e7`.
+The real device created a disposable account by name/Create; settings showed
+retained encrypted recovery. Force-stop/relaunch preserved the account and
+retained phrase. Harness changes added the actual mobile settings selector,
+an observed-IME dismissal/guard and bounded scrolling inside the owned settings
+pane. No retired identity or transport fallback was introduced.
+
+The same `167280c` candidate built Android with zero warnings/errors and the
+production-custody signer above. APK SHA-256:
+`d0214cc08afbdc4910ef943ab846dd55bfe677d2c6a93f0223567f5c27d811d6`.
+Guarded update preserved the existing account and retained recovery. Before/after
+metadata and path hashes matched for all three protected packages. Network
+verification still failed at AccountProof with SecureConnectionError /
+AuthenticationException / Chain Unknown. No certificate or revocation check was
+disabled. A transient post-action UI hierarchy capture failure was followed by
+a fresh Inspect phase; the action was not blindly repeated.
+
+Registry continued the existing signed history to head generation 20/tree 7
+through ordinary renewal. Protected time was renewed with strict expected-hash
+CAS to generation 11 after independent UTC/no-reboot checks. Neither genesis nor
+account history was reset. Authenticated two-replica publication, contacts,
+messages, files/images and groups on physical devices remain unverified.

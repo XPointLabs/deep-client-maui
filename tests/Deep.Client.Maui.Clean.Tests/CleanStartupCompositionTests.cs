@@ -50,8 +50,10 @@ public sealed class CleanStartupCompositionTests
             admission, StringComparison.Ordinal);
         Assert.Contains("DeepIdV2DirectoryBootstrapVerifier.RestoreGenesis",
             admission, StringComparison.Ordinal);
-        Assert.Contains("CreateDeepIdV2NetworkClosureArtifactSource(origin)",
+        Assert.Contains("CreateDeepIdV2NetworkClosureArtifactSource(origin,",
             admission, StringComparison.Ordinal);
+        Assert.Contains("PooledConnectionLifetime: TimeSpan.FromTicks(1)", admission,
+            StringComparison.Ordinal);
         Assert.Contains("accounts.OpenNetworkLkgStoreAsync(genesisPin,",
             admission, StringComparison.Ordinal);
         Assert.Contains("networkSource.VerifyCurrentNetworkAsync(",
@@ -77,7 +79,7 @@ public sealed class CleanStartupCompositionTests
             StringComparison.Ordinal);
         // Shape/composition guard only; real signature, freshness and floor
         // behavior is exercised by the Shared native/SQLCipher fixture.
-        Assert.Contains("clock, verifier, protectedFloor)", admission,
+        Assert.Contains("clock, verifier, protectedFloor, clientOptions: publicClientOptions)", admission,
             StringComparison.Ordinal);
         Assert.Contains("accounts, proof, closure, networkFloor, clock)", admission,
             StringComparison.Ordinal);

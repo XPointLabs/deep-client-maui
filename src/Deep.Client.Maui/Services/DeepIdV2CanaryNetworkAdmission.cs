@@ -41,13 +41,14 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
 
         var factory = new HttpServiceTransportFactory(
             HttpServiceEndpointPolicy.Production);
+        var publicClientOptions = DiagnosticHttpOptions();
         using var admission = factory.CreateDeepIdV2GenesisAdmissionClient(
-            origin);
+            origin, clientOptions: publicClientOptions);
         using var verifier = DeepMlDsa65CandidateVerifierFactory
             .OpenForCurrentProcess();
         var clock = new CanaryMonotonicClock();
         using var proof = factory.CreateDeepIdV2DirectoryProofClient(origin,
-            clock, verifier, protectedFloor);
+            clock, verifier, protectedFloor, clientOptions: publicClientOptions);
         var verified = await HttpStageAsync("AccountProof", () =>
             accounts.AdmitAndVerifyGenesisAsync(admission,
                 proof, authority, cancellationToken: cancellationToken));
@@ -59,7 +60,8 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
         // Public distribution is untrusted. Only the account-owned source
         // verifies the complete signed closure, fresh proof and durable floor.
         // The HTTP loopback probe remains admission-only, never a TLS claim.
-        using var closure = factory.CreateDeepIdV2NetworkClosureArtifactSource(origin);
+        using var closure = factory.CreateDeepIdV2NetworkClosureArtifactSource(origin,
+            clientOptions: publicClientOptions);
         var networkFloor = await accounts.OpenNetworkLkgStoreAsync(genesisPin,
             cancellationToken);
         var networkSource = new DeepIdV2ContactPathAuthoritySource(genesisPin,
@@ -80,6 +82,19 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
         _ = await HttpStageAsync("PreKeyPublication", () =>
             accounts.PublishOwnStagedPreKeyInventoryAsync(networkSource,
                 custody, cancellationToken));
+#endif
+    }
+
+    private static HttpServiceClientOptions? DiagnosticHttpOptions()
+    {
+#if DEEP_DID2_HTTPS_ADMISSION
+        // The real path aborts a second response on a reused connection, also
+        // with plain HttpClient. Isolate this diagnostic's public requests on
+        // fresh connections while preserving TLS, deadlines and signatures.
+        // This is not a retry, downgrade, or change to selected-entry transport.
+        return new(PooledConnectionLifetime: TimeSpan.FromTicks(1));
+#else
+        return null;
 #endif
     }
 
