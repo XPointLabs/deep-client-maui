@@ -135,6 +135,12 @@ source as an unpackaged portable Debug candidate, with preflight by default and
 not a release-signing shortcut. Windows custody resides in a compile-time
 per-network `XPointLabs/DeepDid2Physical` lane, separate from normal application
 data and both isolated account/canary probes; no existing account is migrated.
+HTTP diagnostic failures identify one of the fixed account-proof,
+network-verification, pre-key-staging or publication stages using exception
+classifications only. They preserve the cause without exposing private request
+bytes or exception messages and do not authorize retries or fallback. Actual
+device observations and remaining gates are recorded in
+[`DID2-HTTPS-DEVICE-2026-09-28.md`](DID2-HTTPS-DEVICE-2026-09-28.md).
 The MAUI account and transport runtimes are process-scoped DI singletons.
 Android may destroy a Window and create another without ending that process,
 so Window destruction must not dispose those runtimes or turn a valid account

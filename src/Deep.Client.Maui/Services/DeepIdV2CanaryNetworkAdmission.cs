@@ -48,8 +48,9 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
         var clock = new CanaryMonotonicClock();
         using var proof = factory.CreateDeepIdV2DirectoryProofClient(origin,
             clock, verifier, protectedFloor);
-        var verified = await accounts.AdmitAndVerifyGenesisAsync(admission,
-            proof, authority, cancellationToken: cancellationToken);
+        var verified = await HttpStageAsync("AccountProof", () =>
+            accounts.AdmitAndVerifyGenesisAsync(admission,
+                proof, authority, cancellationToken: cancellationToken));
         if (verified.CurrentCheckpoint is null ||
             verified.NextProtectedLkg.TreeSize == 0)
             throw new CryptographicException(
@@ -63,20 +64,37 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
             cancellationToken);
         var networkSource = new DeepIdV2ContactPathAuthoritySource(genesisPin,
             accounts, proof, closure, networkFloor, clock);
-        var network = await networkSource.VerifyCurrentNetworkAsync(
-            genesisPin.NetworkId, cancellationToken);
+        var network = await HttpStageAsync("NetworkVerification", () =>
+            networkSource.VerifyCurrentNetworkAsync(
+                genesisPin.NetworkId, cancellationToken).AsTask());
         network.EnsureCurrent();
         // Seal all local pre-key capabilities before publication.
         // An exact staged retry is historical state, not a delivery authority.
-        _ = await accounts.EnsureOwnInitialPreKeyInventoryAsync(networkSource,
-            cancellationToken);
+        _ = await HttpStageAsync("PreKeyStaging", () =>
+            accounts.EnsureOwnInitialPreKeyInventoryAsync(networkSource,
+                cancellationToken));
         var custody = await accounts.OpenOwnOnionClientCustodyAsync(cancellationToken);
         // Success requires authenticated replies from both selected exits,
         // independently verified XIC1 signatures and durable pair recording.
         // A Registry proof or local staging alone cannot complete this action.
-        _ = await accounts.PublishOwnStagedPreKeyInventoryAsync(networkSource,
-            custody, cancellationToken);
+        _ = await HttpStageAsync("PreKeyPublication", () =>
+            accounts.PublishOwnStagedPreKeyInventoryAsync(networkSource,
+                custody, cancellationToken));
 #endif
+    }
+
+    // Only fixed stage labels and exception classifications enter the UI.
+    // URLs, credentials, request bytes and private exception messages do not.
+    private static async Task<T> HttpStageAsync<T>(string stage, Func<Task<T>> action)
+    {
+        try { return await action(); }
+        catch (HttpRequestException exception)
+        {
+            throw new InvalidOperationException(
+                $"DID2 {stage} failed ({exception.HttpRequestError}; " +
+                $"{exception.InnerException?.GetType().Name ?? "None"}).",
+                exception);
+        }
     }
 
     public async Task VerifyAsync(DeepIdV2AccountService accounts,

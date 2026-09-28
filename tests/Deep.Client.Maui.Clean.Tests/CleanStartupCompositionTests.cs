@@ -62,6 +62,11 @@ public sealed class CleanStartupCompositionTests
             admission, StringComparison.Ordinal);
         Assert.Contains("accounts.PublishOwnStagedPreKeyInventoryAsync(networkSource,",
             admission, StringComparison.Ordinal);
+        Assert.Contains("HttpStageAsync(\"AccountProof\"", admission);
+        Assert.Contains("HttpStageAsync(\"NetworkVerification\"", admission);
+        Assert.Contains("HttpStageAsync(\"PreKeyStaging\"", admission);
+        Assert.Contains("HttpStageAsync(\"PreKeyPublication\"", admission);
+        Assert.Contains("exception.HttpRequestError", admission);
         Assert.DoesNotContain("new PrivacyRoutedContactResolverTransport", admission,
             StringComparison.Ordinal);
         // Shape/composition guard only; real signature, freshness and floor
