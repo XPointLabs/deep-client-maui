@@ -41,3 +41,31 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 Next: locate the exact failing stage, finish independently verified two-replica
 publication, then compose DID2 contacts/DPH2/receive and verify Windows↔Android
 text, file/image integrity and groups. None of those gates is closed here.
+
+## Android diagnostic preparation
+
+Code `915d05ca0fd3ee9aa7adef10edb7aa2defe790d3` compiled the dedicated ARM64
+HTTPS package with zero warnings/errors. Its new signing step initially failed:
+two explicit file-based password requests cannot consume the original
+single-line password source. The existing `Invoke-ExplicitApkSigning` SDK helper
+successfully signed the zip-aligned disposable APK using the PKCS12 store
+password alone. Independent signature and 16-KiB-page alignment checks passed.
+The actual production-custody signer is
+`bf8abed56e852d0902796f9e0131789f188688784a07ad516760f127684204c2`,
+not the older debug probe signer. No signer-mismatch check was bypassed.
+
+The guarded installer passed preflight and installed/launched only
+`network.xpoint.deep.did2https`; APK SHA-256:
+`9829d57d070023bc4506b4d0edb00b50410fd078408510e6646aca57185c4c6d`.
+Before/after path and stable metadata hashes matched for production, older
+E2E and account-probe packages. No account was reset. This is installation
+evidence only, not Android account/proof/message evidence.
+
+The first guarded UI inspection rejected foreground ownership because the
+Samsung `dumpsys window windows` subsection omits `mCurrentFocus`. Independent
+read-only full-window and resumed-activity checks both identified the exact
+HTTPS package in front, with no keyguard or captured runtime exception.
+The harness now queries full `dumpsys window`; the signer now mirrors the
+existing working helper and uses an aligned input. Clean tests passed 22/22,
+smoke tests 119/119, and the revised seven composition guards passed. Actual
+UI phases on the corrected harness remain to be completed.

@@ -157,7 +157,7 @@ function Assert-SameSnapshot($Before, $After, [string]$Package) {
 }
 
 function Read-ProbeUi {
-    $focus = Invoke-Adb @('shell', 'dumpsys', 'window', 'windows') 'DID2 foreground owner'
+    $focus = Invoke-Adb @('shell', 'dumpsys', 'window') 'DID2 foreground owner'
     if ($focus -notmatch "mCurrentFocus=.*$([regex]::Escape($probePackage))/") {
         throw 'The exact DID2 package does not own the foreground window.'
     }
@@ -259,7 +259,7 @@ if ($Phase -eq 'Install' -and $probeBefore.installed -and -not $AllowProbeUpdate
     throw 'The dedicated DID2 probe package already exists; explicit -AllowProbeUpdate is required.'
 }
 $result = [ordered]@{
-    schema = 'deep.did2-account-android-probe.v1'
+    schema = $(if ($Lane -eq 'Did2Https') { 'deep.did2-https-android-diagnostic.v1' } else { 'deep.did2-account-android-probe.v1' })
     commit = $commit
     apkSha256 = $apkSha256
     signerSha256 = $ExpectedSignerSha256
@@ -271,6 +271,7 @@ $result = [ordered]@{
     execute = [bool]$Execute
     allowProbeUpdate = [bool]$AllowProbeUpdate
     status = 'preflight'
+    deviceDeliveryVerified = $false
     protectedBefore = $before
     probeBefore = $probeBefore
 }

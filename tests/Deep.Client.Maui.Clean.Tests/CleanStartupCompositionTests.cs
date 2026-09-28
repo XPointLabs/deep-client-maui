@@ -130,6 +130,8 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("'--ks-pass', \"file:$passwordFile\"", builder);
         Assert.Contains("'--ks-type', 'PKCS12'", builder);
         Assert.DoesNotContain("AndroidSigningKeyPass=", builder);
+        Assert.DoesNotContain("'--key-pass'", builder);
+        Assert.Contains("android-arm64\\network.xpoint.deep.did2https-Signed.apk", builder);
         Assert.Contains("$Matches[1] -cne $ExpectedSignerSha256", builder);
         Assert.DoesNotContain("pm clear", builder);
         var installer = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1"));
@@ -139,6 +141,8 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("'Inspect', 'SetName', 'CreateAccount', 'Settings', 'VerifyNetwork', 'Restart'", installer);
         Assert.Contains("$Lane -ne 'Did2Https'", installer);
         Assert.Contains("mCurrentFocus=", installer);
+        Assert.Contains("@('shell', 'dumpsys', 'window')", installer);
+        Assert.DoesNotContain("@('shell', 'dumpsys', 'window', 'windows')", installer);
         Assert.Contains("$settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit", installer);
         Assert.Contains("$field.Count -ne 1", installer);
         Assert.Contains("$result.uiAfter = (Read-ProbeUi).Summary", installer);

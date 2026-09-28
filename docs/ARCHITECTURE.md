@@ -146,6 +146,9 @@ probe packages before and after, and performs no reset or uninstall.
 The SDK build uses its disposable debug signer; a separate explicit PKCS12
 SDK step signs the final APK with file-based passwords and verifies its pinned
 signer before any installation. Private signing arguments never enter MSBuild.
+The final signer consumes the already zip-aligned disposable APK and uses the
+PKCS12 store password for its same-password key, matching the existing SDK
+helper. It does not request two passwords from the original single-line file.
 Guarded `Inspect`, `SetName`, `CreateAccount`, `Settings`, `VerifyNetwork` and
 `Restart` phases apply only to that installed HTTPS package. They require its
 foreground ownership and exact enabled AutomationIds, retain bounded XML in

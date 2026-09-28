@@ -92,14 +92,14 @@ if ($Execute) {
         '-p:Aapt2DaemonMaxInstanceCount=1', '-nodeReuse:false', '-m:1')
     & dotnet @arguments
     if ($LASTEXITCODE -ne 0) { throw 'DID2 Android build failed; no package was installed.' }
-    $unsigned = Join-Path $output 'build-bin\Debug\net10.0-android\android-arm64\network.xpoint.deep.did2https.apk'
+    $unsigned = Join-Path $output 'build-bin\Debug\net10.0-android\android-arm64\network.xpoint.deep.did2https-Signed.apk'
     if (-not (Test-Path -LiteralPath $unsigned -PathType Leaf)) { throw 'Exact DID2 HTTPS APK is absent.' }
     # Keep production key arguments outside MSBuild. Match the existing SDK
     # signing workflow, using explicit PKCS12 and file-based passwords only.
     $apk = Join-Path $output 'network.xpoint.deep.did2https-Signed.apk'
     $signArguments = @('-jar', $signer, 'sign', '--out', $apk, '--ks', $keyStore,
         '--ks-type', 'PKCS12', '--ks-key-alias', $SigningAlias,
-        '--ks-pass', "file:$passwordFile", '--key-pass', "file:$passwordFile", $unsigned)
+        '--ks-pass', "file:$passwordFile", $unsigned)
     $signingOutput = (& $java @signArguments 2>&1) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw 'Explicit pinned SDK APK signing failed; no package was installed.' }
     $verified = (& $java '-jar' $signer 'verify' '--print-certs' $apk 2>&1) -join "`n"
