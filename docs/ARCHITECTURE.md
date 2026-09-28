@@ -105,7 +105,13 @@ For the normal non-Release physical `.e2e` package, an explicit
 signed-authority and nonce-bound proof verifier to a canonical DNS HTTPS
 origin. The exact XNA1/DTS1/genesis-head assets and two public hash pins are
 still mandatory build inputs. This switch is rejected for the isolated probe,
-loopback canary and Release; it does not authorize contact acceptance,
+loopback canary and Release. After admission it also fetches the bounded public
+network closure through the owned HTTPS adapter and invokes Shared's
+`VerifyCurrentNetworkAsync` with the same monotonic clock as the proof client.
+The account-owned SQLCipher network floor must commit and reauthenticate
+before the action succeeds. A missing, stale, altered or incomplete closure
+fails closed while retaining the local account; the HTTP loopback probe remains
+admission-only. This diagnostic does not authorize contact acceptance,
 prekey publication, messaging, files or groups. The default build still shows
 these capabilities as unavailable when the physical UAT inputs are absent.
 The MAUI account and transport runtimes are process-scoped DI singletons.

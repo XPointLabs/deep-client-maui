@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Shared.Services;
+using Deep.Client.Shared.Services.ContactV2;
 using Deep.Protocol.AccountDirectoryV1;
 using Deep.Protocol.ApplicationCore;
 using Deep.Protocol.DeepExtension.PrivacyRouting;
@@ -33,7 +34,7 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
     {
         ArgumentNullException.ThrowIfNull(accounts);
         var origin = ValidatedOrigin();
-        var (authority, exactHead, headPin) = await ReadBootstrapAsync(
+        var (genesisPin, authority, exactHead, headPin) = await ReadBootstrapAsync(
             cancellationToken);
         var protectedFloor = await accounts.OpenDirectoryLkgStoreAsync(
             authority, exactHead, headPin, cancellationToken);
@@ -44,14 +45,28 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
             origin);
         using var verifier = DeepMlDsa65CandidateVerifierFactory
             .OpenForCurrentProcess();
+        var clock = new CanaryMonotonicClock();
         using var proof = factory.CreateDeepIdV2DirectoryProofClient(origin,
-            new CanaryMonotonicClock(), verifier, protectedFloor);
+            clock, verifier, protectedFloor);
         var verified = await accounts.AdmitAndVerifyGenesisAsync(admission,
             proof, authority, cancellationToken: cancellationToken);
         if (verified.CurrentCheckpoint is null ||
             verified.NextProtectedLkg.TreeSize == 0)
             throw new CryptographicException(
                 "The DID2 canary did not prove the current account genesis.");
+#if DEEP_DID2_HTTPS_ADMISSION
+        // Public distribution is untrusted. Only the account-owned source
+        // verifies the complete signed closure, fresh proof and durable floor.
+        // The HTTP loopback probe remains admission-only, never a TLS claim.
+        using var closure = factory.CreateDeepIdV2NetworkClosureArtifactSource(origin);
+        var networkFloor = await accounts.OpenNetworkLkgStoreAsync(genesisPin,
+            cancellationToken);
+        var networkSource = new DeepIdV2ContactPathAuthoritySource(genesisPin,
+            accounts, proof, closure, networkFloor, clock);
+        var network = await networkSource.VerifyCurrentNetworkAsync(
+            genesisPin.NetworkId, cancellationToken);
+        network.EnsureCurrent();
+#endif
     }
 
     public async Task VerifyAsync(DeepIdV2AccountService accounts,
@@ -73,7 +88,7 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
                 "The contact descriptor does not bind the exact DID2 credential.");
 
         var origin = ValidatedOrigin();
-        var (authority, exactHead, headPin) = await ReadBootstrapAsync(
+        var (_, authority, exactHead, headPin) = await ReadBootstrapAsync(
             cancellationToken);
         var protectedFloor = await accounts.OpenDirectoryLkgStoreAsync(
             authority, exactHead, headPin, cancellationToken);
@@ -113,7 +128,8 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
 #endif
     }
 
-    private static async Task<(VerifiedXPointNetworkAuthority Authority,
+    private static async Task<(XPointNetworkGenesisPin GenesisPin,
+        VerifiedXPointNetworkAuthority Authority,
         byte[] ExactHead, byte[] HeadPin)> ReadBootstrapAsync(
         CancellationToken cancellationToken)
     {
@@ -126,13 +142,14 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
             cancellationToken);
         var exactHead = await ReadAssetAsync("did2_adh1.bin", 4096,
             cancellationToken);
+        var genesisPin = new XPointNetworkGenesisPin(network.Span, xnaPin);
         var authority = XPointNetworkAuthorityVerifier.Verify(
-            new XPointNetworkGenesisPin(network.Span, xnaPin),
+            genesisPin,
             [(ReadOnlyMemory<byte>)exactXna],
             [(ReadOnlyMemory<byte>)exactDts]);
         _ = DeepIdV2DirectoryBootstrapVerifier.RestoreGenesis(authority,
             exactHead, headPin);
-        return (authority, exactHead, headPin);
+        return (genesisPin, authority, exactHead, headPin);
     }
 
     private static string Metadata(string key)

@@ -4,6 +4,7 @@ namespace Deep.Client.Maui.Core.Services;
 
 /// <summary>
 /// One DID2-only admission and independently verified directory proof.
+/// HTTPS UAT additionally verifies and durably records the signed network closure.
 /// This grants no contact, message, attachment or group transport.
 /// </summary>
 public interface IDeepIdV2NetworkAdmission
