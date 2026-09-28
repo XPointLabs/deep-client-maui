@@ -90,9 +90,11 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
         try { return await action(); }
         catch (HttpRequestException exception)
         {
+            var tls = exception.HttpRequestError == HttpRequestError.SecureConnectionError
+                ? $"; Chain {Did2TlsFailureClassifier.Classify(exception)}" : string.Empty;
             throw new InvalidOperationException(
                 $"DID2 {stage} failed ({exception.HttpRequestError}; " +
-                $"{exception.InnerException?.GetType().Name ?? "None"}).",
+                $"{exception.InnerException?.GetType().Name ?? "None"}{tls}).",
                 exception);
         }
         catch (TimeoutException exception)

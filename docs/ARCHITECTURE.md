@@ -169,8 +169,11 @@ pane with validated bounds, then requires a fresh observation before a tap.
 HTTP diagnostic failures identify one of the fixed account-proof,
 network-verification, pre-key-staging or publication stages using exception
 classifications only. They preserve the cause without exposing private request
-bytes or exception messages and do not authorize retries or fallback. Actual
-device observations and remaining gates are recorded in
+bytes or exception messages and do not authorize retries or fallback.
+TLS failures additionally classify only a closed list of standard
+chain-status names from bounded authentication-exception chains; unknown or
+oversized messages remain `Unknown`. This display never changes validation.
+Actual device observations and remaining gates are recorded in
 [`DID2-HTTPS-DEVICE-2026-09-28.md`](DID2-HTTPS-DEVICE-2026-09-28.md).
 The MAUI account and transport runtimes are process-scoped DI singletons.
 Android may destroy a Window and create another without ending that process,

@@ -20,6 +20,8 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\Did2TlsFailureClassifier.cs"
+             Link="Did2TlsFailureClassifier.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PlatformDeepSecureStorage.cs"
              Link="PlatformDeepSecureStorage.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\DeepIdV2AccountRuntimeOwner.cs"
