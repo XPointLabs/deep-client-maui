@@ -126,6 +126,15 @@ This candidate has not yet proved live publication or physical ML-KEM.
 It does not authorize contact acceptance, messaging, files or groups.
 The default build still shows
 these capabilities as unavailable when the physical UAT inputs are absent.
+The DID2 HTTPS diagnostic rejects retired mailbox/PMA trust-floor and artifact
+identity inputs rather than requiring fictitious values. Its explicit nonzero
+network ID is still bound by runtime verification to the signed bootstrap.
+`eng/Invoke-Did2HttpsWindowsBuild.ps1` builds a clean, explicitly pinned committed
+source as an unpackaged portable Debug candidate, with preflight by default and
+`-Execute` required to build. It neither installs nor launches the result and is
+not a release-signing shortcut. Windows custody resides in a compile-time
+per-network `XPointLabs/DeepDid2Physical` lane, separate from normal application
+data and both isolated account/canary probes; no existing account is migrated.
 The MAUI account and transport runtimes are process-scoped DI singletons.
 Android may destroy a Window and create another without ending that process,
 so Window destruction must not dispose those runtimes or turn a valid account

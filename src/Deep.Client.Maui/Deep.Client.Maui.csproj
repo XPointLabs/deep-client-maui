@@ -167,6 +167,10 @@
            Text="DID2 physical UAT admission requires exact lowercase public bootstrap pins." />
     <Error Condition="'$(DeepDid2BootstrapDirectory)' == '' Or !Exists('$(DeepDid2BootstrapDirectory)\xna1.0000.bin') Or !Exists('$(DeepDid2BootstrapDirectory)\dts1.0000.bin') Or !Exists('$(DeepDid2BootstrapDirectory)\did2-genesis-adh1.bin')"
            Text="DID2 physical UAT admission requires the three exact signed public bootstrap assets." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatNetworkId)', '^[0-9a-f]{32}$')) Or '$(DeepPhysicalUatNetworkId)' == '00000000000000000000000000000000'"
+           Text="DID2 physical admission requires an explicit nonzero network ID bound to the signed bootstrap." />
+    <Error Condition="'$(DeepPhysicalUatMrXPublicKeySha256)$(DeepPhysicalUatAuthorityGeneration)$(DeepPhysicalUatAuthorityHash)$(DeepPhysicalUatRevocationGeneration)$(DeepPhysicalUatRevocationHeadHash)$(DeepPhysicalUatRevocationSnapshotHash)$(DeepPhysicalUatTopologyGeneration)$(DeepPhysicalUatTopologyHash)$(PhysicalUatAndroidBuildIdentitySupplied)$(PhysicalUatAndroidTransparencySupplied)$(PhysicalUatWindowsBuildIdentitySupplied)$(DeepPhysicalUatAndroidTransparencyPreparation)' != ''"
+           Text="DID2 physical admission does not accept retired mailbox/PMA build inputs." />
   </Target>
 
   <ItemGroup Condition="('$(DeepPhysicalE2E)' == 'true' Or '$(DeepLocalDev)' == 'true') And '$(Configuration)' != 'Release'">
@@ -288,7 +292,7 @@
   </ItemGroup>
 
   <Target Name="ValidatePhysicalUatMailboxInputs" BeforeTargets="PrepareForBuild"
-          Condition="'$(DeepPhysicalE2E)' == 'true' And '$(DeepLocalDev)' != 'true' And '$(Configuration)' != 'Release'">
+          Condition="'$(DeepPhysicalE2E)' == 'true' And '$(DeepLocalDev)' != 'true' And '$(DeepDid2HttpsAdmission)' != 'true' And '$(Configuration)' != 'Release'">
     <Error Condition="'$(PhysicalUatMailboxTrustFloorSupplied)' != 'true'"
            Text="Physical UAT builds require the complete, separately named UAT mailbox trust floor." />
     <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatMrXPublicKeySha256)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatNetworkId)', '^[0-9a-f]{32}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatAuthorityHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatRevocationHeadHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatRevocationSnapshotHash)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepPhysicalUatTopologyHash)', '^[0-9a-f]{64}$'))"

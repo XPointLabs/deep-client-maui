@@ -11,6 +11,15 @@ internal static class AppDataPath
 
     internal static string Resolve()
     {
+#if DEEP_DID2_HTTPS_ADMISSION && WINDOWS
+        var physicalRoot = Did2ProbeStorageScope.ResolvePhysicalRoot(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            ActiveBuildNetworkId.Load().Span);
+        RejectReparsePoints(physicalRoot);
+        Directory.CreateDirectory(physicalRoot);
+        WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(physicalRoot);
+        return physicalRoot;
+#else
 #if DEEP_DID2_ACCOUNT_PROBE && WINDOWS
         var localAppData = Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData);
@@ -64,6 +73,7 @@ internal static class AppDataPath
 #endif
         return FileSystem.AppDataDirectory;
 #endif
+#endif
     }
 
     private static bool IsSameOrDescendant(string relativePath)
@@ -87,7 +97,7 @@ internal static class AppDataPath
         var current = new DirectoryInfo(path);
         while (current is not null)
         {
-            if ((current.Attributes & FileAttributes.ReparsePoint) != 0)
+            if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0)
             {
                 throw new InvalidOperationException(
                     $"{RootEnvironment} must not traverse a reparse point.");

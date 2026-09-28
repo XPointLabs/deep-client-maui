@@ -19,6 +19,22 @@ public sealed class Did2ProbeStorageScopeTests
     }
 
     [Fact]
+    public void PhysicalCustodyIsStablePerNetworkAndSeparateFromBothProbes()
+    {
+        var root = Path.GetFullPath(Path.GetTempPath());
+        var network = Enumerable.Repeat((byte)0xab, 16).ToArray();
+        var physical = Did2ProbeStorageScope.ResolvePhysicalRoot(root, network);
+        Assert.Equal(physical, Did2ProbeStorageScope.ResolvePhysicalRoot(root, network.ToArray()));
+        Assert.NotEqual(physical, Did2ProbeStorageScope.ResolveCanaryRoot(root, network));
+        Assert.NotEqual(physical, Path.Combine(root, "XPointLabs", "DeepDid2AccountProbe"));
+        Assert.Contains(Path.Combine("XPointLabs", "DeepDid2Physical"), physical);
+        network[0] ^= 1;
+        Assert.NotEqual(physical, Did2ProbeStorageScope.ResolvePhysicalRoot(root, network));
+        Assert.Throws<ArgumentException>(() => Did2ProbeStorageScope.ResolvePhysicalRoot(root, new byte[16]));
+        Assert.Throws<ArgumentException>(() => Did2ProbeStorageScope.ResolvePhysicalRoot("relative", network));
+    }
+
+    [Fact]
     public void MissingOrHostileScopeRejectsBeforeAnyFilesystemMutation()
     {
         var network = Enumerable.Repeat((byte)1, 16).ToArray();
