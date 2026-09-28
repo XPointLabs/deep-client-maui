@@ -15,14 +15,21 @@ param(
     [ValidateSet('Did2Account', 'Did2Https')]
     [string]$Lane = 'Did2Account',
     [string]$ApkPath,
-    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart')]
+    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset')]
     [string]$Phase = 'Install',
+    [switch]$ConfirmIsolatedAccountReset,
     [switch]$AllowProbeUpdate,
     [switch]$Execute
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($Phase -eq 'ConfirmReset' -and -not $ConfirmIsolatedAccountReset) {
+    throw 'ConfirmReset requires explicit -ConfirmIsolatedAccountReset.'
+}
+if ($ConfirmIsolatedAccountReset -and $Phase -ne 'ConfirmReset') {
+    throw 'Reset confirmation is accepted only by the ConfirmReset phase.'
+}
 
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $apkRoot = Join-Path $repo 'src\Deep.Client.Maui\bin\Debug\net10.0-android'
@@ -178,7 +185,7 @@ function Read-ProbeUi {
     if ($nodes.Count -eq 0 -or $nodes.Count -gt 10000) { throw 'DID2 UI node bounds rejected.' }
     $controls = @()
     foreach ($id in @('Welcome.DisplayName', 'Welcome.CreateAccount', 'Did2Workspace.Settings', 'Did2Workspace.MobileSettings',
-        'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus')) {
+        'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus', 'Did2Probe.ResetAccount')) {
         $matches = @($nodes | Where-Object {
             $_.GetAttribute('resource-id') -ceq "${probePackage}:id/$id" -or
             $_.GetAttribute('content-desc') -ceq $id
@@ -199,6 +206,9 @@ function Read-ProbeUi {
             recoveryRetained=($text.Contains('Зашифрованная копия хранится на этом устройстве.'))
             verifying=($text.Contains('Проверяем подписанный каталог и регистрацию'))
             stageFailure=$(if ($failure.Success) { $failure.Value } else { $null })
+            resetConfirmationVisible=($text.Contains('Сброс тестового аккаунта') -and
+                $text.Contains('Будут удалены только локальный аккаунт этого диагностического приложения') -and
+                $text.Contains('Удалить тестовый аккаунт'))
         }
     }
 }
@@ -207,10 +217,20 @@ function Click-ProbeControl($Ui, [string]$Id) {
     if ($Ui.ImeShowing -and $Id -cne 'Welcome.DisplayName') {
         throw 'Dismiss the observed probe keyboard before tapping another control.'
     }
-    $nodes = @($Ui.Nodes | Where-Object {
+    $nodes = if ($Id -ceq 'Did2Probe.ConfirmReset') {
+        if (-not $Ui.Summary.resetConfirmationVisible) {
+            throw 'The exact owned diagnostic reset dialog is required.'
+        }
+        @($Ui.Nodes | Where-Object {
+            $_.GetAttribute('resource-id') -ceq 'android:id/button1' -and
+            $_.GetAttribute('text') -ceq 'Удалить тестовый аккаунт' -and
+            $_.GetAttribute('class') -ceq 'android.widget.Button' -and
+            $_.GetAttribute('enabled') -ceq 'true'
+        })
+    } else { @($Ui.Nodes | Where-Object {
         ($_.GetAttribute('resource-id') -ceq "${probePackage}:id/$Id" -or
             $_.GetAttribute('content-desc') -ceq $Id) -and $_.GetAttribute('enabled') -ceq 'true'
-    })
+    }) }
     if ($nodes.Count -ne 1) { throw 'An exact enabled DID2 control is required.' }
     $bounds = [regex]::Match($nodes[0].GetAttribute('bounds'), '^\[(\d{1,5}),(\d{1,5})\]\[(\d{1,5}),(\d{1,5})\]$')
     if (-not $bounds.Success) { throw 'DID2 control bounds are invalid.' }
@@ -292,6 +312,7 @@ $result = [ordered]@{
     apkVariant = $ApkVariant
     execute = [bool]$Execute
     allowProbeUpdate = [bool]$AllowProbeUpdate
+    confirmIsolatedAccountReset = [bool]$ConfirmIsolatedAccountReset
     status = 'preflight'
     deviceDeliveryVerified = $false
     protectedBefore = $before
@@ -367,6 +388,8 @@ if ($Execute) {
                         $x, [string]($top+100), '450') 'Scroll exact owned settings pane')
                 }
                 'VerifyNetwork' { Click-ProbeControl $ui 'Did2Probe.VerifyNetwork' }
+                'BeginReset' { Click-ProbeControl $ui 'Did2Probe.ResetAccount' }
+                'ConfirmReset' { Click-ProbeControl $ui 'Did2Probe.ConfirmReset' }
             }
             $result.uiAfter = (Read-ProbeUi).Summary
             $result.status = 'ui-phase-observed'

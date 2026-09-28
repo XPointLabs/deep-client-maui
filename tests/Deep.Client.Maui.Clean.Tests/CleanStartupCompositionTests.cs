@@ -185,6 +185,11 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("'DismissKeyboard'", installer);
         Assert.Contains("'Did2Workspace.MobileSettings'", installer);
         Assert.Contains("'ScrollSettings'", installer);
+        Assert.Contains("'BeginReset', 'ConfirmReset'", installer);
+        Assert.Contains("ConfirmReset requires explicit -ConfirmIsolatedAccountReset.", installer);
+        Assert.Contains("$Ui.Summary.resetConfirmationVisible", installer);
+        Assert.Contains("'android:id/button1'", installer);
+        Assert.Contains("'Удалить тестовый аккаунт'", installer);
         Assert.Contains("${probePackage}:id/Page.Settings", installer);
         Assert.Contains("'android.widget.ScrollView'", installer);
         Assert.DoesNotContain("uninstall", installer);

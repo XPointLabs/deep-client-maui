@@ -92,6 +92,10 @@ returning to name-only onboarding. It does not rewrite expired signed prekeys,
 erase another package, reset a node, or migrate old data; the normal client build
 does not contain this diagnostic reset control. A recreated account has a new
 identity and is never presented as continuation of the erased account.
+The Android HTTPS diagnostic harness separates `BeginReset` (open and inspect
+the dialog) from `ConfirmReset` (requires `-ConfirmIsolatedAccountReset` and
+the exact owned dialog/button). Every phase keeps the existing other-package
+before/after audit and rejects a missing or changed dialog before input.
 An additional non-Release `DeepDid2CanaryAdmission=true` switch may be used
 only with that isolated account probe. It requires an explicit loopback-tunnel
 origin, separately pinned XNA1 and DID2 genesis-head hashes, and three exact
