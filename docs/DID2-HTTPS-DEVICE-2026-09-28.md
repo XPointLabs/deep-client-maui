@@ -371,3 +371,27 @@ were unchanged. Settings showed the retained account and hidden recovery.
 Only wireless ADB was observed; USB transport is not confirmed. Connectivity
 inspection identified Wi-Fi as the default route, even though cellular was also
 validated. No network/security setting was changed by automation.
+
+At approximately 08:07 UTC, a fresh read-only Android Inspect observed
+`verified-publication` following one bounded verification action. Its immediate
+post-action UI hierarchy was unavailable, so the tap was not repeated. This
+establishes successful account-owned completion: independently authenticated
+exact XIC1 signatures and protected pair custody, not contact/claim authority.
+The observation alone does not distinguish a first dispatch from an exact
+interrupted-operation retry or completed-pair reauthentication.
+
+The supported Restart phase then stopped/relaunched only the diagnostic process,
+without reset. Settings retained the account and hidden recovery. A single
+post-restart verification action again had an unavailable immediate hierarchy;
+the subsequent Inspect at approximately 08:13 UTC observed `verified-publication`.
+The now-completed protected pair is reauthenticated against fresh account/network
+authority without inventory redispatch. This is same-history process-restart
+evidence, not the separate changed-signed-tip restart gate or proof of present
+replica availability. Protected package snapshots remained unchanged.
+
+A further identity-neutral control used the existing digest-pinned official
+Node 24 image in local Linux ARM64 Docker: three responses on one H2 connection
+completed and matched the independent NCP2 export. The Docker endpoint was a
+local named pipe, not the remote production host. Native Windows ARM64 controls
+still truncate. This further narrows the Windows-dependent path; it does not
+identify a faulty driver, proxy or system component. No system setting changed.
