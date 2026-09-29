@@ -285,3 +285,25 @@ This tests completed-operation reuse after process/build replacement, not new
 replica retention or current service availability. No signed interval is extended
 and no account, staged inventory, registered node key or rollback floor is reset.
 Contacts, atomic V2 claim, DPH2, text, files/images and groups remain unverified.
+
+## Follow-up on 2026-09-29: current proof unavailable
+
+The existing Windows HTTPS QA account was preserved, not recreated following
+the delayed account-creation confirmation. One fresh network action completed
+with `proof-authority-unavailable`; the local account and hidden encrypted
+recovery remained present. No reset or phrase disclosure was performed.
+
+Android `VerifyNetwork` passed preflight, but its bounded execution could not
+capture UI hierarchy. The action outcome was initially unknown and the tap was
+not repeated. A subsequent read-only `Inspect` phase succeeded and observed
+`proof-authority-unavailable`, not a verified publication. Path and stable
+metadata hashes before/after matched for production, E2E and the separate DID2
+account-probe packages. Account/recovery fields were outside the scrolled view;
+their absence in this observation is not evidence of deleted account state.
+
+Both devices still use the previously recorded diagnostic builds; they do not
+contain the new account-owned durable DNH2 implementation. The current signed
+view expiry and independent service observations are recorded in the
+[DevOps runbook](../../deep-devops/docs/DID2_FLOOR_PRODUCTION_CANDIDATE.md).
+No current physical contact, claim, handshake, text, attachment or group
+delivery is established by these actions.
