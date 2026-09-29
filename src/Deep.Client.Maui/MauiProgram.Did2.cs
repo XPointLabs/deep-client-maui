@@ -27,6 +27,15 @@ public static partial class MauiProgram
         builder.Services.AddSingleton<IDeepIdV2ContactDiscovery>(services =>
             (DeepIdV2CanaryNetworkAdmission)services.GetRequiredService<
                 IDeepIdV2NetworkAdmission>());
+        builder.Services.AddSingleton<INetworkStatusService,MauiConnectivityStatusService>();
+        builder.Services.AddSingleton<DeepIdV2NetworkReconnect>(services => new(
+            async ct => {
+                var accounts = await services.GetRequiredService<IDeepIdV2AccountRuntimeAccessor>().GetAccountsAsync(ct);
+                if (await accounts.GetCurrentAsync(ct) is null) throw new DeepIdV2AccountUnavailableException();
+                // Owned proof/history/closure/ONION connections and attempt
+                // contexts are recreated and disposed by this exact pipeline.
+                await services.GetRequiredService<IDeepIdV2NetworkAdmission>().VerifyAsync(accounts,ct);
+            },services.GetRequiredService<INetworkStatusService>(),MainThread.BeginInvokeOnMainThread));
 #endif
         builder.Services.AddSingleton<DeepIdV2AccountViewModel>();
         builder.Services.AddSingleton<AppShell>();

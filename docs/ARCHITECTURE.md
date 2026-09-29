@@ -1,5 +1,25 @@
 # Deep MAUI Architecture
 
+## DID2 network recovery candidate (2026-09-29)
+
+The process-owned `DeepIdV2NetworkReconnect` subscribes to connectivity and
+window activation, cancels obsolete attempts and serializes the entire fresh
+DID2 proof/closure/pre-key composition. Typed 429/503 scheduling hints have
+bounded monotonic backoff; malformed signatures or corrupt floors remain
+rejected. Confirmed local account reset waits for the cancelled pipeline to
+drain; returning connectivity never creates or resets an account.
+
+This currently restores the isolated DID2 diagnostic composition, **not** a
+shipping MSG inbox/outbox/session graph. 46 clean and 119 smoke tests passed;
+these are not Windows/Android physical reconnect or message-delivery evidence.
+The optional HTTPS diagnostic build also requires the independently compiled
+Mr. X trust pin and explicit public bootstrap/runtime inputs. Missing inputs
+must not be bypassed to claim an active network build.
+
+Historical wire and trust semantics are owned by
+[DR-0014](../../docs/survival-program/decisions/DR-0014-directory-historical-catchup.md);
+the local topology is documented in [Deep DEV](../../deep-devops/docs/DEEP_DEV.md).
+
 Deep is a private messenger running over XPoint Network. The MAUI repository is
 the native application boundary; portable protocol and state behavior live in
 the sibling `deep-client-shared` repository.

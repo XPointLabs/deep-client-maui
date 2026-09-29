@@ -16,6 +16,8 @@
     <Compile Include="..\Deep.Client.Maui.Core\Services\IDeepIdV2AccountRuntimeAccessor.cs" Link="Services\IDeepIdV2AccountRuntimeAccessor.cs" />
     <Compile Include="..\Deep.Client.Maui.Core\Services\IDeepIdV2NetworkAdmission.cs" Link="Services\IDeepIdV2NetworkAdmission.cs" />
     <Compile Include="..\Deep.Client.Maui.Core\Services\IDeepIdV2ContactDiscovery.cs" Link="Services\IDeepIdV2ContactDiscovery.cs" />
+    <Compile Include="..\Deep.Client.Maui.Core\Services\INetworkStatusService.cs" Link="Services\INetworkStatusService.cs" />
+    <Compile Include="..\Deep.Client.Maui.Core\Services\DeepIdV2NetworkReconnect.cs" Link="Services\DeepIdV2NetworkReconnect.cs" />
   </ItemGroup>
 
 </Project>

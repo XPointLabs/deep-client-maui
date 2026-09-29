@@ -14,6 +14,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
     private readonly IDeepIdV2AccountRuntimeAccessor runtime;
     private readonly IDeepIdV2NetworkAdmission? networkAdmission;
     private readonly IDeepIdV2ContactDiscovery? contactDiscovery;
+    private readonly DeepIdV2NetworkReconnect? reconnect;
     private string displayName = string.Empty;
     private DeepIdV2AccountSnapshot? account;
     private string revealedRecoveryPhrase = string.Empty;
@@ -24,11 +25,16 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
 
     public DeepIdV2AccountViewModel(IDeepIdV2AccountRuntimeAccessor runtime,
         IDeepIdV2NetworkAdmission? networkAdmission = null,
-        IDeepIdV2ContactDiscovery? contactDiscovery = null)
+        IDeepIdV2ContactDiscovery? contactDiscovery = null, DeepIdV2NetworkReconnect? reconnect = null)
     {
         this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         this.networkAdmission = networkAdmission;
         this.contactDiscovery = contactDiscovery;
+        this.reconnect = reconnect;
+        if (reconnect is not null) reconnect.StateChanged += (_,_) => {
+            IsNetworkVerified = reconnect.State == DeepIdV2ReconnectState.Verified;
+            if (!IsNetworkVerified) InvalidateContactProof();
+        };
         CreateAccountCommand = new AsyncCommand(CreateAccountAsync,
             () => Account is null && !string.IsNullOrWhiteSpace(DisplayName));
         RevealRecoveryPhraseCommand = new AsyncCommand(RevealRecoveryPhraseAsync,
@@ -131,6 +137,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
             using var phrase = Account is null ? null :
                 await accounts.ReadRetainedRecoveryPhraseAsync(ct);
             HasRetainedRecoveryPhrase = phrase is not null;
+            reconnect?.AccountChanged();
         }, cancellationToken);
 
     public Task CreateAccountAsync(CancellationToken cancellationToken = default) =>
@@ -143,6 +150,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
             Account = await accounts.CreateAsync(DisplayName, ct);
             DisplayName = Account.DisplayName;
             HasRetainedRecoveryPhrase = true;
+            reconnect?.AccountChanged();
         }, cancellationToken);
 
     /// <summary>
@@ -157,10 +165,12 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
             IsNetworkVerified = false;
             InvalidateContactProof();
             var accounts = await runtime.GetAccountsAsync(ct);
-            await accounts.ResetExplicitlyAsync(ct);
+            if (reconnect is null) await accounts.ResetExplicitlyAsync(ct);
+            else await reconnect.MutateAccountAsync(token => accounts.ResetExplicitlyAsync(token),ct);
             Account = null;
             DisplayName = string.Empty;
             HasRetainedRecoveryPhrase = false;
+            reconnect?.AccountChanged();
         }, cancellationToken);
 
     public Task VerifyNetworkAsync(CancellationToken cancellationToken = default) =>

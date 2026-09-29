@@ -3,7 +3,7 @@ using Microsoft.Maui.Networking;
 
 namespace Deep.Client.Maui.Services;
 
-public sealed class MauiConnectivityStatusService : INetworkStatusService
+public sealed class MauiConnectivityStatusService : INetworkStatusService, IDisposable
 {
     public MauiConnectivityStatusService()
     {
@@ -29,4 +29,5 @@ public sealed class MauiConnectivityStatusService : INetworkStatusService
     {
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
+    public void Dispose() => Connectivity.ConnectivityChanged -= OnConnectivityChanged;
 }
