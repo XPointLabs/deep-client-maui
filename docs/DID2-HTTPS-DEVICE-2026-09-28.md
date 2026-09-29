@@ -350,3 +350,24 @@ Unknown stage strings reject; this change neither retries nor completes an
 interrupted operation. Clean tests passed 42/42 and smoke tests 119/119 after
 the correction; these are local evidence only. Current-history
 restart, live claim, DPH2 and Windows↔Android text/files/images/groups remain open.
+
+### Corrected diagnostic on the physical devices
+
+Source `00a089fbd7030f9e83f653c4660bfffe31f14447` built both actual DID2 graphs
+through the supported scripts. Windows apphost SHA-256:
+`8e51282b735126e1ff8ca6055a3c4ccec05c895712a99cc1fcf1702a197e3ec8`;
+assembly: `092147bf31cd0d5ad51acb2f3478f4af3922b85bb0079c83741b586aaa4ca8cd`.
+The former isolated QA was closed through its UI. The new process retained
+the same observed profile/identity and hidden recovery without reset or creation.
+One network action reported `DID2 AccountProof failed (TransportIo)`, demonstrating
+the closed error wrapper in the real application, not successful proof completion.
+
+Android APK SHA-256:
+`2ec49e4814b7fa3842b056393dda6a70af8e89d1ae4bd806942e6957ada43189`.
+The build completed with zero warnings/errors and the same pinned signer.
+Install preflight passed; the guarded update changed only the dedicated HTTPS
+package and launched it. All three protected packages' path/metadata hashes
+were unchanged. Settings showed the retained account and hidden recovery.
+Only wireless ADB was observed; USB transport is not confirmed. Connectivity
+inspection identified Wi-Fi as the default route, even though cellular was also
+validated. No network/security setting was changed by automation.
