@@ -127,6 +127,10 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
             throw new InvalidOperationException(
                 $"DID2 {stage} failed (Timeout).", exception);
         }
+        catch (IOException exception)
+        {
+            throw Did2NetworkIoFailure.AtStage(stage, exception);
+        }
         catch (OnionBoundaryException exception)
         {
             var code = exception.Code is "network-stale-or-fork" or "network-history-mismatch" or

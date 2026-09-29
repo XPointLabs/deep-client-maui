@@ -307,3 +307,46 @@ view expiry and independent service observations are recorded in the
 [DevOps runbook](../../deep-devops/docs/DID2_FLOOR_PRODUCTION_CANDIDATE.md).
 No current physical contact, claim, handshake, text, attachment or group
 delivery is established by these actions.
+
+## DNH2 builds after the authenticated operational successor
+
+MAUI `d1166446dd41f1df6b0592a29a81af53159d8b16`, with Shared
+`72a78b7217a88232496c1749adfe9841641b395c`, built the dedicated Windows
+ARM64 and Android ARM64 diagnostics. Clean tests passed 35/35 and smoke tests
+119/119. Shared owner CI run `36529522694` succeeded. Windows apphost SHA-256:
+`cf4b53e8733250f75366160b569ff7060c07eb7439f2726e14f8fbdabf01f69e`;
+assembly: `fc51e73ca332899b0a96e3c78fa2f40c7e55e643336c6ebb3fedd29fe56b68d7`.
+Android APK: `1224e9d5ed32d5b4c5b38e90547df684289451d6f57afefdd489312f8d4c0e79`,
+with the production-custody signer recorded above and zero build warnings/errors.
+The guarded update changed only the HTTPS package; path/metadata hashes of
+the three protected packages remained equal. These are Debug diagnostics,
+not Release packages or publication approval.
+
+The old Windows projection-only custody was rejected as incompatible, without
+migration. After action-time confirmation, only this isolated account was reset
+through the application UI. Mr. X created the replacement account; subsequent
+inspection showed its profile and hidden retained recovery. It was not created
+again after his confirmation. Android was observed at fresh onboarding and,
+later, with retained recovery; an unavailable SetName hierarchy was not blindly
+retried. Fresh verification reported Android PreKeyPublication timeout and
+Windows AccountProof timeout or aborted response. No new XIC1 pair is claimed.
+
+A bounded Windows runtime trace subsequently recorded an HTTP 200 proof
+response declaring 18,994 bytes, then an incomplete body and connection abort.
+Identity-neutral controls reproduced second-response truncation with both
+plain .NET HttpClient and Node.js on this workstation. Three Node.js requests
+on one connection from the Registry host completed and hash-matched the
+independent 14,449-byte public NCP2 export; three fresh local Node.js connections
+also completed. Fresh .NET connections passed with TLS resumption enabled or
+disabled; disabling resumption alone on a reused connection still failed.
+Local TLS 1.2 and IPv4-only controls also reproduced truncation. This rules out
+a .NET-only explanation for that control, but does not identify the failing
+network/proxy/runtime component or prove device publication. No platform trust,
+signature, deadline, exact H2, registered key or protected floor was weakened.
+
+The diagnostic now wraps IOException with a closed stage and `TransportIo`
+label. The original cause is retained internally, not copied into UI/evidence.
+Unknown stage strings reject; this change neither retries nor completes an
+interrupted operation. Clean tests passed 42/42 and smoke tests 119/119 after
+the correction; these are local evidence only. Current-history
+restart, live claim, DPH2 and Windows↔Android text/files/images/groups remain open.

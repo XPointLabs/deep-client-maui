@@ -266,6 +266,7 @@
     <Compile Include="Services\DeepIdV2CanaryNetworkAdmission.cs" />
     <Compile Include="Services\Did2ProbeStorageScope.cs" />
     <Compile Include="Services\Did2TlsFailureClassifier.cs" />
+    <Compile Include="Services\Did2NetworkIoFailure.cs" />
     <Compile Include="Services\PlatformDeepSecureStorage.cs" />
     <Compile Include="Services\WindowsMailboxAccessControl.cs" />
     <Compile Remove="Platforms\Android\AndroidAppLockService.cs" />

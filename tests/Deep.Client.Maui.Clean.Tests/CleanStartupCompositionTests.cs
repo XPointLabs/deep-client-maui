@@ -97,6 +97,9 @@ public sealed class CleanStartupCompositionTests
             StringComparison.Ordinal);
         Assert.Contains("catch (TimeoutException exception)", admission);
         Assert.Contains("DID2 {stage} failed (Timeout).", admission);
+        Assert.Contains("catch (IOException exception)", admission);
+        Assert.Contains("Did2NetworkIoFailure.AtStage(stage, exception)", admission);
+        Assert.Contains("<Compile Include=\"Services\\Did2NetworkIoFailure.cs\" />", project);
         Assert.DoesNotContain("new PrivacyRoutedContactResolverTransport", admission,
             StringComparison.Ordinal);
         // Shape/composition guard only; real signature, freshness and floor
