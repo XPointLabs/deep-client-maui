@@ -395,3 +395,41 @@ completed and matched the independent NCP2 export. The Docker endpoint was a
 local named pipe, not the remote production host. Native Windows ARM64 controls
 still truncate. This further narrows the Windows-dependent path; it does not
 identify a faulty driver, proxy or system component. No system setting changed.
+
+## Resumed physical checkpoint — 2026-09-30
+
+Mr. X resumed physical contacts/messages/attachments/groups testing and explicitly
+allowed updating production for it. This checkpoint does not close that scope.
+
+- Shared `6682437` adds an internal exact V2 claim transport boundary. Four
+  focused tests cover eleven success/refusal/substitution/cancellation scenarios;
+  they do not supply a durable caller journal, peer closure, DPH2 or device evidence.
+- The first fresh HTTPS Android build failed because reconnect referenced a
+  connectivity adapter omitted by the clean compile allow-list. MAUI `d1689e6`
+  explicitly includes that platform primitive without restoring the retired
+  runtime. Clean tests passed 47/47 and smoke tests 119/119.
+- The supported scripts built Windows ARM64 and signed Android ARM64 diagnostic
+  candidates from `d1689e6`, not Release packages. Windows apphost SHA-256:
+  `ada4fd15475ed6d1f42f9fa8ea9534e1d8fea4ed364dc04d793203bff61cb0c2`;
+  assembly: `084e5e4ef7cf92d1208a87994cfa2c55a3a5a77027b836701410e1b4e942d385`.
+  Android APK: `4d6663df7265a5e2c79e6c1861c4bdddc12963610e7191e4fe9fbcd9cf069359`,
+  with the production-custody signer recorded above and zero build warnings/errors.
+- The guarded USB update changed only the dedicated HTTPS diagnostic package.
+  Before/after path and stable metadata hashes matched for all three protected
+  packages. Both real devices retained their QA accounts and encrypted, hidden
+  recovery phrases; no account reset or phrase reveal/deletion occurred.
+- One network action on each real device ended at `AccountProof / TransportIo`.
+  Android's immediate post-action hierarchy was unavailable; the action was not
+  repeated, and a later read-only Inspect observed the failure.
+- An independent public HTTPS check returned **503** for production DID2 readiness
+  and **200** for staking. This establishes production DID2 unavailability, not
+  the exact cause of each wrapped client exception. The local retained DEV
+  verification reported current Registry proof and three verified ONION nodes.
+- New source-bound XNode/Registry image workflows built but failed GHCR upload
+  with `permission_denied: write_package`. No new image was deployed, no old
+  floor/key was reset, and no GitHub Release or main merge was performed.
+
+Next: restore authorized image publication and live production authority, then
+complete account-owned durable V2 claim/peer-closure/DPH2 composition before the
+bidirectional text, restart/dedup/ACK, file/image and membership-change gates.
+The current UI still explicitly marks those messaging functions unavailable.
