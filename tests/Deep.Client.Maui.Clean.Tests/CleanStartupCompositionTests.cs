@@ -3,6 +3,21 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
+    public void Did2ReconnectIncludesItsPlatformConnectivityAdapterAfterCleanServiceRemoval()
+    {
+        var project = System.Xml.Linq.XDocument.Parse(ReadSource("Deep.Client.Maui.csproj"));
+        var adapter = Assert.Single(project.Descendants("Compile"), value =>
+            (string?)value.Attribute("Include") == "Services\\MauiConnectivityStatusService.cs");
+        Assert.Null(adapter.Attribute("Condition"));
+        Assert.Null(adapter.Parent!.Attribute("Condition"));
+        Assert.Contains("MauiConnectivityStatusService", ReadSource("MauiProgram.Did2.cs"));
+        var source = ReadSource(Path.Combine("Services", "MauiConnectivityStatusService.cs"));
+        Assert.Contains("INetworkStatusService", source);
+        Assert.Contains("Connectivity.ConnectivityChanged", source);
+        Assert.DoesNotContain("DeepAccountService", source);
+    }
+
+    [Fact]
     public void HttpsAndroidDiagnosticHasOnlySystemTrustAndExactPublicCaCrlHostException()
     {
         var config = System.Xml.Linq.XDocument.Parse(ReadSource(Path.Combine("Platforms", "Android", "Resources", "xml", "network_security_config_did2_https.xml")));

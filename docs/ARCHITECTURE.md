@@ -16,6 +16,13 @@ The optional HTTPS diagnostic build also requires the independently compiled
 Mr. X trust pin and explicit public bootstrap/runtime inputs. Missing inputs
 must not be bypassed to claim an active network build.
 
+The 2026-09-30 physical HTTPS build exposed a missing native composition input:
+the clean service allow-list omitted `MauiConnectivityStatusService`, although
+the opt-in reconnect graph referenced it. The platform connectivity adapter is
+now explicitly included after the wildcard removal. No retired account/contact
+runtime is restored, and neither build success nor this composition contract
+constitutes physical message-delivery evidence.
+
 Historical wire and trust semantics are owned by
 [DR-0014](../../docs/survival-program/decisions/DR-0014-directory-historical-catchup.md);
 the local topology is documented in [Deep DEV](../../deep-devops/docs/DEEP_DEV.md).
