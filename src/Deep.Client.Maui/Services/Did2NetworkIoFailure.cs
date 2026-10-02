@@ -32,6 +32,9 @@ internal static class Did2NetworkIoFailure
             : exception is DeepIdV2DirectoryProofUnavailableException proof
                 ? proof.StatusCode == HttpStatusCode.TooManyRequests
                     ? "ProofRateLimited" : "ProofAuthorityUnavailable"
+                : exception is DeepIdV2GenesisAdmissionUnavailableException admission
+                    ? admission.StatusCode == HttpStatusCode.TooManyRequests
+                        ? "AdmissionRateLimited" : "AdmissionAuthorityUnavailable"
                 : exception is HttpServiceRequestTransportException transport
                     ? transport.Error switch
                     {

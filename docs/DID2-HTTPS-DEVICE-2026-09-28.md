@@ -6,6 +6,14 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 
 ## VPN retry after contact rollout — 2026-10-02
 
+The next focused increment adds Shared's typed genesis admission availability
+exception and displays only `AdmissionRateLimited` / `AdmissionAuthorityUnavailable`.
+The bounded native client tests exercise genuine DID2 request generation and
+one actual transport call against controlled 429/503 responses. These categories
+cannot prove admission, authorize replay or change reconnect scheduling. A new
+physical Windows build is required; until its terminal result is recorded,
+the prior `TransportIo` remains unattributed.
+
 The signed `503505f` Android APK (Protocol `7c513f1`, Shared `9bac6e7`;
 APK SHA-256 `5c5ddd839e711bd2f89e0f77b7e647ff88e7bd4a2111d2a418eb5168341d8708`)
 identified the retained-account rejection as **XRA1 / Expiry**. This is a

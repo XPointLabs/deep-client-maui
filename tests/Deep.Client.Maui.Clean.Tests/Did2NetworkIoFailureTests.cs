@@ -9,6 +9,19 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class Did2NetworkIoFailureTests
 {
     [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests, "AdmissionRateLimited")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "AdmissionAuthorityUnavailable")]
+    public void TypedAdmissionFailureIsNotAProofOrStreamFailure(HttpStatusCode status, string expected)
+    {
+        var cause = new DeepIdV2GenesisAdmissionUnavailableException(status, TimeSpan.FromSeconds(10));
+        var result = Did2NetworkIoFailure.AtStage("AccountProof", cause);
+        Assert.Equal($"DID2 AccountProof failed ({expected}).", result.Message);
+        Assert.Same(cause, result.InnerException);
+        Assert.Equal("DID2 AccountProof failed (TransportIo).",
+            Did2NetworkIoFailure.AtStage("AccountProof", new IOException("private", cause)).Message);
+    }
+
+    [Theory]
     [InlineData(HttpServiceRequestTransportError.EndpointChanged, "HttpEndpointChanged")]
     [InlineData(HttpServiceRequestTransportError.UnexpectedMediaType, "HttpUnexpectedMediaType")]
     [InlineData(HttpServiceRequestTransportError.ResponseTooLarge, "HttpResponseTooLarge")]
