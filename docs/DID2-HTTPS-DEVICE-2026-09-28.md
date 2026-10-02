@@ -4,6 +4,26 @@ This records an incomplete real Windows diagnostic, not messaging or release
 approval. Registry and seed1–seed3 are production infrastructure; Mr. X permits
 testing there until he explicitly reports users exist. There is no remote UAT.
 
+## VPN retry after contact rollout — 2026-10-02
+
+The human enabled VPN on the physical Android device. One guarded network action
+still failed, with no stage wrapper in the sanitized UI result. A read-only,
+foreground-owned status inspection matched that exact fixed error to
+`DeepIdV2RouteContext.Covers` in Protocol: a route artifact does not cover the
+complete authenticated time interval. This does not identify which artifact,
+not-before versus expiry, or censorship as a cause. After the coordinated contact
+rollout, another guarded action and terminal inspection reproduced the same
+fixed coverage error. Local recovery remained retained; protected packages were
+unchanged and no account reset was performed. Neither action proves delivery.
+
+Deployment evidence and preserved custody belong to the
+[Registry operator checkpoint](../../deep-registry-api/docs/DID2_DIRECTORY_CANDIDATE.md#private-did2-contact-coordination-deployment).
+All three nodes now have the closed DID2 coordination/resolver/claim profile and
+readiness 200; mailbox authority remains unready. The next diagnostic must isolate
+the failing artifact/time relation without relaxing TLS, signed-time coverage or
+protected retry custody. Contacts, text, attachments/images and groups remain
+unproven physically; no release approval is implied.
+
 ## Current committed contact candidate — 2026-10-02
 
 Latest physical follow-up used the `e1090b5` HTTPS APK. After the operator enabled
