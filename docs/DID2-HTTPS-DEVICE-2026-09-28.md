@@ -651,3 +651,18 @@ Next: restore authorized image publication and live production authority, then
 complete account-owned durable V2 claim/peer-closure/DPH2 composition before the
 bidirectional text, restart/dedup/ACK, file/image and membership-change gates.
 The current UI still explicitly marks those messaging functions unavailable.
+
+## Retained-device retry — 2026-10-03
+
+The proxy-aware `e745b63` Windows client was observed, then its network action
+was repeated once through the UI. It completed with `XRA1 / Expiry`, with the
+same visible QA identity and encrypted recovery retained. No account reset.
+Guarded USB Android Inspect -> VerifyNetwork -> Inspect also completed with
+`XRA1 / Expiry`; encrypted recovery remained retained and all three protected
+package snapshots matched. Immediate post-action `verifying` was not success.
+
+These installed candidates predate the issued-head and object/publication
+successor APIs. No same-account renewal, peer/Hello/Accept, text/files/images or
+groups delivery is established. The next connected step is protected successor
+adoption and permanent per-generation private issuance, followed by matched
+build/deployment and a retained-account recovery run. Production was not changed.
