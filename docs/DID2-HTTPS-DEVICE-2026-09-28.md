@@ -37,6 +37,19 @@ private exception text, changes TLS/H2/byte limits, retries a request or reports
 delivery success. Its freshly rebuilt Windows diagnostic must identify the
 actual failure before any product correction is claimed.
 
+The locally built `8937d0a` Windows diagnostic was launched through the supported
+window API, restored the same QA account/recovery and performed one network
+action. Terminal inspection still reported `AccountProof (TransportIo)`; none
+of the four typed HTTP boundary labels appeared. Apphost SHA-256:
+`edc4731fca9f881e5ad0aae4a64f875f2f84bd1e3864e80d754914c6faa9aa74`;
+assembly SHA-256:
+`46c679c919db9c349026eea20e1eb490fb8fa911c29081f966bd319d0032dd4c`.
+The source also contains an untyped admission-authority 429/503 IOException;
+the observation does not distinguish it from generic stream IO. An origin-only
+bounded log scan produced no matching directory entries, so it supplies no
+attribution. Do not declare this a VPN, WAF, HTTP-body or quota defect yet.
+The 25 focused diagnostic/readback tests pass; this is not the full release gate.
+
 The human enabled VPN on the physical Android device. One guarded network action
 still failed, with no stage wrapper in the sanitized UI result. A read-only,
 foreground-owned status inspection matched that exact fixed error to
