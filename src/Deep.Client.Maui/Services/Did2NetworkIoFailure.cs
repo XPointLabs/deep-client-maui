@@ -32,7 +32,16 @@ internal static class Did2NetworkIoFailure
             : exception is DeepIdV2DirectoryProofUnavailableException proof
                 ? proof.StatusCode == HttpStatusCode.TooManyRequests
                     ? "ProofRateLimited" : "ProofAuthorityUnavailable"
-                : "TransportIo";
+                : exception is HttpServiceRequestTransportException transport
+                    ? transport.Error switch
+                    {
+                        HttpServiceRequestTransportError.EndpointChanged => "HttpEndpointChanged",
+                        HttpServiceRequestTransportError.UnexpectedMediaType => "HttpUnexpectedMediaType",
+                        HttpServiceRequestTransportError.ResponseTooLarge => "HttpResponseTooLarge",
+                        HttpServiceRequestTransportError.EmptyResponse => "HttpEmptyResponse",
+                        _ => "TransportIo"
+                    }
+                    : "TransportIo";
         return new InvalidOperationException(
             $"DID2 {stage} failed ({failure}).", exception);
     }

@@ -9,6 +9,21 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class Did2NetworkIoFailureTests
 {
     [Theory]
+    [InlineData(HttpServiceRequestTransportError.EndpointChanged, "HttpEndpointChanged")]
+    [InlineData(HttpServiceRequestTransportError.UnexpectedMediaType, "HttpUnexpectedMediaType")]
+    [InlineData(HttpServiceRequestTransportError.ResponseTooLarge, "HttpResponseTooLarge")]
+    [InlineData(HttpServiceRequestTransportError.EmptyResponse, "HttpEmptyResponse")]
+    [InlineData((HttpServiceRequestTransportError)999, "TransportIo")]
+    public void TypedHttpBoundaryFailureDoesNotExposeItsMessage(HttpServiceRequestTransportError error, string expected)
+    {
+        var cause = new HttpServiceRequestTransportException(error, "private endpoint, headers and payload");
+        var result = Did2NetworkIoFailure.AtStage("AccountProof", cause);
+        Assert.Equal($"DID2 AccountProof failed ({expected}).", result.Message);
+        Assert.Same(cause, result.InnerException);
+        Assert.DoesNotContain("private", result.Message);
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.TooManyRequests, "ProofRateLimited")]
     [InlineData(HttpStatusCode.ServiceUnavailable, "ProofAuthorityUnavailable")]
     public void TypedDirectoryFailureCannotBeMistakenForIngressIo(HttpStatusCode code, string expected)

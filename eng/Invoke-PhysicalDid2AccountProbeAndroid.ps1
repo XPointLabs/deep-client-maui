@@ -273,6 +273,20 @@ function Read-ProbeUi {
     }
 }
 
+function Read-ProbeUiAfterAction {
+    # Reset/create can replace the window while UIAutomator is taking its
+    # snapshot. Reobserve once, never replay the mutation. Read-ProbeUi must
+    # independently check foreground ownership again; ownership loss and all
+    # other failures remain terminal.
+    try { return Read-ProbeUi }
+    catch {
+        if ($_.Exception.Message -cnotin @(
+            'DID2 UI hierarchy is unavailable.',
+            'The owned reset window lacks the exact diagnostic confirmation UI.')) { throw }
+        return Read-ProbeUi
+    }
+}
+
 function Click-ProbeControl($Ui, [string]$Id) {
     if ($Ui.ImeShowing -and $Id -cne 'Welcome.DisplayName') {
         throw 'Dismiss the observed probe keyboard before tapping another control.'
@@ -463,7 +477,8 @@ if ($Execute) {
                 'BeginIncompatibleReset' { Click-ProbeControl $ui 'Startup.ResetIncompatibleDid2' }
                 'ConfirmIncompatibleReset' { Click-ProbeControl $ui 'Startup.ConfirmIncompatibleReset' }
             }
-            $result.uiAfter = (Read-ProbeUi).Summary
+            $result.uiAfter = $(if ($Phase -eq 'Inspect') { (Read-ProbeUi).Summary }
+                else { (Read-ProbeUiAfterAction).Summary })
             $result.status = 'ui-phase-observed'
         }
     } finally {

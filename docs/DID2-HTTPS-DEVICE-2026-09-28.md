@@ -6,6 +6,37 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 
 ## VPN retry after contact rollout — 2026-10-02
 
+The signed `503505f` Android APK (Protocol `7c513f1`, Shared `9bac6e7`;
+APK SHA-256 `5c5ddd839e711bd2f89e0f77b7e647ff88e7bd4a2111d2a418eb5168341d8708`)
+identified the retained-account rejection as **XRA1 / Expiry**. This is a
+signed route lifetime rejection, not evidence of censorship. Under the human's
+standing QA reset authorization, only the dedicated HTTPS QA account was reset
+through its owned confirmation UI. A new offline one-click account retained
+encrypted recovery; one VPN-enabled network action then reached the terminal
+`verified-publication` state. That complete diagnostic operation requires the
+verified two-replica prekey completion and owned permanent-contact commit before
+success. Protected production/E2E/probe package snapshots remained unchanged.
+It does not prove Windows peer lookup, Hello/Accept, text, attachments or groups.
+The expired-intent renewal gate in
+[DR-0051](../../docs/survival-program/decisions/DR-0051-owned-permanent-contact-client-entry.md)
+remains open; the QA reset is not a product recovery implementation.
+
+Post-reset and post-create immediate UI readback encountered a transient window
+replacement. Independent subsequent inspection established the welcome screen,
+then the created account. The harness now retries only those two known readback
+failures once, with a new foreground-owner check, never repeating the mutation.
+Ownership loss and repeated failure remain terminal. Focused functional tests
+exercise this observation-only retry; no account/network retry is authorized.
+
+Windows rebuilt `503505f` and restored the same account without reset.
+Its AccountProof action still ended in `TransportIo`, as did the earlier
+`e1090b5` running build. Android's successful result cannot establish a Windows
+transport fix. The next display-only increment separates existing typed HTTP
+boundary errors from generic IO; it never reads
+private exception text, changes TLS/H2/byte limits, retries a request or reports
+delivery success. Its freshly rebuilt Windows diagnostic must identify the
+actual failure before any product correction is claimed.
+
 The human enabled VPN on the physical Android device. One guarded network action
 still failed, with no stage wrapper in the sanitized UI result. A read-only,
 foreground-owned status inspection matched that exact fixed error to

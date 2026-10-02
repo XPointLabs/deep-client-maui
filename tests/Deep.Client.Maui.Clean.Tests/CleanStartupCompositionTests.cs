@@ -3,6 +3,54 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
+    public async Task AndroidTransitionReadbackRetriesOnlyOneObservationNeverTheAction()
+    {
+        var script = Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1");
+        var start = new System.Diagnostics.ProcessStartInfo("pwsh")
+        { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        start.Environment["DEEP_DIAGNOSTIC_SCRIPT"] = script;
+        const string test = """
+            $ErrorActionPreference='Stop'
+            $tokens=$null;$errors=$null
+            $ast=[Management.Automation.Language.Parser]::ParseFile($env:DEEP_DIAGNOSTIC_SCRIPT,[ref]$tokens,[ref]$errors)
+            if ($errors.Count -ne 0) { throw 'Parser failed' }
+            $functions=@($ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Read-ProbeUiAfterAction' },$true))
+            if ($functions.Count -ne 1) { throw 'Function scope failed' }
+            . ([scriptblock]::Create($functions[0].Extent.Text))
+            function Read-ProbeUi {
+                $script:calls++
+                if ($script:calls -le $script:failures) { throw $script:message }
+                return @{Summary=@{status='observed'}}
+            }
+            foreach ($message in @('DID2 UI hierarchy is unavailable.','The owned reset window lacks the exact diagnostic confirmation UI.')) {
+                $script:message=$message;$script:calls=0;$script:failures=1
+                $observed=Read-ProbeUiAfterAction
+                if ($script:calls -ne 2 -or $observed.Summary.status -cne 'observed') { throw 'Bounded reobservation failed' }
+                $script:calls=0;$script:failures=2;$errorSeen=$false
+                try { Read-ProbeUiAfterAction } catch { $errorSeen=$true }
+                if (-not $errorSeen -or $script:calls -ne 2) { throw 'Repeated transition must fail closed' }
+            }
+            $script:calls=0;$script:failures=0
+            $null=Read-ProbeUiAfterAction
+            if ($script:calls -ne 1) { throw 'Stable readback must not repeat' }
+            foreach ($message in @('The exact DID2 package does not own the foreground window.','Protected package changed.')) {
+                $script:message=$message;$script:calls=0;$script:failures=1;$errorSeen=$false
+                try { Read-ProbeUiAfterAction } catch { $errorSeen=$true }
+                if (-not $errorSeen -or $script:calls -ne 1) { throw 'Permanent failure was retried' }
+            }
+            Write-Output 'passed'
+            """;
+        foreach (var argument in new[] { "-NoProfile", "-Command", test }) start.ArgumentList.Add(argument);
+        using var process = System.Diagnostics.Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+        try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
+        catch { if (!process.HasExited) process.Kill(entireProcessTree: true); throw; }
+        Assert.Equal(string.Empty, (await errors).Trim());
+        Assert.Equal(0, process.ExitCode);
+        Assert.Equal("passed", (await output).Trim());
+    }
+
+    [Fact]
     public async Task AndroidRouteTimeDiagnosticsRecognizeOnlyClosedNonSecretFailureLabels()
     {
         var script = Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1");
