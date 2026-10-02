@@ -57,6 +57,17 @@ assembly SHA-256 `5cb77e89d69c2330a2a3d446a461020527f601c227fd5f770107959b5e6b25
 15 focused Shared transport/proxy tests and 43 MAUI composition/display tests
 passed, with unchanged assertions on TLS, H2 and byte/deadline boundaries.
 
+The signed `e745b63` Android update (APK SHA-256
+`2a5c1c8d1016eddfd392535bfb675351f44b114940d05186aaf2016f7605ac14`)
+was installed only over the dedicated HTTPS QA package. The existing account
+and encrypted recovery reopened without reset; all three protected package
+snapshots matched before/after. One guarded network action then rejected
+`XRA1 / Expiry`, confirmed by independent terminal inspection. Thus the earlier
+fresh-account success is not durable account recovery after route expiry.
+DR-0051 expired-intent renewal remains the next product correction; do not
+reset the account, silently replace stable intents/nonces, relax expiry, or
+claim current Android publication/delivery from its prior completed action.
+
 The signed `503505f` Android APK (Protocol `7c513f1`, Shared `9bac6e7`;
 APK SHA-256 `5c5ddd839e711bd2f89e0f77b7e647ff88e7bd4a2111d2a418eb5168341d8708`)
 identified the retained-account rejection as **XRA1 / Expiry**. This is a
