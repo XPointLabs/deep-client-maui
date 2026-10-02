@@ -33,6 +33,12 @@ unknown-operation replacement tests; it cannot construct or authorize a Shared
 conversation. Test visibility is limited to the Clean UI test assembly and does
 not expose an account key, proof, route, signer or completion setter.
 
+Composer selection never transfers draft text between contacts: refreshing the
+same selected dialog preserves its editable draft; selecting another dialog or
+closing the detail clears it. Only an unknown send's protected original text may
+be restored when its own dialog is selected again. This is UI isolation, not
+mailbox completion or physical delivery evidence.
+
 Each UI command also owns a linked cancellation scope. Account replacement or
 loss of network verification cancels the active scope; asynchronous account,
 intent and projection reads are rechecked before transport dispatch or UI

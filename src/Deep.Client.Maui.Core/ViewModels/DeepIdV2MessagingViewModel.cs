@@ -104,15 +104,15 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             var owner = await accounts.GetAccountsAsync(token);
             RequireCurrentOperation(token);
             await RecoverPendingTextAsync(owner, token);
-            if (Selected?.Conversation.ConversationId != snapshot.Conversation.ConversationId)
-                DraftText = textComposer.DraftFor(snapshot.Conversation.ConversationId);
+            DraftText = textComposer.DraftAfterSelection(Selected?.Conversation.ConversationId,
+                snapshot.Conversation.ConversationId, DraftText);
             Selected = snapshot; Messages.Clear();
             var messages = await runtime!.MessagesAsync(owner, snapshot.Conversation, token);
             RequireCurrentOperation(token);
             foreach (var message in messages) Messages.Add(message);
         }, ct, clearProjectionOnFailure: true);
     }
-    public void CloseConversation() { Selected = null; Messages.Clear(); }
+    public void CloseConversation() { Selected = null; DraftText = string.Empty; Messages.Clear(); }
 
     public Task StartContactAsync(CancellationToken ct = default)
     {
@@ -179,7 +179,10 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
         RequireCurrentOperation(ct);
         await RecoverPendingTextAsync(owner, ct);
         Conversations.Clear(); foreach (var conversation in list) Conversations.Add(conversation);
-        Selected = selection is null ? null : list.SingleOrDefault(value => value.Conversation.ConversationId == selection);
+        var next = selection is null ? null : list.SingleOrDefault(value => value.Conversation.ConversationId == selection);
+        DraftText = textComposer.DraftAfterSelection(Selected?.Conversation.ConversationId,
+            next?.Conversation.ConversationId, DraftText);
+        Selected = next;
         Messages.Clear();
         if (Selected is { } active)
         {
@@ -255,6 +258,12 @@ internal sealed class DeepIdV2TextComposerState
     private byte[]? operation;
     private string? conversation, text;
     internal string DraftFor(string conversationId) => conversation == conversationId ? text ?? string.Empty : string.Empty;
+    // Display-only selection metadata. Never carry editable text to a different
+    // peer; an unknown send's original text is restored only for its own dialog.
+    internal string DraftAfterSelection(string? previousConversation, string? nextConversation, string displayedDraft)
+        => nextConversation is null ? string.Empty
+            : previousConversation == nextConversation ? displayedDraft
+            : DraftFor(nextConversation);
     internal void Restore(ReadOnlySpan<byte> retainedOperation, string conversationId, string retainedText)
     {
         if (retainedOperation.Length != 32 || retainedOperation.IndexOfAnyExcept((byte)0) < 0)

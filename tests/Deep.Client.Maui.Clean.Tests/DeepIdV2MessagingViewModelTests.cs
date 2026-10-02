@@ -11,6 +11,33 @@ namespace Deep.Client.Maui.Clean.Tests;
 // crypto, mailbox or physical delivery evidence; handles cannot be forged here.
 public sealed class DeepIdV2MessagingViewModelTests
 {
+    [Theory]
+    [InlineData("a", "a", "unsent text", "unsent text")]
+    [InlineData("a", "b", "text for a", "")]
+    [InlineData(null, "b", "stale hidden text", "")]
+    [InlineData("a", null, "text for a", "")]
+    [InlineData(null, null, "stale hidden text", "")]
+    public void SelectionNeverTransfersDraftToAnotherConversation(string? previous,
+        string? next, string displayedDraft, string expected)
+    {
+        var state = new DeepIdV2TextComposerState();
+        Assert.Equal(expected, state.DraftAfterSelection(previous, next, displayedDraft));
+    }
+
+    [Fact]
+    public void SelectionRestoresUnknownSendOnlyInItsOriginalConversation()
+    {
+        var state = new DeepIdV2TextComposerState();
+        var operation = state.Prepare("a", "retained original");
+        Assert.Empty(state.DraftAfterSelection("a", "b", "text for a"));
+        Assert.Equal("retained original", state.DraftAfterSelection("b", "a", "text for b"));
+        Assert.Equal(operation, state.Prepare("a", "retained original"));
+        Assert.Empty(state.DraftAfterSelection("a", null, "retained original"));
+        Assert.Equal("retained original", state.DraftAfterSelection(null, "a", ""));
+        state.Clear();
+        Assert.Empty(state.DraftAfterSelection("b", "a", "text for b"));
+    }
+
     [Fact]
     public void ComposerRestartRestoresOriginalOperationAndCannotReplaceUnknownText()
     {
