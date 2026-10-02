@@ -54,9 +54,10 @@ public sealed class Did2ProbeVisualShellTests
     }
 
     [Fact]
-    public void CleanWorkspaceRestoresNavigationWithoutPresentingUnwiredMessageActions()
+    public void CleanWorkspaceConnectsOwnedTextCommandsWithoutLegacyOrUnwiredAttachments()
     {
         var shell = ReadSource("AppShell.Did2.cs");
+        var messages = ReadSource("AppShell.Did2.Messaging.cs");
 
         foreach (var id in new[]
         {
@@ -68,13 +69,17 @@ public sealed class Did2ProbeVisualShellTests
             "Did2Workspace.ConversationList", "Did2Workspace.EmptyConversation",
             "Page.Conversations", "Page.Contacts", "Page.Groups"
         })
-            Assert.Contains($"\"{id}\"", shell, StringComparison.Ordinal);
+            Assert.Contains($"\"{id}\"", shell + messages, StringComparison.Ordinal);
 
         Assert.Contains("section = destination;", shell, StringComparison.Ordinal);
         Assert.Contains("Переписка станет доступна после подключения проверенного DID2-транспорта.",
             shell, StringComparison.Ordinal);
-        Assert.DoesNotContain("AutomationId = \"Message.Send\"", shell,
-            StringComparison.Ordinal);
+        Assert.Contains("Command = messaging.SendTextCommand", messages);
+        Assert.Contains("start.Command = messaging.StartContactCommand", messages);
+        Assert.Contains("accept.Command = messaging.AcceptContactCommand", messages);
+        Assert.Contains("if (!messaging.HasRuntime) return CreateEmptyChatsSection();", messages);
+        Assert.DoesNotContain("Attachment.Send", messages);
+        Assert.DoesNotContain("GroupChatPage", messages);
     }
 
     private static string ReadSource(string name)

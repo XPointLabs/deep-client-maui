@@ -38,6 +38,11 @@ public static partial class MauiProgram
             },services.GetRequiredService<INetworkStatusService>(),MainThread.BeginInvokeOnMainThread));
 #endif
         builder.Services.AddSingleton<DeepIdV2AccountViewModel>();
+        builder.Services.AddSingleton<DeepIdV2MessagingViewModel>();
+#if DEEP_DID2_HTTPS_ADMISSION
+        builder.Services.AddSingleton<IDeepIdV2ConversationRuntime>(services =>
+            (DeepIdV2CanaryNetworkAdmission)services.GetRequiredService<IDeepIdV2NetworkAdmission>());
+#endif
         builder.Services.AddSingleton<AppShell>();
         return builder.Build();
     }

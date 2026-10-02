@@ -8,7 +8,7 @@ internal static class Did2NetworkIoFailure
     {
         ArgumentNullException.ThrowIfNull(exception);
         if (stage is not ("AccountProof" or "NetworkVerification" or
-            "PreKeyStaging" or "PreKeyPublication"))
+            "PreKeyStaging" or "PreKeyPublication" or "ContactPublication" or "ContactResolution"))
             throw new ArgumentException("Unknown DID2 diagnostic stage.", nameof(stage));
 
         return new InvalidOperationException(

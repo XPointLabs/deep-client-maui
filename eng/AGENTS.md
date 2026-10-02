@@ -34,3 +34,9 @@ The workspace and repository `AGENTS.md` files apply.
 
 Valid phases are defined by the script's `ValidateSet`; do not bypass its provenance, process,
 deadline, package-audit or evidence-containment checks.
+
+`Invoke-Did2HttpsWindowsBuild.ps1 -CompileOnly` is a development compiler
+check, not a physical phase: it may compile a dirty working tree, never
+publishes/installs/launches, and returns no apphost/delivery evidence.
+It cannot be combined with `-Execute`. Device-qualified builds keep the
+original expected-commit and clean-tree checks; Android never opts into this mode.

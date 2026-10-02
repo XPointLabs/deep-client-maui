@@ -73,12 +73,10 @@ public static class ApplicationHttpTransportComposition
                 : _ => fileTransportFactory.CreateAvatar(
                     new HttpAvatarProfileTransportOptions(fileBaseUrl),
                     fileClientOptions);
+        // This excluded Session composition must not recreate a retired file
+        // protocol merely because a file-service URL was configured.
         Func<IServiceProvider, IAttachmentFileTransport> attachment =
-            string.IsNullOrWhiteSpace(fileBaseUrl)
-                ? _ => new DisabledAttachmentFileTransport()
-                : _ => fileTransportFactory.CreateAttachment(
-                    new HttpAttachmentFileTransportOptions(fileBaseUrl),
-                    fileClientOptions);
+            _ => new DisabledAttachmentFileTransport();
         Func<IServiceProvider, IPushSubscriptionTransport> push =
             string.IsNullOrWhiteSpace(pushBaseUrl)
                 ? _ => new DisabledPushSubscriptionTransport()

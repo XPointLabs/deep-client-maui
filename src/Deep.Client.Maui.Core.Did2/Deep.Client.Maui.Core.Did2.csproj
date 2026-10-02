@@ -8,11 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Deep.Client.Maui.Clean.Tests" />
     <ProjectReference Include="..\..\..\deep-client-shared\src\Deep.Client.Shared\Deep.Client.Shared.Production.csproj"
                       GlobalPropertiesToRemove="RuntimeIdentifier;RuntimeIdentifiers;SelfContained" />
     <Compile Include="..\Deep.Client.Maui.Core\Commands\AsyncCommand.cs" Link="Commands\AsyncCommand.cs" />
     <Compile Include="..\Deep.Client.Maui.Core\ViewModels\ViewModelBase.cs" Link="ViewModels\ViewModelBase.cs" />
     <Compile Include="..\Deep.Client.Maui.Core\ViewModels\DeepIdV2AccountViewModel.cs" Link="ViewModels\DeepIdV2AccountViewModel.cs" />
+    <Compile Include="..\Deep.Client.Maui.Core\ViewModels\DeepIdV2MessagingViewModel.cs" Link="ViewModels\DeepIdV2MessagingViewModel.cs" />
+    <Compile Include="..\Deep.Client.Maui.Core\Services\IDeepIdV2ConversationRuntime.cs" Link="Services\IDeepIdV2ConversationRuntime.cs" />
     <Compile Include="..\Deep.Client.Maui.Core\Services\IDeepIdV2AccountRuntimeAccessor.cs" Link="Services\IDeepIdV2AccountRuntimeAccessor.cs" />
     <Compile Include="..\Deep.Client.Maui.Core\Services\IDeepIdV2NetworkAdmission.cs" Link="Services\IDeepIdV2NetworkAdmission.cs" />
     <Compile Include="..\Deep.Client.Maui.Core\Services\IDeepIdV2ContactDiscovery.cs" Link="Services\IDeepIdV2ContactDiscovery.cs" />

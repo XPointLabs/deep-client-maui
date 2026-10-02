@@ -23,10 +23,10 @@ internal sealed class DeepIdV2AccountRuntimeOwner : IAsyncDisposable
 
     internal DeepIdV2AccountService Accounts { get; }
 
-#if DEEP_DID2_ACCOUNT_PROBE
+#if DEEP_DID2_ACCOUNT_PROBE || DEEP_DID2_HTTPS_ADMISSION
     /// <summary>
-    /// The isolated probe can reset a retired, unreadable test generation only
-    /// after its own visible confirmation UI. Normal UAT/production builds do
+    /// The isolated probe/HTTPS QA can reset a retired, unreadable generation only
+    /// after its own visible confirmation UI. Normal production builds do
     /// not contain this entry point.
     /// </summary>
     internal static async Task ResetIsolatedProbeAfterConfirmationAsync(

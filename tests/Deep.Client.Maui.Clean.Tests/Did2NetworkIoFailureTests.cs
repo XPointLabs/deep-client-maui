@@ -9,6 +9,8 @@ public sealed class Did2NetworkIoFailureTests
     [InlineData("NetworkVerification")]
     [InlineData("PreKeyStaging")]
     [InlineData("PreKeyPublication")]
+    [InlineData("ContactPublication")]
+    [InlineData("ContactResolution")]
     public void IoFailureReportsOnlyClosedStageAndPreservesCause(string stage)
     {
         var cause = new IOException("private URL, request bytes, account and capability",

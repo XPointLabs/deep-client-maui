@@ -3,6 +3,46 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
+    public async Task WorkingTreeCompileCannotQualifyOrExecutePhysicalPublication()
+    {
+        var script = Path.Combine(FindRepository(), "eng", "Invoke-Did2HttpsWindowsBuild.ps1");
+        var source = File.ReadAllText(script);
+        Assert.Contains("(-not $CompileOnly -and $dirty.Count -ne 0)", source);
+        Assert.Contains("compiled-working-tree-not-device-qualified", source);
+        Assert.Contains("deviceDeliveryVerified = $false", source);
+        Assert.DoesNotContain("CompileOnly", File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-Did2HttpsAndroidBuild.ps1")));
+        var start = new System.Diagnostics.ProcessStartInfo("pwsh")
+        { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var arg in new[] { "-NoProfile", "-File", script, "-ExpectedCommit", new string('1', 40),
+            "-NetworkId", new string('1', 32), "-Xna1Pin", new string('1', 64), "-GenesisHeadPin", new string('1', 64),
+            "-MrXPublicKeySha256", new string('1', 64), "-RegistryOrigin", "https://compile-only.invalid/",
+            "-BootstrapDirectory", Path.GetTempPath(), "-RuntimeEnvironmentPath", Path.Combine(Path.GetTempPath(), "absent-input.env"),
+            "-CompileOnly", "-Execute" }) start.ArgumentList.Add(arg);
+        using var process = System.Diagnostics.Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.NotEqual(0, process.ExitCode);
+        Assert.Contains("Compile-only cannot publish", await error);
+        Assert.DoesNotContain("Determining projects", await output);
+    }
+
+    [Fact]
+    public void IncompatibleHttpsQaHasExplicitScopedResetButShippingStillCannotResetOnStartup()
+    {
+        var app = ReadSource("App.Did2.cs");
+        var owner = ReadSource(Path.Combine("Services", "DeepIdV2AccountRuntimeOwner.cs"));
+        const string guard = "#if DEEP_DID2_ACCOUNT_PROBE || DEEP_DID2_HTTPS_ADMISSION";
+        Assert.Contains(guard, app); Assert.Contains(guard, owner);
+        var guardedPage = app[app.IndexOf(guard, StringComparison.Ordinal)..app.IndexOf("#else", app.IndexOf(guard, StringComparison.Ordinal), StringComparison.Ordinal)];
+        Assert.Contains("DisplayAlertAsync", guardedPage);
+        Assert.True(guardedPage.IndexOf("DisplayAlertAsync", StringComparison.Ordinal) < guardedPage.IndexOf("ResetIsolatedProbeAfterConfirmationAsync", StringComparison.Ordinal));
+        Assert.Contains("ResetExplicitlyAsync", owner);
+        Assert.DoesNotContain("Remove-Item", owner);
+        Assert.DoesNotContain("Directory.Delete", owner);
+        Assert.Contains("Не удаляйте данные приложения", app);
+    }
+
+    [Fact]
     public void Did2ReconnectIncludesItsPlatformConnectivityAdapterAfterCleanServiceRemoval()
     {
         var project = System.Xml.Linq.XDocument.Parse(ReadSource("Deep.Client.Maui.csproj"));
@@ -105,6 +145,11 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("HttpStageAsync(\"NetworkVerification\"", admission);
         Assert.Contains("HttpStageAsync(\"PreKeyStaging\"", admission);
         Assert.Contains("HttpStageAsync(\"PreKeyPublication\"", admission);
+        Assert.Contains("HttpStageAsync(\"ContactPublication\"", admission);
+        Assert.Contains("accounts.EnsureOwnPermanentContactPublishedAsync(networkSource,", admission);
+        Assert.Contains("HttpStageAsync(\"ContactResolution\"", admission);
+        Assert.Contains("accounts.ResolvePermanentContactAsync(descriptor, source,", admission);
+        Assert.Contains("resolved.Candidate.ExactDid2.CanonicalBytes.Span", admission);
         Assert.Contains("exception.HttpRequestError", admission);
         Assert.Contains("<Compile Include=\"Services\\Did2TlsFailureClassifier.cs\" />", project,
             StringComparison.Ordinal);

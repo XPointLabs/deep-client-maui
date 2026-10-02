@@ -1,5 +1,61 @@
 # Deep MAUI Architecture
 
+## Owned DID2 contact/text UI candidate (2026-10-02)
+
+[DR-0066](../../docs/survival-program/decisions/DR-0066-did2-application-sqlcipher-random-key.md)
+also requires explicit reset of older isolated QA application generations;
+the compiled startup recovery control never migrates or silently recreates them.
+
+[DR-0065](../../docs/survival-program/decisions/DR-0065-did2-contact-application-command-boundary.md)
+connects the opt-in HTTPS diagnostic to a testable messaging ViewModel and the
+account-owned Start/Accept/SendText/List/Synchronize commands. The existing
+dark/cyan workspace now has contact entry, request/accept states, authenticated
+message rows and a text composer; narrow windows show either list or selected
+conversation. Stable account/navigation IDs remain. Default builds without a
+real conversation runtime retain explicit unavailable controls, not a V1 adapter.
+Files/images and governed groups remain unavailable until their owners are composed.
+
+UI authorization flags enable controls only; Shared independently verifies every
+operation. Errors use fixed sanitized text. Explicit contact retry reuses the
+actual protected intent across restart; unknown text outcomes keep the same
+operation/text and cannot be replaced by a different send.
+[DR-0067](../../docs/survival-program/decisions/DR-0067-did2-ordinary-store-completion-and-ui-retry.md)
+adds actual protected original-text/operation recovery before composer allocation
+and on conversation selection after restart. Nothing is sent automatically.
+Input clears after owned Store completion, before an independent history refresh,
+so a later UI refresh error cannot resurrect a completed send. Physical restart
+evidence remains open. Loss of current
+verification clears the current conversation projection instead of treating
+cached rows as fresh authority. Isolated HTTPS QA startup recovery now offers an
+explicit confirmed STORE-V2 reset; normal shipping startup has no such reset.
+The internal composer metadata helper has focused restart/defensive-copy/
+unknown-operation replacement tests; it cannot construct or authorize a Shared
+conversation. Test visibility is limited to the Clean UI test assembly and does
+not expose an account key, proof, route, signer or completion setter.
+
+Local command evidence and exact test counts are in
+[SPRINT-HISTORY](../../docs/SPRINT-HISTORY.md). Windows ARM64 normal and opt-in
+HTTPS compilation passed without warnings; neither is physical delivery evidence.
+`Invoke-Did2HttpsWindowsBuild.ps1 -CompileOnly` permits a dirty-tree compiler
+check only, never a device-qualified package. Normal `-Execute` still requires
+the expected commit and clean MAUI tree; Android does not opt into compile-only.
+
+
+## Owned permanent-contact entry candidate (2026-10-01)
+
+[DR-0051](../../docs/survival-program/decisions/DR-0051-owned-permanent-contact-client-entry.md)
+connects the opt-in HTTPS physical diagnostic to the account-owned contact
+publication after verified initial prekey publication. The owner chooses its
+protected stable retry intent, signed profile and fixed genesis policy; UI code
+never receives a private key or injects a threshold/transport callback. Peer
+lookup now runs the actual owned permanent resolver, independently verifies
+current peer DID2/floors and checks the diagnostic pasted public credential
+against that result. Directory proof alone is no longer HTTPS lookup success.
+Loopback admission-only remains explicitly diagnostic. These changes do not
+activate a shipping inbox/outbox/group graph or prove physical delivery. Current
+node DR50 activation and production package/root/clock/floor promotion are still
+required before the diagnostic can succeed against the deployed network.
+
 ## DID2 network recovery candidate (2026-09-29)
 
 The process-owned `DeepIdV2NetworkReconnect` subscribes to connectivity and
@@ -451,16 +507,18 @@ unspecified, multicast, noncanonical IPv4, credentials, query, and fragment
 forms remain rejected. Ordinary Debug and Release continue using the original
 HTTPS-or-explicit-loopback policy.
 
-Groups use the same transport and persistence guarantees for state and messages;
-there is no legacy-group read-only conversation kind. Attachments are encrypted
-before upload using the current authenticated chunked `DEEPATT2` format, and
-downloads fail closed for every other encrypted format. Ordinary images are
-compressed for inline media while document mode preserves the source file.
+The retired direct `/file` attachment transport, its `DEEPATT2` reader/author
+and its HTTP factory have been deleted from Shared. The excluded Session HTTP
+composition cannot enable attachments from a configured file-service URL.
+Its remaining UI file-I/O boundary is explicitly unavailable until the DID2
+DAM1 durable blob custody, authenticated routed upload/download and current
+MAUI consumers are composed. Protocol chunk-crypto and preparation tests are
+not upload, delivery or physical-device evidence. Images and document-mode
+behavior likewise require the new platform composition.
 
-Local tests and the isolated `GroupText` physical harness cover this
-composition, but a successful current Android ↔ Windows device run has not
-been retained. Arbitrary contacts, direct text and groups therefore remain
-release-unproven.
+The old isolated `GroupText` harness does not cover the current DID2 graph.
+Arbitrary contacts, direct text, attachments and groups remain release-unproven
+until a retained current Android ↔ Windows physical run exercises them.
 
 ## Direct P2P and user-managed status
 

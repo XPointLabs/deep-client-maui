@@ -9,12 +9,16 @@ param(
     [Parameter(Mandatory)][string]$BootstrapDirectory,
     [Parameter(Mandatory)][string]$RuntimeEnvironmentPath,
     [ValidateSet('win-x64', 'win-arm64')][string]$RuntimeIdentifier = 'win-arm64',
+    [switch]$CompileOnly,
     [switch]$Execute
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+if ($CompileOnly -and $Execute) {
+    throw 'Compile-only cannot publish or qualify a physical build.'
+}
 
 function Assert-NoRedirect([string]$Path) {
     for ($cursor = $Path; -not [string]::IsNullOrWhiteSpace($cursor);
@@ -59,7 +63,7 @@ if ($LASTEXITCODE -ne 0 -or $commit -cne $ExpectedCommit) {
     throw 'DID2 build source differs from the expected committed revision.'
 }
 $dirty = @(& git -C $repo status --porcelain)
-if ($LASTEXITCODE -ne 0 -or $dirty.Count -ne 0) {
+if ($LASTEXITCODE -ne 0 -or (-not $CompileOnly -and $dirty.Count -ne 0)) {
     throw 'DID2 build requires a clean committed MAUI worktree.'
 }
 if (-not [IO.Path]::IsPathFullyQualified($BootstrapDirectory)) {
@@ -78,13 +82,16 @@ $result = [ordered]@{
     execute = [bool]$Execute
     installed = $false
     deviceDeliveryVerified = $false
+    compileOnly = [bool]$CompileOnly
+    sourceClean = ($dirty.Count -eq 0)
 }
-if ($Execute) {
+if ($Execute -or $CompileOnly) {
     $artifactRoot = Join-Path $repo 'artifacts\did2-https-windows'
     $output = Join-Path $artifactRoot ([DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + [Guid]::NewGuid().ToString('N'))
     Assert-NoRedirect $output
     [void][IO.Directory]::CreateDirectory($output)
-    $arguments = @('publish', (Join-Path $repo 'src\Deep.Client.Maui\Deep.Client.Maui.csproj'),
+    $buildVerb = if ($CompileOnly) { 'build' } else { 'publish' }
+    $arguments = @($buildVerb, (Join-Path $repo 'src\Deep.Client.Maui\Deep.Client.Maui.csproj'),
         '-c', 'Debug', '-f', 'net10.0-windows10.0.19041.0',
         "-p:RuntimeIdentifierOverride=$RuntimeIdentifier", '-p:WindowsPackageType=None',
         '-p:DeepPhysicalE2E=true', '-p:DeepLocalDev=false', '-p:DeepDid2AccountProbe=false',
@@ -97,6 +104,11 @@ if ($Execute) {
         '-p:UseSharedCompilation=false', '-nodeReuse:false', '-m:1', '-o', $output)
     & dotnet @arguments
     if ($LASTEXITCODE -ne 0) { throw 'DID2 Windows build failed; no client was installed or launched.' }
+    if ($CompileOnly) {
+        $result.status = 'compiled-working-tree-not-device-qualified'
+        $result | ConvertTo-Json -Depth 3
+        return
+    }
     $app = Join-Path $output 'Deep.Client.Maui.exe'
     $dll = Join-Path $output 'Deep.Client.Maui.dll'
     $result.status = 'built-not-installed'

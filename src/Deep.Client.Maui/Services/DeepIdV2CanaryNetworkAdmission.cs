@@ -19,7 +19,7 @@ namespace Deep.Client.Maui.Services;
 /// same pinned public authority and proof verifier, but neither is a release
 /// transport composition.
 /// </summary>
-internal sealed class DeepIdV2CanaryNetworkAdmission :
+internal sealed partial class DeepIdV2CanaryNetworkAdmission :
     IDeepIdV2NetworkAdmission, IDeepIdV2ContactDiscovery
 {
     private const string OriginKey = "DeepDid2CanaryOrigin";
@@ -82,6 +82,9 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
         _ = await HttpStageAsync("PreKeyPublication", () =>
             accounts.PublishOwnStagedPreKeyInventoryAsync(networkSource,
                 custody, cancellationToken), cancellationToken);
+        _ = await HttpStageAsync("ContactPublication", () =>
+            accounts.EnsureOwnPermanentContactPublishedAsync(networkSource,
+                cancellationToken), cancellationToken);
 #endif
     }
 
@@ -159,7 +162,7 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
                 "The contact descriptor does not bind the exact DID2 credential.");
 
         var origin = ValidatedOrigin();
-        var (_, authority, exactHead, headPin) = await ReadBootstrapAsync(
+        var (genesisPin, authority, exactHead, headPin) = await ReadBootstrapAsync(
             cancellationToken);
         var protectedFloor = await accounts.OpenDirectoryLkgStoreAsync(
             authority, exactHead, headPin, cancellationToken);
@@ -167,11 +170,27 @@ internal sealed class DeepIdV2CanaryNetworkAdmission :
             HttpServiceEndpointPolicy.Production);
         using var verifier = DeepMlDsa65CandidateVerifierFactory
             .OpenForCurrentProcess();
+        var clock = new CanaryMonotonicClock();
         using var proof = factory.CreateDeepIdV2DirectoryProofClient(origin,
-            new CanaryMonotonicClock(), verifier, protectedFloor);
+            clock, verifier, protectedFloor, clientOptions: DiagnosticHttpOptions());
+#if DEEP_DID2_HTTPS_ADMISSION
+        using var closure = factory.CreateDeepIdV2NetworkClosureArtifactSource(origin,
+            clientOptions: DiagnosticHttpOptions());
+        var networkFloor = await accounts.OpenNetworkLkgStoreAsync(genesisPin, cancellationToken);
+        var source = new DeepIdV2ContactPathAuthoritySource(genesisPin, accounts,
+            proof, closure, networkFloor, clock);
+        var resolved = await HttpStageAsync("ContactResolution", () =>
+            accounts.ResolvePermanentContactAsync(descriptor, source, cancellationToken), cancellationToken);
+        if (!CryptographicOperations.FixedTimeEquals(resolved.Candidate.ExactDid2.CanonicalBytes.Span,
+            exactDid2.CanonicalBytes.Span))
+            throw new CryptographicException("The diagnostic credential differs from the authenticated resolved contact.");
+#else
+        // Loopback probe only: a directory proof is not resolver/relationship
+        // authority, and this graph cannot enter a release build.
         _ = await proof.FetchByContactDescriptorAsync(descriptor,
             exactDid2, authority, deploymentProfileId: 1,
             supportedReader: 2, cancellationToken: cancellationToken);
+#endif
     }
 
     private static string ValidatedOrigin()

@@ -7,11 +7,13 @@ namespace Deep.Client.Maui;
 
 // The DID2 shell never navigates into pre-clean-break conversations.
 // The diagnostic package adds proof controls, but neither package owns a V1 runtime.
-public sealed class AppShell : ContentPage
+public sealed partial class AppShell : ContentPage
 {
     private enum WorkspaceSection { Chats, Contacts, Groups, Settings }
 
     private readonly DeepIdV2AccountViewModel account;
+    private readonly DeepIdV2MessagingViewModel messaging;
+    private Action? refreshConversationLayout;
     private Action? hideSensitive;
 #if DEEP_DID2_ACCOUNT_PROBE
     private WorkspaceSection section = WorkspaceSection.Settings;
@@ -19,9 +21,14 @@ public sealed class AppShell : ContentPage
     private WorkspaceSection section = WorkspaceSection.Chats;
 #endif
 
-    public AppShell(DeepIdV2AccountViewModel account)
+    public AppShell(DeepIdV2AccountViewModel account, DeepIdV2MessagingViewModel messaging)
     {
         this.account = account;
+        this.messaging = messaging;
+        messaging.PropertyChanged += (_, change) =>
+        {
+            if (change.PropertyName == nameof(DeepIdV2MessagingViewModel.HasSelection)) refreshConversationLayout?.Invoke();
+        };
         Title = "Deep";
         BackgroundColor = DeepTheme.Background;
         Render();
@@ -37,6 +44,7 @@ public sealed class AppShell : ContentPage
     {
         hideSensitive?.Invoke();
         hideSensitive = null;
+        refreshConversationLayout = null;
         Content = account.Account is null ? CreateWelcome() : CreateWorkspace();
     }
 
@@ -99,9 +107,7 @@ public sealed class AppShell : ContentPage
         var sectionContent = section switch
         {
             WorkspaceSection.Chats => CreateChatsSection(),
-            WorkspaceSection.Contacts => CreateUnavailableSection(
-                "Page.Contacts", "КОНТАКТЫ", "Ваши контакты", "Контактов пока нет",
-                "Добавление контакта откроется после проверки DID2-публикации и защищённого принятия."),
+            WorkspaceSection.Contacts => CreateContactSection(),
             WorkspaceSection.Groups => CreateUnavailableSection(
                 "Page.Groups", "ГРУППЫ", "Ваши группы", "Групп пока нет",
                 "Создание группы откроется после проверки доставки и смены состава на DID2-устройствах."),
@@ -157,7 +163,7 @@ public sealed class AppShell : ContentPage
         return button;
     }
 
-    private View CreateChatsSection()
+    private View CreateEmptyChatsSection()
     {
         var list = new VerticalStackLayout
         {
@@ -471,7 +477,7 @@ public sealed class AppShell : ContentPage
                 },
                 new Label
                 {
-                    Text = "Этот адрес останется тем же после удаления локальной копии фразы. Контакты станут доступны после подключения проверенного DID2-транспорта.",
+                    Text = "Этот адрес останется тем же после удаления локальной копии фразы. Для добавления контактов требуется проверенная сетевая регистрация.",
                     TextColor = DeepTheme.Secondary,
                     FontSize = 12
                 }
@@ -587,7 +593,7 @@ public sealed class AppShell : ContentPage
                 new Label
                 {
 #if DEEP_DID2_HTTPS_ADMISSION
-                    Text = "Диагностическая проверка подписанного DID2-каталога через HTTPS. Она не включает сообщения и не является релизной сборкой.",
+                    Text = "Изолированный HTTPS-клиент: после проверки регистрации доступны контакты и текстовые сообщения. Физический E2E ещё проверяется; это не релизная сборка.",
 #else
                     Text = "Изолированная диагностическая проверка через локальный туннель. Она не включает сообщения и не является релизной сборкой.",
 #endif
@@ -660,6 +666,7 @@ public sealed class AppShell : ContentPage
                 }
             }
         };
+        unavailable.IsVisible = !messaging.HasRuntime;
 #if DEEP_DID2_ACCOUNT_PROBE || DEEP_DID2_HTTPS_ADMISSION
         // Only the isolated diagnostic package exposes this destructive
         // control. It uses the account-owned STORE-V2 reset, never OS data wipe.

@@ -64,10 +64,10 @@ public sealed class App : Application
 
     private ContentPage CreateRecoveryPage(Window window)
     {
-#if DEEP_DID2_ACCOUNT_PROBE
+#if DEEP_DID2_ACCOUNT_PROBE || DEEP_DID2_HTTPS_ADMISSION
         var status = new Label
         {
-            Text = "Тестовый DID2-аккаунт не прошёл локальную проверку. Возможно, он создан до clean-break. Данные других приложений не затронуты.",
+            Text = "Изолированный тестовый DID2-аккаунт не прошёл локальную проверку. Возможно, он создан до clean-break. Данные других приложений не затронуты.",
             AutomationId = "Startup.Error"
         };
         var reset = new Button
@@ -87,7 +87,7 @@ public sealed class App : Application
         reset.Clicked += async (_, _) =>
         {
             if (!await page.DisplayAlertAsync("Удалить тестовый аккаунт?",
-                    "Будут удалены только данные этого отдельного DID2 probe. Старая сид-фраза и адрес не восстановятся.",
+                    "Будут удалены только данные этого изолированного тестового DID2-клиента. Старая сид-фраза и адрес не восстановятся. Другие приложения и данные нод не затрагиваются.",
                     "Удалить", "Отмена"))
                 return;
             reset.IsEnabled = false;
