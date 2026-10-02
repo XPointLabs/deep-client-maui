@@ -6,6 +6,18 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 
 ## Current committed contact candidate — 2026-10-02
 
+Latest physical follow-up used the `e1090b5` HTTPS APK. After the operator enabled
+VPN on Android, the network action passed account proof, signed network verification
+and local pre-key staging, then reported `PreKeyPublication (TransportIo)`.
+The guarded phases preserved all three protected packages. No verified publication
+pair or contact/message/attachment/group delivery is established by this result.
+
+The next diagnostic distinguishes code-owned unknown ONION completion, rejected
+reply, timeout and transport failures from generic I/O. These are display-only
+categories, not retry or delivery authority. It retains the original exception
+privately without displaying messages, identifiers, URLs or payloads. Focused
+classification tests pass 16/16; the revised device build/run is still pending.
+
 MAUI source `1261920b8e75a6262b9a38e05f6964609add6b37` built through both
 supported strict, clean-source scripts. Windows apphost SHA-256 is
 `e8327f36c4c5956444b7f49180467d84490643ddeb4d7a484d7fe783f9b0d0aa`;

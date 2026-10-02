@@ -1,4 +1,6 @@
 using Deep.Client.Maui.Services;
+using Deep.Client.Shared.Services;
+using System.Security.Cryptography;
 
 namespace Deep.Client.Maui.Clean.Tests;
 
@@ -30,5 +32,39 @@ public sealed class Did2NetworkIoFailureTests
         var result = Assert.Throws<ArgumentException>(() =>
             Did2NetworkIoFailure.AtStage(stage, new IOException("private details")));
         Assert.DoesNotContain(stage.Length == 0 ? "private" : stage, result.Message);
+    }
+
+    [Theory]
+    [InlineData("completion", "OnionCompletionUnknown")]
+    [InlineData("crypto", "OnionReplyRejected")]
+    [InlineData("cancellation", "OnionTimeoutUnknown")]
+    [InlineData("http", "OnionTransportUnknown")]
+    [InlineData("io", "OnionTransportUnknown")]
+    [InlineData("other", "OnionOutcomeUnknown")]
+    public void UnknownOnionCompletionHasClosedDisplayClassification(string kind, string expected)
+    {
+        const string secret = "private endpoint, account, capability, certificate and payload";
+        Exception? inner = kind switch
+        {
+            "completion" => null,
+            "crypto" => new CryptographicException(secret),
+            "cancellation" => new OperationCanceledException(secret),
+            "http" => new HttpRequestException(secret),
+            "io" => new IOException(secret),
+            _ => new InvalidOperationException(secret)
+        };
+        var cause = new ClientMailboxDispatchOutcomeUnknownException(secret, inner);
+        var result = Did2NetworkIoFailure.AtStage("PreKeyPublication", cause);
+        Assert.Equal($"DID2 PreKeyPublication failed ({expected}).", result.Message);
+        Assert.Same(cause, result.InnerException);
+        Assert.DoesNotContain("private", result.Message);
+    }
+
+    [Fact]
+    public void ArbitraryIoWrapperCannotClaimAnAuthenticatedOnionOutcome()
+    {
+        var cause = new IOException("private", new ClientMailboxDispatchOutcomeUnknownException("private"));
+        Assert.Equal("DID2 PreKeyPublication failed (TransportIo).",
+            Did2NetworkIoFailure.AtStage("PreKeyPublication", cause).Message);
     }
 }
