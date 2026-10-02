@@ -686,3 +686,17 @@ matched before/after each phase, and encrypted recovery remained retained.
 Neither account was reset, deleted or recreated; no recovery phrase was revealed.
 These are network/recovery diagnostics of the older installed candidates, not
 same-account successor recovery or contacts/messages/files/images/groups E2E.
+
+## Authorized Windows retry on retained account — 2026-10-03
+
+Mr. X provided a five-minute no-input interval. Fresh observation found the
+previous NetworkVerification failure; one initial input failed for unavailable
+geometry and was not treated as completion. A screenshot-backed refresh then
+preceded exactly one successful VerifyNetwork input. Independent subsequent
+inspection found `PreKeyPublication / SecureConnectionError`, `IOException`
+and the reject-only diagnostic `Chain PlatformChainAccepted`. This moved past
+the previous stage but did not complete publication or identify the exact cause
+of the protected-connection failure. The same QA account and encrypted recovery
+remained present; no reset, phrase reveal, deletion or VPN-setting change.
+The installed `e745b63` candidate still predates connected successor custody;
+this result is not same-account renewal or messaging/assets/groups delivery.
