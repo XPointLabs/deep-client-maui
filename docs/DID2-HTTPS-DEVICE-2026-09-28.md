@@ -18,7 +18,24 @@ categories, not retry or delivery authority. It retains the original exception
 privately without displaying messages, identifiers, URLs or payloads. Focused
 classification tests pass 18/18, including the typed directory 429/503 categories
 `ProofRateLimited` / `ProofAuthorityUnavailable`. These do not introduce retry or
-change admission quotas. The new classification's device build/run is pending.
+change admission quotas.
+
+The signed `aa320f7` diagnostic APK built with zero warnings/errors; SHA-256
+`d37080cb210d31e403cc112a74c23416d04295795fae6808cb85ec1a63bf50d6`.
+The guarded USB update preserved all three protected packages; Settings restored
+the account and retained encrypted recovery. One network action then completed
+with `PreKeyPublication (OnionCompletionUnknown)`. A closed 180-second log window
+was empty before this action; after it, seed1 reported one terminal
+`proof-rate-limit`. This establishes a server-side proof admission failure in
+the publication window, not a verified receipt pair or message delivery.
+All three nodes subsequently returned readiness 200 / ONION ready; retained
+health samples included temporary refusals. A currently green health is not
+evidence that the publication succeeded.
+
+Next isolated slice: reconcile the fresh-proof acquisition count of the complete
+publication with bounded Registry admission and replay-ledger capacity. Do not
+blindly increase quotas, reset nonce/floor custody, reuse expired authority or
+interpret unknown completion as rejection before forwarding.
 
 The signed `fdab89c` APK was built with zero warnings/errors and installed through
 the guarded update, retaining the account and all protected-package snapshots.
