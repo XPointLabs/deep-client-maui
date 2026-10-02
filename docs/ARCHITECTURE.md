@@ -1,5 +1,15 @@
 # Deep MAUI Architecture
 
+## Publication coordination clean break (2026-10-03)
+
+[DR79](../../docs/survival-program/decisions/DR-0079-did2-publication-issuer-successor.md)
+requires matched V3 publication peers/Registry and a current-only protected route
+journal rebuild. Existing HTTPS QA binaries cannot attest this increment. Older
+disposable QA state uses the explicit isolated recovery control; never silently
+migrate or erase a saved account. Keep its recovery material private and do not
+claim retained-account/device recovery from local crypto/HTTP fixtures. Physical
+contacts, messages, files/images and groups remain unproven.
+
 ## Owned DID2 contact/text UI candidate (2026-10-02)
 
 [DR-0066](../../docs/survival-program/decisions/DR-0066-did2-application-sqlcipher-random-key.md)
