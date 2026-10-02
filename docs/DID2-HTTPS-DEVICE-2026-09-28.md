@@ -42,7 +42,20 @@ the default and the separately selected/pinned ONION connector remain direct.
 An owned custom connector and proxy opt-in are rejected together. A focused
 real loopback CONNECT rejection test proves no binary body, direct retry or H1
 fallback after proxy failure; TLS and signature validation are unchanged.
-The proxy-aware physical result must still be recorded before claiming a fix.
+The `e745b63` Windows build restored the same account and encrypted recovery.
+Its first action passed AccountProof but failed TLS at NetworkVerification.
+After six isolated public NCQ2 reads succeeded through the same proxy-aware
+Shared factory (three fresh-connection and three pooled requests), one further
+UI action reached terminal `verified-publication` without reset. That operation
+requires the independently verified two-replica prekey completion and owned
+permanent-contact publication. This is not peer consent or message delivery,
+and does not establish stable automatic reconnect after every TLS failure.
+The separate `PlatformChainAccepted` diagnostic is a reject-only direct TLS
+handshake; it is not evidence that the failed proxied handshake was accepted.
+Apphost SHA-256 `8e11adccfff215edcfff696f67495315d1dc3a13650034b0f55be0ef126d7264`;
+assembly SHA-256 `5cb77e89d69c2330a2a3d446a461020527f601c227fd5f770107959b5e6b251f`.
+15 focused Shared transport/proxy tests and 43 MAUI composition/display tests
+passed, with unchanged assertions on TLS, H2 and byte/deadline boundaries.
 
 The signed `503505f` Android APK (Protocol `7c513f1`, Shared `9bac6e7`;
 APK SHA-256 `5c5ddd839e711bd2f89e0f77b7e647ff88e7bd4a2111d2a418eb5168341d8708`)
