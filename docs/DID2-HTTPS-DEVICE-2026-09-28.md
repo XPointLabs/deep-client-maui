@@ -24,6 +24,13 @@ the failing artifact/time relation without relaxing TLS, signed-time coverage or
 protected retry custody. Contacts, text, attachments/images and groups remain
 unproven physically; no release approval is implied.
 
+The subsequent diagnostic build uses Protocol's closed route-time artifact and
+boundary labels. Android inspection emits only those two allowed fields, not
+interval values or raw error text. Unknown labels remain unclassified failures;
+neither a label nor an enabled button can establish publication success. The
+cryptographic predicate, wire and protected retry state remain unchanged. No
+account reset is required by this diagnostic change.
+
 ## Current committed contact candidate — 2026-10-02
 
 Latest physical follow-up used the `e1090b5` HTTPS APK. After the operator enabled

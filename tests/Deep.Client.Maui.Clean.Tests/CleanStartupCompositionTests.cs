@@ -3,6 +3,49 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
+    public async Task AndroidRouteTimeDiagnosticsRecognizeOnlyClosedNonSecretFailureLabels()
+    {
+        var script = Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1");
+        var start = new System.Diagnostics.ProcessStartInfo("pwsh")
+        { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        start.Environment["DEEP_DIAGNOSTIC_SCRIPT"] = script;
+        const string test = """
+            $ErrorActionPreference='Stop'
+            $tokens=$null;$errors=$null
+            $ast=[Management.Automation.Language.Parser]::ParseFile($env:DEEP_DIAGNOSTIC_SCRIPT,[ref]$tokens,[ref]$errors)
+            if ($errors.Count -ne 0) { throw 'Parser failed' }
+            foreach ($name in @('Get-ProbeRouteTimeCoverageFailure','Get-ProbeNetworkOutcome')) {
+                $functions=@($ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $name },$true))
+                if ($functions.Count -ne 1) { throw 'Function scope failed' }
+                . ([scriptblock]::Create($functions[0].Extent.Text))
+            }
+            $count=0
+            foreach ($artifact in @('XNA1','XNV1','XNH1','ADH1','DeviceCertificate','DCA1','PMT2','XRA1','PMS2','XRC1','XSS1','XIR1V2','XRR1','ThresholdAuthoring','ResolveRequest')) {
+                foreach ($boundary in @('InvalidInterval','NotBefore','Expiry')) {
+                    $text="Не удалось проверить регистрацию: DID2 route time coverage failed ($artifact; $boundary). Локальный аккаунт сохранён."
+                    $failure=Get-ProbeRouteTimeCoverageFailure $text
+                    if ($failure.artifact -cne $artifact -or $failure.boundary -cne $boundary -or $failure.Count -ne 2) { throw 'Closed classification failed' }
+                    if ((Get-ProbeNetworkOutcome $text) -cne 'route-time-coverage-rejected') { throw 'Failure cannot be success' }
+                    $count++
+                }
+            }
+            foreach ($text in @('DID2 route time coverage failed (SecretPayload; Expiry).','DID2 route time coverage failed (XRA1; Unknown).','DID2 route time coverage failed (XRA1; Expiry; private).','A route artifact does not cover the complete authenticated time interval.')) {
+                if ($null -ne (Get-ProbeRouteTimeCoverageFailure $text)) { throw 'Unknown label escaped' }
+            }
+            if ((Get-ProbeNetworkOutcome 'Не удалось проверить регистрацию: неизвестная ошибка') -cne 'failure-redacted') { throw 'Unclassified failure became success' }
+            Write-Output $count
+            """;
+        foreach (var argument in new[] { "-NoProfile", "-Command", test }) start.ArgumentList.Add(argument);
+        using var process = System.Diagnostics.Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+        try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
+        catch { if (!process.HasExited) process.Kill(entireProcessTree: true); throw; }
+        Assert.Equal(string.Empty, (await errors).Trim());
+        Assert.Equal(0, process.ExitCode);
+        Assert.Equal("45", (await output).Trim());
+    }
+
+    [Fact]
     public async Task WorkingTreeCompileCannotQualifyOrExecutePhysicalPublication()
     {
         var script = Path.Combine(FindRepository(), "eng", "Invoke-Did2HttpsWindowsBuild.ps1");

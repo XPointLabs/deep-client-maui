@@ -183,10 +183,18 @@ function Test-OwnedResetDialogFocus([string]$WindowDump, [string]$PackageDump) {
     return $uid.Success -and $owner.Groups['uid'].Value -ceq $uid.Groups['uid'].Value
 }
 
+function Get-ProbeRouteTimeCoverageFailure([string]$Text) {
+    $match = [regex]::Match($Text,
+        'DID2 route time coverage failed \((XNA1|XNV1|XNH1|ADH1|DeviceCertificate|DCA1|PMT2|XRA1|PMS2|XRC1|XSS1|XIR1V2|XRR1|ThresholdAuthoring|ResolveRequest); (InvalidInterval|NotBefore|Expiry)\)\.')
+    if (-not $match.Success) { return $null }
+    return [ordered]@{artifact=$match.Groups[1].Value; boundary=$match.Groups[2].Value}
+}
+
 function Get-ProbeNetworkOutcome([string]$Text) {
     # A null stageFailure does not mean success: some bounded transport
     # rejections are IOException rather than the adapter's stage wrapper.
     if ($Text.Contains('Проверяем подписанный каталог и регистрацию')) { return 'verifying' }
+    if ($null -ne (Get-ProbeRouteTimeCoverageFailure $Text)) { return 'route-time-coverage-rejected' }
     if ($Text.Contains('DID2-аккаунт зарегистрирован; текущий подписанный proof проверен и защищённое состояние сохранено.')) { return 'verified-publication' }
     if ($Text.Contains('The DID2 directory proof authority is unavailable.')) { return 'proof-authority-unavailable' }
     if ($Text.Contains('The DID2 directory is temporarily unavailable.')) { return 'admission-authority-unavailable' }
@@ -256,6 +264,7 @@ function Read-ProbeUi {
             recoveryRetained=($text.Contains('Зашифрованная копия хранится на этом устройстве.'))
             verifying=($text.Contains('Проверяем подписанный каталог и регистрацию'))
             stageFailure=$(if ($failure.Success) { $failure.Value } else { $null })
+            routeTimeCoverageFailure=(Get-ProbeRouteTimeCoverageFailure $text)
             networkOutcome=(Get-ProbeNetworkOutcome $text)
             resetConfirmationVisible=$resetConfirmationVisible
             incompatibleResetConfirmationVisible=$incompatibleResetConfirmationVisible
