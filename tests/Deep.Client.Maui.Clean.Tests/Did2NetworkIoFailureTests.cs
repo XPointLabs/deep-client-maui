@@ -9,6 +9,22 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class Did2NetworkIoFailureTests
 {
     [Theory]
+    [InlineData(HttpRequestError.ResponseEnded, "HttpResponseEnded")]
+    [InlineData(HttpRequestError.InvalidResponse, "HttpInvalidResponse")]
+    [InlineData(HttpRequestError.Unknown, "HttpStreamIo")]
+    [InlineData((HttpRequestError)999, "HttpStreamIo")]
+    public void FrameworkHttpStreamFailureHasClosedCategoryWithoutMessageLeak(HttpRequestError error, string expected)
+    {
+        var cause = new HttpIOException(error, "private endpoint and response bytes");
+        var result = Did2NetworkIoFailure.AtStage("AccountProof", cause);
+        Assert.Equal($"DID2 AccountProof failed ({expected}).", result.Message);
+        Assert.Same(cause, result.InnerException);
+        Assert.DoesNotContain("private", result.Message);
+        Assert.Equal("DID2 AccountProof failed (TransportIo).",
+            Did2NetworkIoFailure.AtStage("AccountProof", new IOException("private", cause)).Message);
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.TooManyRequests, "AdmissionRateLimited")]
     [InlineData(HttpStatusCode.ServiceUnavailable, "AdmissionAuthorityUnavailable")]
     public void TypedAdmissionFailureIsNotAProofOrStreamFailure(HttpStatusCode status, string expected)

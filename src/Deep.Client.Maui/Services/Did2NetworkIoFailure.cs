@@ -44,7 +44,14 @@ internal static class Did2NetworkIoFailure
                         HttpServiceRequestTransportError.EmptyResponse => "HttpEmptyResponse",
                         _ => "TransportIo"
                     }
-                    : "TransportIo";
+                    : exception is HttpIOException http
+                        ? http.HttpRequestError switch
+                        {
+                            HttpRequestError.ResponseEnded => "HttpResponseEnded",
+                            HttpRequestError.InvalidResponse => "HttpInvalidResponse",
+                            _ => "HttpStreamIo"
+                        }
+                        : "TransportIo";
         return new InvalidOperationException(
             $"DID2 {stage} failed ({failure}).", exception);
     }
