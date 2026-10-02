@@ -33,6 +33,14 @@ unknown-operation replacement tests; it cannot construct or authorize a Shared
 conversation. Test visibility is limited to the Clean UI test assembly and does
 not expose an account key, proof, route, signer or completion setter.
 
+Each UI command also owns a linked cancellation scope. Account replacement or
+loss of network verification cancels the active scope; asynchronous account,
+intent and projection reads are rechecked before transport dispatch or UI
+mutation. Reverification cannot revive an earlier command. Replacing the
+account clears process-local retry metadata; retries for the current account
+are restored only from its protected owner. The delayed-lookup reset/refresh
+tests exercise UI lifecycle plumbing, not real network or device delivery.
+
 Local command evidence and exact test counts are in
 [SPRINT-HISTORY](../../docs/SPRINT-HISTORY.md). Windows ARM64 normal and opt-in
 HTTPS compilation passed without warnings; neither is physical delivery evidence.

@@ -109,6 +109,64 @@ public sealed class DeepIdV2MessagingViewModelTests
         finally { Directory.Delete(directory, recursive: true); }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AccountInvalidationCancelsDelayedContactBeforeTransportEvenAfterReverification(bool reset)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "deep-did2-messaging-race-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var owned = new OwnedAccounts(directory);
+            await using var accessor = new DelayedAccounts(owned);
+            var account = new DeepIdV2AccountViewModel(accessor, new UiAdmission()) { DisplayName = "Before" };
+            await account.CreateAccountAsync(); Assert.Null(account.ErrorMessage);
+            await account.VerifyNetworkAsync(); Assert.True(account.IsNetworkVerified);
+            var transport = new ThrowingRuntime();
+            var view = new DeepIdV2MessagingViewModel(accessor, account, transport)
+                { ContactAddress = account.Account!.PermanentId.CanonicalText };
+            var owner = await owned.GetAccountsAsync();
+            var delayed = accessor.DelayNextAccess();
+            var starting = view.StartContactAsync();
+            Assert.False(starting.IsCompleted);
+            if (reset)
+            {
+                await account.ResetAccountAfterConfirmationAsync(); Assert.Null(account.ErrorMessage);
+                account.DisplayName = "After";
+                await account.CreateAccountAsync(); Assert.Null(account.ErrorMessage);
+            }
+            else await account.RefreshAsync();
+            await account.VerifyNetworkAsync(); Assert.True(view.IsReady);
+            // Deliberately ignore cancellation in the delayed platform lookup.
+            // The resumed command must recheck before reading intent or dispatch.
+            delayed.SetResult(owner);
+            await starting;
+            Assert.Equal(0, transport.Calls); Assert.Empty(transport.Intents);
+            Assert.Empty(view.Conversations); Assert.Empty(view.Messages); Assert.Null(view.Selected);
+            Assert.False(view.IsBusy); Assert.NotNull(view.ErrorMessage);
+            Assert.DoesNotContain("PRIVATE", view.ErrorMessage);
+            view.ContactAddress = account.Account!.PermanentId.CanonicalText;
+            await view.StartContactAsync();
+            Assert.Equal(1, transport.Calls); Assert.Single(transport.Intents);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    private sealed class DelayedAccounts(IDeepIdV2AccountRuntimeAccessor inner) : IDeepIdV2AccountRuntimeAccessor
+    {
+        private TaskCompletionSource<DeepIdV2AccountService>? pending;
+        public TaskCompletionSource<DeepIdV2AccountService> DelayNextAccess()
+        {
+            var result = new TaskCompletionSource<DeepIdV2AccountService>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Assert.Null(Interlocked.CompareExchange(ref pending, result, null));
+            return result;
+        }
+        public Task<DeepIdV2AccountService> GetAccountsAsync(CancellationToken ct = default)
+            => Interlocked.Exchange(ref pending, null)?.Task ?? inner.GetAccountsAsync(ct);
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class UnavailableAccounts : IDeepIdV2AccountRuntimeAccessor
     {
         public int Calls { get; private set; }

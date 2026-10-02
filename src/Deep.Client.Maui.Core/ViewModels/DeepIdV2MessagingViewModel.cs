@@ -18,6 +18,7 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
     private string contactAddress = string.Empty, draftText = string.Empty, status = string.Empty;
     private DeepIdV2ConversationSnapshot? selected;
     private int accountGeneration;
+    private CancellationTokenSource? activeOperation;
     private readonly DeepIdV2TextComposerState textComposer = new();
 
     public DeepIdV2MessagingViewModel(IDeepIdV2AccountRuntimeAccessor accounts,
@@ -34,16 +35,18 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
         {
             if (change.PropertyName is nameof(DeepIdV2AccountViewModel.Account) or nameof(DeepIdV2AccountViewModel.IsNetworkVerified) or nameof(DeepIdV2AccountViewModel.IsBusy))
             {
-                if (change.PropertyName == nameof(DeepIdV2AccountViewModel.Account)) accountGeneration++;
+                if (change.PropertyName == nameof(DeepIdV2AccountViewModel.Account))
+                {
+                    accountGeneration++;
+                    activeOperation?.Cancel();
+                    foreach (var op in contactIntents.Values.Concat(acceptanceOperations.Values)) CryptographicOperations.ZeroMemory(op);
+                    contactIntents.Clear(); acceptanceOperations.Clear(); ClearTextOperation();
+                    ContactAddress = string.Empty; DraftText = string.Empty;
+                }
                 if (account.Account is null || !account.IsNetworkVerified)
                 {
+                    activeOperation?.Cancel();
                     Conversations.Clear(); Messages.Clear(); Selected = null;
-                    if (account.Account is null)
-                    {
-                        foreach (var op in contactIntents.Values.Concat(acceptanceOperations.Values)) CryptographicOperations.ZeroMemory(op);
-                        contactIntents.Clear(); acceptanceOperations.Clear(); ClearTextOperation();
-                        ContactAddress = string.Empty; DraftText = string.Empty;
-                    }
                 }
                 RaisePropertyChanged(nameof(IsReady)); NotifyCommands();
             }
@@ -85,7 +88,9 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
     public Task RefreshAsync(CancellationToken ct = default) => RunMessagingAsync(async token =>
     {
         var owner = await accounts.GetAccountsAsync(token);
+        RequireCurrentOperation(token);
         var received = await runtime!.SynchronizeAsync(owner, token);
+        RequireCurrentOperation(token);
         await LoadConversationsAsync(owner, Selected?.Conversation.ConversationId, token);
         Status = received.HasMore ? "Страница получена. Обновите ещё раз для продолжения." : "Синхронизация завершена";
     }, ct, clearProjectionOnFailure: true);
@@ -97,11 +102,14 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
         {
             if (!Conversations.Contains(snapshot)) throw new InvalidOperationException("The selection is not in the current projection.");
             var owner = await accounts.GetAccountsAsync(token);
+            RequireCurrentOperation(token);
             await RecoverPendingTextAsync(owner, token);
             if (Selected?.Conversation.ConversationId != snapshot.Conversation.ConversationId)
                 DraftText = textComposer.DraftFor(snapshot.Conversation.ConversationId);
             Selected = snapshot; Messages.Clear();
-            foreach (var message in await runtime!.MessagesAsync(owner, snapshot.Conversation, token)) Messages.Add(message);
+            var messages = await runtime!.MessagesAsync(owner, snapshot.Conversation, token);
+            RequireCurrentOperation(token);
+            foreach (var message in messages) Messages.Add(message);
         }, ct, clearProjectionOnFailure: true);
     }
     public void CloseConversation() { Selected = null; Messages.Clear(); }
@@ -114,13 +122,16 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             var address = DeepPermanentIdV2.ParseCanonical(text);
             var peer = Convert.ToHexString(address.ExactDid2Hash.Span);
             var owner = await accounts.GetAccountsAsync(token);
+            RequireCurrentOperation(token);
             if (!contactIntents.TryGetValue(peer, out var intent))
             {
                 var existing = (await owner.ListContactStartOperationsAsync(token))
                     .Where(value => value.PeerDid2Hash == peer).OrderByDescending(value => value.CreatedAtUnixMilliseconds).FirstOrDefault();
+                RequireCurrentOperation(token);
                 intent = existing?.LogicalIntent.ToArray() ?? NewOperation(); contactIntents.Add(peer, intent);
             }
             var started = await runtime!.StartAsync(owner, address, intent, token);
+            RequireCurrentOperation(token);
             await LoadConversationsAsync(owner, started.Conversation.ConversationId, token);
             Status = "Запрос контакта сохранён в сети. Ожидаем принятия.";
         }, ct);
@@ -135,7 +146,9 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             var key = target.Conversation.ConversationId;
             if (!acceptanceOperations.TryGetValue(key, out var op)) { op = NewOperation(); acceptanceOperations.Add(key, op); }
             var owner = await accounts.GetAccountsAsync(token);
+            RequireCurrentOperation(token);
             await runtime!.AcceptAsync(owner, target.Conversation, op, token);
+            RequireCurrentOperation(token);
             await LoadConversationsAsync(owner, key, token); Status = "Принятие контакта сохранено в сети";
         }, ct);
     }
@@ -148,10 +161,12 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             if (target is null || target.ContactState is not (DeepIdV2ContactState.LocalAcceptanceRetained or DeepIdV2ContactState.PeerAcceptanceRetained) || string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("An accepted contact and text are required.");
             var key = target.Conversation.ConversationId;
             var owner = await accounts.GetAccountsAsync(token);
+            RequireCurrentOperation(token);
             await RecoverPendingTextAsync(owner, token);
             var operation = textComposer.Prepare(key, text);
             try { await runtime!.SendTextAsync(owner, target.Conversation, operation, text, token); }
             finally { CryptographicOperations.ZeroMemory(operation); }
+            RequireCurrentOperation(token);
             if (DraftText == text) DraftText = string.Empty;
             ClearTextOperation();
             await LoadConversationsAsync(owner, key, token);
@@ -161,6 +176,7 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
     private async Task LoadConversationsAsync(DeepIdV2AccountService owner, string? selection, CancellationToken ct)
     {
         var list = await runtime!.ListAsync(owner, ct);
+        RequireCurrentOperation(ct);
         await RecoverPendingTextAsync(owner, ct);
         Conversations.Clear(); foreach (var conversation in list) Conversations.Add(conversation);
         Selected = selection is null ? null : list.SingleOrDefault(value => value.Conversation.ConversationId == selection);
@@ -168,12 +184,15 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
         if (Selected is { } active)
         {
             if (string.IsNullOrEmpty(DraftText)) DraftText = textComposer.DraftFor(active.Conversation.ConversationId);
-            foreach (var message in await runtime.MessagesAsync(owner, active.Conversation, ct)) Messages.Add(message);
+            var messages = await runtime.MessagesAsync(owner, active.Conversation, ct);
+            RequireCurrentOperation(ct);
+            foreach (var message in messages) Messages.Add(message);
         }
     }
     private async Task RecoverPendingTextAsync(DeepIdV2AccountService owner, CancellationToken ct)
     {
         var pending = (await owner.ListPendingTextOperationsAsync(ct)).FirstOrDefault();
+        RequireCurrentOperation(ct);
         if (pending is null) return;
         var restored = pending.LogicalOperation.ToArray();
         try { textComposer.Restore(restored, pending.ConversationId, pending.Text); }
@@ -184,10 +203,12 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
         var generation = accountGeneration;
         return RunBusyAsync(async token =>
         {
+            using var scope = CancellationTokenSource.CreateLinkedTokenSource(token);
+            activeOperation = scope;
             try
             {
                 if (!IsReady || generation != accountGeneration) throw new InvalidOperationException("The verified DID2 runtime is unavailable.");
-                await action(token);
+                await action(scope.Token);
                 if (!IsReady || generation != accountGeneration)
                 {
                     Conversations.Clear(); Messages.Clear(); Selected = null;
@@ -196,7 +217,7 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             }
             catch (Exception error)
             {
-                if (clearProjectionOnFailure) { Conversations.Clear(); Messages.Clear(); Selected = null; }
+                if (clearProjectionOnFailure || !IsReady || generation != accountGeneration) { Conversations.Clear(); Messages.Clear(); Selected = null; }
                 Status = string.Empty;
                 var message = error switch
                 {
@@ -207,7 +228,13 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
                 };
                 throw new InvalidOperationException(message);
             }
+            finally { activeOperation = null; }
         }, ct);
+    }
+    private void RequireCurrentOperation(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!IsReady) throw new InvalidOperationException("The verified DID2 runtime is unavailable.");
     }
     private void ClearTextOperation()
         => textComposer.Clear();
