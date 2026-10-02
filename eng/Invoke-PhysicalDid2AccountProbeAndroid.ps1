@@ -15,7 +15,7 @@ param(
     [ValidateSet('Did2Account', 'Did2Https')]
     [string]$Lane = 'Did2Account',
     [string]$ApkPath,
-    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset')]
+    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset', 'BeginIncompatibleReset', 'ConfirmIncompatibleReset')]
     [string]$Phase = 'Install',
     [switch]$ConfirmIsolatedAccountReset,
     [switch]$AllowProbeUpdate,
@@ -24,11 +24,11 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-if ($Phase -eq 'ConfirmReset' -and -not $ConfirmIsolatedAccountReset) {
-    throw 'ConfirmReset requires explicit -ConfirmIsolatedAccountReset.'
+if ($Phase -in @('ConfirmReset', 'ConfirmIncompatibleReset') -and -not $ConfirmIsolatedAccountReset) {
+    throw 'ConfirmReset requires explicit -ConfirmIsolatedAccountReset. The same guard applies to ConfirmIncompatibleReset.'
 }
-if ($ConfirmIsolatedAccountReset -and $Phase -ne 'ConfirmReset') {
-    throw 'Reset confirmation is accepted only by the ConfirmReset phase.'
+if ($ConfirmIsolatedAccountReset -and $Phase -notin @('ConfirmReset', 'ConfirmIncompatibleReset')) {
+    throw 'Reset confirmation is accepted only by an explicit confirmation phase.'
 }
 
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -167,7 +167,7 @@ function Assert-SameSnapshot($Before, $After, [string]$Package) {
 
 function Test-OwnedResetDialogFocus([string]$WindowDump, [string]$PackageDump) {
     $focused = [regex]::Match($WindowDump,
-        '(?m)^\s*mCurrentFocus=Window\{(?<token>[a-f0-9]{1,16}) u0 Сброс тестового аккаунта\}\s*$')
+        '(?m)^\s*mCurrentFocus=Window\{(?<token>[a-f0-9]{1,16}) u0 (?:Сброс тестового аккаунта|Удалить тестовый аккаунт\?)\}\s*$')
     if (-not $focused.Success) { return $false }
     $section = [regex]::Match($WindowDump,
         '(?ms)^  Window #\d+ Window\{' + [regex]::Escape($focused.Groups['token'].Value) +
@@ -221,7 +221,8 @@ function Read-ProbeUi {
     if ($nodes.Count -eq 0 -or $nodes.Count -gt 10000) { throw 'DID2 UI node bounds rejected.' }
     $controls = @()
     foreach ($id in @('Welcome.DisplayName', 'Welcome.CreateAccount', 'Did2Workspace.Settings', 'Did2Workspace.MobileSettings',
-        'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus', 'Did2Probe.ResetAccount')) {
+        'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus', 'Did2Probe.ResetAccount',
+        'Startup.Error', 'Startup.ResetIncompatibleDid2')) {
         $matches = @($nodes | Where-Object {
             $_.GetAttribute('resource-id') -ceq "${probePackage}:id/$id" -or
             $_.GetAttribute('content-desc') -ceq $id
@@ -234,10 +235,17 @@ function Read-ProbeUi {
     $resetConfirmationVisible = $text.Contains('Сброс тестового аккаунта') -and
         $text.Contains('Будут удалены только локальный аккаунт этого диагностического приложения') -and
         $text.Contains('Удалить тестовый аккаунт')
-    if ($ownedResetDialog -and -not $resetConfirmationVisible) {
+    $incompatibleResetConfirmationVisible = $text.Contains('Удалить тестовый аккаунт?') -and
+        $text.Contains('Будут удалены только данные этого изолированного тестового DID2-клиента. Старая сид-фраза и адрес не восстановятся. Другие приложения и данные нод не затрагиваются.') -and
+        @($nodes | Where-Object {
+            $_.GetAttribute('resource-id') -ceq 'android:id/button1' -and
+            $_.GetAttribute('text') -ceq 'Удалить' -and
+            $_.GetAttribute('class') -ceq 'android.widget.Button'
+        }).Count -eq 1
+    if ($ownedResetDialog -and -not $resetConfirmationVisible -and -not $incompatibleResetConfirmationVisible) {
         throw 'The owned reset window lacks the exact diagnostic confirmation UI.'
     }
-    $failure = [regex]::Match($text, 'DID2 (AccountProof|NetworkVerification|PreKeyStaging|PreKeyPublication) failed \(([A-Za-z0-9; ]{1,160}|network-(stale-or-fork|history-mismatch|genesis-required|rehydration-mismatch|fork|verification-rejected))\)')
+    $failure = [regex]::Match($text, 'DID2 (AccountProof|NetworkVerification|PreKeyStaging|PreKeyPublication|ContactPublication|ContactResolution) failed \(([A-Za-z0-9; ]{1,160}|network-(stale-or-fork|history-mismatch|genesis-required|rehydration-mismatch|fork|verification-rejected))\)')
     return [pscustomobject]@{
         Nodes=$nodes
         ImeShowing=($focus -match 'mImeShowing=true')
@@ -250,6 +258,8 @@ function Read-ProbeUi {
             stageFailure=$(if ($failure.Success) { $failure.Value } else { $null })
             networkOutcome=(Get-ProbeNetworkOutcome $text)
             resetConfirmationVisible=$resetConfirmationVisible
+            incompatibleResetConfirmationVisible=$incompatibleResetConfirmationVisible
+            incompatibleAccountVisible=($text.Contains('Изолированный тестовый DID2-аккаунт не прошёл локальную проверку. Возможно, он создан до clean-break. Данные других приложений не затронуты.'))
         }
     }
 }
@@ -258,13 +268,16 @@ function Click-ProbeControl($Ui, [string]$Id) {
     if ($Ui.ImeShowing -and $Id -cne 'Welcome.DisplayName') {
         throw 'Dismiss the observed probe keyboard before tapping another control.'
     }
-    $nodes = @(if ($Id -ceq 'Did2Probe.ConfirmReset') {
-        if (-not $Ui.Summary.resetConfirmationVisible) {
+    $nodes = @(if ($Id -in @('Did2Probe.ConfirmReset', 'Startup.ConfirmIncompatibleReset')) {
+        $startupReset = $Id -ceq 'Startup.ConfirmIncompatibleReset'
+        if (($startupReset -and -not $Ui.Summary.incompatibleResetConfirmationVisible) -or
+            (-not $startupReset -and -not $Ui.Summary.resetConfirmationVisible)) {
             throw 'The exact owned diagnostic reset dialog is required.'
         }
+        $confirmText = if ($startupReset) { 'Удалить' } else { 'Удалить тестовый аккаунт' }
         @($Ui.Nodes | Where-Object {
             $_.GetAttribute('resource-id') -ceq 'android:id/button1' -and
-            $_.GetAttribute('text') -ceq 'Удалить тестовый аккаунт' -and
+            $_.GetAttribute('text') -ceq $confirmText -and
             $_.GetAttribute('class') -ceq 'android.widget.Button' -and
             $_.GetAttribute('enabled') -ceq 'true'
         })
@@ -431,6 +444,8 @@ if ($Execute) {
                 'VerifyNetwork' { Click-ProbeControl $ui 'Did2Probe.VerifyNetwork' }
                 'BeginReset' { Click-ProbeControl $ui 'Did2Probe.ResetAccount' }
                 'ConfirmReset' { Click-ProbeControl $ui 'Did2Probe.ConfirmReset' }
+                'BeginIncompatibleReset' { Click-ProbeControl $ui 'Startup.ResetIncompatibleDid2' }
+                'ConfirmIncompatibleReset' { Click-ProbeControl $ui 'Startup.ConfirmIncompatibleReset' }
             }
             $result.uiAfter = (Read-ProbeUi).Summary
             $result.status = 'ui-phase-observed'

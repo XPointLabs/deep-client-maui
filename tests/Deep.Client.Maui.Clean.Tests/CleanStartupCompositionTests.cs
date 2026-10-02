@@ -267,6 +267,26 @@ public sealed class CleanStartupCompositionTests
     }
 
     [Fact]
+    public void AndroidIncompatibleAccountResetIsOwnedExplicitAndSeparateFromSettingsReset()
+    {
+        var installer = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1"));
+        Assert.Contains("'BeginIncompatibleReset', 'ConfirmIncompatibleReset'", installer);
+        Assert.Contains("$Phase -in @('ConfirmReset', 'ConfirmIncompatibleReset') -and -not $ConfirmIsolatedAccountReset", installer);
+        Assert.Contains("$ConfirmIsolatedAccountReset -and $Phase -notin", installer);
+        Assert.Contains("'Startup.Error', 'Startup.ResetIncompatibleDid2'", installer);
+        Assert.Contains("$owner.Groups['uid'].Value -ceq $uid.Groups['uid'].Value", installer);
+        Assert.Contains("$ownedResetDialog -and -not $resetConfirmationVisible -and -not $incompatibleResetConfirmationVisible", installer);
+        Assert.Contains("$startupReset -and -not $Ui.Summary.incompatibleResetConfirmationVisible", installer);
+        Assert.Contains("-not $startupReset -and -not $Ui.Summary.resetConfirmationVisible", installer);
+        Assert.Contains("$confirmText = if ($startupReset) { 'Удалить' } else { 'Удалить тестовый аккаунт' }", installer);
+        Assert.Contains("Click-ProbeControl $ui 'Startup.ResetIncompatibleDid2'", installer);
+        Assert.Contains("Click-ProbeControl $ui 'Startup.ConfirmIncompatibleReset'", installer);
+        Assert.Contains("ContactPublication|ContactResolution", installer);
+        Assert.DoesNotContain("pm clear", installer);
+        Assert.DoesNotContain("uninstall", installer);
+    }
+
+    [Fact]
     public void WindowsUatPackageCanAdvanceRevisionWithoutChangingProductionVersion()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

@@ -4,6 +4,30 @@ This records an incomplete real Windows diagnostic, not messaging or release
 approval. Registry and seed1–seed3 are production infrastructure; Mr. X permits
 testing there until he explicitly reports users exist. There is no remote UAT.
 
+## Current committed contact candidate — 2026-10-02
+
+MAUI source `1261920b8e75a6262b9a38e05f6964609add6b37` built through both
+supported strict, clean-source scripts. Windows apphost SHA-256 is
+`e8327f36c4c5956444b7f49180467d84490643ddeb4d7a484d7fe783f9b0d0aa`;
+assembly SHA-256 is
+`8bdd17545ec01f0e08b2cdf3fe816bc37b9fcc2c877d260d28e8854e593d5175`.
+Its actual window reached the explicit incompatible-isolated-account reset
+confirmation; deletion had not been performed at this checkpoint.
+
+Android build completed with zero warnings/errors. APK SHA-256 is
+`67168e439384fae9737e398bdbbc6ea1f17220d50bc198b49cdf4807d812cd9a`,
+with the production-custody signer already recorded below. The guarded USB
+update installed and launched only the dedicated HTTPS package; all three
+protected packages retained equal before/after path and stable metadata hashes.
+This is build/install evidence, not contact, message or account verification.
+
+The Android harness now recognizes the isolated startup recovery control and
+its exact, UID-owned confirmation separately from the settings reset dialog.
+Both final reset phases require the explicit isolated-reset switch; no package
+clear, uninstall, account migration or protected-package mutation is available.
+UI-only harness revisions can inspect an already-installed, pinned ancestor
+APK only under the existing four-file whitelist, never install an older APK.
+
 - MAUI code `2e8eae6bdd68bb7b297a5543be7d202706a49042` passed 21 clean-account
   tests, 119 smoke tests and the selected seven-file secret scan. Actual MSBuild
   admission guards accepted the complete DID2 build inputs and rejected retired
