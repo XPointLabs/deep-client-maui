@@ -28,6 +28,17 @@ clear, uninstall, account migration or protected-package mutation is available.
 UI-only harness revisions can inspect an already-installed, pinned ancestor
 APK only under the existing four-file whitelist, never install an older APK.
 
+On the actual USB device, BeginIncompatibleReset displayed the exact owned
+startup dialog. The next confirmation phase rejected because that dialog was
+no longer present; no blind retry was made and automated deletion is not
+claimed. Fresh Inspect observed empty onboarding. Name/Create was performed
+once; its immediate hierarchy capture failed, so the action was not repeated.
+Fresh Inspect then observed the workspace, and Settings observed both the
+current address and retained encrypted recovery without exporting either.
+Force-stop/relaunch followed by Settings retained both. The network action
+failed at `DID2 AccountProof failed (TransportIo)`; no independent proof,
+publication, contact or message delivery is established by these observations.
+
 - MAUI code `2e8eae6bdd68bb7b297a5543be7d202706a49042` passed 21 clean-account
   tests, 119 smoke tests and the selected seven-file secret scan. Actual MSBuild
   admission guards accepted the complete DID2 build inputs and rejected retired
