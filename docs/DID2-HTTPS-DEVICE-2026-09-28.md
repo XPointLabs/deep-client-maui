@@ -666,3 +666,23 @@ successor APIs. No same-account renewal, peer/Hello/Accept, text/files/images or
 groups delivery is established. The next connected step is protected successor
 adoption and permanent per-generation private issuance, followed by matched
 build/deployment and a retained-account recovery run. Production was not changed.
+
+## Proxy/VPN retained-account recheck — 2026-10-03
+
+With the Windows QA window made available by Mr. X, the installed `e745b63`
+client was reobserved and its network action invoked once. The initial displayed
+`XRA1 / Expiry` was a previous result, not the new action's outcome. Independent
+terminal inspection of this retry found `NetworkVerification / SecureConnectionError`
+with `IOException` and the diagnostic `Chain PlatformChainAccepted`. This records
+a protected-connection failure despite platform chain acceptance; it neither
+proves a certificate defect nor identifies VPN/proxy as its exact cause. One
+initial click failed because geometry was unavailable; selection/state were
+refreshed before the single successful input. No further Windows input occurred.
+
+USB Android Inspect -> VerifyNetwork -> independent terminal Inspect, after
+Mr. X enabled VPN on the phone, finished at `XRA1 / Expiry` again. Immediate
+`verifying` was not counted as success. All three protected package snapshots
+matched before/after each phase, and encrypted recovery remained retained.
+Neither account was reset, deleted or recreated; no recovery phrase was revealed.
+These are network/recovery diagnostics of the older installed candidates, not
+same-account successor recovery or contacts/messages/files/images/groups E2E.
