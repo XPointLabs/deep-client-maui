@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Net;
 using Deep.Client.Shared.Services;
 using Deep.Client.Shared.Services.AccountDirectoryV2;
+using Deep.Client.Shared.Persistence.XPointNetworkV1;
 using Deep.Protocol.DeepExtension.PrivacyRouting;
 
 namespace Deep.Client.Maui.Services;
@@ -20,7 +21,17 @@ internal static class Did2NetworkIoFailure
         // Classify only code-owned exception types, never private messages or
         // caller-provided names. Every ONION classification retains unknown
         // completion: it must not authorize retry, success or a direct fallback.
-        var failure = exception is ClientMailboxDispatchOutcomeUnknownException
+        // Local SQLCipher rejection is not evidence of a remote transport
+        // failure. Match only the owned exception type, never its private text
+        // or a generic wrapper's inner exception. These labels grant no reset,
+        // retry or authority and do not disclose a path/key/account scope.
+        var failure = exception is EntryGuardStoreOpenException
+            ? "LocalEntryGuardRejected"
+            : exception is XPointNetworkStoreOpenException
+                ? "LocalNetworkStoreRejected"
+            : exception is ClientMailboxTransportException { Failure: ClientMailboxTransportFailure.DependencyUnavailable }
+                ? "OnionDependencyRejected"
+            : exception is ClientMailboxDispatchOutcomeUnknownException
             ? exception.InnerException switch
             {
                 null => "OnionCompletionUnknown",

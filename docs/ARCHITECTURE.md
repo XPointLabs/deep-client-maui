@@ -1,5 +1,19 @@
 # Deep MAUI Architecture
 
+## Local persistence diagnostic classification (2026-10-03)
+
+The HTTPS diagnostic distinguishes the existing typed SQLCipher entry-guard and
+network-store open rejections from generic IO with fixed display-only labels
+`LocalEntryGuardRejected` and `LocalNetworkStoreRejected`. Private exception
+messages, paths and scopes never enter UI text. A generic IO wrapper cannot
+impersonate either typed rejection. The existing neutral mailbox dependency
+exception is displayed as `OnionDependencyRejected`, without claiming delivery
+certainty from its public constructor. Other mailbox failure categories retain
+generic IO classification. No retry, reset, key repair or transport
+fallback is introduced; this is not physical localization until the rebuilt
+device actually observes a label. The current physical checkpoint is recorded
+in [the workspace evidence](../../docs/DID2-PRODUCTION-DEVICE-CHECKPOINT-2026-10-03.md).
+
 ## Publication coordination clean break (2026-10-03)
 
 [DR79](../../docs/survival-program/decisions/DR-0079-did2-publication-issuer-successor.md)
