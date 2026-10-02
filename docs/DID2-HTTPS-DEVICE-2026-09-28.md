@@ -700,3 +700,20 @@ of the protected-connection failure. The same QA account and encrypted recovery
 remained present; no reset, phrase reveal, deletion or VPN-setting change.
 The installed `e745b63` candidate still predates connected successor custody;
 this result is not same-account renewal or messaging/assets/groups delivery.
+
+## Retained Windows/Android retry reaches route expiry — 2026-10-03
+
+Mr. X renewed the five-minute no-input interval. Selected exactly the returned
+running DID2 HTTPS QA window, independently observed the previous failure,
+then submitted one VerifyNetwork action without reset. A subsequent separate
+observation found `XRA1 / Expiry`, not the former protected-connection error.
+The stored account and encrypted recovery remained intact; no phrase reveal,
+deletion, account creation or VPN setting change. This proves only that this
+attempt progressed to the route-time check, not the exact cause of earlier IO.
+
+Guarded USB Android VerifyNetwork followed by a separate terminal Inspect also
+reported `route-time-coverage-rejected`, `XRA1 / Expiry`, verifying=false and
+recoveryRetained=true. Protected package snapshots matched. No install/reset
+or production mutation occurred. Both installed candidates remain the recorded
+older source, not the new protected successor implementation. Full contacts,
+messages, attachments/images and groups physical E2E remain unproven.
