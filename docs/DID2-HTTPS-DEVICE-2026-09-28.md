@@ -26,6 +26,24 @@ generic IO wrappers cannot impersonate a framework stream error. This adds no
 retry, transport downgrade or verification relaxation. A physical result from
 the new build is still required before attributing Windows failure to stream IO.
 
+The `8560312` physical Windows build also restored the same account and ended
+one action with `AccountProof (TransportIo)`. A bounded QA-process-only exception
+trace, retained privately, localizes the failure to socket/TLS frame reads,
+H2 response processing and `HttpServiceRequestTransport.ReadBoundedAsync` during
+`DeepIdV2DirectoryProofClient.FetchCurrentWithFloorAsync`. It is not a local SQL
+or protected-account write failure. The trace does not identify censorship,
+Cloudflare or a particular proxy as the source of the disconnect.
+
+Source inspection found `CreateHttpHandler` unconditionally disabled proxies.
+The human's Windows VPN is a system proxy, so this public Registry HTTP path
+did not honor that configuration. HTTPS diagnostic Registry options now
+explicitly opt into the platform proxy through Shared's `UseSystemProxy` option;
+the default and the separately selected/pinned ONION connector remain direct.
+An owned custom connector and proxy opt-in are rejected together. A focused
+real loopback CONNECT rejection test proves no binary body, direct retry or H1
+fallback after proxy failure; TLS and signature validation are unchanged.
+The proxy-aware physical result must still be recorded before claiming a fix.
+
 The signed `503505f` Android APK (Protocol `7c513f1`, Shared `9bac6e7`;
 APK SHA-256 `5c5ddd839e711bd2f89e0f77b7e647ff88e7bd4a2111d2a418eb5168341d8708`)
 identified the retained-account rejection as **XRA1 / Expiry**. This is a

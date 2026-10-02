@@ -242,6 +242,7 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("accounts.ResolvePermanentContactAsync(descriptor, source,", admission);
         Assert.Contains("resolved.Candidate.ExactDid2.CanonicalBytes.Span", admission);
         Assert.Contains("exception.HttpRequestError", admission);
+        Assert.Contains("PooledConnectionLifetime: TimeSpan.FromTicks(1), UseSystemProxy: true", admission);
         Assert.Contains("<Compile Include=\"Services\\Did2TlsFailureClassifier.cs\" />", project,
             StringComparison.Ordinal);
         Assert.Contains("Did2TlsFailureClassifier.Classify(exception)", admission,
@@ -327,7 +328,8 @@ public sealed class CleanStartupCompositionTests
         Assert.DoesNotContain("@('shell', 'dumpsys', 'window', 'windows')", installer);
         Assert.Contains("$settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit", installer);
         Assert.Contains("$field.Count -ne 1", installer);
-        Assert.Contains("$result.uiAfter = (Read-ProbeUi).Summary", installer);
+        Assert.Contains("$result.uiAfter = $(if ($Phase -eq 'Inspect') { (Read-ProbeUi).Summary }", installer);
+        Assert.Contains("else { (Read-ProbeUiAfterAction).Summary })", installer);
         Assert.Contains("networkOutcome=(Get-ProbeNetworkOutcome $text)", installer);
         Assert.Contains("return 'verified-publication'", installer);
         Assert.Contains("return 'proof-authority-unavailable'", installer);

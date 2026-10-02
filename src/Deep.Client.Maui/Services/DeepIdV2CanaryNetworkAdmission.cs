@@ -95,7 +95,9 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
         // with plain HttpClient. Isolate this diagnostic's public requests on
         // fresh connections while preserving TLS, deadlines and signatures.
         // This is not a retry, downgrade, or change to selected-entry transport.
-        return new(PooledConnectionLifetime: TimeSpan.FromTicks(1));
+        // Registry public HTTPS must honor the user's system-proxy VPN. This
+        // option is not passed to the independently selected ONION connector.
+        return new(PooledConnectionLifetime: TimeSpan.FromTicks(1), UseSystemProxy: true);
 #else
         return null;
 #endif
