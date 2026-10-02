@@ -12,11 +12,27 @@ and local pre-key staging, then reported `PreKeyPublication (TransportIo)`.
 The guarded phases preserved all three protected packages. No verified publication
 pair or contact/message/attachment/group delivery is established by this result.
 
-The next diagnostic distinguishes code-owned unknown ONION completion, rejected
+The diagnostic distinguishes code-owned unknown ONION completion, rejected
 reply, timeout and transport failures from generic I/O. These are display-only
 categories, not retry or delivery authority. It retains the original exception
 privately without displaying messages, identifiers, URLs or payloads. Focused
-classification tests pass 16/16; the revised device build/run is still pending.
+classification tests pass 18/18, including the typed directory 429/503 categories
+`ProofRateLimited` / `ProofAuthorityUnavailable`. These do not introduce retry or
+change admission quotas. The new classification's device build/run is pending.
+
+The signed `fdab89c` APK was built with zero warnings/errors and installed through
+the guarded update, retaining the account and all protected-package snapshots.
+APK SHA-256: `2336e670e46c6cb9328ff03bf54c2f91e0e7363c96be8e80a46a97c1d739c0b3`.
+One attempt reported `AccountProof` / `RevocationStatusUnknown`; a subsequent
+bounded attempt with VPN enabled passed that stage and again reported
+`PreKeyPublication (TransportIo)`. No TLS/revocation checks were disabled.
+
+Production XNode `6dbf0fb` was installed on the same three nodes through the
+supported installer. Registered Ed/BLS keys remained unchanged; all three
+readiness checks returned 200 with ONION ready. Its closed terminal diagnostic
+has a per-process rate bound and never records exceptions or request identifiers.
+37 focused native tests pass; no physical publication/delivery is inferred from
+the installation or from an empty diagnostic log window.
 
 Owned settings scrolling uses a pane-local third, with an explicit upward phase,
 so a full-screen fling cannot skip the network action and force a reset/relaunch.

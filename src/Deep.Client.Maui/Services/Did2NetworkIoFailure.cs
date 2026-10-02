@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
+using System.Net;
 using Deep.Client.Shared.Services;
+using Deep.Client.Shared.Services.AccountDirectoryV2;
 using Deep.Protocol.DeepExtension.PrivacyRouting;
 
 namespace Deep.Client.Maui.Services;
@@ -27,7 +29,10 @@ internal static class Did2NetworkIoFailure
                 HttpRequestException or IOException => "OnionTransportUnknown",
                 _ => "OnionOutcomeUnknown"
             }
-            : "TransportIo";
+            : exception is DeepIdV2DirectoryProofUnavailableException proof
+                ? proof.StatusCode == HttpStatusCode.TooManyRequests
+                    ? "ProofRateLimited" : "ProofAuthorityUnavailable"
+                : "TransportIo";
         return new InvalidOperationException(
             $"DID2 {stage} failed ({failure}).", exception);
     }

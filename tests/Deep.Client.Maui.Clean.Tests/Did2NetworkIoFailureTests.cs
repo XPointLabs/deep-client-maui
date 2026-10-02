@@ -1,11 +1,24 @@
 using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Services;
+using Deep.Client.Shared.Services.AccountDirectoryV2;
+using System.Net;
 using System.Security.Cryptography;
 
 namespace Deep.Client.Maui.Clean.Tests;
 
 public sealed class Did2NetworkIoFailureTests
 {
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests, "ProofRateLimited")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "ProofAuthorityUnavailable")]
+    public void TypedDirectoryFailureCannotBeMistakenForIngressIo(HttpStatusCode code, string expected)
+    {
+        var cause = new DeepIdV2DirectoryProofUnavailableException(code, TimeSpan.FromSeconds(10));
+        var result = Did2NetworkIoFailure.AtStage("PreKeyPublication", cause);
+        Assert.Equal($"DID2 PreKeyPublication failed ({expected}).", result.Message);
+        Assert.Same(cause, result.InnerException);
+    }
+
     [Theory]
     [InlineData("AccountProof")]
     [InlineData("NetworkVerification")]
