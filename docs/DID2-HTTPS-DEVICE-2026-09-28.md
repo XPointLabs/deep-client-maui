@@ -18,6 +18,11 @@ categories, not retry or delivery authority. It retains the original exception
 privately without displaying messages, identifiers, URLs or payloads. Focused
 classification tests pass 16/16; the revised device build/run is still pending.
 
+Owned settings scrolling uses a pane-local third, with an explicit upward phase,
+so a full-screen fling cannot skip the network action and force a reset/relaunch.
+Both directions require the observed exact package, scroll pane and bounded
+geometry; subsequent clicks still require fresh enabled selectors.
+
 MAUI source `1261920b8e75a6262b9a38e05f6964609add6b37` built through both
 supported strict, clean-source scripts. Windows apphost SHA-256 is
 `e8327f36c4c5956444b7f49180467d84490643ddeb4d7a484d7fe783f9b0d0aa`;

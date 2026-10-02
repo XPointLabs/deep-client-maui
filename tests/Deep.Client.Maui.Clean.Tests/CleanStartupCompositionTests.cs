@@ -252,6 +252,10 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("'DismissKeyboard'", installer);
         Assert.Contains("'Did2Workspace.MobileSettings'", installer);
         Assert.Contains("'ScrollSettings'", installer);
+        Assert.Contains("'ScrollSettingsUp'", installer);
+        Assert.Contains("$Phase -eq 'ScrollSettingsUp'", installer);
+        Assert.Contains("(($bottom-$top)/3)", installer);
+        Assert.DoesNotContain("[string]($bottom-100)", installer);
         Assert.Contains("'BeginReset', 'ConfirmReset'", installer);
         Assert.Contains("ConfirmReset requires explicit -ConfirmIsolatedAccountReset.", installer);
         Assert.Contains("$Ui.Summary.resetConfirmationVisible", installer);

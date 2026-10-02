@@ -15,7 +15,7 @@ param(
     [ValidateSet('Did2Account', 'Did2Https')]
     [string]$Lane = 'Did2Account',
     [string]$ApkPath,
-    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset', 'BeginIncompatibleReset', 'ConfirmIncompatibleReset')]
+    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset', 'BeginIncompatibleReset', 'ConfirmIncompatibleReset', 'ScrollSettingsUp')]
     [string]$Phase = 'Install',
     [switch]$ConfirmIsolatedAccountReset,
     [switch]$AllowProbeUpdate,
@@ -422,7 +422,7 @@ if ($Execute) {
                     } else { 'Did2Workspace.Settings' }
                     Click-ProbeControl $ui $settingsId
                 }
-                'ScrollSettings' {
+                { $_ -in @('ScrollSettings', 'ScrollSettingsUp') } {
                     if ($ui.ImeShowing) { throw 'Dismiss the probe keyboard before scrolling settings.' }
                     $pane = @($ui.Nodes | Where-Object {
                         $_.GetAttribute('resource-id') -ceq "${probePackage}:id/Page.Settings" -and
@@ -438,8 +438,15 @@ if ($Execute) {
                         throw 'Settings pane bounds are outside the screen limit.'
                     }
                     $x=[string][int](($left+$right)/2)
-                    [void](Invoke-Adb @('shell', 'input', 'swipe', $x, [string]($bottom-100),
-                        $x, [string]($top+100), '450') 'Scroll exact owned settings pane')
+                    # A full-screen fling can skip the network action entirely.
+                    # Use an observed pane-local third in either direction; the
+                    # next phase must inspect fresh selectors before any click.
+                    $lower=[int]($top + (($bottom-$top)*2/3))
+                    $upper=[int]($top + (($bottom-$top)/3))
+                    $from=if ($Phase -eq 'ScrollSettingsUp') { $upper } else { $lower }
+                    $to=if ($Phase -eq 'ScrollSettingsUp') { $lower } else { $upper }
+                    [void](Invoke-Adb @('shell', 'input', 'swipe', $x, [string]$from,
+                        $x, [string]$to, '450') 'Scroll exact owned settings pane')
                 }
                 'VerifyNetwork' { Click-ProbeControl $ui 'Did2Probe.VerifyNetwork' }
                 'BeginReset' { Click-ProbeControl $ui 'Did2Probe.ResetAccount' }
