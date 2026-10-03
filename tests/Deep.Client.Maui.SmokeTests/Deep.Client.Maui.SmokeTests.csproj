@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Deep.Client.Maui.Core\Deep.Client.Maui.Core.csproj" />
+    <ProjectReference Include="..\..\src\Deep.Client.Maui.Core.Did2\Deep.Client.Maui.Core.Did2.csproj" />
     <ProjectReference Include="..\..\eng\Deep.AndroidRunner\Deep.AndroidRunner.csproj" />
   </ItemGroup>
 
@@ -30,6 +30,7 @@
     <Compile Include="..\..\src\Deep.Client.Maui\Services\RealityTransportRuntime.cs" Link="Services\RealityTransportRuntime.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\WnsPushPayloadCodec.cs" Link="Services\WnsPushPayloadCodec.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\ExifOrientationTransform.cs" Link="Services\ExifOrientationTransform.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui.Core\Services\RoutedRuntimeConfiguration.cs" Link="Services\RoutedRuntimeConfiguration.cs" />
   </ItemGroup>
 
 </Project>

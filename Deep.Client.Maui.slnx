@@ -4,7 +4,6 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Deep.Client.Maui.Core.Did2/Deep.Client.Maui.Core.Did2.csproj" />
-    <Project Path="src/Deep.Client.Maui.Core/Deep.Client.Maui.Core.csproj" />
     <Project Path="src/Deep.Client.Maui/Deep.Client.Maui.csproj" />
   </Folder>
   <Folder Name="/tests/">
