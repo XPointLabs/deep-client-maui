@@ -1,10 +1,14 @@
 ﻿# Deep Client MAUI
 
-`deep-client-maui` is the production .NET MAUI client for Deep over XPoint
-Network. Shared protocol, encrypted persistence, E2EE, Deep-native privacy routing, groups,
-attachments, push subscriptions, and call signaling live in
-`deep-client-shared`; this repository owns the MAUI UX and native platform
-integration.
+`deep-client-maui` contains the .NET MAUI client for Deep over XPoint Network.
+The current application uses the DID2 account graph. Connected contact and
+direct-text commands are available only in an explicitly configured non-Release
+HTTPS diagnostic; production messaging composition and physical delivery are
+not qualified. See the [current composition](docs/ARCHITECTURE.md#current-composition-baseline--2026-10-03)
+for active features and the
+[implementation plan](../docs/architecture/IMPLEMENTATION-PLAN-V1.md) for the
+remaining work. Shared owns portable protocol, custody and service behavior;
+this repository owns the MAUI UX and native platform integration.
 
 ## Agent Specs
 
@@ -13,7 +17,8 @@ integration.
 
 ## Projects
 
-- `src/Deep.Client.Maui.Core`: testable MVVM layer, route catalog, commands, attachment picker abstraction.
+- `src/Deep.Client.Maui.Core.Did2`: current testable account/direct-text MVVM layer and narrow runtime interfaces.
+- `src/Deep.Client.Maui.Core`: former broader UI project, outside the current application graph; selected source files are explicitly included by Core.Did2.
 - `src/Deep.Client.Maui`: MAUI app targeting Android, iOS, Windows, and Mac Catalyst.
 - `tests/Deep.Client.Maui.Clean.Tests`: current DID2 account and clean-break UI contracts.
 - `tests/Deep.Client.Maui.SmokeTests`: shell route smoke tests.
@@ -22,7 +27,8 @@ integration.
 
 ## Local Verification
 
-Validated in this workspace:
+Repository verification entry points (their presence is not evidence that the
+current candidate has passed them; Release builds require provisioned inputs):
 
 ```powershell
 dotnet build src/Deep.Client.Maui/Deep.Client.Maui.csproj -f net10.0-windows10.0.19041.0 -c Release -p:RuntimeIdentifierOverride=win-x64
@@ -34,7 +40,8 @@ dotnet test tests/Deep.Client.Maui.SmokeTests/Deep.Client.Maui.SmokeTests.csproj
 The retired SessionId UI automation must not be run as release evidence.
 A DID2 Android↔Windows physical messaging lane remains a release gate.
 
-Implemented E2 platform contour coverage:
+Historical platform implementation coverage, excluded from the current DID2
+application whitelist and not evidence of current feature availability:
 
 - APNS/WNS native token ingestion and provider-token persistence/unregister paths.
 - Android uses the official Firebase Messaging binding, obtains a real FCM token, refreshes it, and registers it with the push subscription API. Synthetic provider tokens are never used.
@@ -44,7 +51,8 @@ Implemented E2 platform contour coverage:
 
 Platform caveats/workarounds are documented in `docs/ARCHITECTURE.md`.
 
-Runtime transport behavior:
+Historical MAU2 runtime transport description, excluded from the current DID2
+application graph; use the architecture baseline above for the active path:
 
 - Physical Debug MAU2 loads an exact app-private `privacy-routes.v2.json` bound
   by both `activation.v1.json` and the Mr. X-signed mailbox policy.

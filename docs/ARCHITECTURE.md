@@ -1,5 +1,49 @@
 # Deep MAUI Architecture
 
+## Current composition baseline — 2026-10-03
+
+This is a source-composition description, not release qualification. The
+[workspace audit](../../docs/architecture/ARCHITECTURE-AUDIT-2026-10-03.md) records the
+cross-repository findings; the
+[implementation plan](../../docs/architecture/IMPLEMENTATION-PLAN-V1.md)
+owns the execution order and acceptance gates. Dated notes below preserve
+implementation context and do not define another backlog.
+
+The actual application references `Deep.Client.Maui.Core.Did2` and Shared's
+`Deep.Client.Shared.Production.csproj`. The
+[application project](../src/Deep.Client.Maui/Deep.Client.Maui.csproj) removes
+the former pages, startup and service graph, then explicitly includes the DID2
+account owner, platform custody/crypto adapters and diagnostic network services.
+The [DID2 Core project](../src/Deep.Client.Maui.Core.Did2/Deep.Client.Maui.Core.Did2.csproj)
+includes the account and direct-text ViewModels and their narrow interfaces.
+The older `Deep.Client.Maui.Core` project and a service file present on disk
+are not evidence that the current application composes that feature.
+
+| Application surface | Current source behavior |
+| --- | --- |
+| Default and Release builds | DID2 local account/custody graph; no registered network admission or conversation runtime. |
+| Loopback canary | Explicit non-Release account/admission diagnostic. |
+| HTTPS physical diagnostic | Explicit non-Release admission, publication and Start/Accept/SendText/List/Synchronize commands. |
+| Automatic network recovery | Diagnostic proof/publication reconnect with cancellation and bounded retry; it does not drain a message outbox or poll an inbox. |
+| Files, images and governed groups | No current DID2 UI/runtime composition. |
+| Push, background message sync, calls and native media integration | Earlier implementations are excluded from the current application service whitelist. |
+
+[MauiProgram.Did2](../src/Deep.Client.Maui/MauiProgram.Did2.cs) registers the
+conversation runtime only with `DEEP_DID2_HTTPS_ADMISSION`; the application
+project explicitly rejects that diagnostic switch for Release. A separate
+production composition remains required. A successful Debug build or local
+ViewModel test does not qualify it.
+
+The diagnostic currently requires network verification even to show local
+conversation history, clears that projection when verification is lost, and
+offers explicit message retry and single-page synchronization. Offline local
+reading/queueing, automatic delivery scheduling and complete expiry/capacity
+recovery remain implementation work. Shared has durable Store, semantic inbox
+and mailbox tombstone ACK paths; these are not sender-visible AppAck/Read
+receipts. Remote attachment transfer and group delivery are also still missing
+from this graph. The linked plan owns their sequencing; no legacy service is
+implicitly re-enabled by this document.
+
 ## Local persistence diagnostic classification (2026-10-03)
 
 The HTTPS diagnostic distinguishes the existing typed SQLCipher entry-guard and
@@ -125,7 +169,14 @@ Deep is a private messenger running over XPoint Network. The MAUI repository is
 the native application boundary; portable protocol and state behavior live in
 the sibling `deep-client-shared` repository.
 
-## Layers
+## Retained layer and component notes
+
+The following notes mix DID2 implementation history with the former application
+graph. Descriptions of the old Core, MAU2 activation, groups, media, calls, push,
+background sync and Release composition are historical and **not active in the
+current DID2 whitelist**. Use the current composition baseline above when
+assessing availability. Remaining DID2 notes describe their dated increment;
+their old future-work statements do not supersede the consolidated plan.
 
 ### Shared runtime
 
@@ -417,7 +468,7 @@ DCR1/route closure and stages the verified XPU1 for publication. The bootstrap
 is fail-closed on publication failure; successful device delivery remains to
 be verified physically.
 
-## Startup
+## Historical startup composition — excluded graph
 
 1. `MauiProgram` validates immutable embedded settings and composes narrow
    platform services.
@@ -452,7 +503,7 @@ be verified physically.
 4. Conversation and message pages render cached snapshots first; sync runs in
    a cancellable background path.
 
-## Messaging
+## Historical messaging composition — excluded graph
 
 Outgoing messages are persisted to the durable MAU2 outbox before dispatch.
 The existing six-node physical Debug composition loads two hash-bound three-hop
@@ -589,7 +640,7 @@ hidden or report an exact unavailable state. In particular, calls must not
 appear available in `direct-p2p` while `CallsEnabled` is false or fall back
 to process-local signaling.
 
-## Push
+## Historical push composition — excluded graph
 
 Android uses FCM and Windows uses WNS. Both register a provider token through the
 same signed v2 subscription protocol. Provider payloads are encrypted with
@@ -606,7 +657,7 @@ durable queue carries both message and conversation IDs; a foreground notificati
 is acknowledged without presentation only when that conversation is actively open,
 while background delivery and other conversations are always presented.
 
-## Platform Work
+## Historical platform integration — excluded graph
 
 Android uses JobService-backed retry/catch-up, Firebase callbacks, biometric or
 device-credential lock, MediaStore downloads, and a bounded share-ingress service.
