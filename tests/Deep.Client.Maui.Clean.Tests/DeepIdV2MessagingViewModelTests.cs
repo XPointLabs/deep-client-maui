@@ -180,6 +180,61 @@ public sealed class DeepIdV2MessagingViewModelTests
         finally { Directory.Delete(directory, recursive: true); }
     }
 
+    [Fact]
+    public async Task LocalRefreshNeedsNoNetworkAdmissionAndAccountRefreshPreservesSameOwnerDraft()
+    {
+        // UI plumbing only; authenticated nonempty history/cold SQL reopen is
+        // covered by Shared's real two-account mailbox test, not this stub.
+        var directory = Path.Combine(Path.GetTempPath(), "deep-did2-offline-ui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var accounts = new OwnedAccounts(directory);
+            var admission = new UiAdmission();
+            var account = new DeepIdV2AccountViewModel(accounts, admission) { DisplayName = "Offline UI" };
+            await account.CreateAccountAsync(); Assert.Null(account.ErrorMessage);
+            var runtime = new LocalRuntime();
+            var view = new DeepIdV2MessagingViewModel(accounts, account, runtime);
+            Assert.True(view.CanReadLocal); Assert.False(view.IsReady);
+            Assert.True(view.RefreshCommand.CanExecute(null));
+            await view.RefreshAsync();
+            Assert.Null(view.ErrorMessage); Assert.Equal(1, runtime.LocalReads); Assert.Equal(0, runtime.NetworkCalls);
+            Assert.Empty(view.Conversations); Assert.Empty(view.Messages);
+            view.ContactAddress = account.Account!.PermanentId.CanonicalText;
+            view.DraftText = "retained local draft";
+            Assert.False(view.StartContactCommand.CanExecute(null));
+            Assert.False(view.SendTextCommand.CanExecute(null));
+            await view.StartContactAsync(); Assert.Equal(0, runtime.NetworkCalls);
+            await account.RefreshAsync(); Assert.Null(account.ErrorMessage);
+            Assert.Equal("retained local draft", view.DraftText); Assert.NotEmpty(view.ContactAddress);
+            await account.VerifyNetworkAsync(); Assert.True(view.IsReady);
+            admission.Reject = true;
+            await account.VerifyNetworkAsync(); Assert.False(view.IsReady); Assert.True(view.CanReadLocal);
+            Assert.Equal("retained local draft", view.DraftText); Assert.NotEmpty(view.ContactAddress);
+            await view.RefreshAsync(); Assert.Null(view.ErrorMessage);
+            Assert.Equal(2, runtime.LocalReads); Assert.Equal(0, runtime.NetworkCalls);
+            await account.ResetAccountAfterConfirmationAsync(); Assert.Null(account.ErrorMessage);
+            Assert.False(view.CanReadLocal); Assert.False(view.RefreshCommand.CanExecute(null));
+            Assert.Empty(view.DraftText); Assert.Empty(view.ContactAddress);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    private sealed class LocalRuntime : IDeepIdV2ConversationRuntime
+    {
+        public int LocalReads { get; private set; }
+        public int NetworkCalls { get; private set; }
+        private Exception UnexpectedNetwork() { NetworkCalls++; return new IOException("PRIVATE network unavailable"); }
+        public Task<IReadOnlyList<DeepIdV2ConversationSnapshot>> ListAsync(DeepIdV2AccountService accounts, CancellationToken ct = default)
+        { LocalReads++; return accounts.ListConversationsAsync(ct); }
+        public Task<IReadOnlyList<DirectMessageCreateSnapshot>> MessagesAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, CancellationToken ct = default)
+            => accounts.ListMessagesAsync(conversation, ct);
+        public Task<DeepIdV2ContactStartResult> StartAsync(DeepIdV2AccountService accounts, DeepPermanentIdV2 address, ReadOnlyMemory<byte> intent, CancellationToken ct = default) => throw UnexpectedNetwork();
+        public Task AcceptAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, CancellationToken ct = default) => throw UnexpectedNetwork();
+        public Task SendTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, string text, CancellationToken ct = default) => throw UnexpectedNetwork();
+        public Task<DeepIdV2MailboxSynchronizationResult> SynchronizeAsync(DeepIdV2AccountService accounts, CancellationToken ct = default) => throw UnexpectedNetwork();
+    }
+
     private sealed class DelayedAccounts(IDeepIdV2AccountRuntimeAccessor inner) : IDeepIdV2AccountRuntimeAccessor
     {
         private TaskCompletionSource<DeepIdV2AccountService>? pending;
@@ -214,8 +269,9 @@ public sealed class DeepIdV2MessagingViewModelTests
     }
     private sealed class UiAdmission : IDeepIdV2NetworkAdmission
     {
+        public bool Reject { get; set; }
         public Task VerifyAsync(DeepIdV2AccountService accounts, CancellationToken cancellationToken = default)
-        { cancellationToken.ThrowIfCancellationRequested(); return Task.CompletedTask; }
+        { cancellationToken.ThrowIfCancellationRequested(); if (Reject) throw new IOException("PRIVATE authority unavailable"); return Task.CompletedTask; }
     }
     private sealed class ThrowingRuntime : IDeepIdV2ConversationRuntime
     {

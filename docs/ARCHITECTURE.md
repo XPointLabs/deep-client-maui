@@ -34,10 +34,13 @@ project explicitly rejects that diagnostic switch for Release. A separate
 production composition remains required. A successful Debug build or local
 ViewModel test does not qualify it.
 
-The diagnostic currently requires network verification even to show local
-conversation history, clears that projection when verification is lost, and
-offers explicit message retry and single-page synchronization. Offline local
-reading/queueing, automatic delivery scheduling and complete expiry/capacity
+The diagnostic now reads conversation/message history directly from the Shared
+protected local owner without bootstrap HTTP or fresh endpoint proofs.
+`CanReadLocal` is separate from network `IsReady`; loss of network verification
+does not clear authenticated projections or drafts. Network commands remain
+closed, and corrupt local reads or account replacement clear projections.
+It offers explicit message retry and single-page synchronization. Offline
+queueing, automatic delivery scheduling and complete expiry/capacity
 recovery remain implementation work. Shared has durable Store, semantic inbox
 and mailbox tombstone ACK paths; these are not sender-visible AppAck/Read
 receipts. Remote attachment transfer and group delivery are also still missing
@@ -92,9 +95,8 @@ adds actual protected original-text/operation recovery before composer allocatio
 and on conversation selection after restart. Nothing is sent automatically.
 Input clears after owned Store completion, before an independent history refresh,
 so a later UI refresh error cannot resurrect a completed send. Physical restart
-evidence remains open. Loss of current
-verification clears the current conversation projection instead of treating
-cached rows as fresh authority. Isolated HTTPS QA startup recovery now offers an
+evidence remains open. Loss of current verification closes network commands,
+not local history; retained rows grant no fresh authority. Isolated HTTPS QA startup recovery now offers an
 explicit confirmed STORE-V2 reset; normal shipping startup has no such reset.
 The internal composer metadata helper has focused restart/defensive-copy/
 unknown-operation replacement tests; it cannot construct or authorize a Shared
@@ -108,12 +110,21 @@ be restored when its own dialog is selected again. This is UI isolation, not
 mailbox completion or physical delivery evidence.
 
 Each UI command also owns a linked cancellation scope. Account replacement or
-loss of network verification cancels the active scope; asynchronous account,
+loss of network verification cancels an active network scope, not a local read; asynchronous account,
 intent and projection reads are rechecked before transport dispatch or UI
 mutation. Reverification cannot revive an earlier command. Replacing the
 account clears process-local retry metadata; retries for the current account
 are restored only from its protected owner. The delayed-lookup reset/refresh
 tests exercise UI lifecycle plumbing, not real network or device delivery.
+
+Reconnect invalidation publishes its new state and wake before cancelling the
+old attempt. Cancellation can synchronously resume the worker inside the
+reentrant lock; the old invalidation must not overwrite newer success or queue
+an extra attempt afterward. A deterministic cancellation/reconnect regression
+preserves the exact two-attempt assertion. Local availability and delivery
+semantics belong to the [normative owner](../../docs/architecture/TRANSPORT-NEUTRAL-MESSAGING.md#31-local-availability-и-delivery-lifecycle);
+test scopes and receipts belong to the
+[Shared checkpoint](../../deep-client-shared/docs/testing/s07-local-history-2026-10-04.md).
 
 Local command evidence and exact test counts are in
 [SPRINT-HISTORY](../../docs/SPRINT-HISTORY.md). Windows ARM64 normal and opt-in

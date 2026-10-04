@@ -10,8 +10,8 @@ namespace Deep.Client.Maui.Services;
 
 internal sealed partial class DeepIdV2CanaryNetworkAdmission : IDeepIdV2ConversationRuntime
 {
-    // Private lifecycle composition only. Every action recreates fresh proof/
-    // network inputs; handles are not cached source/freshness capabilities.
+    // Network mutations recreate fresh proof/authority. Read-only history
+    // goes straight to the protected local owner, without bootstrap HTTP.
     private static async Task<T> RunConversationAsync<T>(DeepIdV2AccountService accounts,
         Func<DeepIdV2ContactPathAuthoritySource, CancellationToken, Task<T>> action, CancellationToken ct)
     {
@@ -31,7 +31,7 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission : IDeepIdV2Conversa
         ReadOnlyMemory<byte> intent, CancellationToken ct = default)
         => RunConversationAsync(accounts, (source, token) => accounts.StartContactAsync(address, intent, source, token), ct);
     public Task<IReadOnlyList<DeepIdV2ConversationSnapshot>> ListAsync(DeepIdV2AccountService accounts, CancellationToken ct = default)
-        => RunConversationAsync(accounts, accounts.ListConversationsAsync, ct);
+        => accounts.ListConversationsAsync(ct);
     public async Task AcceptAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> op, CancellationToken ct = default)
         => _ = await RunConversationAsync(accounts, (source, token) => accounts.AcceptContactAsync(conversation, op, source, token), ct);
     public async Task SendTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation,
@@ -39,7 +39,7 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission : IDeepIdV2Conversa
         => _ = await RunConversationAsync(accounts, (source, token) => accounts.SendTextAsync(conversation, op, text, source, token), ct);
     public Task<IReadOnlyList<DirectMessageCreateSnapshot>> MessagesAsync(DeepIdV2AccountService accounts,
         DeepIdV2Conversation conversation, CancellationToken ct = default)
-        => RunConversationAsync(accounts, (source, token) => accounts.ListMessagesAsync(conversation, source, token), ct);
+        => accounts.ListMessagesAsync(conversation, ct);
     public Task<DeepIdV2MailboxSynchronizationResult> SynchronizeAsync(DeepIdV2AccountService accounts, CancellationToken ct = default)
         => RunConversationAsync(accounts, accounts.SynchronizeOwnMailboxAsync, ct);
 }

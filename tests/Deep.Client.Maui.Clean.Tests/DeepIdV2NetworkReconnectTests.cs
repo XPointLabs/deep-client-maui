@@ -56,6 +56,32 @@ public sealed class DeepIdV2NetworkReconnectTests
     }
 
     [Fact]
+    public async Task ConnectivityReturningInsideCancellationCannotScheduleDuplicatePipeline()
+    {
+        var status = new Network();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Deliberately synchronous completion: cancellation can resume the
+        // worker inside Invalidate's reentrant lock before that method returns.
+        var cancelled = new TaskCompletionSource();
+        var calls = 0;
+        CancellationTokenRegistration registration = default;
+        await using var reconnect = new DeepIdV2NetworkReconnect(token => {
+            if (Interlocked.Increment(ref calls) != 1) return Task.CompletedTask;
+            registration = token.Register(() => { status.Set(true); cancelled.TrySetCanceled(token); });
+            entered.TrySetResult();
+            return cancelled.Task;
+        }, status);
+        try
+        {
+            reconnect.Resume(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            status.Set(false);
+            await WaitFor(reconnect, DeepIdV2ReconnectState.Verified);
+            Assert.Equal(2, calls);
+        }
+        finally { registration.Dispose(); }
+    }
+
+    [Fact]
     public async Task Typed503RetriesButWakeCannotBypassRetryAfterAndCorruptFloorDoesNotRetry()
     {
         var status = new Network(); var calls = 0;

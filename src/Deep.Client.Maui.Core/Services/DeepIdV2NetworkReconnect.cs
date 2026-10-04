@@ -57,9 +57,16 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
     private void ConnectivityChanged(object? sender,EventArgs args) { lock (gate) { if (!disposed) Invalidate(); } }
     private void Invalidate()
     {
-        revision++; attempt?.Cancel();
+        var stamp = ++revision;
+        var previous = attempt;
         SetState(foreground ? network.IsConnected ? DeepIdV2ReconnectState.Reconnecting : DeepIdV2ReconnectState.Offline : DeepIdV2ReconnectState.Dormant);
+        // State notifications may reenter and supersede this invalidation.
+        if (stamp != revision) return;
         wake.Writer.TryWrite(0);
+        // Publish state/wake before cancellation: a synchronous cancellation
+        // continuation can run the worker inside this reentrant lock. Nothing
+        // from the old invalidation may overwrite its newer success afterward.
+        if (ReferenceEquals(previous, attempt)) previous?.Cancel();
     }
     private void SetState(DeepIdV2ReconnectState value)
     {

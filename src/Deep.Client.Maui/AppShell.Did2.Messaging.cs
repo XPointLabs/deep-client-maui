@@ -140,7 +140,7 @@ public sealed partial class AppShell
     {
         var unavailable = new Label
         {
-            Text = messaging.HasRuntime ? "Сначала проверьте регистрацию в настройках профиля." : "DID2-транспорт не подключён в этой сборке. Добавление контактов недоступно.",
+            Text = messaging.HasRuntime ? "Локальная история доступна без сети. Для отправки проверьте регистрацию в настройках профиля." : "DID2-транспорт не подключён в этой сборке. Добавление контактов недоступно.",
             TextColor = DeepTheme.Secondary
         };
         unavailable.SetBinding(IsVisibleProperty, nameof(messaging.IsReady), converter: new NotConverter());
