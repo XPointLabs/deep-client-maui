@@ -28,10 +28,12 @@ public sealed class DeepIdV2MessagingViewModelTests
     public void SelectionRestoresUnknownSendOnlyInItsOriginalConversation()
     {
         var state = new DeepIdV2TextComposerState();
-        var operation = state.Prepare("a", "retained original");
+        var operation = Enumerable.Repeat((byte)1, 32).ToArray();
+        Assert.Null(state.ReadRetry("a", "retained original"));
+        state.Restore(operation, "a", "retained original");
         Assert.Empty(state.DraftAfterSelection("a", "b", "text for a"));
         Assert.Equal("retained original", state.DraftAfterSelection("b", "a", "text for b"));
-        Assert.Equal(operation, state.Prepare("a", "retained original"));
+        Assert.Equal(operation, state.ReadRetry("a", "retained original"));
         Assert.Empty(state.DraftAfterSelection("a", null, "retained original"));
         Assert.Equal("retained original", state.DraftAfterSelection(null, "a", ""));
         state.Clear();
@@ -43,17 +45,19 @@ public sealed class DeepIdV2MessagingViewModelTests
     {
         // UI metadata only; no forged account/conversation/freshness authority.
         var original = new DeepIdV2TextComposerState();
-        var intent = original.Prepare("conversation-a", "retained 📨");
-        Assert.Equal(intent, original.Prepare("conversation-a", "retained 📨"));
+        var intent = Enumerable.Repeat((byte)2, 32).ToArray();
+        Assert.Null(original.ReadRetry("conversation-a", "retained 📨"));
+        original.Restore(intent, "conversation-a", "retained 📨");
+        Assert.Equal(intent, original.ReadRetry("conversation-a", "retained 📨"));
         var restarted = new DeepIdV2TextComposerState(); restarted.Restore(intent, "conversation-a", "retained 📨");
-        var callerCopy = restarted.Prepare("conversation-a", "retained 📨"); callerCopy.AsSpan().Clear();
-        Assert.Equal(intent, restarted.Prepare("conversation-a", "retained 📨"));
+        var callerCopy = restarted.ReadRetry("conversation-a", "retained 📨")!; callerCopy.AsSpan().Clear();
+        Assert.Equal(intent, restarted.ReadRetry("conversation-a", "retained 📨"));
         Assert.Equal("retained 📨", restarted.DraftFor("conversation-a")); Assert.Empty(restarted.DraftFor("conversation-b"));
-        Assert.Throws<InvalidOperationException>(() => restarted.Prepare("conversation-a", "changed"));
-        Assert.Throws<InvalidOperationException>(() => restarted.Prepare("conversation-b", "retained 📨"));
+        Assert.Throws<InvalidOperationException>(() => restarted.ReadRetry("conversation-a", "changed"));
+        Assert.Throws<InvalidOperationException>(() => restarted.ReadRetry("conversation-b", "retained 📨"));
         Assert.Throws<System.Security.Cryptography.CryptographicException>(() => restarted.Restore(intent, "conversation-a", "changed"));
         restarted.Clear(); Assert.Empty(restarted.DraftFor("conversation-a"));
-        Assert.NotEqual(intent, restarted.Prepare("conversation-a", "next"));
+        Assert.Null(restarted.ReadRetry("conversation-a", "next"));
         original.Clear(); restarted.Clear();
     }
 
@@ -61,9 +65,10 @@ public sealed class DeepIdV2MessagingViewModelTests
     [InlineData(0)] [InlineData(31)] [InlineData(32)] [InlineData(33)]
     public void ComposerRejectsMalformedRetainedOperationBeforeReplacingMetadata(int length)
     {
-        var state = new DeepIdV2TextComposerState(); var original = state.Prepare("a", "text");
+        var state = new DeepIdV2TextComposerState(); var original = Enumerable.Repeat((byte)3, 32).ToArray();
+        state.Restore(original, "a", "text");
         Assert.Throws<ArgumentException>(() => state.Restore(new byte[length], "b", "other"));
-        Assert.Equal(original, state.Prepare("a", "text")); state.Clear();
+        Assert.Equal(original, state.ReadRetry("a", "text")); state.Clear();
     }
 
     [Fact]
@@ -231,7 +236,8 @@ public sealed class DeepIdV2MessagingViewModelTests
             => accounts.ListMessagesAsync(conversation, ct);
         public Task<DeepIdV2ContactStartResult> StartAsync(DeepIdV2AccountService accounts, DeepPermanentIdV2 address, ReadOnlyMemory<byte> intent, CancellationToken ct = default) => throw UnexpectedNetwork();
         public Task AcceptAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, CancellationToken ct = default) => throw UnexpectedNetwork();
-        public Task SendTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, string text, CancellationToken ct = default) => throw UnexpectedNetwork();
+        public Task<ReadOnlyMemory<byte>> QueueTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, string text, CancellationToken ct = default) => throw UnexpectedNetwork();
+        public Task RetryTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, string text, CancellationToken ct = default) => throw UnexpectedNetwork();
         public Task<DeepIdV2MailboxSynchronizationResult> SynchronizeAsync(DeepIdV2AccountService accounts, CancellationToken ct = default) => throw UnexpectedNetwork();
     }
 
@@ -282,7 +288,8 @@ public sealed class DeepIdV2MessagingViewModelTests
         { Intents.Add(intent.ToArray()); throw Failure(); }
         public Task<IReadOnlyList<DeepIdV2ConversationSnapshot>> ListAsync(DeepIdV2AccountService accounts, CancellationToken ct = default) => throw Failure();
         public Task AcceptAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, CancellationToken ct = default) => throw Failure();
-        public Task SendTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, string text, CancellationToken ct = default) => throw Failure();
+        public Task<ReadOnlyMemory<byte>> QueueTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, string text, CancellationToken ct = default) => throw Failure();
+        public Task RetryTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, string text, CancellationToken ct = default) => throw Failure();
         public Task<IReadOnlyList<DirectMessageCreateSnapshot>> MessagesAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, CancellationToken ct = default) => throw Failure();
         public Task<DeepIdV2MailboxSynchronizationResult> SynchronizeAsync(DeepIdV2AccountService accounts, CancellationToken ct = default) => throw Failure();
     }

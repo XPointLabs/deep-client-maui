@@ -79,7 +79,7 @@ the compiled startup recovery control never migrates or silently recreates them.
 
 [DR-0065](../../docs/survival-program/decisions/DR-0065-did2-contact-application-command-boundary.md)
 connects the opt-in HTTPS diagnostic to a testable messaging ViewModel and the
-account-owned Start/Accept/SendText/List/Synchronize commands. The existing
+account-owned Start/Accept/QueueText/RetryText/List/Synchronize commands. The existing
 dark/cyan workspace now has contact entry, request/accept states, authenticated
 message rows and a text composer; narrow windows show either list or selected
 conversation. Stable account/navigation IDs remain. Default builds without a
@@ -102,6 +102,24 @@ The internal composer metadata helper has focused restart/defensive-copy/
 unknown-operation replacement tests; it cannot construct or authorize a Shared
 conversation. Test visibility is limited to the Clean UI test assembly and does
 not expose an account key, proof, route, signer or completion setter.
+
+The current S04 source cutover follows the
+[creation/retry owner](../../docs/architecture/TRANSPORT-NEUTRAL-MESSAGING.md#843-compaction-and-boundedness):
+the composer reads an existing retry operation or calls QueueTextAsync, then
+adopts the returned operation and calls RetryTextAsync. It no longer generates
+text operation IDs, and the runtime has no create-or-retry SendText overload.
+The visible Send command and automation IDs are unchanged. Interrupted creation
+is discovered by the existing protected pending-text recovery before another
+creation. On2026-10-13 the Clean consumer Release build and Windows Debug app
+build passed with zero warnings/errors; all95 Clean cases passed with native0/
+wrapper0 and2505 unchanged inputs. The scoped receipt is
+`artifacts/s04-creation-20261013/consumer-clean-02/focused.trx` (SHA256
+`32F14E7DF2796D9B2E0BA4E69956F0A0C7D5A89FDC3C470802A4F0B14241CE59`).
+This is consumer compilation/UI-contract evidence, not physical messaging,
+release packaging or terminal-cleanup qualification. The Android Debug app
+build also passed with zero warnings/errors at2026-10-13T00:10:23.9991544Z–
+00:16:14.2602249Z; no APK was installed or accepted as a production package.
+Full cross-repository qualification remains required.
 
 Composer selection never transfers draft text between contacts: refreshing the
 same selected dialog preserves its editable draft; selecting another dialog or

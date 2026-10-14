@@ -177,8 +177,15 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             var owner = await accounts.GetAccountsAsync(token);
             RequireCurrentOperation(token);
             await RecoverPendingTextAsync(owner, token);
-            var operation = textComposer.Prepare(key, text);
-            try { await runtime!.SendTextAsync(owner, target.Conversation, operation, text, token); }
+            var operation = textComposer.ReadRetry(key, text);
+            if (operation is null)
+            {
+                var queued = await runtime!.QueueTextAsync(owner, target.Conversation, text, token);
+                RequireCurrentOperation(token);
+                textComposer.Restore(queued.Span, key, text);
+                operation = textComposer.ReadRetry(key, text) ?? throw new InvalidOperationException("Queued text lost its owned operation.");
+            }
+            try { await runtime!.RetryTextAsync(owner, target.Conversation, operation, text, token); }
             finally { CryptographicOperations.ZeroMemory(operation); }
             RequireCurrentOperation(token);
             if (DraftText == text) DraftText = string.Empty;
@@ -298,19 +305,13 @@ internal sealed class DeepIdV2TextComposerState
         }
         Clear(); operation = retainedOperation.ToArray(); conversation = conversationId; text = retainedText;
     }
-    internal byte[] Prepare(string conversationId, string candidateText)
+    internal byte[]? ReadRetry(string conversationId, string candidateText)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(conversationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(candidateText);
         if (operation is not null && (conversation != conversationId || text != candidateText))
             throw new InvalidOperationException("The pending text operation must be reconciled before replacing it.");
-        if (operation is null)
-        {
-            operation = new byte[32];
-            do RandomNumberGenerator.Fill(operation); while (operation.AsSpan().IndexOfAnyExcept((byte)0) < 0);
-            conversation = conversationId; text = candidateText;
-        }
-        return operation.ToArray();
+        return operation?.ToArray();
     }
     internal void Clear()
     {

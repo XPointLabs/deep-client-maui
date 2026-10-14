@@ -12,7 +12,9 @@ public interface IDeepIdV2ConversationRuntime
         ReadOnlyMemory<byte> intent, CancellationToken ct = default);
     Task<IReadOnlyList<DeepIdV2ConversationSnapshot>> ListAsync(DeepIdV2AccountService accounts, CancellationToken ct = default);
     Task AcceptAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, CancellationToken ct = default);
-    Task SendTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation,
+    Task<ReadOnlyMemory<byte>> QueueTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation,
+        string text, CancellationToken ct = default);
+    Task RetryTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation,
         ReadOnlyMemory<byte> operation, string text, CancellationToken ct = default);
     Task<IReadOnlyList<DirectMessageCreateSnapshot>> MessagesAsync(DeepIdV2AccountService accounts,
         DeepIdV2Conversation conversation, CancellationToken ct = default);
