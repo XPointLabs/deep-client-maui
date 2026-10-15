@@ -30,11 +30,26 @@ public static partial class MauiProgram
         builder.Services.AddSingleton<INetworkStatusService,MauiConnectivityStatusService>();
         builder.Services.AddSingleton<DeepIdV2NetworkReconnect>(services => new(
             async ct => {
-                var accounts = await services.GetRequiredService<IDeepIdV2AccountRuntimeAccessor>().GetAccountsAsync(ct);
-                if (await accounts.GetCurrentAsync(ct) is null) throw new DeepIdV2AccountUnavailableException();
-                // Owned proof/history/closure/ONION connections and attempt
-                // contexts are recreated and disposed by this exact pipeline.
-                await services.GetRequiredService<IDeepIdV2NetworkAdmission>().VerifyAsync(accounts,ct);
+                try
+                {
+                    var accounts = await services.GetRequiredService<IDeepIdV2AccountRuntimeAccessor>().GetAccountsAsync(ct);
+                    if (await accounts.GetCurrentAsync(ct) is null) throw new DeepIdV2AccountUnavailableException();
+                    // Owned proof/history/closure/ONION connections and attempt
+                    // contexts are recreated and disposed by this exact pipeline.
+                    await services.GetRequiredService<IDeepIdV2NetworkAdmission>().VerifyAsync(accounts,ct);
+                }
+                catch (Exception error)
+                {
+#if DEEP_DID2_HTTPS_ADMISSION
+                    // The existing bounded QA observer cannot alter scheduling,
+                    // cancellation, authority or the original exception.
+                    try {
+                        foreach (var location in Did2BusinessFailureDiagnostics.Capture(error))
+                            CrashDiagnostics.LogInfo("Did2.NetworkFailure",location);
+                    } catch { }
+#endif
+                    throw;
+                }
             },services.GetRequiredService<INetworkStatusService>(),MainThread.BeginInvokeOnMainThread));
 #endif
         builder.Services.AddSingleton<DeepIdV2AccountViewModel>();

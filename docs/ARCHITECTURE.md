@@ -253,6 +253,13 @@ creates a different logical request. Stopped originals, uncertainty and replay
 floors remain with their existing retention owners; no reset, recall, expiry
 extension, new journal generation or automatic remint. The UI explains that
 stopping retries does not withdraw an already accepted remote request.
+
+The same bounded HTTPS QA code-location observer also reports actual background
+verification failures through `Did2.NetworkFailure` in the existing diagnostic
+log. It preserves and rethrows the original exception, including cancellation;
+observer failure cannot alter the reconnect result or grant network authority.
+No exception text, payload, identifier, endpoint or new persistence surface is
+added. This is debugging metadata, not verification or delivery evidence.
 [DR-0067](../../docs/survival-program/decisions/DR-0067-did2-ordinary-store-completion-and-ui-retry.md)
 adds actual protected original-text/operation recovery before composer allocation
 and on conversation selection after restart. Nothing is sent automatically.
