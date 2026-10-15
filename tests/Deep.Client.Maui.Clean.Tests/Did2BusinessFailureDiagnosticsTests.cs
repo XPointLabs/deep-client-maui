@@ -14,6 +14,9 @@ public sealed class Did2BusinessFailureDiagnosticsTests
     [InlineData("cancelled", "Cancelled")]
     [InlineData("http", "HttpTransport")]
     [InlineData("io", "Io")]
+    [InlineData("overflow", "ArithmeticOverflow")]
+    [InlineData("disposed", "Disposed")]
+    [InlineData("invalid-operation", "InvalidOperation")]
     [InlineData("other", "Other")]
     [InlineData("unknown", "OutcomeUnknown")]
     [InlineData("mailbox", "MailboxTransport")]
@@ -27,9 +30,12 @@ public sealed class Did2BusinessFailureDiagnosticsTests
             "cancelled" => new OperationCanceledException(privateText),
             "http" => new HttpRequestException(privateText),
             "io" => new IOException(privateText),
+            "overflow" => new OverflowException(privateText),
+            "disposed" => new ObjectDisposedException(privateText),
+            "invalid-operation" => new InvalidOperationException(privateText),
             "unknown" => new ClientMailboxDispatchOutcomeUnknownException(privateText),
             "mailbox" => new ClientMailboxTransportException(ClientMailboxTransportFailure.DependencyUnavailable,false,privateText),
-            _ => new InvalidOperationException(privateText)
+            _ => new Exception(privateText)
         };
         IReadOnlyList<string> locations;
         try { ThrowOwnedFailure(failure); throw new InvalidOperationException(); }

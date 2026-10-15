@@ -26,6 +26,9 @@ internal static class Did2BusinessFailureDiagnostics
                 TimeoutException => "Timeout",
                 HttpRequestException => "HttpTransport",
                 IOException => "Io",
+                OverflowException => "ArithmeticOverflow",
+                ObjectDisposedException => "Disposed",
+                InvalidOperationException => "InvalidOperation",
                 _ => "Other"
             };
             var check = ContactCheck(error);

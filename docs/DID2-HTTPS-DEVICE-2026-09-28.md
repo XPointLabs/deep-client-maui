@@ -28,10 +28,20 @@ Clean183 passed, while its matching installed startup is still pending.
 APK16 AddContact12 restored the retained newer intent without dispatch; explicit
 retry13 ended at `XurWindow / RequireCurrentIssuer / IL87` with no Store observed
 (Inspect66). Exact-process/tag logcat provided only closed code metadata; no
-private file was read. StopContact02 was submitted but has no terminal evidence
-yet. It is not recall or noncommit proof. The prior first intent remains stopped.
+private file was read. StopContact02 then failed separately with `Other` in
+`StopInitialContactIntentAsync / IL4274`; no successful stop or new intent is
+claimed. The exact managed input places that offset at checked time subtraction
+before WithStoppedWork. It does not establish exception type, cause or commit.
+The bounded category reader will distinguish arithmetic/disposed/invalid-state
+failures; it does not expose exception messages. The prior first intent remains
+stopped, without recall or noncommit proof.
 Windows build11 restored the retained account, but subsequent UI automation was
 stopped by physical Escape; no new Windows contact acceptance or send occurred.
+Android build17 used the nonincremental builder but could not be installed after
+the harness advanced to a docs commit: the exact-source installation guard
+correctly refused it. Its one Google Services package-mismatch warning is real;
+the next QA graph excludes that unused production resource, not the Release
+configuration requirement. No failed receipt was replaced or marked PASS.
 Protocol boundary/public-surface focused15 passed0fail/skip/native0. These are
 diagnostic/source observations, not contacts/messages/files/groups acceptance.
 

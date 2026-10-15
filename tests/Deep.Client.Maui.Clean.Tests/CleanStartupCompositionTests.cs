@@ -513,6 +513,12 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("'--no-incremental'", builder);
         Assert.Contains("incrementalBuild = $false", builder);
         Assert.Contains("releaseEvidence = $false", builder);
+        var google = Assert.Single(project.Descendants("GoogleServicesJson"));
+        var googleCondition = (string?)google.Attribute("Condition");
+        Assert.Contains("'$(DeepDid2HttpsAdmission)' != 'true' Or '$(Configuration)' == 'Release'", googleCondition);
+        Assert.Contains(project.Root.Elements("Target"), element =>
+            (string?)element.Attribute("Name") == "EnsureGoogleServicesJson" &&
+            ((string?)element.Attribute("Condition"))!.Contains("'$(Configuration)' == 'Release'", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -272,6 +272,10 @@ The supported builder uses `dotnet build --no-incremental` and records
 Android JNI/runtime intermediates. Regenerating that graph avoids packaging
 stale registration after source/profile changes without touching device data
 or assigning colliding intermediate paths to project references.
+This HTTPS QA graph has no push composition and excludes the default
+production-package Google Services resource, rather than packaging a mismatched
+Firebase configuration. Actual Release keeps its external configuration guard;
+this is not push-delivery evidence or removal of the release push requirement.
 Ordinary development Debug, Windows and actual Release profiles are unchanged.
 [Microsoft's build-property reference](https://learn.microsoft.com/en-us/dotnet/android/building-apps/build-properties#androiduseinterpreter)
 documents the Mono Debug interpreter default. Actual SDK evaluation on this
@@ -287,6 +291,8 @@ metadata under `Deep.Did2Qa` in Android logcat. This source-scoped diagnostic
 does not export existing private logs, change sandbox permissions or expose
 exception text/account data. Collection selects the exact QA process/tag and
 accepts only the existing bounded category/check/method/line/IL grammar.
+Closed exception categories additionally distinguish arithmetic overflow,
+disposed state and invalid operation without reading their messages or data.
 Permanent-time QA classification distinguishes the six fixed request/object
 boundary failures. Protocol retains the same predicate, exception type and
 windows; the labels do not authorize retries or change UI business outcomes.
