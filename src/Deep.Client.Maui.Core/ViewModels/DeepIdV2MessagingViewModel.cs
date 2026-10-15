@@ -286,6 +286,7 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             using var scope = CancellationTokenSource.CreateLinkedTokenSource(token);
             activeOperation = scope;
             activeRequiresNetwork = requiresNetwork;
+            Status = string.Empty;
             try
             {
                 if (!(requiresNetwork ? IsReady : CanReadLocal) || generation != accountGeneration) throw new InvalidOperationException("The DID2 runtime is unavailable.");

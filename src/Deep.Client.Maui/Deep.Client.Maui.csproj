@@ -111,6 +111,19 @@
     <DefineConstants>$(DefineConstants);DEEP_DID2_HTTPS_ADMISSION</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(DeepDid2HttpsAdmission)' == 'true' And '$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <!-- Physical timing must not measure Debug's Mono interpreter. This is
+         still the isolated non-Release package, not shipping qualification. -->
+    <UseInterpreter>false</UseInterpreter>
+    <AndroidUseInterpreter>false</AndroidUseInterpreter>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+  <Target Name="RequireDid2AndroidQaJit" BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepDid2HttpsAdmission)' == 'true' And '$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <Error Condition="'$(UseInterpreter)' != 'false' Or '$(AndroidUseInterpreter)' != 'false' Or '$(Optimize)' != 'true'"
+           Text="Physical DID2 Android QA requires optimized Mono JIT, not the Debug interpreter. Release and trust guards remain unchanged." />
+  </Target>
+
   <ItemGroup Condition="('$(DeepDid2CanaryAdmission)' == 'true' Or '$(DeepDid2HttpsAdmission)' == 'true') And '$(Configuration)' != 'Release'">
     <AssemblyMetadata Include="DeepDid2CanaryOrigin" Value="$(DeepDid2CanaryOrigin)" />
     <AssemblyMetadata Include="DeepDid2HttpsOrigin" Value="$(DeepDid2HttpsOrigin)" />

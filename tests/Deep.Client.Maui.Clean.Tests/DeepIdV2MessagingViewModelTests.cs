@@ -178,8 +178,13 @@ public sealed class DeepIdV2MessagingViewModelTests
             Assert.Equal(original, runtime.Stops[1]); Assert.Equal(2, runtime.Intents.Count);
             Assert.False(view.HasContactRetry); Assert.Contains("не отзывает", view.Status);
             Assert.Equal("Добавить контакт", view.StartContactCaption);
-            await view.StartContactAsync();
+            runtime.PendingStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            var next = view.StartContactAsync();
+            await runtime.PendingStartEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(view.IsBusy); Assert.Empty(view.Status);
             Assert.Equal(3, runtime.Intents.Count); Assert.NotEqual(original, runtime.Intents[2]);
+            runtime.PendingStart.SetException(new IOException("PRIVATE failed new request"));
+            await next; Assert.NotNull(view.ErrorMessage); Assert.Empty(view.Status);
             await account.ResetAccountAfterConfirmationAsync(); Assert.False(view.HasContactRetry);
         }
         finally { Directory.Delete(directory, recursive: true); }
@@ -366,11 +371,13 @@ public sealed class DeepIdV2MessagingViewModelTests
         public List<byte[]> Intents { get; } = [];
         public List<byte[]> Stops { get; } = [];
         public bool ConfirmStop { get; set; }
+        public TaskCompletionSource<DeepIdV2ContactStartResult>? PendingStart { get; set; }
+        public TaskCompletionSource PendingStartEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task StopContactRetryAsync(DeepIdV2AccountService accounts, ReadOnlyMemory<byte> intent, CancellationToken ct = default)
         { Stops.Add(intent.ToArray()); if (!ConfirmStop) throw Failure(); return Task.CompletedTask; }
         private Exception Failure() { Calls++; return new IOException("PRIVATE payload key endpoint password"); }
         public Task<DeepIdV2ContactStartResult> StartAsync(DeepIdV2AccountService accounts, DeepPermanentIdV2 address, ReadOnlyMemory<byte> intent, CancellationToken ct = default)
-        { Intents.Add(intent.ToArray()); throw Failure(); }
+        { Intents.Add(intent.ToArray()); if (PendingStart is not null) { PendingStartEntered.TrySetResult(); return PendingStart.Task; } throw Failure(); }
         public Task<IReadOnlyList<DeepIdV2ConversationSnapshot>> ListAsync(DeepIdV2AccountService accounts, CancellationToken ct = default) => throw Failure();
         public Task AcceptAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, CancellationToken ct = default) => throw Failure();
         public Task<ReadOnlyMemory<byte>> QueueTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, string text, CancellationToken ct = default) => throw Failure();

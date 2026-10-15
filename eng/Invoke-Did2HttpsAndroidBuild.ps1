@@ -73,6 +73,9 @@ $result = [ordered]@{
     commit = $preflight.commit
     package = 'network.xpoint.deep.did2https'
     runtimeIdentifier = 'android-arm64'
+    configuration = 'Debug'
+    managedExecutionProfile = 'optimized-jit'
+    releaseEvidence = $false
     signerSha256 = $ExpectedSignerSha256
     status = 'preflight'
     execute = [bool]$Execute
@@ -94,6 +97,7 @@ if ($Execute) {
     [void][IO.Directory]::CreateDirectory($output)
     $arguments = @('build', (Join-Path $repo 'src\Deep.Client.Maui\Deep.Client.Maui.csproj'),
         '-c', 'Debug', '-f', 'net10.0-android', '-p:RuntimeIdentifier=android-arm64',
+        '-p:UseInterpreter=false', '-p:AndroidUseInterpreter=false', '-p:Optimize=true',
         '-p:AndroidPackageFormats=apk', '-p:DeepPhysicalE2E=true', '-p:DeepLocalDev=false',
         '-p:DeepDid2AccountProbe=false', '-p:DeepDid2HttpsAdmission=true',
         "-p:DeepPhysicalUatNetworkId=$NetworkId", "-p:DeepDid2HttpsOrigin=$RegistryOrigin",

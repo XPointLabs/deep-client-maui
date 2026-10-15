@@ -260,6 +260,22 @@ log. It preserves and rethrows the original exception, including cancellation;
 observer failure cannot alter the reconnect result or grant network authority.
 No exception text, payload, identifier, endpoint or new persistence surface is
 added. This is debugging metadata, not verification or delivery evidence.
+
+The supported physical Android HTTPS QA builder keeps Debug/isolation/signing/
+private-CA and Release rejection rules, but explicitly uses optimized Mono JIT
+(`UseInterpreter=false`, `AndroidUseInterpreter=false`, global `Optimize=true`).
+A restricted Android-only project profile and pre-build guard reject overrides
+that restore interpretation or disable optimization. The build receipt labels
+`optimized-jit` and `releaseEvidence=false`; this does not qualify shipping.
+Ordinary development Debug, Windows and actual Release profiles are unchanged.
+[Microsoft's build-property reference](https://learn.microsoft.com/en-us/dotnet/android/building-apps/build-properties#androiduseinterpreter)
+documents the Mono Debug interpreter default. Actual SDK evaluation on this
+prior QA configuration returned both interpreter flags true/Optimize false;
+one physical request used a 96% QA CPU sample and terminated at permanent-contact
+`RequireTime` IL118. These observations motivate a controlled JIT comparison,
+not a proven universal cause, timing waiver or physical delivery result.
+Starting a new UI command clears the previous command's success status before
+awaiting work, so an earlier stopped/stored label cannot describe a busy retry.
 [DR-0067](../../docs/survival-program/decisions/DR-0067-did2-ordinary-store-completion-and-ui-retry.md)
 adds actual protected original-text/operation recovery before composer allocation
 and on conversation selection after restart. Nothing is sent automatically.

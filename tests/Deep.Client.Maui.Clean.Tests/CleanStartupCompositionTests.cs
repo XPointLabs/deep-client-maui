@@ -488,6 +488,32 @@ public sealed class CleanStartupCompositionTests
     }
 
     [Fact]
+    public void PhysicalAndroidQaUsesGuardedOptimizedJitWithoutBecomingRelease()
+    {
+        var project = System.Xml.Linq.XDocument.Parse(ReadSource("Deep.Client.Maui.csproj"));
+        var profile = Assert.Single(project.Root!.Elements("PropertyGroup"),
+            element => element.Element("AndroidUseInterpreter") is not null);
+        var condition = (string?)profile.Attribute("Condition") ?? string.Empty;
+        Assert.Contains("'$(DeepDid2HttpsAdmission)' == 'true'", condition);
+        Assert.Contains("'$(DeepPhysicalE2E)' == 'true'", condition);
+        Assert.Contains("'$(Configuration)' != 'Release'", condition);
+        Assert.Contains("== 'android'", condition);
+        Assert.Equal("false", profile.Element("UseInterpreter")!.Value);
+        Assert.Equal("false", profile.Element("AndroidUseInterpreter")!.Value);
+        Assert.Equal("true", profile.Element("Optimize")!.Value);
+        var guard = Assert.Single(project.Root.Elements("Target"),
+            element => (string?)element.Attribute("Name") == "RequireDid2AndroidQaJit");
+        Assert.Equal(condition, (string?)guard.Attribute("Condition"));
+        Assert.Contains("$(UseInterpreter)", (string?)guard.Element("Error")!.Attribute("Condition"));
+        var builder = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-Did2HttpsAndroidBuild.ps1"));
+        Assert.Contains("'-p:UseInterpreter=false'", builder);
+        Assert.Contains("'-p:AndroidUseInterpreter=false'", builder);
+        Assert.Contains("'-p:Optimize=true'", builder);
+        Assert.Contains("managedExecutionProfile = 'optimized-jit'", builder);
+        Assert.Contains("releaseEvidence = $false", builder);
+    }
+
+    [Fact]
     public void ExplicitPrivateCaIsBoundedPinnedAndCannotEnterReleaseOrLoopbackProbe()
     {
         var project = System.Xml.Linq.XDocument.Parse(ReadSource("Deep.Client.Maui.csproj"));
