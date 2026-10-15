@@ -46,17 +46,34 @@ network closure (`Io / FetchCurrentAsync / IL453`); matched managed input places
 this at the exhausted eight429 attempts. Registry `a4805bf` is now on the retained
 local current-dev; signed readiness recovered, while its raw mount comparison
 remains unqualified as recorded by the runtime owner above. Exact AddContact17
-reuses that same intent; no terminal result is available. Inspect78 could not
-read the hierarchy; Inspect79 observed the busy controls again, not success or
-failure. It was not replayed as another send. Closed timestamped logcat separates
-the old429 code metadata from future failures; log time is not trusted-time
-authority. No contact/message delivery is claimed.
+reuses that same intent. Inspect78 could not read the hierarchy; Inspect79
+observed busy controls. Inspect80 then observed an error without Store; a new
+closed logcat timestamp identifies `RequireClaimContactTimeAsync / IL509` during
+claim preparation. Matching input maps this to a combined clock/boot/request
+window guard, not a proven individual expiry predicate. It was not replayed as
+another send. Log time is not trusted-time authority. No contact/message
+delivery is claimed.
+
+The next source candidate removes duplicate draft preparation inside one
+`StartContactAsync` call: completion consumes that command's already owned
+draft bytes, while its current protected draft/endpoint/claim checks still run.
+Independent completion callers continue preparing their draft. The combined
+claim-read guard now has four fixed diagnostic reasons with unchanged predicate
+order/boundaries; no time values or identifiers are emitted. Neither source
+change is installed evidence or a confirmed fix for the physical refusal yet.
+Shared focused runs passed10/0/0 and2/0/0/native0, including the actual owned
+application StartContact/receive/lost-ACK fixtures. Current MAUI qualification
+and physical observation of this source candidate remain pending.
 
 Windows build11 retained its profile/recovery and reached background Verified;
 one mailbox refresh at19:09:34Z ended in OutcomeUnknown at
 `PrivacyManagedIngressHttpTransport.ForwardAsync / line304 IL1509`. Build12 with
 Shared `cb7893c` is built but not launched: Windows automation was again stopped
-by physical Escape. No new contact acceptance or send occurred. Protocol
+by physical Escape. After a new explicit human resume, the same build11/profile
+completed one UI Chats refresh on the current local contour: synchronization
+completed, no visible error, empty conversations. This does not erase the prior
+unknown outcome or prove contact delivery/noncommit. No new contact acceptance
+or send occurred. Protocol
 boundary/public-surface focused15 passed. Final full gates and physical
 contacts/messages/files/groups remain open; none of these diagnostics is release
 acceptance or permission to publish.

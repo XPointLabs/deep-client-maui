@@ -81,6 +81,10 @@ public sealed class Did2BusinessFailureDiagnosticsTests
     [InlineData("Permanent read lifetime exceeds 120 seconds.", "PermanentRequestLifetime")]
     [InlineData("Permanent contact object begins after trusted lower time.", "PermanentObjectLower")]
     [InlineData("Permanent contact object expiry does not cover trusted upper time.", "PermanentObjectUpper")]
+    [InlineData("Owned claim route clock precedes the protected freshness reading.", "ClaimRouteSample")]
+    [InlineData("Owned claim route clock changed its protected boot.", "ClaimRouteBoot")]
+    [InlineData("Owned claim read issuance exceeds trusted lower time.", "ClaimIssuedLower")]
+    [InlineData("Owned claim read expiry does not cover trusted upper time.", "ClaimRequestUpper")]
     public void OnlyFixedOwnedGuardLiteralHasAClosedDiagnosticLabel(string message,string expected)
     {
         var entry = Assert.Single(Did2BusinessFailureDiagnostics.Capture(new CryptographicException(message)));

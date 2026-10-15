@@ -77,6 +77,10 @@ internal static class Did2BusinessFailureDiagnostics
             "Permanent read lifetime exceeds 120 seconds." => "PermanentRequestLifetime",
             "Permanent contact object begins after trusted lower time." => "PermanentObjectLower",
             "Permanent contact object expiry does not cover trusted upper time." => "PermanentObjectUpper",
+            "Owned claim route clock precedes the protected freshness reading." => "ClaimRouteSample",
+            "Owned claim route clock changed its protected boot." => "ClaimRouteBoot",
+            "Owned claim read issuance exceeds trusted lower time." => "ClaimIssuedLower",
+            "Owned claim read expiry does not cover trusted upper time." => "ClaimRequestUpper",
             _ => "Unclassified"
         };
 }
