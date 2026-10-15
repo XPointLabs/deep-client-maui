@@ -4,7 +4,7 @@ This records an incomplete real Windows diagnostic, not messaging or release
 approval. Registry and seed1–seed3 are production infrastructure; Mr. X permits
 testing there until he explicitly reports users exist. There is no remote UAT.
 
-## Current retained-device checkpoint — 2026-10-15
+## Current retained-device checkpoint — 2026-10-16
 
 The current local nine-service, three-node contour and source matrix are owned
 by the [contact checkpoint](../../deep-devops/docs/S05-CONTACT-TRANSPORT-2026-10-15.md).
@@ -15,35 +15,44 @@ that failure and the account. It is not a completed cold-reopen gate, loss of
 commit, or permission to reset. Cross-device contacts/text/files/groups remain
 unproven; the older dated observations below do not override current evidence.
 
-Latest diagnostic scope is MAUI `0293453`, Shared `23fbca3`, Protocol `605090b`.
-Android APK15 failed before MAUI startup with a recent exact-QA JNI missing
-implementation for `MauiApplication.n_onCreate`. A same-source APK16 built with
-fresh generated Android intermediates reopened the retained account (Inspect62).
-The previous generated cache was moved recoverably outside Git; device data,
-native floors and protected packages were not cleared. This is an observed
-cache-sensitive startup failure, not evidence of a cryptographic defect.
-The next supported-builder revision requires a nonincremental graph build;
-Clean183 passed, while its matching installed startup is still pending.
+Current installed-source matrix belongs to [NEXT-SPRINT](../../docs/NEXT-SPRINT.md).
+MAUI `f6e57b7` keeps optimized Debug JIT/isolation/strict trust, regenerates native
+registration nonincrementally and excludes only the unused QA production-package
+Google Services resource. Clean186 and Smoke119 passed0fail/skip/native0 with
+Shared `23fbca3`; the first smoke run changed HEAD mid-harness and is unqualified.
+Matching fixed-source focused1 and smoke02 passed, without replacing that FAIL.
+QA/default Debug resource counts0/1 and the unchanged Release rejection were
+actually evaluated. These receipts do not qualify changed Shared inputs.
 
-APK16 AddContact12 restored the retained newer intent without dispatch; explicit
-retry13 ended at `XurWindow / RequireCurrentIssuer / IL87` with no Store observed
-(Inspect66). Exact-process/tag logcat provided only closed code metadata; no
-private file was read. StopContact02 then failed separately with `Other` in
-`StopInitialContactIntentAsync / IL4274`; no successful stop or new intent is
-claimed. The exact managed input places that offset at checked time subtraction
-before WithStoppedWork. It does not establish exception type, cause or commit.
-The bounded category reader will distinguish arithmetic/disposed/invalid-state
-failures; it does not expose exception messages. The prior first intent remains
-stopped, without recall or noncommit proof.
-Windows build11 restored the retained account, but subsequent UI automation was
-stopped by physical Escape; no new Windows contact acceptance or send occurred.
-Android build17 used the nonincremental builder but could not be installed after
-the harness advanced to a docs commit: the exact-source installation guard
-correctly refused it. Its one Google Services package-mismatch warning is real;
-the next QA graph excludes that unused production resource, not the Release
-configuration requirement. No failed receipt was replaced or marked PASS.
-Protocol boundary/public-surface focused15 passed0fail/skip/native0. These are
-diagnostic/source observations, not contacts/messages/files/groups acceptance.
+APK15's exact-QA JNI startup failure and recoverable generated-only cache are
+preserved. Same-source fresh-cache APK16 started; APK17 was refused installation
+after the harness advanced to a docs commit, and its package-mismatch warning
+was real. Supported APK18/19 both built0warnings/errors and started without
+manual cache cleanup or account reset. Optimized QA sandbox/run-as permissions
+were not changed; future exact-process/tag logcat emits closed code metadata only.
+
+The retained newer intent's retry13 failed at `XurWindow / RequireCurrentIssuer /
+IL87`, without Store observed. Its StopContact03 on APK18 then proved
+`ArithmeticOverflow / StopInitialContactIntentAsync / IL4274`. APK19 uses Shared
+`cb7893c`, Protocol `605090b`; SHA256
+`5a9d587a78e4e84be6a51ee36544d21fb657361bf75093691782a2702126456a`.
+It restored the same account/intent, preserved all three protected-package
+snapshots, and StopContact04 -> independent Inspect75 observed stopped retries,
+no error and no StopRetry control. Shared focused13 covered ten arithmetic and
+three real SQLCipher/native cancellation cases; the physical fix is confirmed
+in this scope, without changed signed windows, reset, recall or noncommit proof.
+Only the subsequent separate AddContact16 created new work. It failed reading
+network closure (`Io / FetchCurrentAsync / IL453`); matched managed input places
+this at the exhausted eight429 attempts. No contact/message delivery is claimed.
+
+Windows build11 retained its profile/recovery and reached background Verified;
+one mailbox refresh at19:09:34Z ended in OutcomeUnknown at
+`PrivacyManagedIngressHttpTransport.ForwardAsync / line304 IL1509`. Build12 with
+Shared `cb7893c` is built but not launched: Windows automation was again stopped
+by physical Escape. No new contact acceptance or send occurred. Protocol
+boundary/public-surface focused15 passed. Final full gates and physical
+contacts/messages/files/groups remain open; none of these diagnostics is release
+acceptance or permission to publish.
 
 `eng/Invoke-PhysicalDid2AccountProbeAndroid.ps1` adds HTTPS-only phases:
 Contacts/SetPeerAddress/AddContact, Chats/RefreshConversations/OpenOnlyConversation,
