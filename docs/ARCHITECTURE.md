@@ -102,7 +102,15 @@ before releasing placement or publication authority. No lineage check, floor,
 reset or generation fence is relaxed. The previous genesis-only composition
 failure and its device receipt remain negative evidence.
 
-The diagnostic now reads conversation/message history directly from the Shared
+The matched Shared pipeline also consumes
+[DR-0124](../../docs/survival-program/decisions/DR-0124-publication-winner-readback.md)
+to recover a completed issuer response lost before local phase6. It preserves
+the original account/request and existing journal; current read authentication,
+original-intent verification, fresh XPL and both-node commit checks remain
+separate. A new installed-device run is required: source tests alone do not
+establish that the retained Windows/Android profiles recovered or exchanged text.
+
+The diagnostic reads conversation/message history directly from the Shared
 protected local owner without bootstrap HTTP or fresh endpoint proofs.
 `CanReadLocal` is separate from network `IsReady`; loss of network verification
 does not clear authenticated projections or drafts. Network commands remain
