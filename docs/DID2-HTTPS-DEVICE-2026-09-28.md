@@ -102,6 +102,21 @@ RetryAfter and existing malformed-floor no-retry coverage. The original red
 receipt stays unchanged. This source fix is not installed/physically qualified
 yet and does not fix the independent ContactResolve placement refusal.
 
+Source `229c3da` subsequently passed Smoke119/0/0/native0
+(`bootstrap-stage-smoke-01`). Matching Windows build14 SHA256
+`b411f8a4e06fb4e5bcbcc0ff05227f2187722d53dd96e8308f2c748a765ad858`
+was launched without reset, retained the same profile/recovery, reached actual
+background Verified, then completed one Chats synchronization without visible
+error. No transport fault was injected: this does not physically qualify the
+typed429/503 recovery case or contact delivery. The settings registration-status
+sentence still says not checked alongside the background Verified state; that
+UI projection inconsistency remains open, not a false proof rejection.
+Matching Android APK21 SHA256
+`c312f46c95f27caf6ef94563670527f2fd7361bd0c6fdbb5904178aff3f7c16e`
+passed dry-run, installed/launched, preserved protected packages and reopened
+the existing workspace (Inspect85). No new contact retry was issued on APK21
+yet. Its retained intent and APK20's original refusal remain intact.
+
 `eng/Invoke-PhysicalDid2AccountProbeAndroid.ps1` adds HTTPS-only phases:
 Contacts/SetPeerAddress/AddContact, Chats/RefreshConversations/OpenOnlyConversation,
 AcceptContact, SetQaText/SendQaText/RefreshMessages. SetPeerAddress requires its
