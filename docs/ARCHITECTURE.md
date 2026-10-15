@@ -88,6 +88,20 @@ configuration, not a wildcard allowance. The observed device rejection before
 this increment was `AccountProof / RevocationStatusUnknown`, not publication or
 message delivery. The regenerated APK still requires a real-device recheck.
 
+After the CRL-policy update the same retained Android account passed the TLS
+boundary and reached ADH1 lineage verification. Initial admission must acquire
+the identity-neutral authority/time-policy history before verifying its first
+current account proof: a current ADH1 may already name an XNA1 successor.
+All three diagnostic network entry points now verify the complete fetched
+XNA1/DTS1 chain from the packaged genesis pin, require its first exact records
+to equal the packaged genesis bytes, and reauthenticate the original directory
+genesis. This is root-history acquisition only, not network currentness or
+permission to mutate: the owned source still independently verifies the fresh
+account proof, signed network closure and protected directory/network floors
+before releasing placement or publication authority. No lineage check, floor,
+reset or generation fence is relaxed. The previous genesis-only composition
+failure and its device receipt remain negative evidence.
+
 The diagnostic now reads conversation/message history directly from the Shared
 protected local owner without bootstrap HTTP or fresh endpoint proofs.
 `CanReadLocal` is separate from network `IsReady`; loss of network verification

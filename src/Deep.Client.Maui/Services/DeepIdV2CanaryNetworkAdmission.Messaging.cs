@@ -16,9 +16,9 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission : IDeepIdV2Conversa
         Func<DeepIdV2ContactPathAuthoritySource, CancellationToken, Task<T>> action, CancellationToken ct)
     {
         var origin = ValidatedOrigin();
-        var (genesis, authority, head, pin) = await ReadBootstrapAsync(ct);
-        var floor = await accounts.OpenDirectoryLkgStoreAsync(authority, head, pin, ct);
         var factory = await CreateHttpFactoryAsync(ct);
+        var (genesis, authority, head, pin) = await ReadBootstrapAsync(factory, origin, ct);
+        var floor = await accounts.OpenDirectoryLkgStoreAsync(authority, head, pin, ct);
         using var verifier = DeepMlDsa65CandidateVerifierFactory.OpenForCurrentProcess();
         var clock = new CanaryMonotonicClock();
         using var proofs = factory.CreateDeepIdV2DirectoryProofClient(origin, clock, verifier, floor, clientOptions: DiagnosticHttpOptions());

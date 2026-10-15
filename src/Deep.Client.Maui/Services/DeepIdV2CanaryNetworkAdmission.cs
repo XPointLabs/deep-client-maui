@@ -35,12 +35,12 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
     {
         ArgumentNullException.ThrowIfNull(accounts);
         var origin = ValidatedOrigin();
+        var factory = await CreateHttpFactoryAsync(cancellationToken);
         var (genesisPin, authority, exactHead, headPin) = await ReadBootstrapAsync(
-            cancellationToken);
+            factory, origin, cancellationToken);
         var protectedFloor = await accounts.OpenDirectoryLkgStoreAsync(
             authority, exactHead, headPin, cancellationToken);
 
-        var factory = await CreateHttpFactoryAsync(cancellationToken);
         var publicClientOptions = DiagnosticHttpOptions();
         using var admission = factory.CreateDeepIdV2GenesisAdmissionClient(
             origin, clientOptions: publicClientOptions);
@@ -165,11 +165,11 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
                 "The contact descriptor does not bind the exact DID2 credential.");
 
         var origin = ValidatedOrigin();
+        var factory = await CreateHttpFactoryAsync(cancellationToken);
         var (genesisPin, authority, exactHead, headPin) = await ReadBootstrapAsync(
-            cancellationToken);
+            factory, origin, cancellationToken);
         var protectedFloor = await accounts.OpenDirectoryLkgStoreAsync(
             authority, exactHead, headPin, cancellationToken);
-        var factory = await CreateHttpFactoryAsync(cancellationToken);
         using var verifier = DeepMlDsa65CandidateVerifierFactory
             .OpenForCurrentProcess();
         var clock = new CanaryMonotonicClock();
@@ -251,6 +251,7 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
     private static async Task<(XPointNetworkGenesisPin GenesisPin,
         VerifiedXPointNetworkAuthority Authority,
         byte[] ExactHead, byte[] HeadPin)> ReadBootstrapAsync(
+        HttpServiceTransportFactory factory, string origin,
         CancellationToken cancellationToken)
     {
         var network = ActiveBuildNetworkId.Load();
@@ -269,6 +270,23 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
             [(ReadOnlyMemory<byte>)exactDts]);
         _ = DeepIdV2DirectoryBootstrapVerifier.RestoreGenesis(authority,
             exactHead, headPin);
+        // An ADH1 proof can already name an XNA1 successor before this account
+        // has any network floor. Acquire identity-neutral bytes first, then
+        // verify the COMPLETE root/time-policy lineage from the packaged pin.
+        // This grants no network currentness, placement or mutation lease;
+        // those still require the owned source's fresh proof + protected floor.
+        using var distribution = factory.CreateDeepIdV2NetworkClosureArtifactSource(origin,
+            clientOptions: DiagnosticHttpOptions());
+        var history = await HttpStageAsync("BootstrapAuthority", () =>
+            distribution.FetchCurrentAsync(genesisPin.NetworkId, null,
+                cancellationToken).AsTask(), cancellationToken);
+        if (history.ExactXna1AuthorityChain.Count == 0 || history.ExactDts1PolicyChain.Count == 0 ||
+            !history.ExactXna1AuthorityChain[0].Span.SequenceEqual(exactXna) ||
+            !history.ExactDts1PolicyChain[0].Span.SequenceEqual(exactDts))
+            throw new CryptographicException("The distributed authority history differs from the exact packaged genesis.");
+        authority = XPointNetworkAuthorityVerifier.Verify(genesisPin,
+            history.ExactXna1AuthorityChain, history.ExactDts1PolicyChain);
+        _ = DeepIdV2DirectoryBootstrapVerifier.RestoreGenesis(authority, exactHead, headPin);
         return (genesisPin, authority, exactHead, headPin);
     }
 

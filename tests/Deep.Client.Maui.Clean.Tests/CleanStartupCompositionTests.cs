@@ -445,6 +445,26 @@ public sealed class CleanStartupCompositionTests
     }
 
     [Fact]
+    public void AdmissionAndConversationVerifyFullPinnedAuthorityHistoryBeforeDirectoryProof()
+    {
+        var source = ReadSource(Path.Combine("Services", "DeepIdV2CanaryNetworkAdmission.cs"));
+        Assert.Contains("factory, origin, cancellationToken)", source);
+        var bootstrap = source[source.IndexOf("byte[] ExactHead, byte[] HeadPin)> ReadBootstrapAsync(", StringComparison.Ordinal)..];
+        Assert.Contains("HttpStageAsync(\"BootstrapAuthority\"", bootstrap);
+        Assert.Contains("history.ExactXna1AuthorityChain[0].Span.SequenceEqual(exactXna)", bootstrap);
+        Assert.Contains("history.ExactDts1PolicyChain[0].Span.SequenceEqual(exactDts)", bootstrap);
+        Assert.Contains("history.ExactXna1AuthorityChain, history.ExactDts1PolicyChain)", bootstrap);
+        Assert.Contains("RestoreGenesis(authority, exactHead, headPin)", bootstrap);
+        Assert.DoesNotContain("EnsureCurrent()", bootstrap);
+        var messaging = ReadSource(Path.Combine("Services", "DeepIdV2CanaryNetworkAdmission.Messaging.cs"));
+        Assert.Contains("ReadBootstrapAsync(factory, origin, ct)", messaging);
+        var admission = source[..source.IndexOf("private static HttpServiceClientOptions?", StringComparison.Ordinal)];
+        Assert.True(admission.IndexOf("ReadBootstrapAsync(", StringComparison.Ordinal) <
+            admission.IndexOf("accounts.AdmitAndVerifyGenesisAsync(", StringComparison.Ordinal));
+        Assert.Contains("network.EnsureCurrent()", admission);
+    }
+
+    [Fact]
     public void AndroidIncompatibleAccountResetIsOwnedExplicitAndSeparateFromSettingsReset()
     {
         var installer = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1"));

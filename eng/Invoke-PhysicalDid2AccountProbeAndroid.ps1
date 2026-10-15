@@ -253,7 +253,7 @@ function Read-ProbeUi {
     if ($ownedResetDialog -and -not $resetConfirmationVisible -and -not $incompatibleResetConfirmationVisible) {
         throw 'The owned reset window lacks the exact diagnostic confirmation UI.'
     }
-    $failure = [regex]::Match($text, 'DID2 (AccountProof|NetworkVerification|PreKeyStaging|PreKeyPublication|ContactPublication|ContactResolution) failed \(([A-Za-z0-9; ]{1,160}|network-(stale-or-fork|history-mismatch|genesis-required|rehydration-mismatch|fork|verification-rejected))\)')
+    $failure = [regex]::Match($text, 'DID2 (BootstrapAuthority|AccountProof|NetworkVerification|PreKeyStaging|PreKeyPublication|ContactPublication|ContactResolution) failed \(([A-Za-z0-9; ]{1,160}|network-(stale-or-fork|history-mismatch|genesis-required|rehydration-mismatch|fork|verification-rejected))\)')
     return [pscustomobject]@{
         Nodes=$nodes
         ImeShowing=($focus -match 'mImeShowing=true')
