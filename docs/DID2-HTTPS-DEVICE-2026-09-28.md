@@ -43,7 +43,14 @@ three real SQLCipher/native cancellation cases; the physical fix is confirmed
 in this scope, without changed signed windows, reset, recall or noncommit proof.
 Only the subsequent separate AddContact16 created new work. It failed reading
 network closure (`Io / FetchCurrentAsync / IL453`); matched managed input places
-this at the exhausted eight429 attempts. No contact/message delivery is claimed.
+this at the exhausted eight429 attempts. Registry `a4805bf` is now on the retained
+local current-dev; signed readiness recovered, while its raw mount comparison
+remains unqualified as recorded by the runtime owner above. Exact AddContact17
+reuses that same intent; no terminal result is available. Inspect78 could not
+read the hierarchy; Inspect79 observed the busy controls again, not success or
+failure. It was not replayed as another send. Closed timestamped logcat separates
+the old429 code metadata from future failures; log time is not trusted-time
+authority. No contact/message delivery is claimed.
 
 Windows build11 retained its profile/recovery and reached background Verified;
 one mailbox refresh at19:09:34Z ended in OutcomeUnknown at
