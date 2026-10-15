@@ -182,7 +182,8 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
                 throw new InvalidOperationException(
                     "DID2 network admission is unavailable for this account.");
             var accounts = await runtime.GetAccountsAsync(ct);
-            await networkAdmission.VerifyAsync(accounts, ct);
+            if (reconnect is null) await networkAdmission.VerifyAsync(accounts, ct);
+            else await reconnect.VerifyNowAsync(ct);
             IsNetworkVerified = true;
         }, cancellationToken);
 
@@ -201,7 +202,8 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
             // A previous UI success is not a freshness capability. Recheck
             // the local DID2 admission before each independent peer lookup.
             IsNetworkVerified = false;
-            await networkAdmission.VerifyAsync(accounts, ct);
+            if (reconnect is null) await networkAdmission.VerifyAsync(accounts, ct);
+            else await reconnect.VerifyNowAsync(ct);
             if (inputRevision != Volatile.Read(ref contactInputRevision))
                 throw new InvalidOperationException(
                     "Contact input changed during DID2 proof verification.");

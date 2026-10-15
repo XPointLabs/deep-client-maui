@@ -39,6 +39,18 @@ separate cross-device evidence is assembled. See the
 | Files, images and governed groups | No current DID2 UI/runtime composition. |
 | Push, background message sync, calls and native media integration | Earlier implementations are excluded from the current application service whitelist. |
 
+Manual registration/contact-proof rechecks join the reconnect scheduler's actual
+single pipeline; they no longer launch a second admission/publication flight.
+An idle explicit check starts a fresh flight, not a cached success. Cancelling
+one waiter does not cancel the shared owner, while suspend/offline/account-change
+still cancels the operation and all pending waiters. RetryAfter and the existing
+two-minute whole-attempt budget remain unchanged. A routine periodic refresh
+does not turn a previously verified UI offline while it is running; an actual
+failure/offline/invalidation still does. This UI state is advisory, never a
+freshness capability: each contact/message mutation independently obtains and
+verifies its actual proof, placement, time and protected account authority.
+This source correction requires new matched client builds and physical retest.
+
 [MauiProgram.Did2](../src/Deep.Client.Maui/MauiProgram.Did2.cs) registers the
 conversation runtime only with `DEEP_DID2_HTTPS_ADMISSION`; the application
 project explicitly rejects that diagnostic switch for Release. A separate

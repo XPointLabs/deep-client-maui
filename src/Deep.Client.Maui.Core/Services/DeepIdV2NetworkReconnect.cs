@@ -20,23 +20,48 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
     private readonly CancellationTokenSource lifetime = new();
     private readonly object gate = new();
     private readonly SemaphoreSlim pipelineGate = new(1,1);
+    private readonly TimeSpan refreshInterval;
     private readonly Task worker;
     private CancellationTokenSource? attempt;
+    private TaskCompletionSource? requestedVerification;
+    private bool verificationWakeAllowed;
     private long revision;
     private bool foreground, disposed;
     private int state;
     private int accountMutations;
     public DeepIdV2NetworkReconnect(Func<CancellationToken,Task> reconnect, INetworkStatusService network,
         Action<Action>? dispatch = null)
+        : this(reconnect, network, dispatch, TimeSpan.FromSeconds(60)) { }
+    internal DeepIdV2NetworkReconnect(Func<CancellationToken,Task> reconnect, INetworkStatusService network,
+        Action<Action>? dispatch, TimeSpan refreshInterval)
     {
         this.reconnect = reconnect ?? throw new ArgumentNullException(nameof(reconnect));
         this.network = network ?? throw new ArgumentNullException(nameof(network));
         this.dispatch = dispatch ?? (action => action());
+        if (refreshInterval <= TimeSpan.Zero || refreshInterval > TimeSpan.FromSeconds(60))
+            throw new ArgumentOutOfRangeException(nameof(refreshInterval));
+        this.refreshInterval = refreshInterval;
         network.StatusChanged += ConnectivityChanged;
         worker = RunAsync();
     }
     public DeepIdV2ReconnectState State => (DeepIdV2ReconnectState)Volatile.Read(ref state);
     public event EventHandler? StateChanged;
+    // Join the actual scheduled pipeline, never a retained success flag. A
+    // caller cancelling its wait cannot cancel another caller/background owner.
+    // Lifecycle/account invalidation still cancels the underlying operation.
+    public Task VerifyNowAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed,this);
+            if (!foreground || !network.IsConnected || accountMutations != 0)
+                throw new IOException("DID2 network verification requires an active connected account window.");
+            requestedVerification ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (verificationWakeAllowed) wake.Writer.TryWrite(0);
+            return requestedVerification.Task.WaitAsync(cancellationToken);
+        }
+    }
     public void Resume() { lock (gate) { if (disposed) return; foreground = true; Invalidate(); } }
     public void Suspend() { lock (gate) { if (disposed) return; foreground = false; Invalidate(); } }
     public void AccountChanged() { lock (gate) { if (!disposed) Invalidate(); } }
@@ -59,6 +84,7 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
     {
         var stamp = ++revision;
         var previous = attempt;
+        CompleteRequestedVerification(new OperationCanceledException());
         SetState(foreground ? network.IsConnected ? DeepIdV2ReconnectState.Reconnecting : DeepIdV2ReconnectState.Offline : DeepIdV2ReconnectState.Dormant);
         // State notifications may reenter and supersede this invalidation.
         if (stamp != revision) return;
@@ -90,9 +116,15 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
                 }
                 if (!token.CanBeCanceled) { await WaitAsync(Timeout.InfiniteTimeSpan); continue; }
                 var remaining = backoff - System.Diagnostics.Stopwatch.GetElapsedTime(backoffStart);
-                if (remaining > TimeSpan.Zero) { await WaitAsync(remaining); continue; }
-                lock (gate) { if (stamp != revision) continue; SetState(DeepIdV2ReconnectState.Reconnecting); }
-                var wait = TimeSpan.FromSeconds(60);
+                if (remaining > TimeSpan.Zero) { await WaitAsync(remaining, allowVerificationWake:false); continue; }
+                lock (gate) {
+                    if (stamp != revision) continue;
+                    // A routine refresh is not loss of connectivity. This UI
+                    // state grants no proof: every foreground operation still
+                    // obtains and independently verifies its actual authority.
+                    if (State != DeepIdV2ReconnectState.Verified) SetState(DeepIdV2ReconnectState.Reconnecting);
+                }
+                var wait = refreshInterval;
                 try {
                     await pipelineGate.WaitAsync(token).ConfigureAwait(false);
                     try {
@@ -102,15 +134,23 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
                     lock (gate) {
                         if (stamp != revision || token.IsCancellationRequested || !foreground || !network.IsConnected) continue;
                         SetState(DeepIdV2ReconnectState.Verified);
+                        if (stamp == revision) CompleteRequestedVerification(null);
                     }
                     failures = 0; backoff = TimeSpan.Zero;
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { break; }
                 catch (OperationCanceledException) when (stamp != Volatile.Read(ref revision)) { continue; }
-                catch (DeepIdV2AccountUnavailableException) { lock (gate) { if (stamp == revision) SetState(DeepIdV2ReconnectState.Dormant); } wait = Timeout.InfiniteTimeSpan; }
+                catch (DeepIdV2AccountUnavailableException error) {
+                    lock (gate) { if (stamp == revision) { SetState(DeepIdV2ReconnectState.Dormant); CompleteRequestedVerification(error); } }
+                    wait = Timeout.InfiniteTimeSpan;
+                }
                 catch (Exception error) {
                     var transient = ClassifyTransient(error);
-                    lock (gate) { if (stamp != revision) continue; SetState(transient is null ? DeepIdV2ReconnectState.Rejected : DeepIdV2ReconnectState.Unavailable); }
+                    lock (gate) {
+                        if (stamp != revision) continue;
+                        SetState(transient is null ? DeepIdV2ReconnectState.Rejected : DeepIdV2ReconnectState.Unavailable);
+                        if (stamp == revision) CompleteRequestedVerification(error);
+                    }
                     if (transient is null) wait = Timeout.InfiniteTimeSpan;
                     else {
                         failures = Math.Min(failures+1,6);
@@ -135,8 +175,22 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
         }
         return null;
     }
-    private async Task WaitAsync(TimeSpan delay)
+    // Called under gate. Observe faulted tasks even if every UI waiter was
+    // cancelled; later awaiters still receive the exact failure normally.
+    private void CompleteRequestedVerification(Exception? error)
     {
+        var pending = requestedVerification; requestedVerification = null;
+        if (pending is null) return;
+        if (error is OperationCanceledException) pending.TrySetCanceled();
+        else if (error is not null) { pending.TrySetException(error); _ = pending.Task.Exception; }
+        else pending.TrySetResult();
+    }
+    private async Task WaitAsync(TimeSpan delay, bool allowVerificationWake = true)
+    {
+        lock (gate) {
+            verificationWakeAllowed = allowVerificationWake;
+            if (allowVerificationWake && requestedVerification is not null) wake.Writer.TryWrite(0);
+        }
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var changed = wake.Reader.ReadAsync(stop.Token).AsTask();
         var timer = Task.Delay(delay,stop.Token);
@@ -144,11 +198,16 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
         await stop.CancelAsync().ConfigureAwait(false);
         try { await changed.ConfigureAwait(false); } catch (OperationCanceledException) { }
         try { await timer.ConfigureAwait(false); } catch (OperationCanceledException) { }
+        lock (gate) verificationWakeAllowed = false;
         lifetime.Token.ThrowIfCancellationRequested();
     }
     public async ValueTask DisposeAsync()
     {
-        lock (gate) { if (disposed) return; disposed = true; network.StatusChanged -= ConnectivityChanged; lifetime.Cancel(); attempt?.Cancel(); }
+        lock (gate) {
+            if (disposed) return; disposed = true; network.StatusChanged -= ConnectivityChanged;
+            CompleteRequestedVerification(new OperationCanceledException());
+            lifetime.Cancel(); attempt?.Cancel();
+        }
         await worker.ConfigureAwait(false);
         attempt?.Dispose(); lifetime.Dispose();
     }

@@ -29,6 +29,16 @@ use `ExpectedApkSourceCommit` for the existing signed APK only under the exact
 ancestor/changed-path checks; installation still requires a matching build.
 This does not allow compiled source differences or a stale signing/CA pin.
 
+One bounded same-account retry after the cold-reopen TransportIo reached
+verified-publication; it does not establish the cause of that first IO failure.
+The next observed blocker was UI readiness: after successful publication the
+contact action stayed disabled, and Windows displayed its offline-history hint.
+The source candidate now makes manual rechecks join the actual reconnect flight
+and preserves advisory readiness during routine refresh, while real failure,
+offline and account/lifecycle invalidation still clear it. No contact request or
+message was submitted from the disabled controls. New matched builds and a real
+two-device run are required; a historical APK cannot qualify this compiled change.
+
 ## VPN retry after contact rollout — 2026-10-02
 
 The focused increment adds Shared's typed genesis admission availability

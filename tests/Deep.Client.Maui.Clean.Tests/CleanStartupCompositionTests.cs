@@ -3,6 +3,17 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
+    public void ManualNetworkAndContactReverificationUseTheSameReconnectPipeline()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepository(), "src", "Deep.Client.Maui.Core",
+            "ViewModels", "DeepIdV2AccountViewModel.cs"));
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(source,
+            System.Text.RegularExpressions.Regex.Escape("else await reconnect.VerifyNowAsync(ct);")).Count);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(source,
+            System.Text.RegularExpressions.Regex.Escape("if (reconnect is null) await networkAdmission.VerifyAsync(accounts, ct);")).Count);
+    }
+
+    [Fact]
     public async Task AndroidMessagingEditorRejectsForeignFocusAndExistingDraftBeforeTyping()
     {
         // Pure parsed-function test with synthetic XML and an ADB stub, not UI evidence.

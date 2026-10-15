@@ -9,6 +9,78 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class DeepIdV2NetworkReconnectTests
 {
     [Fact]
+    public async Task ManualVerificationJoinsActivePipelineAndWaiterCancellationDoesNotCancelOwner()
+    {
+        var status = new Network(); var calls = 0;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var reconnect = new DeepIdV2NetworkReconnect(async token => {
+            Interlocked.Increment(ref calls); entered.TrySetResult(); await finish.Task.WaitAsync(token);
+        }, status);
+        reconnect.Resume(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var joined = reconnect.VerifyNowAsync();
+        using var cancelled = new CancellationTokenSource();
+        var cancelledWaiter = reconnect.VerifyNowAsync(cancelled.Token);
+        cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelledWaiter.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.False(joined.IsCompleted); Assert.Equal(1, calls);
+        finish.TrySetResult(); await joined.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(DeepIdV2ReconnectState.Verified, reconnect.State);
+        await Task.Delay(100); Assert.Equal(1, calls); // Joining did not queue another flight.
+    }
+
+    [Fact]
+    public async Task ManualVerificationAfterSuccessRunsFreshPipelineInsteadOfReturningCachedState()
+    {
+        var status = new Network(); var calls = 0;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var reconnect = new DeepIdV2NetworkReconnect(async token => {
+            if (Interlocked.Increment(ref calls) == 2) { entered.TrySetResult(); await finish.Task.WaitAsync(token); }
+        }, status);
+        reconnect.Resume(); await WaitFor(reconnect, DeepIdV2ReconnectState.Verified);
+        var verification = reconnect.VerifyNowAsync();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(verification.IsCompleted); Assert.Equal(2, calls);
+        finish.TrySetResult(); await verification.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(DeepIdV2ReconnectState.Verified, reconnect.State);
+    }
+
+    [Fact]
+    public async Task PeriodicRefreshDoesNotInvalidatePreviouslyVerifiedUiButOfflineStillDoes()
+    {
+        var status = new Network(); var calls = 0;
+        var refreshed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var reconnect = new DeepIdV2NetworkReconnect(async token => {
+            if (Interlocked.Increment(ref calls) == 2) {
+                refreshed.TrySetResult(); await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+        }, status, null, TimeSpan.FromMilliseconds(50));
+        reconnect.Resume(); await WaitFor(reconnect, DeepIdV2ReconnectState.Verified);
+        await refreshed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(DeepIdV2ReconnectState.Verified, reconnect.State);
+        status.Set(false); Assert.Equal(DeepIdV2ReconnectState.Offline, reconnect.State);
+    }
+
+    [Fact]
+    public async Task SuspendCancelsManualWaiterAndLatePipelineCannotCompleteItSuccessfully()
+    {
+        var status = new Network();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var reconnect = new DeepIdV2NetworkReconnect(async _ => {
+            entered.TrySetResult(); await finish.Task;
+        }, status);
+        reconnect.Resume(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        try {
+            var verification = reconnect.VerifyNowAsync(); reconnect.Suspend();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => verification.WaitAsync(TimeSpan.FromSeconds(5)));
+        } finally { finish.TrySetResult(); }
+        await Task.Delay(100);
+        Assert.Equal(DeepIdV2ReconnectState.Dormant, reconnect.State);
+    }
+
+    [Fact]
     public async Task ConfirmedAccountMutationWaitsForCancelledPipelineToDrain()
     {
         var status = new Network();
@@ -92,6 +164,9 @@ public sealed class DeepIdV2NetworkReconnectTests
         reconnect.Resume(); await WaitFor(reconnect,DeepIdV2ReconnectState.Unavailable);
         for (var i = 0; i < 10; i++) reconnect.AccountChanged();
         await Task.Delay(200); Assert.Equal(1,calls);
+        var manual = reconnect.VerifyNowAsync();
+        await Task.Delay(200); Assert.Equal(1,calls); // Explicit UI wake cannot bypass RetryAfter.
+        await manual.WaitAsync(TimeSpan.FromSeconds(6));
         await WaitFor(reconnect,DeepIdV2ReconnectState.Verified); Assert.Equal(2,calls);
         var rejectedCalls = 0;
         await using var rejected = new DeepIdV2NetworkReconnect(_ => {
