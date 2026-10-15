@@ -33,6 +33,7 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
         this.reconnect = reconnect;
         if (reconnect is not null) reconnect.StateChanged += (_,_) => {
             IsNetworkVerified = reconnect.State == DeepIdV2ReconnectState.Verified;
+            RaisePropertyChanged(nameof(NetworkState));
             if (!IsNetworkVerified) InvalidateContactProof();
         };
         CreateAccountCommand = new AsyncCommand(CreateAccountAsync,
@@ -110,8 +111,14 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
     public bool IsNetworkVerified
     {
         get => isNetworkVerified;
-        private set => SetProperty(ref isNetworkVerified, value);
+        private set
+        {
+            if (SetProperty(ref isNetworkVerified, value) && reconnect is null)
+                RaisePropertyChanged(nameof(NetworkState));
+        }
     }
+    public DeepIdV2ReconnectState NetworkState => reconnect?.State ??
+        (IsNetworkVerified ? DeepIdV2ReconnectState.Verified : DeepIdV2ReconnectState.Dormant);
 
     public bool IsContactProofVerified
     {

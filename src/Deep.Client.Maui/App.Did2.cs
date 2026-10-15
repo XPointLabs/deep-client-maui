@@ -33,7 +33,10 @@ public sealed class App : Application
         var window = new Window(loading);
         var reconnect = services.GetService<DeepIdV2NetworkReconnect>();
         window.Activated += (_,_) => reconnect?.Resume();
-        window.Deactivated += (_,_) => reconnect?.Suspend();
+        // Losing focus (including an auxiliary input window) is not a hidden
+        // app. Only actual visibility/lifetime stop cancels the network owner.
+        window.Resumed += (_,_) => reconnect?.Resume();
+        window.Stopped += (_,_) => reconnect?.Suspend();
         window.Destroying += (_,_) => reconnect?.Suspend();
         window.Created += async (_, _) =>
         {

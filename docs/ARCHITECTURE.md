@@ -51,6 +51,15 @@ freshness capability: each contact/message mutation independently obtains and
 verifies its actual proof, placement, time and protected account authority.
 This source correction requires new matched client builds and physical retest.
 
+Network suspension follows actual `Window.Stopped`/`Destroying`, not loss of
+focus through `Deactivated`; resume/activation is idempotent for an already
+visible window. This follows the [MAUI lifecycle distinction](https://learn.microsoft.com/en-us/dotnet/maui/fundamentals/app-lifecycle?view=net-maui-10.0).
+An auxiliary input/focus transition must not invalidate verified UI readiness.
+The diagnostic network card exposes only the closed reconnect state enum,
+separately from the last manually observed result; its guarded Android receipt
+records the same closed enum, never exception messages or identity material.
+This does not add background inbox/message composition or waive fresh authority.
+
 [MauiProgram.Did2](../src/Deep.Client.Maui/MauiProgram.Did2.cs) registers the
 conversation runtime only with `DEEP_DID2_HTTPS_ADMISSION`; the application
 project explicitly rejects that diagnostic switch for Release. A separate

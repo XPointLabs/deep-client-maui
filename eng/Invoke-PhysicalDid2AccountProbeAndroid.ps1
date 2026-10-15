@@ -242,7 +242,7 @@ function Read-ProbeUi {
     if ($nodes.Count -eq 0 -or $nodes.Count -gt 10000) { throw 'DID2 UI node bounds rejected.' }
     $controls = @()
     foreach ($id in @('Welcome.DisplayName', 'Welcome.CreateAccount', 'Did2Workspace.Settings', 'Did2Workspace.MobileSettings',
-        'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus', 'Did2Probe.ResetAccount',
+        'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus', 'Did2Probe.ReconnectState', 'Did2Probe.ResetAccount',
         'Startup.Error', 'Startup.ResetIncompatibleDid2', 'Did2Workspace.Contacts', 'Did2Workspace.MobileContacts',
         'Did2Workspace.Chats', 'Did2Workspace.MobileChats', 'Contacts.Address', 'Contacts.Add',
         'Conversations.Refresh', 'Conversations.Items', 'Contacts.Accept', 'Conversation.Refresh',
@@ -256,6 +256,14 @@ function Read-ProbeUi {
         }
     }
     $text = ($nodes | ForEach-Object { $_.GetAttribute('text') }) -join "`n"
+    $reconnectNodes = @($nodes | Where-Object {
+        $_.GetAttribute('resource-id') -ceq "${probePackage}:id/Did2Probe.ReconnectState" -or
+        $_.GetAttribute('content-desc') -ceq 'Did2Probe.ReconnectState'
+    })
+    $reconnectState = if ($reconnectNodes.Count -eq 1 -and
+        $reconnectNodes[0].GetAttribute('text') -cin @('Dormant', 'Offline', 'Reconnecting', 'Verified', 'Unavailable', 'Rejected')) {
+        $reconnectNodes[0].GetAttribute('text')
+    } else { 'not-observed' }
     $resetConfirmationVisible = $text.Contains('Сброс тестового аккаунта') -and
         $text.Contains('Будут удалены только локальный аккаунт этого диагностического приложения') -and
         $text.Contains('Удалить тестовый аккаунт')
@@ -282,6 +290,7 @@ function Read-ProbeUi {
             stageFailure=$(if ($failure.Success) { $failure.Value } else { $null })
             routeTimeCoverageFailure=(Get-ProbeRouteTimeCoverageFailure $text)
             networkOutcome=(Get-ProbeNetworkOutcome $text)
+            reconnectState=$reconnectState
             messagingErrorPresent=(@($nodes | Where-Object {
                 ($_.GetAttribute('resource-id') -ceq "${probePackage}:id/Messaging.Error" -or
                     $_.GetAttribute('content-desc') -ceq 'Messaging.Error') -and

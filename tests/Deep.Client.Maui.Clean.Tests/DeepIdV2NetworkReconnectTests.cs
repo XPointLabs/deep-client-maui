@@ -9,6 +9,26 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class DeepIdV2NetworkReconnectTests
 {
     [Fact]
+    public async Task RepeatedActivationDoesNotCancelActiveVerificationOrClearVerifiedState()
+    {
+        var status = new Network(); var calls = 0;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var reconnect = new DeepIdV2NetworkReconnect(async token => {
+            Interlocked.Increment(ref calls); entered.TrySetResult(); await finish.Task.WaitAsync(token);
+        }, status);
+        reconnect.Resume(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var verification = reconnect.VerifyNowAsync();
+        reconnect.Resume(); reconnect.Resume();
+        Assert.False(verification.IsCompleted); Assert.Equal(1, calls);
+        finish.TrySetResult(); await verification.WaitAsync(TimeSpan.FromSeconds(5));
+        reconnect.Resume();
+        Assert.Equal(DeepIdV2ReconnectState.Verified, reconnect.State); Assert.Equal(1, calls);
+        reconnect.Suspend(); reconnect.Suspend();
+        Assert.Equal(DeepIdV2ReconnectState.Dormant, reconnect.State);
+    }
+
+    [Fact]
     public async Task ManualVerificationJoinsActivePipelineAndWaiterCancellationDoesNotCancelOwner()
     {
         var status = new Network(); var calls = 0;

@@ -62,8 +62,8 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
             return requestedVerification.Task.WaitAsync(cancellationToken);
         }
     }
-    public void Resume() { lock (gate) { if (disposed) return; foreground = true; Invalidate(); } }
-    public void Suspend() { lock (gate) { if (disposed) return; foreground = false; Invalidate(); } }
+    public void Resume() { lock (gate) { if (disposed || foreground) return; foreground = true; Invalidate(); } }
+    public void Suspend() { lock (gate) { if (disposed || !foreground) return; foreground = false; Invalidate(); } }
     public void AccountChanged() { lock (gate) { if (!disposed) Invalidate(); } }
     public async Task MutateAccountAsync(Func<CancellationToken,Task> mutation, CancellationToken cancellationToken = default)
     {

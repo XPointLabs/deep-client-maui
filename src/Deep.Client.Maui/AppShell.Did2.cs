@@ -503,6 +503,9 @@ public sealed partial class AppShell : ContentPage
         };
         var networkStatus = Status("Did2Probe.NetworkStatus");
         networkStatus.Text = "Сетевая DID2-регистрация ещё не проверена на этом устройстве.";
+        var networkState = Status("Did2Probe.ReconnectState");
+        networkState.BindingContext = account;
+        networkState.SetBinding(Label.TextProperty, nameof(account.NetworkState));
         var contactDescriptor = new Entry
         {
             Placeholder = "Короткий Deep ID другого аккаунта",
@@ -601,6 +604,7 @@ public sealed partial class AppShell : ContentPage
                     FontSize = 13
                 },
                 verifyNetwork,
+                networkState,
                 networkStatus
             }
         });

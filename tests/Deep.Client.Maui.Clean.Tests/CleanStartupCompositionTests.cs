@@ -3,6 +3,22 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
+    public void DiagnosticNetworkLifecycleUsesVisibilityAndExposesOnlyClosedReconnectState()
+    {
+        var app = ReadSource("App.Did2.cs");
+        Assert.Contains("window.Stopped += (_,_) => reconnect?.Suspend();", app);
+        Assert.Contains("window.Resumed += (_,_) => reconnect?.Resume();", app);
+        Assert.Contains("window.Destroying += (_,_) => reconnect?.Suspend();", app);
+        Assert.DoesNotContain("window.Deactivated +=", app);
+        var shell = ReadSource("AppShell.Did2.cs");
+        Assert.Contains("Status(\"Did2Probe.ReconnectState\")", shell);
+        Assert.Contains("nameof(account.NetworkState)", shell);
+        var driver = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1"));
+        Assert.Contains("@('Dormant', 'Offline', 'Reconnecting', 'Verified', 'Unavailable', 'Rejected')", driver);
+        Assert.Contains("reconnectState=$reconnectState", driver);
+    }
+
+    [Fact]
     public void ManualNetworkAndContactReverificationUseTheSameReconnectPipeline()
     {
         var source = File.ReadAllText(Path.Combine(FindRepository(), "src", "Deep.Client.Maui.Core",

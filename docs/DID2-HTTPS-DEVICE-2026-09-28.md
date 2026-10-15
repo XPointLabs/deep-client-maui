@@ -39,6 +39,16 @@ offline and account/lifecycle invalidation still clear it. No contact request or
 message was submitted from the disabled controls. New matched builds and a real
 two-device run are required; a historical APK cannot qualify this compiled change.
 
+Matched `4fafe7d` Windows build02 and Android build03/install02 both reached
+verified-publication on the retained profiles; Clean140 and Smoke119 passed.
+Android's next public-peer input still removed UI readiness before any contact
+submission. That observation is not a sent request, nor proof that keyboard focus
+was the exact cause. Source review additionally found network suspension bound to
+every Window.Deactivated and non-idempotent activation. The next candidate binds
+actual Stopped/Resumed visibility, keeps activation idempotent, and displays only
+the closed reconnect enum so physical retest can distinguish lifecycle, offline
+and actual authority/transport failure. Clean142 passed; new builds/retest remain.
+
 ## VPN retry after contact rollout — 2026-10-02
 
 The focused increment adds Shared's typed genesis admission availability
