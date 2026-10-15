@@ -71,6 +71,22 @@ preserving original request/holder/floors. Do not extend the120s window or infer
 non-issuance from expiry. No Android failure cause is established by the Windows
 trace. Physical contacts/text/files/groups remain0/4; production was not changed.
 
+Matched Shared `d2ef134` / Protocol `f0ef288` / MAUI `fc7b86a` Windows build04
+and Android build06/install06 preserve those same accounts. Windows reached
+verified-publication after a bounded manual verification; two mailbox refreshes
+still failed. Its second bounded private exception trace confirms the closure
+composition ran, then `AcquisitionForNewWork` refused the retained closed tail.
+Android refresh01 also ended with a terminal messaging error; no contact request
+was repeated. Build05 failed its expected-source preflight before compilation or
+installation, not on the device. Matching source Smoke119 passed.
+
+[DR-0126](../../docs/survival-program/decisions/DR-0126-independent-grant-after-unresolved-acquisition.md)
+corrects that new-work selection in Shared, preserving old uncertainty and every
+active transport intent. Focused16 and affected regression58 passed; new matched
+builds and retained-device retests remain required. The older APK's MAUI-only
+ancestor guard cannot qualify a changed Shared/Protocol dependency. Bounded
+mixed-history retirement is also still open. This is not a device-delivery PASS.
+
 ## VPN retry after contact rollout — 2026-10-02
 
 The focused increment adds Shared's typed genesis admission availability
