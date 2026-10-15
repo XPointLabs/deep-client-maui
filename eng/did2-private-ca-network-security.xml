@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors><certificates src="system" /></trust-anchors>
+  </base-config>
+  <!-- Local dev profile only. This host serves the CA-signed public CRL.
+       Application service origins remain HTTPS-only; no CA is installed here. -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">__DEEP_PRIVATE_CRL_HOST__</domain>
+  </domain-config>
+</network-security-config>

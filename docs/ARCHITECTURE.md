@@ -74,6 +74,20 @@ a private-root build: an unclassified failure remains `PrivateProfileUnknown`,
 not an exception about public-origin configuration. Neither path accepts TLS or
 retries with weaker certificate, name or revocation checks.
 
+For Android's local private-CA diagnostic, the supported builder generates a
+network-security resource from the validated Registry DNS/IPv4 host. It permits
+HTTP only to that exact host (no subdomains), which the local dev PKI also uses
+for its CA-signed public CRL. All other hosts retain the base cleartext deny;
+all application service origins still require HTTPS. The resource adds no CA
+trust anchor: explicit CA trust remains app-scoped in the HTTP factory, with
+online revocation and name/EKU/chain validation unchanged. Missing policy or
+using it without private-CA/non-Release/physical Android inputs fails the build.
+Public-CA diagnostics retain their separate public CRL policy; Release rejects
+this opt-in. Private profiles with another CRL host need an explicit reviewed
+configuration, not a wildcard allowance. The observed device rejection before
+this increment was `AccountProof / RevocationStatusUnknown`, not publication or
+message delivery. The regenerated APK still requires a real-device recheck.
+
 The diagnostic now reads conversation/message history directly from the Shared
 protected local owner without bootstrap HTTP or fresh endpoint proofs.
 `CanReadLocal` is separate from network `IsReady`; loss of network verification

@@ -414,6 +414,37 @@ public sealed class CleanStartupCompositionTests
     }
 
     [Fact]
+    public void PrivateAndroidCrlPolicyHasOneExactHostAndNoAddedTrustOrGlobalCleartext()
+    {
+        var template = File.ReadAllText(Path.Combine(FindRepository(), "eng", "did2-private-ca-network-security.xml"));
+        Assert.Equal(1, template.Split("__DEEP_PRIVATE_CRL_HOST__").Length - 1);
+        var policy = System.Xml.Linq.XDocument.Parse(template.Replace("__DEEP_PRIVATE_CRL_HOST__", "dev.example"));
+        var root = policy.Root!;
+        Assert.Equal(2, root.Elements().Count());
+        Assert.Equal("false", (string?)root.Element("base-config")!.Attribute("cleartextTrafficPermitted"));
+        var anchor = Assert.Single(root.Descendants("certificates"));
+        Assert.Equal("system", (string?)anchor.Attribute("src"));
+        var domain = Assert.Single(root.Elements("domain-config"));
+        Assert.Equal("true", (string?)domain.Attribute("cleartextTrafficPermitted"));
+        var host = Assert.Single(domain.Elements());
+        Assert.Equal("domain", host.Name.LocalName);
+        Assert.Equal("false", (string?)host.Attribute("includeSubdomains"));
+        Assert.Equal("dev.example", host.Value);
+        var project = System.Xml.Linq.XDocument.Parse(ReadSource("Deep.Client.Maui.csproj"));
+        var group = project.Root!.Elements("ItemGroup").Single(value => value.Elements("AndroidResource").Any(resource =>
+            (string?)resource.Attribute("Include") == "$(DeepDid2PrivateCaAndroidNetworkSecurityConfig)"));
+        var condition = (string?)group.Attribute("Condition");
+        foreach (var required in new[] { "'$(DeepDid2HttpsAdmission)' == 'true'", "'$(DeepPhysicalE2E)' == 'true'",
+            "'$(Configuration)' != 'Release'", "'$(DeepDid2PrivateCertificateAuthority)' != ''" }) Assert.Contains(required, condition);
+        var gate = project.Root.Elements("Target").Single(value => (string?)value.Attribute("Name") == "RejectUnsafeDid2PrivateCaAndroidPolicy");
+        Assert.Contains(gate.Elements("Error"), value => ((string?)value.Attribute("Condition"))?.Contains("'$(Configuration)' == 'Release'", StringComparison.Ordinal) == true);
+        var builder = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-Did2HttpsAndroidBuild.ps1"));
+        Assert.Contains("$privateCrlHost = $privateOrigin.DnsSafeHost", builder);
+        Assert.Contains("[Security.SecurityElement]::Escape($privateCrlHost)", builder);
+        Assert.Contains("-p:DeepDid2PrivateCaAndroidNetworkSecurityConfig=$privateConfig", builder);
+    }
+
+    [Fact]
     public void AndroidIncompatibleAccountResetIsOwnedExplicitAndSeparateFromSettingsReset()
     {
         var installer = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1"));

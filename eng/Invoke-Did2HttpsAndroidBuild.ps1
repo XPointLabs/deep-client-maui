@@ -32,6 +32,16 @@ if ($PSBoundParameters.ContainsKey('PrivateCertificateAuthorityPath')) {
 $preflight = (& (Join-Path $PSScriptRoot 'Invoke-Did2HttpsWindowsBuild.ps1') @common) |
     ConvertFrom-Json
 if ($preflight.status -cne 'preflight') { throw 'DID2 common preflight did not complete.' }
+$privateCrlHost = $null
+if ($null -ne $preflight.privateCaSha256) {
+    $privateOrigin = [Uri]$RegistryOrigin
+    if ($privateOrigin.HostNameType -notin @([UriHostNameType]::Dns, [UriHostNameType]::IPv4)) {
+        throw 'Android local private-CA CRL retrieval requires a canonical DNS or IPv4 Registry host.'
+    }
+    # The supported local dev PKI serves its signed public CRL on this exact
+    # Registry host. Do not enable cleartext for other hosts or subdomains.
+    $privateCrlHost = $privateOrigin.DnsSafeHost
+}
 
 function Assert-Input([string]$Path, [long]$Maximum) {
     if (-not [IO.Path]::IsPathFullyQualified($Path)) { throw 'Signing inputs require absolute paths.' }
@@ -96,8 +106,16 @@ if ($Execute) {
         '-p:BuildInParallel=false', '-p:UseSharedCompilation=false',
         '-p:Aapt2DaemonMaxInstanceCount=1', '-nodeReuse:false', '-m:1')
     if ($null -ne $preflight.privateCaSha256) {
+        $template = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'did2-private-ca-network-security.xml'))
+        if ([regex]::Matches($template, '__DEEP_PRIVATE_CRL_HOST__').Count -ne 1) {
+            throw 'The exact local CRL policy template is invalid.'
+        }
+        $privateConfig = Join-Path $output 'network_security_config.private_ca.xml'
+        $config = $template.Replace('__DEEP_PRIVATE_CRL_HOST__', [Security.SecurityElement]::Escape($privateCrlHost))
+        [IO.File]::WriteAllText($privateConfig, $config, [Text.UTF8Encoding]::new($false))
         $arguments += @("-p:DeepDid2PrivateCertificateAuthority=$PrivateCertificateAuthorityPath",
-            "-p:DeepDid2PrivateCaSha256=$($preflight.privateCaSha256)")
+            "-p:DeepDid2PrivateCaSha256=$($preflight.privateCaSha256)",
+            "-p:DeepDid2PrivateCaAndroidNetworkSecurityConfig=$privateConfig")
     }
     & dotnet @arguments
     if ($LASTEXITCODE -ne 0) { throw 'DID2 Android build failed; no package was installed.' }
