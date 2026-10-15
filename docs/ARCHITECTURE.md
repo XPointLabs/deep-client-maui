@@ -69,6 +69,18 @@ passed35/0/0/native0; `foreground-pipeline-clean-01` passed150/0/0/native0.
 The scheduling cases use controlled delegates, not network/physical evidence.
 Matched Windows/Android builds and retained-device retest remain required.
 
+Only the non-Release HTTPS QA composition subscribes a messaging failure
+observer. It sends bounded category/depth/code-method/line metadata to the
+existing bounded diagnostic log; it never reads exception Message/Data/ToString
+or emits a source-file path. The UI keeps its closed error text. The observer
+does not change business state, retry, cancellation or authority and cannot mask
+the original failure if diagnostics itself fails. The shipping composition does
+not register it. `business-diagnostics-clean-02` passed160/0/0/native0; these
+privacy/observer tests are not device delivery evidence.
+`business-diagnostics-windows-compile-01` compiled the matching working tree
+with0 warnings/errors; compile-only is neither an installed artifact nor release
+qualification. The earlier158-case receipt remains unchanged.
+
 Network suspension follows actual `Window.Stopped`/`Destroying`, not loss of
 focus through `Deactivated`; resume/activation is idempotent for an already
 visible window. This follows the [MAUI lifecycle distinction](https://learn.microsoft.com/en-us/dotnet/maui/fundamentals/app-lifecycle?view=net-maui-10.0).

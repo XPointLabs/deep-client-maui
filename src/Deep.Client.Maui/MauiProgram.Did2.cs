@@ -38,10 +38,20 @@ public static partial class MauiProgram
             },services.GetRequiredService<INetworkStatusService>(),MainThread.BeginInvokeOnMainThread));
 #endif
         builder.Services.AddSingleton<DeepIdV2AccountViewModel>();
-        builder.Services.AddSingleton<DeepIdV2MessagingViewModel>();
 #if DEEP_DID2_HTTPS_ADMISSION
+        builder.Services.AddSingleton<DeepIdV2MessagingViewModel>(services => new(
+            services.GetRequiredService<IDeepIdV2AccountRuntimeAccessor>(),
+            services.GetRequiredService<DeepIdV2AccountViewModel>(),
+            services.GetRequiredService<IDeepIdV2ConversationRuntime>(),
+            services.GetRequiredService<DeepIdV2NetworkReconnect>(),
+            error => {
+                foreach (var location in Did2BusinessFailureDiagnostics.Capture(error))
+                    CrashDiagnostics.LogInfo("Did2.BusinessFailure",location);
+            }));
         builder.Services.AddSingleton<IDeepIdV2ConversationRuntime>(services =>
             (DeepIdV2CanaryNetworkAdmission)services.GetRequiredService<IDeepIdV2NetworkAdmission>());
+#else
+        builder.Services.AddSingleton<DeepIdV2MessagingViewModel>();
 #endif
         builder.Services.AddSingleton<AppShell>();
         return builder.Build();

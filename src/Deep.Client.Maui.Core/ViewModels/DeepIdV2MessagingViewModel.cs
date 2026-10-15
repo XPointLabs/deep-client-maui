@@ -14,6 +14,7 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
     private readonly DeepIdV2AccountViewModel account;
     private readonly IDeepIdV2ConversationRuntime? runtime;
     private readonly DeepIdV2NetworkReconnect? reconnect;
+    private readonly Action<Exception>? failureObserver;
     private readonly Dictionary<string, byte[]> contactIntents = new(StringComparer.Ordinal);
     private readonly Dictionary<string, byte[]> acceptanceOperations = new(StringComparer.Ordinal);
     private string contactAddress = string.Empty, draftText = string.Empty, status = string.Empty;
@@ -26,11 +27,12 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
 
     public DeepIdV2MessagingViewModel(IDeepIdV2AccountRuntimeAccessor accounts,
         DeepIdV2AccountViewModel account, IDeepIdV2ConversationRuntime? runtime = null,
-        DeepIdV2NetworkReconnect? reconnect = null)
+        DeepIdV2NetworkReconnect? reconnect = null, Action<Exception>? failureObserver = null)
     {
         this.accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
         this.account = account ?? throw new ArgumentNullException(nameof(account)); this.runtime = runtime;
         this.reconnect = reconnect;
+        this.failureObserver = failureObserver;
         projectedAccount = account.Account?.PermanentId.CanonicalText;
         RefreshCommand = new(RefreshAsync, () => CanReadLocal && !IsBusy);
         StartContactCommand = new(StartContactAsync, () => IsReady && !IsBusy && !string.IsNullOrWhiteSpace(ContactAddress));
@@ -247,6 +249,9 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             }
             catch (Exception error)
             {
+                // Optional QA metadata cannot alter the original failure,
+                // retain authority or prevent this error from reaching the UI.
+                try { failureObserver?.Invoke(error); } catch { }
                 if (account.Account is null || error is CryptographicException or InvalidDataException)
                 { Conversations.Clear(); Messages.Clear(); Selected = null; }
                 Status = string.Empty;

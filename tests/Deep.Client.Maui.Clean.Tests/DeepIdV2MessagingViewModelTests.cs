@@ -115,13 +115,17 @@ public sealed class DeepIdV2MessagingViewModelTests
             await account.CreateAccountAsync(); Assert.Null(account.ErrorMessage);
             await account.VerifyNetworkAsync(); Assert.True(account.IsNetworkVerified);
             var transport = new ThrowingRuntime();
-            var view = new DeepIdV2MessagingViewModel(accounts, account, transport) { ContactAddress = "not an address" };
+            var observedFailures = new List<Exception>();
+            var view = new DeepIdV2MessagingViewModel(accounts, account, transport,
+                failureObserver: error => { observedFailures.Add(error); throw new InvalidOperationException("PRIVATE observer failed"); })
+                { ContactAddress = "not an address" };
             Assert.True(view.IsReady);
             await view.StartContactAsync();
             Assert.Equal(0, transport.Calls); Assert.Contains("Проверьте", view.ErrorMessage);
             view.ContactAddress = account.Account!.PermanentId.CanonicalText;
             await view.StartContactAsync();
             var original = Assert.Single(transport.Intents);
+            Assert.Contains(observedFailures,error => error is IOException);
             Assert.Equal(32, original.Length); Assert.Contains(original, value => value != 0);
             await view.StartContactAsync();
             Assert.Equal(original, transport.Intents[1]);

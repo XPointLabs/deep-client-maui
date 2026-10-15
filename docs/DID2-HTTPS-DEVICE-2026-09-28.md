@@ -114,6 +114,20 @@ serialized despite sharing protected account/network custody; a MAUI-only
 coordination correction is being qualified. Neither this observation nor a
 scheduler unit test proves that concurrency was this physical failure's cause.
 
+Matched MAUI `845a666` Windows build06 completed another real empty mailbox
+refresh without error on the retained profile (`windows-observation-03.json`).
+The bounded private trace05 contains only general IO/cancellation and scheduler
+wait cancellation, not the former acquisition-selection rejection. Android
+build08/install08 retained account/recovery/protected packages; Inspect33
+observed automatic Verified, peer input05/dismiss05 left Add enabled. Exactly
+one AddContact03 retry ran on the same intent; Inspect35 ended in the closed
+protected-state-rejected category, without contactRequestStored. No fourth send
+has occurred. This is not the prior cancellation category, and its precise
+source guard remains unproven. Source Clean150 and Smoke119 passed. A QA-only
+bounded metadata observer is being qualified to locate that error without
+logging exception text, payloads, identities or file paths. No reset or crypto
+guard weakening is authorized by this observation.
+
 ## VPN retry after contact rollout — 2026-10-02
 
 The focused increment adds Shared's typed genesis admission availability

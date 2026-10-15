@@ -24,6 +24,8 @@
              Link="Did2TlsFailureClassifier.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\Did2NetworkIoFailure.cs"
              Link="Did2NetworkIoFailure.cs" />
+    <Compile Include="..\..\src\Deep.Client.Maui\Services\Did2BusinessFailureDiagnostics.cs"
+             Link="Did2BusinessFailureDiagnostics.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\PlatformDeepSecureStorage.cs"
              Link="PlatformDeepSecureStorage.cs" />
     <Compile Include="..\..\src\Deep.Client.Maui\Services\DeepIdV2AccountRuntimeOwner.cs"
