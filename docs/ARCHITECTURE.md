@@ -244,7 +244,10 @@ to `CancelOwnInitialContactAsync`, through the same foreground network lane and
 independently current account authority. The key-free operation projection adds
 read-only `IsStopped`; it is not authorization. Cold Add first discovers the
 retained nonstopped intent and offers explicit Retry or `Contacts.StopRetry`,
-without dispatch. A failed/lost stop reply retains the original UI intent.
+without dispatch. This local discovery stays outside the foreground network
+lane and remains readable offline; it cannot allocate a new intent or dispatch
+without current verification. New UI intent allocation occurs only inside the
+held foreground lane, immediately before actual Start. A failed/lost stop reply retains the original UI intent.
 Only completed owned stop removes that UI choice, and only a subsequent Add
 creates a different logical request. Stopped originals, uncertainty and replay
 floors remain with their existing retention owners; no reset, recall, expiry

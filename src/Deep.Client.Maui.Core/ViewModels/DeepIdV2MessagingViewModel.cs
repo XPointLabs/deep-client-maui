@@ -35,7 +35,7 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
         this.failureObserver = failureObserver;
         projectedAccount = account.Account?.PermanentId.CanonicalText;
         RefreshCommand = new(RefreshAsync, () => CanReadLocal && !IsBusy);
-        StartContactCommand = new(StartContactAsync, () => IsReady && !IsBusy && !string.IsNullOrWhiteSpace(ContactAddress));
+        StartContactCommand = new(StartContactAsync, () => CanReadLocal && !IsBusy && !string.IsNullOrWhiteSpace(ContactAddress));
         StopContactRetryCommand = new(StopContactRetryAsync, () => IsReady && !IsBusy && HasContactRetry);
         AcceptContactCommand = new(AcceptContactAsync, () => IsReady && !IsBusy && CanAccept);
         SendTextCommand = new(SendTextAsync, () => IsReady && !IsBusy && CanSend && !string.IsNullOrWhiteSpace(DraftText));
@@ -145,25 +145,37 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             var address = DeepPermanentIdV2.ParseCanonical(text);
             var peer = Convert.ToHexString(address.ExactDid2Hash.Span);
             var owner = await accounts.GetAccountsAsync(token);
-            RequireCurrentOperation(token);
+            RequireLocalOperation(token);
             if (!contactIntents.TryGetValue(peer, out var intent))
             {
                 var existing = (await owner.ListContactStartOperationsAsync(token))
                     .Where(value => value.PeerDid2Hash == peer && !value.IsStopped).OrderByDescending(value => value.CreatedAtUnixMilliseconds).FirstOrDefault();
-                RequireCurrentOperation(token);
-                intent = existing?.LogicalIntent.ToArray() ?? NewOperation(); contactIntents.Add(peer, intent);
-                NotifyContactRetry();
+                RequireLocalOperation(token);
                 if (existing is not null)
                 {
+                    intent = existing.LogicalIntent.ToArray(); contactIntents.Add(peer, intent);
+                    NotifyContactRetry();
                     Status = "Сохранён незавершённый запрос. Повторите его или остановите повторы. Остановка не отзывает запрос у получателя.";
                     return;
                 }
             }
-            var started = await runtime!.StartAsync(owner, address, intent, token);
+            if (!IsReady) { Status = "Для отправки или остановки повторов требуется проверенное подключение к сети."; return; }
+            activeRequiresNetwork = true;
+            async Task<DeepIdV2ContactStartResult> DispatchAsync(CancellationToken next)
+            {
+                RequireCurrentOperation(next);
+                // Do not allocate even UI retry metadata while queued behind
+                // background work. Existing owned originals were read locally.
+                if (intent is null)
+                { intent = NewOperation(); contactIntents.Add(peer, intent); NotifyContactRetry(); }
+                return await runtime!.StartAsync(owner, address, intent, next);
+            }
+            var started = reconnect is null ? await DispatchAsync(token) :
+                await reconnect.RunForegroundAsync(DispatchAsync, token);
             RequireCurrentOperation(token);
             await LoadConversationsAsync(owner, started.Conversation.ConversationId, token);
             Status = "Запрос контакта сохранён в сети. Ожидаем принятия.";
-        }, ct);
+        }, ct, requiresNetwork: false);
     }
 
     public Task StopContactRetryAsync(CancellationToken ct = default)

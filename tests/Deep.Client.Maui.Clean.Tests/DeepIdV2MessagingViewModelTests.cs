@@ -251,9 +251,10 @@ public sealed class DeepIdV2MessagingViewModelTests
             Assert.Empty(view.Conversations); Assert.Empty(view.Messages);
             view.ContactAddress = account.Account!.PermanentId.CanonicalText;
             view.DraftText = "retained local draft";
-            Assert.False(view.StartContactCommand.CanExecute(null));
+            Assert.True(view.StartContactCommand.CanExecute(null));
             Assert.False(view.SendTextCommand.CanExecute(null));
             await view.StartContactAsync(); Assert.Equal(0, runtime.NetworkCalls);
+            Assert.Null(view.ErrorMessage); Assert.False(view.HasContactRetry);
             await account.RefreshAsync(); Assert.Null(account.ErrorMessage);
             Assert.Equal("retained local draft", view.DraftText); Assert.NotEmpty(view.ContactAddress);
             await account.VerifyNetworkAsync(); Assert.True(view.IsReady);
@@ -267,6 +268,41 @@ public sealed class DeepIdV2MessagingViewModelTests
             Assert.Empty(view.DraftText); Assert.Empty(view.ContactAddress);
         }
         finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public async Task OfflineContactDiscoveryDoesNotWaitForBackgroundLaneOrAllocateNewIntent()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "deep-did2-contact-local-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            await using var accounts = new OwnedAccounts(directory);
+            var account = new DeepIdV2AccountViewModel(accounts) { DisplayName = "Local UI" };
+            await account.CreateAccountAsync(); Assert.Null(account.ErrorMessage);
+            await using var reconnect = new DeepIdV2NetworkReconnect(async token =>
+            { entered.TrySetResult(); await finish.Task.WaitAsync(token); }, new ConnectedNetwork());
+            reconnect.Resume(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var runtime = new ThrowingRuntime();
+            var view = new DeepIdV2MessagingViewModel(accounts, account, runtime, reconnect)
+                { ContactAddress = account.Account!.PermanentId.CanonicalText };
+            Assert.True(view.CanReadLocal); Assert.False(view.IsReady);
+            Assert.True(view.StartContactCommand.CanExecute(null));
+            await view.StartContactAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Null(view.ErrorMessage); Assert.False(view.HasContactRetry);
+            Assert.Contains("проверенное подключение", view.Status);
+            Assert.Empty(runtime.Intents); Assert.Empty(runtime.Stops); Assert.Equal(0, runtime.Calls);
+        }
+        finally { finish.TrySetResult(); Directory.Delete(directory, recursive: true); }
+    }
+
+    private sealed class ConnectedNetwork : INetworkStatusService
+    {
+        public bool IsConnected => true;
+        public string ConnectionLabel => "UI test";
+        public event EventHandler? StatusChanged { add { } remove { } }
     }
 
     private sealed class LocalRuntime : IDeepIdV2ConversationRuntime
