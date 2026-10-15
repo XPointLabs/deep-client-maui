@@ -6,6 +6,26 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 
 ## Current retained-device checkpoint — 2026-10-16
 
+The next Shared candidate `acc65f1` carries independently verified contact
+authority on one command's async stack and uses explicit existing borrowed
+account/ONION custody for its single read and claim. Real protected floor,
+endpoint, clock/window, selected-replica and final native custody checks remain;
+no cache flag, implicit retry, new journal/wire or extended lifetime is added.
+The owning mapping and exact limits are in
+[owned contact start](../../deep-client-shared/docs/architecture/owned-authored-counter-custody.md#current-same-command-proof-and-owned-transport-candidate).
+Its first focused run was11PASS/1FAIL/native1: a new bad-signature test expected
+the wrong exception type. The failed receipt stays unchanged. The corrected/
+expanded focused run passed8/0/0/native0 (`scoped-contact-start-02`), including
+first claim/native completion/Store/cold exact retry, exactly two preclaim network
+acquisitions, expired/cancelled/invalid replies, late response after lease end,
+changed floor, expired proof and foreign-owner refusal. Existing eight affected
+regressions passed on the same production source in the first run. MAUI Clean193
+and Smoke119 passed0fail/skip/native0 (`scoped-contact-clean-01`,
+`scoped-contact-smoke-01`). These are native in-process source fixtures, not
+physical delivery, an Android speed measurement, or final full acceptance.
+New matching device builds/observations are pending; installed-source evidence
+below still belongs to its own older inputs.
+
 The current local nine-service, three-node contour and source matrix are owned
 by the [contact checkpoint](../../deep-devops/docs/S05-CONTACT-TRANSPORT-2026-10-15.md).
 Android and Windows each reached `verified-publication` on retained accounts
