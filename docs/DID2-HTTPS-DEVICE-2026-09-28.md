@@ -23,8 +23,23 @@ regressions passed on the same production source in the first run. MAUI Clean193
 and Smoke119 passed0fail/skip/native0 (`scoped-contact-clean-01`,
 `scoped-contact-smoke-01`). These are native in-process source fixtures, not
 physical delivery, an Android speed measurement, or final full acceptance.
-New matching device builds/observations are pending; installed-source evidence
-below still belongs to its own older inputs.
+Matching Windows15 and APK22 built at MAUI `7cf9d21` / Shared `acc65f1` /
+Protocol `605090b`; APK22 passed supported dry/install and restored the existing
+profile with protected-package audits. Windows15 restored the same profile and
+retained recovery status. Its explicit registration check reached Verified,
+then background state returned to Rejected. The single earlier Chats refresh
+was local-history-only, not a mailbox request. Android Add20 observed neither
+Store nor retry-choice; do not infer dispatch or noncommit from that projection.
+Settings/scroll/Verify27 subsequently observed a live verification, not success;
+closed latest Android metadata identifies genesis-admission I/O. No further
+business send or account reset followed. This build does not yet qualify the
+scoped command physically. Older evidence below retains its original inputs.
+
+Supported current-dev Verify failed with Registry readiness timeouts/503;
+independent node reads found all three mailbox hosts unavailable while ONION
+and required contact terminals remained ready. Closed Registry NTS acquisition
+logs contain quorum/interval/floor denials; no individual mailbox cause is
+claimed. Recover this retained runtime before another contact retry.
 
 The current local nine-service, three-node contour and source matrix are owned
 by the [contact checkpoint](../../deep-devops/docs/S05-CONTACT-TRANSPORT-2026-10-15.md).
