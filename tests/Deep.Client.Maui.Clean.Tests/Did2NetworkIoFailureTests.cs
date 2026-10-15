@@ -109,6 +109,7 @@ public sealed class Did2NetworkIoFailureTests
     }
 
     [Theory]
+    [InlineData("BootstrapAuthority")]
     [InlineData("AccountProof")]
     [InlineData("NetworkVerification")]
     [InlineData("PreKeyStaging")]

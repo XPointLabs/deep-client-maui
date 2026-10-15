@@ -382,6 +382,14 @@ bounded monotonic backoff; malformed signatures or corrupt floors remain
 rejected. Confirmed local account reset waits for the cancelled pipeline to
 drain; returning connectivity never creates or resets an account.
 
+The closed I/O display-stage list includes `BootstrapAuthority`, used while
+reading the signed root/time-policy lineage. Its wrapper retains the original
+typed exception as its inner cause: a typed429/503 remains eligible only for
+the existing bounded reconnect backoff/RetryAfter; generic I/O, malformed
+records and signature/floor rejection gain no retry authority. Unknown stage
+names still reject. The display wrapper must not replace an expected stage's
+transport failure with an unrelated argument error.
+
 This currently restores the isolated DID2 diagnostic composition, **not** a
 shipping MSG inbox/outbox/session graph. 46 clean and 119 smoke tests passed;
 these are not Windows/Android physical reconnect or message-delivery evidence.

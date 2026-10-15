@@ -14,7 +14,7 @@ internal static class Did2NetworkIoFailure
     internal static InvalidOperationException AtStage(string stage, IOException exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
-        if (stage is not ("AccountProof" or "NetworkVerification" or
+        if (stage is not ("BootstrapAuthority" or "AccountProof" or "NetworkVerification" or
             "PreKeyStaging" or "PreKeyPublication" or "ContactPublication" or "ContactResolution"))
             throw new ArgumentException("Unknown DID2 diagnostic stage.", nameof(stage));
 

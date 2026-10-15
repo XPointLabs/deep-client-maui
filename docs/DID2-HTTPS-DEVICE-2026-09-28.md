@@ -62,8 +62,18 @@ claim-read guard now has four fixed diagnostic reasons with unchanged predicate
 order/boundaries; no time values or identifiers are emitted. Neither source
 change is installed evidence or a confirmed fix for the physical refusal yet.
 Shared focused runs passed10/0/0 and2/0/0/native0, including the actual owned
-application StartContact/receive/lost-ACK fixtures. Current MAUI qualification
-and physical observation of this source candidate remain pending.
+application StartContact/receive/lost-ACK fixtures. MAUI `a2bc906` passed
+Clean190/0/0 and Smoke119/0/0/native0 (`prepared-contact-clean-01`,
+`prepared-contact-smoke-01`) with Shared `09f5c1d`, Protocol `605090b`.
+Matching APK20 SHA256
+`ed05ca5cd5ff379af9434537671ecf78f1574b97525b5641fce4e87a29437d9b`
+was installed, launched and preserved the protected packages. Cold Add18 restored
+the existing retry choice without dispatch. Add19 retried that same intent;
+Inspect84 observed an error, no Store, retry/stop still available. New closed
+metadata identifies `DeepIdV2PermanentContactResolveVerifier.VerifyAsync / IL1039`
+before draft preparation. Matched input places it at the combined current
+view/placement-hash/request-within-placement-lifetime guard. It does not prove
+which predicate failed, or a completed speedup; no new intent was created.
 
 Windows build11 retained its profile/recovery and reached background Verified;
 one mailbox refresh at19:09:34Z ended in OutcomeUnknown at
@@ -77,6 +87,20 @@ or send occurred. Protocol
 boundary/public-surface focused15 passed. Final full gates and physical
 contacts/messages/files/groups remain open; none of these diagnostics is release
 acceptance or permission to publish.
+
+Windows build13 (`a2bc906`/`09f5c1d`) replaced build11 through normal close/launch,
+without reset; the retained profile/recovery remained present. Its first refresh
+failed `OutcomeUnknown / ForwardAsync / IL1509` at20:33:35Z, with no contact
+delivery claimed. Background diagnostics then found a separate source bug:
+`ReadBootstrapAsync` calls `HttpStageAsync("BootstrapAuthority")`, but the closed
+I/O wrapper did not accept that stage. Its `ArgumentException` discarded the
+transport cause and could stop reconnect as Rejected. The new two-case regression
+failed exactly there for typed429/503 (`bootstrap-stage-red-01`, native1), then
+Clean193/0/0/native0 passed after accepting the already used fixed stage
+(`bootstrap-stage-clean-01`). Tests retain the typed cause, actual scheduling,
+RetryAfter and existing malformed-floor no-retry coverage. The original red
+receipt stays unchanged. This source fix is not installed/physically qualified
+yet and does not fix the independent ContactResolve placement refusal.
 
 `eng/Invoke-PhysicalDid2AccountProbeAndroid.ps1` adds HTTPS-only phases:
 Contacts/SetPeerAddress/AddContact, Chats/RefreshConversations/OpenOnlyConversation,

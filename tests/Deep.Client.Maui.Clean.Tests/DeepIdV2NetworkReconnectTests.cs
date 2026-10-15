@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
 using Deep.Client.Maui.Core.Services;
+using Deep.Client.Maui.Services;
 using Deep.Client.Shared.Services.AccountDirectoryV2;
 
 namespace Deep.Client.Maui.Clean.Tests;
@@ -313,6 +314,27 @@ public sealed class DeepIdV2NetworkReconnectTests
         },status);
         rejected.Resume(); await WaitFor(rejected,DeepIdV2ReconnectState.Rejected);
         await Task.Delay(200); Assert.Equal(1,rejectedCalls);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task WrappedBootstrapUnavailableRetainsTypedCauseAndRetryAfter(HttpStatusCode code)
+    {
+        var cause = new DeepIdV2DirectoryProofUnavailableException(code, TimeSpan.FromSeconds(3));
+        var wrapped = Did2NetworkIoFailure.AtStage("BootstrapAuthority", cause);
+        Assert.Same(cause, wrapped.InnerException);
+        var status = new Network(); var calls = 0;
+        await using var reconnect = new DeepIdV2NetworkReconnect(_ => {
+            if (Interlocked.Increment(ref calls) == 1) throw wrapped;
+            return Task.CompletedTask;
+        }, status);
+        reconnect.Resume(); await WaitFor(reconnect, DeepIdV2ReconnectState.Unavailable);
+        var manual = reconnect.VerifyNowAsync();
+        await Task.Delay(200); Assert.Equal(1, calls);
+        await manual.WaitAsync(TimeSpan.FromSeconds(6));
+        await WaitFor(reconnect, DeepIdV2ReconnectState.Verified);
+        Assert.Equal(2, calls);
     }
 
     [Fact]
