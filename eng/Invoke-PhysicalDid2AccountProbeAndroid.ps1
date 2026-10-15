@@ -15,8 +15,10 @@ param(
     [ValidateSet('Did2Account', 'Did2Https')]
     [string]$Lane = 'Did2Account',
     [string]$ApkPath,
-    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset', 'BeginIncompatibleReset', 'ConfirmIncompatibleReset', 'ScrollSettingsUp')]
+    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset', 'BeginIncompatibleReset', 'ConfirmIncompatibleReset', 'ScrollSettingsUp', 'Contacts', 'SetPeerAddress', 'AddContact', 'Chats', 'RefreshConversations', 'OpenOnlyConversation', 'AcceptContact', 'SetQaText', 'SendQaText', 'RefreshMessages')]
     [string]$Phase = 'Install',
+    [ValidatePattern('^deep1[a-z0-9]{50,180}$')][string]$PeerAddress,
+    [ValidateSet('DID2 Android QA 20261015 A')][string]$QaText,
     [switch]$ConfirmIsolatedAccountReset,
     [switch]$AllowProbeUpdate,
     [switch]$Execute
@@ -29,6 +31,17 @@ if ($Phase -in @('ConfirmReset', 'ConfirmIncompatibleReset') -and -not $ConfirmI
 }
 if ($ConfirmIsolatedAccountReset -and $Phase -notin @('ConfirmReset', 'ConfirmIncompatibleReset')) {
     throw 'Reset confirmation is accepted only by an explicit confirmation phase.'
+}
+$messagingPhases = @('Contacts', 'SetPeerAddress', 'AddContact', 'Chats', 'RefreshConversations',
+    'OpenOnlyConversation', 'AcceptContact', 'SetQaText', 'SendQaText', 'RefreshMessages')
+if ($Phase -in $messagingPhases -and $Lane -cne 'Did2Https') {
+    throw 'Messaging phases require the dedicated DID2 HTTPS lane.'
+}
+if ($PSBoundParameters.ContainsKey('PeerAddress') -ne ($Phase -ceq 'SetPeerAddress')) {
+    throw 'Only SetPeerAddress requires the explicit public test peer address.'
+}
+if ($PSBoundParameters.ContainsKey('QaText') -ne ($Phase -ceq 'SetQaText')) {
+    throw 'Only SetQaText requires a fixed synthetic test message.'
 }
 
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -230,7 +243,10 @@ function Read-ProbeUi {
     $controls = @()
     foreach ($id in @('Welcome.DisplayName', 'Welcome.CreateAccount', 'Did2Workspace.Settings', 'Did2Workspace.MobileSettings',
         'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus', 'Did2Probe.ResetAccount',
-        'Startup.Error', 'Startup.ResetIncompatibleDid2')) {
+        'Startup.Error', 'Startup.ResetIncompatibleDid2', 'Did2Workspace.Contacts', 'Did2Workspace.MobileContacts',
+        'Did2Workspace.Chats', 'Did2Workspace.MobileChats', 'Contacts.Address', 'Contacts.Add',
+        'Conversations.Refresh', 'Conversations.Items', 'Contacts.Accept', 'Conversation.Refresh',
+        'Message.Text', 'Message.Send', 'Messages.Items', 'Messaging.Status', 'Messaging.Error', 'Messaging.Busy')) {
         $matches = @($nodes | Where-Object {
             $_.GetAttribute('resource-id') -ceq "${probePackage}:id/$id" -or
             $_.GetAttribute('content-desc') -ceq $id
@@ -266,6 +282,17 @@ function Read-ProbeUi {
             stageFailure=$(if ($failure.Success) { $failure.Value } else { $null })
             routeTimeCoverageFailure=(Get-ProbeRouteTimeCoverageFailure $text)
             networkOutcome=(Get-ProbeNetworkOutcome $text)
+            messagingErrorPresent=(@($nodes | Where-Object {
+                ($_.GetAttribute('resource-id') -ceq "${probePackage}:id/Messaging.Error" -or
+                    $_.GetAttribute('content-desc') -ceq 'Messaging.Error') -and
+                -not [string]::IsNullOrWhiteSpace($_.GetAttribute('text'))
+            }).Count -ne 0)
+            contactRequestStored=$text.Contains('Запрос контакта сохранён в сети. Ожидаем принятия.')
+            contactAcceptanceStored=$text.Contains('Принятие контакта сохранено в сети')
+            messageStored=$text.Contains('Сообщение сохранено в сети')
+            synchronizationCompleted=$text.Contains('Синхронизация завершена')
+            androidQaTextVisible=($nodes.GetAttribute('text') -ccontains 'DID2 Android QA 20261015 A')
+            windowsQaTextVisible=($nodes.GetAttribute('text') -ccontains 'DID2 Windows QA 20261015 A')
             resetConfirmationVisible=$resetConfirmationVisible
             incompatibleResetConfirmationVisible=$incompatibleResetConfirmationVisible
             incompatibleAccountVisible=($text.Contains('Изолированный тестовый DID2-аккаунт не прошёл локальную проверку. Возможно, он создан до clean-break. Данные других приложений не затронуты.'))
@@ -309,7 +336,13 @@ function Click-ProbeControl($Ui, [string]$Id) {
             $_.GetAttribute('content-desc') -ceq $Id) -and $_.GetAttribute('enabled') -ceq 'true'
     }) })
     if ($nodes.Count -ne 1) { throw 'An exact enabled DID2 control is required.' }
-    $bounds = [regex]::Match($nodes[0].GetAttribute('bounds'), '^\[(\d{1,5}),(\d{1,5})\]\[(\d{1,5}),(\d{1,5})\]$')
+    Click-ProbeNode $nodes[0]
+}
+
+function Click-ProbeNode($Node) {
+    if ($Node.GetAttribute('package') -cne $probePackage -or
+        $Node.GetAttribute('enabled') -cne 'true') { throw 'An exact enabled owned node is required.' }
+    $bounds = [regex]::Match($Node.GetAttribute('bounds'), '^\[(\d{1,5}),(\d{1,5})\]\[(\d{1,5}),(\d{1,5})\]$')
     if (-not $bounds.Success) { throw 'DID2 control bounds are invalid.' }
     $left = [int]$bounds.Groups[1].Value; $top = [int]$bounds.Groups[2].Value
     $right = [int]$bounds.Groups[3].Value; $bottom = [int]$bounds.Groups[4].Value
@@ -317,6 +350,27 @@ function Click-ProbeControl($Ui, [string]$Id) {
         throw 'DID2 control bounds are outside the screen limit.'
     }
     [void](Invoke-Adb @('shell', 'input', 'tap', [string][int](($left+$right)/2), [string][int](($top+$bottom)/2)) 'DID2 control tap')
+}
+
+function Set-ProbeEmptyEditor($Ui, [string]$Id, [string]$Value) {
+    $field = @($Ui.Nodes | Where-Object {
+        ($_.GetAttribute('resource-id') -ceq "${probePackage}:id/$Id" -or $_.GetAttribute('content-desc') -ceq $Id) -and
+        $_.GetAttribute('class') -ceq 'android.widget.EditText' -and $_.GetAttribute('enabled') -ceq 'true'
+    })
+    if ($field.Count -ne 1) { throw 'One exact enabled editor is required.' }
+    # Android exposes an empty editor hint as text. Never overwrite or append
+    # to an existing user draft; only the source-defined hint is empty here.
+    $hint = if ($Id -ceq 'Contacts.Address') { 'Deep ID контакта' } else { 'Сообщение' }
+    if ($field[0].GetAttribute('text') -cnotin @('', $hint)) { throw 'The observed test editor is not empty.' }
+    Click-ProbeNode $field[0]
+    $focused = Read-ProbeUi
+    $matches = @($focused.Nodes | Where-Object {
+        $_.GetAttribute('package') -ceq $probePackage -and
+        ($_.GetAttribute('resource-id') -ceq "${probePackage}:id/$Id" -or $_.GetAttribute('content-desc') -ceq $Id) -and
+        $_.GetAttribute('class') -ceq 'android.widget.EditText' -and $_.GetAttribute('focused') -ceq 'true'
+    })
+    if ($matches.Count -ne 1) { throw 'The exact test editor did not receive focus.' }
+    [void](Invoke-Adb @('shell', 'input', 'text', $Value.Replace(' ', '%s')) 'Fill exact synthetic test editor')
 }
 
 foreach ($tool in @($adb, $aapt, $apksignerJar, $java, $apk)) {
@@ -472,6 +526,35 @@ if ($Execute) {
                         $x, [string]$to, '450') 'Scroll exact owned settings pane')
                 }
                 'VerifyNetwork' { Click-ProbeControl $ui 'Did2Probe.VerifyNetwork' }
+                { $_ -in @('Contacts', 'Chats') } {
+                    $suffix = if ($Phase -ceq 'Contacts') { 'Contacts' } else { 'Chats' }
+                    $mobile = "Did2Workspace.Mobile$suffix"
+                    $id = if (@($ui.Summary.controls | Where-Object { $_.id -ceq $mobile }).Count -eq 1) {
+                        $mobile
+                    } else { "Did2Workspace.$suffix" }
+                    Click-ProbeControl $ui $id
+                }
+                'SetPeerAddress' { Set-ProbeEmptyEditor $ui 'Contacts.Address' $PeerAddress }
+                'AddContact' { Click-ProbeControl $ui 'Contacts.Add' }
+                'RefreshConversations' { Click-ProbeControl $ui 'Conversations.Refresh' }
+                'RefreshMessages' { Click-ProbeControl $ui 'Conversation.Refresh' }
+                'AcceptContact' { Click-ProbeControl $ui 'Contacts.Accept' }
+                'SetQaText' { Set-ProbeEmptyEditor $ui 'Message.Text' $QaText }
+                'SendQaText' { Click-ProbeControl $ui 'Message.Send' }
+                'OpenOnlyConversation' {
+                    if ($ui.ImeShowing) { throw 'Dismiss the observed keyboard before selecting a conversation.' }
+                    $lists = @($ui.Nodes | Where-Object {
+                        $_.GetAttribute('resource-id') -ceq "${probePackage}:id/Conversations.Items" -or
+                        $_.GetAttribute('content-desc') -ceq 'Conversations.Items'
+                    })
+                    if ($lists.Count -ne 1) { throw 'One exact owned conversation list is required.' }
+                    $states = @($lists[0].SelectNodes('.//node') | Where-Object {
+                        $_.GetAttribute('package') -ceq $probePackage -and
+                        $_.GetAttribute('text') -cin @('Входящий запрос', 'Ожидаем принятия', 'Контакт принят')
+                    })
+                    if ($states.Count -ne 1) { throw 'Exactly one observed conversation row is required; never choose an arbitrary peer.' }
+                    Click-ProbeNode $states[0]
+                }
                 'BeginReset' { Click-ProbeControl $ui 'Did2Probe.ResetAccount' }
                 'ConfirmReset' { Click-ProbeControl $ui 'Did2Probe.ConfirmReset' }
                 'BeginIncompatibleReset' { Click-ProbeControl $ui 'Startup.ResetIncompatibleDid2' }

@@ -3,6 +3,96 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
+    public async Task AndroidMessagingEditorRejectsForeignFocusAndExistingDraftBeforeTyping()
+    {
+        // Pure parsed-function test with synthetic XML and an ADB stub, not UI evidence.
+        var script = Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1");
+        var start = new System.Diagnostics.ProcessStartInfo("pwsh")
+        { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        start.Environment["DEEP_DIAGNOSTIC_SCRIPT"] = script;
+        const string test = """
+            $ErrorActionPreference='Stop'
+            $tokens=$null;$errors=$null
+            $ast=[Management.Automation.Language.Parser]::ParseFile($env:DEEP_DIAGNOSTIC_SCRIPT,[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { throw 'Parser failed' }
+            foreach ($name in @('Click-ProbeNode','Set-ProbeEmptyEditor')) {
+                $matches=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $name},$true))
+                if ($matches.Count -ne 1) { throw 'Function scope failed' }
+                . ([scriptblock]::Create($matches[0].Extent.Text))
+            }
+            $probePackage='network.xpoint.deep.did2https'
+            $script:commands=[Collections.Generic.List[object]]::new()
+            function Invoke-Adb([string[]]$Arguments,[string]$Label) { $script:commands.Add($Arguments) }
+            function Node([string]$Package,[string]$Id,[string]$Text,[string]$Focused,[string]$Bounds='[10,20][110,120]',[string]$Enabled='true') {
+                $doc=[Xml.XmlDocument]::new()
+                $doc.LoadXml('<node/>')
+                foreach($pair in @(@('package',$Package),@('resource-id',"${probePackage}:id/$Id"),@('text',$Text),
+                    @('focused',$Focused),@('bounds',$Bounds),@('enabled',$Enabled),@('class','android.widget.EditText'))) {
+                    $doc.DocumentElement.SetAttribute($pair[0],$pair[1])
+                }
+                return $doc.DocumentElement
+            }
+            function Read-ProbeUi { return @{Nodes=@($script:focus)} }
+            foreach($id in @('Contacts.Address','Message.Text')) {
+                $hint=if($id -ceq 'Contacts.Address'){'Deep ID контакта'}else{'Сообщение'}
+                foreach($empty in @('', $hint)) {
+                    $script:commands.Clear()
+                    $field=Node $probePackage $id $empty 'false'
+                    $script:focus=Node $probePackage $id '' 'true'
+                    Set-ProbeEmptyEditor @{Nodes=@($field)} $id 'DID2 Android QA 20261015 A'
+                    if($script:commands.Count -ne 2 -or $script:commands[0][2] -cne 'tap' -or
+                        $script:commands[1][2] -cne 'text' -or $script:commands[1][3] -cne 'DID2%sAndroid%sQA%s20261015%sA') {
+                        throw 'Exact focused synthetic input failed'
+                    }
+                }
+                $script:commands.Clear();$seen=$false
+                try { Set-ProbeEmptyEditor @{Nodes=@((Node $probePackage $id 'existing draft' 'false'))} $id 'test' }
+                catch { $seen=$true }
+                if(-not $seen -or $script:commands.Count -ne 0) { throw 'Existing draft changed' }
+                $script:commands.Clear();$seen=$false
+                $script:focus=Node 'foreign.package' $id '' 'true'
+                try { Set-ProbeEmptyEditor @{Nodes=@((Node $probePackage $id '' 'false'))} $id 'test' }
+                catch { $seen=$true }
+                if(-not $seen -or $script:commands.Count -ne 1) { throw 'Foreign focused field received input' }
+            }
+            foreach($invalid in @(
+                (Node 'foreign.package' 'Message.Text' '' 'false'),
+                (Node $probePackage 'Message.Text' '' 'false' '[0,0][0,0]'),
+                (Node $probePackage 'Message.Text' '' 'false' '[0,0][110,120]' 'false'))) {
+                $script:commands.Clear();$seen=$false
+                try { Click-ProbeNode $invalid } catch { $seen=$true }
+                if(-not $seen -or $script:commands.Count -ne 0) { throw 'Invalid owned-node boundary was crossed' }
+            }
+            Write-Output 'passed'
+            """;
+        foreach (var argument in new[] { "-NoProfile", "-Command", test }) start.ArgumentList.Add(argument);
+        using var process = System.Diagnostics.Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await process.WaitForExitAsync(deadline.Token);
+        Assert.True(process.ExitCode == 0, await errors);
+        Assert.Contains("passed", await output);
+    }
+
+    [Fact]
+    public void AndroidMessagingPhasesRetainPackageProvenanceAndDoNotRecordPeerOrPayload()
+    {
+        var script = File.ReadAllText(Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1"));
+        Assert.Contains("$Phase -in $messagingPhases -and $Lane -cne 'Did2Https'", script);
+        Assert.Contains("$PSBoundParameters.ContainsKey('PeerAddress') -ne ($Phase -ceq 'SetPeerAddress')", script);
+        Assert.Contains("[ValidateSet('DID2 Android QA 20261015 A')]", script);
+        Assert.Contains("Exactly one observed conversation row is required", script);
+        Assert.Contains("$lists[0].SelectNodes('.//node')", script);
+        Assert.Contains("Click-ProbeControl $ui 'Message.Send'", script);
+        Assert.Contains("$_.GetAttribute('focused') -ceq 'true'", script);
+        Assert.Contains("Assert-SameSnapshot $before[$package] $after[$package] $package", script);
+        Assert.Contains("merge-base --is-ancestor $apkSourceCommit $commit", script);
+        Assert.DoesNotContain("peerAddress =", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("qaText =", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("deviceDeliveryVerified = $false", script);
+    }
+
+    [Fact]
     public async Task AndroidTransitionReadbackRetriesOnlyOneObservationNeverTheAction()
     {
         var script = Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1");

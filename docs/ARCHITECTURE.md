@@ -19,6 +19,17 @@ includes the account and direct-text ViewModels and their narrow interfaces.
 The older `Deep.Client.Maui.Core` project and a service file present on disk
 are not evidence that the current application composes that feature.
 
+The dedicated Android HTTPS driver now exposes bounded contact/direct-text UI
+phases in addition to account diagnostics. It still requires an explicit serial,
+exact APK/source/signing provenance, foreground ownership and before/after
+protected-package snapshots. Only one observed conversation may be selected;
+typing requires an empty exact editor and independently reobserved focus. Peer
+addresses and message contents are not included in result JSON. The only message
+input is a fixed synthetic QA marker. Each phase is one action plus observation,
+never an automatic send/accept retry; `deviceDeliveryVerified` stays false until
+separate cross-device evidence is assembled. See the
+[physical checkpoint](DID2-HTTPS-DEVICE-2026-09-28.md).
+
 | Application surface | Current source behavior |
 | --- | --- |
 | Default and Release builds | DID2 local account/custody graph; no registered network admission or conversation runtime. |

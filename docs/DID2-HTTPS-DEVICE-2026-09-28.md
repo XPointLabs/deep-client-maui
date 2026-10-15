@@ -4,6 +4,31 @@ This records an incomplete real Windows diagnostic, not messaging or release
 approval. Registry and seed1–seed3 are production infrastructure; Mr. X permits
 testing there until he explicitly reports users exist. There is no remote UAT.
 
+## Current retained-device checkpoint — 2026-10-15
+
+The current local nine-service, three-node contour and source matrix are owned
+by the [contact checkpoint](../../deep-devops/docs/S05-CONTACT-TRANSPORT-2026-10-15.md).
+Android and Windows each reached `verified-publication` on retained accounts
+with DR-0125 and the bounded Registry admission fix. Android's first verification
+after another process restart returned ContactPublication/TransportIo; preserve
+that failure and the account. It is not a completed cold-reopen gate, loss of
+commit, or permission to reset. Cross-device contacts/text/files/groups remain
+unproven; the older dated observations below do not override current evidence.
+
+`eng/Invoke-PhysicalDid2AccountProbeAndroid.ps1` adds HTTPS-only phases:
+Contacts/SetPeerAddress/AddContact, Chats/RefreshConversations/OpenOnlyConversation,
+AcceptContact, SetQaText/SendQaText/RefreshMessages. SetPeerAddress requires its
+explicit public QA peer; SetQaText accepts only `DID2 Android QA 20261015 A`.
+Inspect each fresh result, dismiss only an observed keyboard before another
+control, and never repeat an unknown send. The result records only closed
+statuses/marker-presence flags, not addresses, drafts or private error text.
+Selecting an ambiguous list or replacing an existing draft rejects.
+
+Dry-run before the first new phase. Current committed harness-only changes may
+use `ExpectedApkSourceCommit` for the existing signed APK only under the exact
+ancestor/changed-path checks; installation still requires a matching build.
+This does not allow compiled source differences or a stale signing/CA pin.
+
 ## VPN retry after contact rollout — 2026-10-02
 
 The focused increment adds Shared's typed genesis admission availability
