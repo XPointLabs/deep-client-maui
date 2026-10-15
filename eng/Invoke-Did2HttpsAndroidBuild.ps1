@@ -8,6 +8,7 @@ param(
     [Parameter(Mandatory)][string]$RegistryOrigin,
     [Parameter(Mandatory)][string]$BootstrapDirectory,
     [Parameter(Mandatory)][string]$RuntimeEnvironmentPath,
+    [string]$PrivateCertificateAuthorityPath,
     [Parameter(Mandatory)][string]$SigningKeyStore,
     [Parameter(Mandatory)][string]$SigningPasswordFile,
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$SigningAlias,
@@ -24,6 +25,9 @@ $common = @{}
 foreach ($name in @('ExpectedCommit', 'NetworkId', 'Xna1Pin', 'GenesisHeadPin',
     'MrXPublicKeySha256', 'RegistryOrigin', 'BootstrapDirectory', 'RuntimeEnvironmentPath')) {
     $common[$name] = $PSBoundParameters[$name]
+}
+if ($PSBoundParameters.ContainsKey('PrivateCertificateAuthorityPath')) {
+    $common.PrivateCertificateAuthorityPath = $PrivateCertificateAuthorityPath
 }
 $preflight = (& (Join-Path $PSScriptRoot 'Invoke-Did2HttpsWindowsBuild.ps1') @common) |
     ConvertFrom-Json
@@ -64,6 +68,7 @@ $result = [ordered]@{
     execute = [bool]$Execute
     installed = $false
     deviceDeliveryVerified = $false
+    privateCaSha256 = $preflight.privateCaSha256
 }
 if ($Execute) {
     $output = Join-Path $repo ('artifacts\did2-https-android\' +
@@ -90,6 +95,10 @@ if ($Execute) {
         '-p:DeepProtocolSourceCutover=true',
         '-p:BuildInParallel=false', '-p:UseSharedCompilation=false',
         '-p:Aapt2DaemonMaxInstanceCount=1', '-nodeReuse:false', '-m:1')
+    if ($null -ne $preflight.privateCaSha256) {
+        $arguments += @("-p:DeepDid2PrivateCertificateAuthority=$PrivateCertificateAuthorityPath",
+            "-p:DeepDid2PrivateCaSha256=$($preflight.privateCaSha256)")
+    }
     & dotnet @arguments
     if ($LASTEXITCODE -ne 0) { throw 'DID2 Android build failed; no package was installed.' }
     $unsigned = Join-Path $output 'build-bin\Debug\net10.0-android\android-arm64\network.xpoint.deep.did2https-Signed.apk'

@@ -34,6 +34,22 @@ project explicitly rejects that diagnostic switch for Release. A separate
 production composition remains required. A successful Debug build or local
 ViewModel test does not qualify it.
 
+The HTTPS diagnostic defaults to system-CA DNS HTTPS on the default port.
+For a retained local dev contour, both platform build scripts accept an explicit
+`PrivateCertificateAuthorityPath` containing exactly one **public** CA certificate
+(no key/PFX). They pin its DER SHA256 into the isolated non-Release build.
+Only that opt-in permits a canonical private HTTPS address/nondefault port.
+The runtime independently checks the bounded asset, CA signing usage and exact
+fingerprint before using Shared's app-scoped private-CA transport factory.
+Hostname/SAN, server authentication, chain and revocation checks remain required;
+there is no arbitrary certificate callback, global root installation, HTTP or
+missing-trust fallback. Release rejects these inputs. Signed bootstrap/network
+authority and account-state isolation remain separate requirements. Both Windows
+and Android HTTPS diagnostics select a network-scoped local data directory;
+switching the signed network does not reset or open another network's account.
+Previously stored diagnostic data is left untouched, not migrated. This is
+configuration support, not physical E2E acceptance.
+
 The diagnostic now reads conversation/message history directly from the Shared
 protected local owner without bootstrap HTTP or fresh endpoint proofs.
 `CanReadLocal` is separate from network `IsReady`; loss of network verification

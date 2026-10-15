@@ -27,6 +27,7 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
     private const string HeadPinKey = "DeepDid2CanaryAdh1Pin";
 #if DEEP_DID2_HTTPS_ADMISSION
     private const string HttpsOriginKey = "DeepDid2HttpsOrigin";
+    private const string PrivateCaPinKey = "DeepDid2PrivateCaSha256";
 #endif
 
     public async Task VerifyAsync(DeepIdV2AccountService accounts,
@@ -39,8 +40,7 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
         var protectedFloor = await accounts.OpenDirectoryLkgStoreAsync(
             authority, exactHead, headPin, cancellationToken);
 
-        var factory = new HttpServiceTransportFactory(
-            HttpServiceEndpointPolicy.Production);
+        var factory = await CreateHttpFactoryAsync(cancellationToken);
         var publicClientOptions = DiagnosticHttpOptions();
         using var admission = factory.CreateDeepIdV2GenesisAdmissionClient(
             origin, clientOptions: publicClientOptions);
@@ -168,8 +168,7 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
             cancellationToken);
         var protectedFloor = await accounts.OpenDirectoryLkgStoreAsync(
             authority, exactHead, headPin, cancellationToken);
-        var factory = new HttpServiceTransportFactory(
-            HttpServiceEndpointPolicy.Production);
+        var factory = await CreateHttpFactoryAsync(cancellationToken);
         using var verifier = DeepMlDsa65CandidateVerifierFactory
             .OpenForCurrentProcess();
         var clock = new CanaryMonotonicClock();
@@ -198,15 +197,7 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
     private static string ValidatedOrigin()
     {
 #if DEEP_DID2_HTTPS_ADMISSION
-        var origin = Metadata(HttpsOriginKey);
-        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) ||
-            uri.Scheme != Uri.UriSchemeHttps || uri.IsLoopback ||
-            uri.IsDefaultPort is false || uri.AbsolutePath != "/" ||
-            uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
-            uri.UserInfo.Length != 0 || uri.HostNameType != UriHostNameType.Dns)
-            throw new InvalidOperationException(
-                "The DID2 physical UAT build requires a canonical HTTPS authority origin.");
-        return origin;
+        return Did2HttpsBuildTrust.RequireOrigin(Metadata(HttpsOriginKey), PrivateCaPin());
 #else
         var origin = Metadata(OriginKey);
         if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) ||
@@ -219,6 +210,42 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
         return origin;
 #endif
     }
+
+    private static async Task<HttpServiceTransportFactory> CreateHttpFactoryAsync(CancellationToken ct)
+    {
+        var factory = new HttpServiceTransportFactory(HttpServiceEndpointPolicy.Production);
+#if DEEP_DID2_HTTPS_ADMISSION
+        var pin = PrivateCaPin();
+        if (pin.Length != 0)
+        {
+            // An explicit public CA asset, not an arbitrary TLS callback, mutable
+            // handler, public leaf pin, global ROOT import or missing-trust retry.
+            var encoded = await ReadAssetAsync("did2_private_ca.bin", Did2HttpsBuildTrust.MaximumCertificateBytes, ct);
+            var der = Did2HttpsBuildTrust.RequirePublicRoot(encoded, pin);
+            factory = factory.WithAppScopedPrivateCertificateAuthority(der);
+        }
+#else
+        ct.ThrowIfCancellationRequested();
+        await Task.CompletedTask;
+#endif
+        return factory;
+    }
+
+#if DEEP_DID2_HTTPS_ADMISSION
+    private static byte[] PrivateCaPin()
+    {
+        var values = typeof(DeepIdV2CanaryNetworkAdmission).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Where(value => value.Key == PrivateCaPinKey).ToArray();
+        if (values.Length == 0) return [];
+        if (values.Length != 1 || values[0].Value is not { Length: 64 } value ||
+            value.Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f')))
+            throw new InvalidOperationException("The explicit private CA fingerprint is invalid.");
+        var pin = Convert.FromHexString(value);
+        if (pin.AsSpan().IndexOfAnyExcept((byte)0) < 0)
+            throw new InvalidOperationException("The explicit private CA fingerprint is zero.");
+        return pin;
+    }
+#endif
 
     private static async Task<(XPointNetworkGenesisPin GenesisPin,
         VerifiedXPointNetworkAuthority Authority,

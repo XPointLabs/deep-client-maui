@@ -19,6 +19,14 @@ internal static class AppDataPath
         Directory.CreateDirectory(physicalRoot);
         WindowsMailboxAccessControl.EnsurePrivateAppDataRoot(physicalRoot);
         return physicalRoot;
+#elif DEEP_DID2_HTTPS_ADMISSION && ANDROID
+        // A different signed dev network must not open the older HTTPS QA
+        // account merely because both binaries use the diagnostic package.
+        var physicalRoot = Did2ProbeStorageScope.ResolvePhysicalRoot(
+            FileSystem.AppDataDirectory, ActiveBuildNetworkId.Load().Span);
+        RejectReparsePoints(physicalRoot);
+        Directory.CreateDirectory(physicalRoot);
+        return physicalRoot;
 #else
 #if DEEP_DID2_ACCOUNT_PROBE && WINDOWS
         var localAppData = Environment.GetFolderPath(

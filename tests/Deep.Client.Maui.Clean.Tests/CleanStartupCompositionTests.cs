@@ -214,7 +214,7 @@ public sealed class CleanStartupCompositionTests
             StringComparison.Ordinal);
         Assert.Contains("#if DEEP_DID2_CANARY_ADMISSION || DEEP_DID2_HTTPS_ADMISSION",
             startup, StringComparison.Ordinal);
-        Assert.Contains("uri.Scheme != Uri.UriSchemeHttps || uri.IsLoopback",
+        Assert.Contains("Did2HttpsBuildTrust.RequireOrigin(Metadata(HttpsOriginKey), PrivateCaPin())",
             admission, StringComparison.Ordinal);
         Assert.Contains("DeepIdV2DirectoryBootstrapVerifier.RestoreGenesis",
             admission, StringComparison.Ordinal);
@@ -280,6 +280,7 @@ public sealed class CleanStartupCompositionTests
                 StringComparison.Ordinal) == true);
         var paths = ReadSource(Path.Combine("Services", "AppDataPath.cs"));
         Assert.Contains("#if DEEP_DID2_HTTPS_ADMISSION && WINDOWS", paths);
+        Assert.Contains("#elif DEEP_DID2_HTTPS_ADMISSION && ANDROID", paths);
         Assert.Contains("Did2ProbeStorageScope.ResolvePhysicalRoot(", paths);
         Assert.True(paths.IndexOf("RejectReparsePoints(physicalRoot)", StringComparison.Ordinal)
             < paths.IndexOf("Directory.CreateDirectory(physicalRoot)", StringComparison.Ordinal));
@@ -297,7 +298,7 @@ public sealed class CleanStartupCompositionTests
     }
 
     [Fact]
-    public void Did2HttpsAndroidUsesSeparatePackageAndSystemTrust()
+    public void Did2HttpsAndroidUsesSeparatePackageAndDefaultSystemTrust()
     {
         var project = System.Xml.Linq.XDocument.Parse(ReadSource("Deep.Client.Maui.csproj"));
         var package = project.Descendants("ApplicationId").Single(value =>
@@ -361,6 +362,39 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("'android.widget.ScrollView'", installer);
         Assert.DoesNotContain("uninstall", installer);
         Assert.DoesNotContain("pm clear", installer);
+    }
+
+    [Fact]
+    public void ExplicitPrivateCaIsBoundedPinnedAndCannotEnterReleaseOrLoopbackProbe()
+    {
+        var project = System.Xml.Linq.XDocument.Parse(ReadSource("Deep.Client.Maui.csproj"));
+        var group = project.Root!.Elements("ItemGroup").Single(value => value.Elements("MauiAsset")
+            .Any(asset => (string?)asset.Attribute("LogicalName") == "did2_private_ca.bin"));
+        var condition = (string?)group.Attribute("Condition");
+        Assert.Contains("'$(DeepDid2HttpsAdmission)' == 'true'", condition);
+        Assert.Contains("'$(DeepPhysicalE2E)' == 'true'", condition);
+        Assert.Contains("'$(Configuration)' != 'Release'", condition);
+        Assert.Contains(group.Elements("AssemblyMetadata"), value =>
+            (string?)value.Attribute("Include") == "DeepDid2PrivateCaSha256");
+        var gate = project.Root.Elements("Target").Single(value =>
+            (string?)value.Attribute("Name") == "RejectUnsafeDid2PrivateCertificateAuthority");
+        Assert.Contains(gate.Elements("Error"), value =>
+            ((string?)value.Attribute("Condition"))?.Contains("'$(Configuration)' == 'Release'", StringComparison.Ordinal) == true);
+        Assert.Contains(gate.Elements("Error"), value =>
+            ((string?)value.Attribute("Condition"))?.Contains("!Exists('$(DeepDid2PrivateCertificateAuthority)')", StringComparison.Ordinal) == true);
+        var admission = ReadSource(Path.Combine("Services", "DeepIdV2CanaryNetworkAdmission.cs"));
+        Assert.Contains("Did2HttpsBuildTrust.RequirePublicRoot(encoded, pin)", admission);
+        Assert.Contains("WithAppScopedPrivateCertificateAuthority(der)", admission);
+        Assert.Equal(2, admission.Split("await CreateHttpFactoryAsync(cancellationToken)").Length - 1);
+        var messaging = ReadSource(Path.Combine("Services", "DeepIdV2CanaryNetworkAdmission.Messaging.cs"));
+        Assert.Contains("await CreateHttpFactoryAsync(ct)", messaging);
+        foreach (var name in new[] { "Invoke-Did2HttpsWindowsBuild.ps1", "Invoke-Did2HttpsAndroidBuild.ps1" })
+        {
+            var script = File.ReadAllText(Path.Combine(FindRepository(), "eng", name));
+            Assert.Contains("[string]$PrivateCertificateAuthorityPath", script);
+            Assert.Contains("-p:DeepDid2PrivateCertificateAuthority=", script);
+            Assert.Contains("-p:DeepDid2PrivateCaSha256=", script);
+        }
     }
 
     [Fact]

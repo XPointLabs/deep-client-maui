@@ -125,6 +125,18 @@
     <AssemblyMetadata Include="DeepDid2CanaryNetworkId" Value="$(DeepDid2CanaryNetworkId)" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(DeepDid2HttpsAdmission)' == 'true' And '$(DeepPhysicalE2E)' == 'true' And '$(Configuration)' != 'Release' And '$(DeepDid2PrivateCertificateAuthority)' != ''">
+    <MauiAsset Include="$(DeepDid2PrivateCertificateAuthority)" LogicalName="did2_private_ca.bin" />
+    <AssemblyMetadata Include="DeepDid2PrivateCaSha256" Value="$(DeepDid2PrivateCaSha256)" />
+  </ItemGroup>
+  <Target Name="RejectUnsafeDid2PrivateCertificateAuthority" BeforeTargets="PrepareForBuild"
+          Condition="'$(DeepDid2PrivateCertificateAuthority)$(DeepDid2PrivateCaSha256)' != ''">
+    <Error Condition="'$(DeepDid2HttpsAdmission)' != 'true' Or '$(DeepPhysicalE2E)' != 'true' Or '$(Configuration)' == 'Release'"
+           Text="Explicit app-scoped private CA trust is restricted to the isolated non-Release HTTPS physical diagnostic." />
+    <Error Condition="'$(DeepDid2PrivateCertificateAuthority)' == '' Or !Exists('$(DeepDid2PrivateCertificateAuthority)') Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2PrivateCaSha256)', '^[0-9a-f]{64}$')) Or '$(DeepDid2PrivateCaSha256)' == '0000000000000000000000000000000000000000000000000000000000000000'"
+           Text="Explicit private trust requires both its public CA asset and exact nonzero lowercase DER SHA256; runtime independently validates them." />
+  </Target>
+
   <PropertyGroup Condition="'$(DeepDid2PeerContactFile)' != '' And '$(DeepDid2CanaryAdmission)' == 'true' And '$(DeepDid2AccountProbe)' == 'true' And '$(DeepLocalDev)' == 'true' And '$(Configuration)' != 'Release'">
     <DefineConstants>$(DefineConstants);DEEP_DID2_PEER_FIXTURE</DefineConstants>
   </PropertyGroup>
@@ -162,8 +174,10 @@
           Condition="'$(DeepDid2HttpsAdmission)' == 'true'">
     <Error Condition="'$(DeepPhysicalE2E)' != 'true' Or '$(DeepDid2AccountProbe)' == 'true' Or '$(DeepDid2CanaryAdmission)' == 'true' Or '$(Configuration)' == 'Release'"
            Text="DID2 HTTPS admission is available only in the non-Release physical E2E package, without the loopback probe." />
-    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2HttpsOrigin)', '^https://[a-z0-9.-]+/$'))"
+    <Error Condition="'$(DeepDid2PrivateCertificateAuthority)' == '' And !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2HttpsOrigin)', '^https://[a-z0-9.-]+/$'))"
            Text="DID2 physical UAT admission requires a canonical DNS HTTPS origin." />
+    <Error Condition="'$(DeepDid2PrivateCertificateAuthority)' != '' And !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2HttpsOrigin)', '^https://([a-z0-9.-]+|\[[0-9a-f:]+\])(:[0-9]{1,5})?/$'))"
+           Text="Explicit private trust still requires a canonical HTTPS root origin; build preflight and runtime enforce URI bounds." />
     <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2CanaryXna1Pin)', '^[0-9a-f]{64}$')) Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(DeepDid2CanaryAdh1Pin)', '^[0-9a-f]{64}$'))"
            Text="DID2 physical UAT admission requires exact lowercase public bootstrap pins." />
     <Error Condition="'$(DeepDid2BootstrapDirectory)' == '' Or !Exists('$(DeepDid2BootstrapDirectory)\xna1.0000.bin') Or !Exists('$(DeepDid2BootstrapDirectory)\dts1.0000.bin') Or !Exists('$(DeepDid2BootstrapDirectory)\did2-genesis-adh1.bin')"
