@@ -70,9 +70,12 @@ The scheduling cases use controlled delegates, not network/physical evidence.
 Matched Windows/Android builds and retained-device retest remain required.
 
 Only the non-Release HTTPS QA composition subscribes a messaging failure
-observer. It sends bounded category/depth/code-method/line metadata to the
-existing bounded diagnostic log; it never reads exception Message/Data/ToString
-or emits a source-file path. The UI keeps its closed error text. The observer
+observer. It sends bounded category/depth/code-method/line/IL-offset metadata to
+the existing bounded diagnostic log, never source paths or private error text.
+For an exact built-in CryptographicException only, fixed owned contact-guard
+literals are mapped to closed diagnostic codes; unknown/private messages remain
+Unclassified and custom getters are never invoked. Data/ToString are not read.
+These labels cannot authenticate a remote failure or change retry. The UI keeps its closed error text. The observer
 does not change business state, retry, cancellation or authority and cannot mask
 the original failure if diagnostics itself fails. The shipping composition does
 not register it. `business-diagnostics-clean-02` passed160/0/0/native0; these
@@ -80,6 +83,8 @@ privacy/observer tests are not device delivery evidence.
 `business-diagnostics-windows-compile-01` compiled the matching working tree
 with0 warnings/errors; compile-only is neither an installed artifact nor release
 qualification. The earlier158-case receipt remains unchanged.
+`business-guard-diagnostics-clean-01` passed174/0/0/native0 for the narrowed
+guard/IL metadata slice. A diagnostic guard label is not an authenticated result.
 
 Network suspension follows actual `Window.Stopped`/`Destroying`, not loss of
 focus through `Deactivated`; resume/activation is idempotent for an already

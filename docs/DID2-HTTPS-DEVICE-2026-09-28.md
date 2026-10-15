@@ -128,6 +128,19 @@ bounded metadata observer is being qualified to locate that error without
 logging exception text, payloads, identities or file paths. No reset or crypto
 guard weakening is authorized by this observation.
 
+QA-only observer MAUI `ab1b15f` compiled with Windows0 warnings/errors and
+Clean160; Android build09/install09 preserved the profile. AddContact04 reused
+the same intent and Inspect37 again ended with a protected-state UI failure.
+Bounded sandbox metadata locates it in
+`ApplicationCoreVerifier.RequireContactHelloEndpointBindingsAsync` called by
+`PrepareInitialContactDraftAsync` / `PrepareOwnInitialContactDraftAsync`.
+Android supplied no PDB source line. No fifth send has occurred. The next QA
+metadata slice distinguishes the existing endpoint/XUR/freshness guards and
+records a static IL offset; it does not loosen any of those checks or authorize
+retained/historical facts as new-work authority. Windows independently completed
+another empty read after the attempt; absence of a local conversation is not
+remote noncommit evidence.
+
 ## VPN retry after contact rollout — 2026-10-02
 
 The focused increment adds Shared's typed genesis admission availability
