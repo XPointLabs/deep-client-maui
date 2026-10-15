@@ -75,6 +75,7 @@ $result = [ordered]@{
     runtimeIdentifier = 'android-arm64'
     configuration = 'Debug'
     managedExecutionProfile = 'optimized-jit'
+    incrementalBuild = $false
     releaseEvidence = $false
     signerSha256 = $ExpectedSignerSha256
     status = 'preflight'
@@ -95,7 +96,11 @@ if ($Execute) {
         if ([IO.Path]::GetDirectoryName($cursor) -ceq $cursor) { break }
     }
     [void][IO.Directory]::CreateDirectory($output)
-    $arguments = @('build', (Join-Path $repo 'src\Deep.Client.Maui\Deep.Client.Maui.csproj'),
+    # Output is fresh per run, but Android JNI/runtime intermediates otherwise
+    # live in the shared project obj directory. Rebuild the graph so a source
+    # or execution-profile change cannot package stale native registration.
+    # Do not clear package data or give all references one intermediate path.
+    $arguments = @('build', (Join-Path $repo 'src\Deep.Client.Maui\Deep.Client.Maui.csproj'), '--no-incremental',
         '-c', 'Debug', '-f', 'net10.0-android', '-p:RuntimeIdentifier=android-arm64',
         '-p:UseInterpreter=false', '-p:AndroidUseInterpreter=false', '-p:Optimize=true',
         '-p:AndroidPackageFormats=apk', '-p:DeepPhysicalE2E=true', '-p:DeepLocalDev=false',

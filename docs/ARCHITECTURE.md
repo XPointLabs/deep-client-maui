@@ -267,6 +267,11 @@ private-CA and Release rejection rules, but explicitly uses optimized Mono JIT
 A restricted Android-only project profile and pre-build guard reject overrides
 that restore interpretation or disable optimization. The build receipt labels
 `optimized-jit` and `releaseEvidence=false`; this does not qualify shipping.
+The supported builder uses `dotnet build --no-incremental` and records
+`incrementalBuild=false`. Fresh APK output alone does not isolate the project's
+Android JNI/runtime intermediates. Regenerating that graph avoids packaging
+stale registration after source/profile changes without touching device data
+or assigning colliding intermediate paths to project references.
 Ordinary development Debug, Windows and actual Release profiles are unchanged.
 [Microsoft's build-property reference](https://learn.microsoft.com/en-us/dotnet/android/building-apps/build-properties#androiduseinterpreter)
 documents the Mono Debug interpreter default. Actual SDK evaluation on this

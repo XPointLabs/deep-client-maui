@@ -510,6 +510,8 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("'-p:AndroidUseInterpreter=false'", builder);
         Assert.Contains("'-p:Optimize=true'", builder);
         Assert.Contains("managedExecutionProfile = 'optimized-jit'", builder);
+        Assert.Contains("'--no-incremental'", builder);
+        Assert.Contains("incrementalBuild = $false", builder);
         Assert.Contains("releaseEvidence = $false", builder);
     }
 
