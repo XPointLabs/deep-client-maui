@@ -237,6 +237,19 @@ UI authorization flags enable controls only; Shared independently verifies every
 operation. Errors use fixed sanitized text. Explicit contact retry reuses the
 actual protected intent across restart; unknown text outcomes keep the same
 operation/text and cannot be replaced by a different send.
+
+Contact retry stopping maps the existing
+[stopped-work contract](../../docs/architecture/TRANSPORT-NEUTRAL-MESSAGING.md#841-sendattempt-transitions)
+to `CancelOwnInitialContactAsync`, through the same foreground network lane and
+independently current account authority. The key-free operation projection adds
+read-only `IsStopped`; it is not authorization. Cold Add first discovers the
+retained nonstopped intent and offers explicit Retry or `Contacts.StopRetry`,
+without dispatch. A failed/lost stop reply retains the original UI intent.
+Only completed owned stop removes that UI choice, and only a subsequent Add
+creates a different logical request. Stopped originals, uncertainty and replay
+floors remain with their existing retention owners; no reset, recall, expiry
+extension, new journal generation or automatic remint. The UI explains that
+stopping retries does not withdraw an already accepted remote request.
 [DR-0067](../../docs/survival-program/decisions/DR-0067-did2-ordinary-store-completion-and-ui-retry.md)
 adds actual protected original-text/operation recovery before composer allocation
 and on conversation selection after restart. Nothing is sent automatically.

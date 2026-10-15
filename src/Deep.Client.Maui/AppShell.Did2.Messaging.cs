@@ -17,14 +17,26 @@ public sealed partial class AppShell
         };
         address.SetBinding(Editor.TextProperty, nameof(messaging.ContactAddress), BindingMode.TwoWay);
         var start = DeepTheme.SecondaryButton("Добавить контакт", "Contacts.Add");
+        start.BindingContext = messaging;
+        start.SetBinding(Button.TextProperty, nameof(messaging.StartContactCaption));
         start.Command = messaging.StartContactCommand;
+        var stop = DeepTheme.SecondaryButton("Остановить повторы", "Contacts.StopRetry");
+        stop.BindingContext = messaging;
+        stop.SetBinding(IsVisibleProperty, nameof(messaging.HasContactRetry));
+        stop.Command = messaging.StopContactRetryCommand;
+        var stopNotice = new Label
+        {
+            Text = "Остановка прекращает только повторы на этом устройстве, но не отзывает запрос у получателя.",
+            TextColor = DeepTheme.Secondary, BindingContext = messaging
+        };
+        stopNotice.SetBinding(IsVisibleProperty, nameof(messaging.HasContactRetry));
         var view = Surface("Page.Contacts", "КОНТАКТЫ", "Добавить контакт",
             Card(new VerticalStackLayout
             {
                 Spacing = 12, Children =
                 {
                     new Label { Text = "Вставьте адрес. Получатель должен принять запрос, прежде чем начнётся переписка.", TextColor = DeepTheme.Secondary },
-                    address, start, CreateMessagingStatus()
+                    address, start, stopNotice, stop, CreateMessagingStatus()
                 }
             }));
         return view;

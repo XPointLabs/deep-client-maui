@@ -76,6 +76,10 @@ public sealed class Did2ProbeVisualShellTests
             shell, StringComparison.Ordinal);
         Assert.Contains("Command = messaging.SendTextCommand", messages);
         Assert.Contains("start.Command = messaging.StartContactCommand", messages);
+        Assert.Contains("stop.Command = messaging.StopContactRetryCommand", messages);
+        Assert.Contains("\"Contacts.StopRetry\"", messages);
+        Assert.Contains("nameof(messaging.HasContactRetry)", messages);
+        Assert.Contains("nameof(messaging.StartContactCaption)", messages);
         Assert.Contains("accept.Command = messaging.AcceptContactCommand", messages);
         Assert.Contains("if (!messaging.HasRuntime) return CreateEmptyChatsSection();", messages);
         Assert.DoesNotContain("Attachment.Send", messages);

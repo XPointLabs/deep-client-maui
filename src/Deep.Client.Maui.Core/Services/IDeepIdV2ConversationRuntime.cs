@@ -10,6 +10,7 @@ public interface IDeepIdV2ConversationRuntime
 {
     Task<DeepIdV2ContactStartResult> StartAsync(DeepIdV2AccountService accounts, DeepPermanentIdV2 address,
         ReadOnlyMemory<byte> intent, CancellationToken ct = default);
+    Task StopContactRetryAsync(DeepIdV2AccountService accounts, ReadOnlyMemory<byte> intent, CancellationToken ct = default);
     Task<IReadOnlyList<DeepIdV2ConversationSnapshot>> ListAsync(DeepIdV2AccountService accounts, CancellationToken ct = default);
     Task AcceptAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, CancellationToken ct = default);
     Task<ReadOnlyMemory<byte>> QueueTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation,

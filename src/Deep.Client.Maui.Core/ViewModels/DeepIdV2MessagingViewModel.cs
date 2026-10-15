@@ -36,6 +36,7 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
         projectedAccount = account.Account?.PermanentId.CanonicalText;
         RefreshCommand = new(RefreshAsync, () => CanReadLocal && !IsBusy);
         StartContactCommand = new(StartContactAsync, () => IsReady && !IsBusy && !string.IsNullOrWhiteSpace(ContactAddress));
+        StopContactRetryCommand = new(StopContactRetryAsync, () => IsReady && !IsBusy && HasContactRetry);
         AcceptContactCommand = new(AcceptContactAsync, () => IsReady && !IsBusy && CanAccept);
         SendTextCommand = new(SendTextAsync, () => IsReady && !IsBusy && CanSend && !string.IsNullOrWhiteSpace(DraftText));
         PropertyChanged += (_, change) => { if (change.PropertyName == nameof(IsBusy)) NotifyCommands(); };
@@ -72,7 +73,9 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
     public bool HasRuntime => runtime is not null;
     public bool CanReadLocal => HasRuntime && account.Account is not null && !account.IsBusy;
     public bool IsReady => CanReadLocal && account.IsNetworkVerified;
-    public string ContactAddress { get => contactAddress; set { if (SetProperty(ref contactAddress, value)) NotifyCommands(); } }
+    public string ContactAddress { get => contactAddress; set { if (SetProperty(ref contactAddress, value)) NotifyContactRetry(); } }
+    public bool HasContactRetry => ContactPeer() is { } peer && contactIntents.ContainsKey(peer);
+    public string StartContactCaption => HasContactRetry ? "Повторить запрос" : "Добавить контакт";
     public string DraftText { get => draftText; set { if (SetProperty(ref draftText, value)) NotifyCommands(); } }
     public string Status { get => status; private set => SetProperty(ref status, value); }
     public DeepIdV2ConversationSnapshot? Selected
@@ -146,15 +149,50 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             if (!contactIntents.TryGetValue(peer, out var intent))
             {
                 var existing = (await owner.ListContactStartOperationsAsync(token))
-                    .Where(value => value.PeerDid2Hash == peer).OrderByDescending(value => value.CreatedAtUnixMilliseconds).FirstOrDefault();
+                    .Where(value => value.PeerDid2Hash == peer && !value.IsStopped).OrderByDescending(value => value.CreatedAtUnixMilliseconds).FirstOrDefault();
                 RequireCurrentOperation(token);
                 intent = existing?.LogicalIntent.ToArray() ?? NewOperation(); contactIntents.Add(peer, intent);
+                NotifyContactRetry();
+                if (existing is not null)
+                {
+                    Status = "Сохранён незавершённый запрос. Повторите его или остановите повторы. Остановка не отзывает запрос у получателя.";
+                    return;
+                }
             }
             var started = await runtime!.StartAsync(owner, address, intent, token);
             RequireCurrentOperation(token);
             await LoadConversationsAsync(owner, started.Conversation.ConversationId, token);
             Status = "Запрос контакта сохранён в сети. Ожидаем принятия.";
         }, ct);
+    }
+
+    public Task StopContactRetryAsync(CancellationToken ct = default)
+    {
+        var peer = ContactPeer();
+        return RunMessagingAsync(async token =>
+        {
+            if (peer is null || !contactIntents.TryGetValue(peer, out var intent))
+                throw new InvalidOperationException("An exact retained contact intent is required.");
+            var owner = await accounts.GetAccountsAsync(token);
+            RequireCurrentOperation(token);
+            await runtime!.StopContactRetryAsync(owner, intent, token);
+            RequireCurrentOperation(token);
+            // A failed/lost stop reply retains this exact UI retry choice. Only
+            // confirmed owned stop allows a later explicit Add to select new work.
+            contactIntents.Remove(peer); CryptographicOperations.ZeroMemory(intent);
+            NotifyContactRetry();
+            Status = "Повторы остановлены. Это не отзывает запрос у получателя. Можно отдельно добавить контакт заново.";
+        }, ct);
+    }
+
+    private string? ContactPeer()
+    {
+        try { return Convert.ToHexString(DeepPermanentIdV2.ParseCanonical(ContactAddress.Trim()).ExactDid2Hash.Span); }
+        catch (Exception error) when (error is FormatException or ArgumentException) { return null; }
+    }
+    private void NotifyContactRetry()
+    {
+        RaisePropertyChanged(nameof(HasContactRetry)); RaisePropertyChanged(nameof(StartContactCaption)); NotifyCommands();
     }
 
     public Task AcceptContactAsync(CancellationToken ct = default)
@@ -282,9 +320,10 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
     private static byte[] NewOperation()
     { var bytes = new byte[32]; do RandomNumberGenerator.Fill(bytes); while (bytes.AsSpan().IndexOfAnyExcept((byte)0) < 0); return bytes; }
     private void NotifyCommands()
-    { RefreshCommand.RaiseCanExecuteChanged(); StartContactCommand.RaiseCanExecuteChanged(); AcceptContactCommand.RaiseCanExecuteChanged(); SendTextCommand.RaiseCanExecuteChanged(); }
+    { RefreshCommand.RaiseCanExecuteChanged(); StartContactCommand.RaiseCanExecuteChanged(); StopContactRetryCommand.RaiseCanExecuteChanged(); AcceptContactCommand.RaiseCanExecuteChanged(); SendTextCommand.RaiseCanExecuteChanged(); }
     public AsyncCommand RefreshCommand { get; }
     public AsyncCommand StartContactCommand { get; }
+    public AsyncCommand StopContactRetryCommand { get; }
     public AsyncCommand AcceptContactCommand { get; }
     public AsyncCommand SendTextCommand { get; }
 }

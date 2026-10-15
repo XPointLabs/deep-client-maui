@@ -145,6 +145,46 @@ public sealed class DeepIdV2MessagingViewModelTests
         finally { Directory.Delete(directory, recursive: true); }
     }
 
+    [Fact]
+    public async Task ContactStopFailureRetainsOriginalAndConfirmedStopRequiresSeparateNewAdd()
+    {
+        // Stub command plumbing only; confirmation here is not native stop or
+        // non-delivery evidence. Native SQLCipher stop is qualified in Shared.
+        var directory = Path.Combine(Path.GetTempPath(), "deep-did2-contact-stop-ui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var accounts = new OwnedAccounts(directory);
+            var account = new DeepIdV2AccountViewModel(accounts, new UiAdmission()) { DisplayName = "UI contract" };
+            await account.CreateAccountAsync(); await account.VerifyNetworkAsync();
+            Assert.Null(account.ErrorMessage);
+            var runtime = new ThrowingRuntime();
+            var view = new DeepIdV2MessagingViewModel(accounts, account, runtime)
+                { ContactAddress = account.Account!.PermanentId.CanonicalText };
+            Assert.False(view.HasContactRetry); Assert.False(view.StopContactRetryCommand.CanExecute(null));
+            await view.StartContactAsync();
+            var original = Assert.Single(runtime.Intents);
+            Assert.True(view.HasContactRetry); Assert.Equal("Повторить запрос", view.StartContactCaption);
+            await view.StopContactRetryAsync();
+            Assert.NotNull(view.ErrorMessage); Assert.True(view.HasContactRetry);
+            Assert.Equal(original, Assert.Single(runtime.Stops)); Assert.Single(runtime.Intents);
+            await view.StartContactAsync(); Assert.Equal(original, runtime.Intents[1]);
+            view.ContactAddress = "invalid"; Assert.False(view.HasContactRetry);
+            Assert.False(view.StopContactRetryCommand.CanExecute(null));
+            await view.StopContactRetryAsync(); Assert.Single(runtime.Stops);
+            view.ContactAddress = account.Account.PermanentId.CanonicalText;
+            runtime.ConfirmStop = true;
+            await view.StopContactRetryAsync(); Assert.Null(view.ErrorMessage);
+            Assert.Equal(original, runtime.Stops[1]); Assert.Equal(2, runtime.Intents.Count);
+            Assert.False(view.HasContactRetry); Assert.Contains("не отзывает", view.Status);
+            Assert.Equal("Добавить контакт", view.StartContactCaption);
+            await view.StartContactAsync();
+            Assert.Equal(3, runtime.Intents.Count); Assert.NotEqual(original, runtime.Intents[2]);
+            await account.ResetAccountAfterConfirmationAsync(); Assert.False(view.HasContactRetry);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -233,6 +273,7 @@ public sealed class DeepIdV2MessagingViewModelTests
     {
         public int LocalReads { get; private set; }
         public int NetworkCalls { get; private set; }
+        public Task StopContactRetryAsync(DeepIdV2AccountService accounts, ReadOnlyMemory<byte> intent, CancellationToken ct = default) => throw UnexpectedNetwork();
         private Exception UnexpectedNetwork() { NetworkCalls++; return new IOException("PRIVATE network unavailable"); }
         public Task<IReadOnlyList<DeepIdV2ConversationSnapshot>> ListAsync(DeepIdV2AccountService accounts, CancellationToken ct = default)
         { LocalReads++; return accounts.ListConversationsAsync(ct); }
@@ -287,6 +328,10 @@ public sealed class DeepIdV2MessagingViewModelTests
     {
         public int Calls { get; private set; }
         public List<byte[]> Intents { get; } = [];
+        public List<byte[]> Stops { get; } = [];
+        public bool ConfirmStop { get; set; }
+        public Task StopContactRetryAsync(DeepIdV2AccountService accounts, ReadOnlyMemory<byte> intent, CancellationToken ct = default)
+        { Stops.Add(intent.ToArray()); if (!ConfirmStop) throw Failure(); return Task.CompletedTask; }
         private Exception Failure() { Calls++; return new IOException("PRIVATE payload key endpoint password"); }
         public Task<DeepIdV2ContactStartResult> StartAsync(DeepIdV2AccountService accounts, DeepPermanentIdV2 address, ReadOnlyMemory<byte> intent, CancellationToken ct = default)
         { Intents.Add(intent.ToArray()); throw Failure(); }

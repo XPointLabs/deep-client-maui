@@ -15,7 +15,7 @@ param(
     [ValidateSet('Did2Account', 'Did2Https')]
     [string]$Lane = 'Did2Account',
     [string]$ApkPath,
-    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset', 'BeginIncompatibleReset', 'ConfirmIncompatibleReset', 'ScrollSettingsUp', 'Contacts', 'SetPeerAddress', 'AddContact', 'Chats', 'RefreshConversations', 'OpenOnlyConversation', 'AcceptContact', 'SetQaText', 'SendQaText', 'RefreshMessages')]
+    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset', 'BeginIncompatibleReset', 'ConfirmIncompatibleReset', 'ScrollSettingsUp', 'Contacts', 'SetPeerAddress', 'AddContact', 'StopContactRetry', 'Chats', 'RefreshConversations', 'OpenOnlyConversation', 'AcceptContact', 'SetQaText', 'SendQaText', 'RefreshMessages')]
     [string]$Phase = 'Install',
     [ValidatePattern('^deep1[a-z0-9]{50,180}$')][string]$PeerAddress,
     [ValidateSet('DID2 Android QA 20261015 A')][string]$QaText,
@@ -32,7 +32,7 @@ if ($Phase -in @('ConfirmReset', 'ConfirmIncompatibleReset') -and -not $ConfirmI
 if ($ConfirmIsolatedAccountReset -and $Phase -notin @('ConfirmReset', 'ConfirmIncompatibleReset')) {
     throw 'Reset confirmation is accepted only by an explicit confirmation phase.'
 }
-$messagingPhases = @('Contacts', 'SetPeerAddress', 'AddContact', 'Chats', 'RefreshConversations',
+$messagingPhases = @('Contacts', 'SetPeerAddress', 'AddContact', 'StopContactRetry', 'Chats', 'RefreshConversations',
     'OpenOnlyConversation', 'AcceptContact', 'SetQaText', 'SendQaText', 'RefreshMessages')
 if ($Phase -in $messagingPhases -and $Lane -cne 'Did2Https') {
     throw 'Messaging phases require the dedicated DID2 HTTPS lane.'
@@ -244,7 +244,7 @@ function Read-ProbeUi {
     foreach ($id in @('Welcome.DisplayName', 'Welcome.CreateAccount', 'Did2Workspace.Settings', 'Did2Workspace.MobileSettings',
         'Did2Probe.VerifyNetwork', 'Settings.Identity', 'Settings.RecoveryPhraseStatus', 'Did2Probe.NetworkStatus', 'Did2Probe.ReconnectState', 'Did2Probe.ResetAccount',
         'Startup.Error', 'Startup.ResetIncompatibleDid2', 'Did2Workspace.Contacts', 'Did2Workspace.MobileContacts',
-        'Did2Workspace.Chats', 'Did2Workspace.MobileChats', 'Contacts.Address', 'Contacts.Add',
+        'Did2Workspace.Chats', 'Did2Workspace.MobileChats', 'Contacts.Address', 'Contacts.Add', 'Contacts.StopRetry',
         'Conversations.Refresh', 'Conversations.Items', 'Contacts.Accept', 'Conversation.Refresh',
         'Message.Text', 'Message.Send', 'Messages.Items', 'Messaging.Status', 'Messaging.Error', 'Messaging.Busy')) {
         $matches = @($nodes | Where-Object {
@@ -297,6 +297,8 @@ function Read-ProbeUi {
                 -not [string]::IsNullOrWhiteSpace($_.GetAttribute('text'))
             }).Count -ne 0)
             contactRequestStored=$text.Contains('Запрос контакта сохранён в сети. Ожидаем принятия.')
+            contactRetryChoicePresent=$text.Contains('Сохранён незавершённый запрос. Повторите его или остановите повторы. Остановка не отзывает запрос у получателя.')
+            contactRetryStopped=$text.Contains('Повторы остановлены. Это не отзывает запрос у получателя. Можно отдельно добавить контакт заново.')
             contactAcceptanceStored=$text.Contains('Принятие контакта сохранено в сети')
             messageStored=$text.Contains('Сообщение сохранено в сети')
             synchronizationCompleted=$text.Contains('Синхронизация завершена')
@@ -545,6 +547,7 @@ if ($Execute) {
                 }
                 'SetPeerAddress' { Set-ProbeEmptyEditor $ui 'Contacts.Address' $PeerAddress }
                 'AddContact' { Click-ProbeControl $ui 'Contacts.Add' }
+                'StopContactRetry' { Click-ProbeControl $ui 'Contacts.StopRetry' }
                 'RefreshConversations' { Click-ProbeControl $ui 'Conversations.Refresh' }
                 'RefreshMessages' { Click-ProbeControl $ui 'Conversation.Refresh' }
                 'AcceptContact' { Click-ProbeControl $ui 'Contacts.Accept' }

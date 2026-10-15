@@ -32,6 +32,9 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission : IDeepIdV2Conversa
         => RunConversationAsync(accounts, (source, token) => accounts.StartContactAsync(address, intent, source, token), ct);
     public Task<IReadOnlyList<DeepIdV2ConversationSnapshot>> ListAsync(DeepIdV2AccountService accounts, CancellationToken ct = default)
         => accounts.ListConversationsAsync(ct);
+    public async Task StopContactRetryAsync(DeepIdV2AccountService accounts, ReadOnlyMemory<byte> intent, CancellationToken ct = default)
+        => _ = await RunConversationAsync(accounts, async (source, token) =>
+        { await accounts.CancelOwnInitialContactAsync(intent, source, token); return true; }, ct);
     public async Task AcceptAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> op, CancellationToken ct = default)
         => _ = await RunConversationAsync(accounts, (source, token) => accounts.AcceptContactAsync(conversation, op, source, token), ct);
     public Task<ReadOnlyMemory<byte>> QueueTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation,
