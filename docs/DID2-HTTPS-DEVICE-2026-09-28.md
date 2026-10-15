@@ -87,6 +87,23 @@ builds and retained-device retests remain required. The older APK's MAUI-only
 ancestor guard cannot qualify a changed Shared/Protocol dependency. Bounded
 mixed-history retirement is also still open. This is not a device-delivery PASS.
 
+Matched Shared `72a86c5` / Protocol `0f295cd` / MAUI `9304da3` Windows build05
+completed its first mailbox refresh with synchronization completed, no error and
+an empty conversation list on the retained profile. Background state was Verified;
+recovery remained stored and hidden. The exact executable/assembly hashes and
+dependency commits are in `artifacts/s05-current-publication-20261015/windows-observation-02.json`;
+that is a manual observation, not a qualified release receipt or contact delivery.
+
+Android build07/install07 preserved the same account/recovery and all three
+protected packages. Verify08/Inspect26 reached verified-publication/Verified;
+refresh02/Inspect28 then ended with an incomplete-redacted messaging error,
+not the UI cancellation/integrity category. Its actual inner cause is unproven.
+Subsequent settings inspection observed background Rejected and Contacts.Add
+disabled even after the exact Windows QA peer input and keyboard dismissal.
+No second AddContact or text send occurred. Source Smoke119 passed. Continue
+diagnosing that retained device; do not infer noncommit, relax authority, reset
+the account or transfer the successful Windows read claim to Android.
+
 ## VPN retry after contact rollout — 2026-10-02
 
 The focused increment adds Shared's typed genesis admission availability
