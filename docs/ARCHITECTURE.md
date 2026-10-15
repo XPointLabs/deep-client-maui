@@ -276,6 +276,15 @@ one physical request used a 96% QA CPU sample and terminated at permanent-contac
 not a proven universal cause, timing waiver or physical delivery result.
 Starting a new UI command clears the previous command's success status before
 awaiting work, so an earlier stopped/stored label cannot describe a busy retry.
+The optimized Android package need not be debuggable; private `run-as` access
+is not assumed. Future HTTPS QA failures additionally emit only the same closed
+metadata under `Deep.Did2Qa` in Android logcat. This source-scoped diagnostic
+does not export existing private logs, change sandbox permissions or expose
+exception text/account data. Collection selects the exact QA process/tag and
+accepts only the existing bounded category/check/method/line/IL grammar.
+Permanent-time QA classification distinguishes the six fixed request/object
+boundary failures. Protocol retains the same predicate, exception type and
+windows; the labels do not authorize retries or change UI business outcomes.
 [DR-0067](../../docs/survival-program/decisions/DR-0067-did2-ordinary-store-completion-and-ui-retry.md)
 adds actual protected original-text/operation recovery before composer allocation
 and on conversation selection after restart. Nothing is sent automatically.

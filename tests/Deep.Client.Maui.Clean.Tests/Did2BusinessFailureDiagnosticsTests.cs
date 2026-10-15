@@ -69,6 +69,12 @@ public sealed class Did2BusinessFailureDiagnosticsTests
     [InlineData("ContactHello is outside the issuer/device validity interval.", "HelloCreation")]
     [InlineData("The private reply route differs from its exact current contact sender endpoint.", "MailboxEndpoint")]
     [InlineData("private credential payload and endpoint", "Unclassified")]
+    [InlineData("Permanent contact trusted interval is inverted.", "PermanentInterval")]
+    [InlineData("Permanent read issuance exceeds trusted lower time.", "PermanentIssuedLower")]
+    [InlineData("Permanent read expiry does not cover trusted upper time.", "PermanentRequestUpper")]
+    [InlineData("Permanent read lifetime exceeds 120 seconds.", "PermanentRequestLifetime")]
+    [InlineData("Permanent contact object begins after trusted lower time.", "PermanentObjectLower")]
+    [InlineData("Permanent contact object expiry does not cover trusted upper time.", "PermanentObjectUpper")]
     public void OnlyFixedOwnedGuardLiteralHasAClosedDiagnosticLabel(string message,string expected)
     {
         var entry = Assert.Single(Did2BusinessFailureDiagnostics.Capture(new CryptographicException(message)));

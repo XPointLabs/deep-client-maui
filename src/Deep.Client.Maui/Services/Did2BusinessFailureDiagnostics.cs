@@ -68,6 +68,12 @@ internal static class Did2BusinessFailureDiagnostics
             "ContactHello differs from its PQ-bound safety number." => "HelloSafety",
             "ContactHello is outside the issuer/device validity interval." => "HelloCreation",
             "The private reply route differs from its exact current contact sender endpoint." => "MailboxEndpoint",
+            "Permanent contact trusted interval is inverted." => "PermanentInterval",
+            "Permanent read issuance exceeds trusted lower time." => "PermanentIssuedLower",
+            "Permanent read expiry does not cover trusted upper time." => "PermanentRequestUpper",
+            "Permanent read lifetime exceeds 120 seconds." => "PermanentRequestLifetime",
+            "Permanent contact object begins after trusted lower time." => "PermanentObjectLower",
+            "Permanent contact object expiry does not cover trusted upper time." => "PermanentObjectUpper",
             _ => "Unclassified"
         };
 }

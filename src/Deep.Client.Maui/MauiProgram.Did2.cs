@@ -44,8 +44,7 @@ public static partial class MauiProgram
                     // The existing bounded QA observer cannot alter scheduling,
                     // cancellation, authority or the original exception.
                     try {
-                        foreach (var location in Did2BusinessFailureDiagnostics.Capture(error))
-                            CrashDiagnostics.LogInfo("Did2.NetworkFailure",location);
+                        ObserveDid2QaFailure("Did2.NetworkFailure",error);
                     } catch { }
 #endif
                     throw;
@@ -59,10 +58,7 @@ public static partial class MauiProgram
             services.GetRequiredService<DeepIdV2AccountViewModel>(),
             services.GetRequiredService<IDeepIdV2ConversationRuntime>(),
             services.GetRequiredService<DeepIdV2NetworkReconnect>(),
-            error => {
-                foreach (var location in Did2BusinessFailureDiagnostics.Capture(error))
-                    CrashDiagnostics.LogInfo("Did2.BusinessFailure",location);
-            }));
+            error => ObserveDid2QaFailure("Did2.BusinessFailure",error)));
         builder.Services.AddSingleton<IDeepIdV2ConversationRuntime>(services =>
             (DeepIdV2CanaryNetworkAdmission)services.GetRequiredService<IDeepIdV2NetworkAdmission>());
 #else
@@ -71,4 +67,21 @@ public static partial class MauiProgram
         builder.Services.AddSingleton<AppShell>();
         return builder.Build();
     }
+
+#if DEEP_DID2_HTTPS_ADMISSION
+    private static void ObserveDid2QaFailure(string channel, Exception error)
+    {
+        if (channel is not ("Did2.BusinessFailure" or "Did2.NetworkFailure"))
+            throw new ArgumentException("Unknown QA diagnostic channel.", nameof(channel));
+        foreach (var location in Did2BusinessFailureDiagnostics.Capture(error))
+        {
+            CrashDiagnostics.LogInfo(channel,location);
+#if ANDROID
+            // Optimized QA need not be debuggable. Emit only the existing
+            // closed code metadata, never export or read private log contents.
+            global::Android.Util.Log.Info("Deep.Did2Qa",channel + " " + location);
+#endif
+        }
+    }
+#endif
 }
