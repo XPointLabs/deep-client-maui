@@ -47,7 +47,29 @@ was the exact cause. Source review additionally found network suspension bound t
 every Window.Deactivated and non-idempotent activation. The next candidate binds
 actual Stopped/Resumed visibility, keeps activation idempotent, and displays only
 the closed reconnect enum so physical retest can distinguish lifecycle, offline
-and actual authority/transport failure. Clean142 passed; new builds/retest remain.
+and actual authority/transport failure. Clean142 passed.
+
+Matched `661d318` Windows build03 and signed Android build04/install04 are now
+running on the same retained profiles; Smoke119/0/0/native0 also passed. Android
+Verify07 followed by independent Inspect20 reached verified-publication and
+Verified. Public-peer input03 and keyboard dismissal03 both left Contacts.Add
+enabled. Exactly one AddContact action was submitted; Inspect22 found a terminal
+messaging error without contactRequestStored. Do not repeat the unknown request,
+infer non-delivery, reset the profile or count an enabled button as exchange.
+
+Windows performed two bounded mailbox refreshes, without contact/text submission.
+The second ended with the protected-state rejection. A short QA-process-only
+exception trace localizes its exception chain to RequireRetainedRequestWindow
+via RestoreRetainedReadRequestAsync, owned retained grant acquisition and
+SynchronizeOwnMailboxAsync. Only exception types/method names were inspected;
+private trace bytes are outside the repositories. This is a current-window
+rejection while restoring pending Retrieve custody, not proof of a bad signature
+or mailbox emptiness. DR-0084 already defines closed-unresolved acquisition and
+late-result/namespace settlement; its internal producer is not composed into
+ordinary namespace maintenance. Audit that exact closure/recovery path next,
+preserving original request/holder/floors. Do not extend the120s window or infer
+non-issuance from expiry. No Android failure cause is established by the Windows
+trace. Physical contacts/text/files/groups remain0/4; production was not changed.
 
 ## VPN retry after contact rollout — 2026-10-02
 
