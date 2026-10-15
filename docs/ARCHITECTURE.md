@@ -68,6 +68,12 @@ qualified by that application-package cleanup; the Microsoft
 [CMS signature advisory](https://github.com/advisories/GHSA-846f-f764-76mx)
 still require a patched package wherever those tools remain in use.
 
+Private-profile TLS rejections retain Shared's closed chain/CRL category.
+The public-DNS-only, always-rejecting diagnostic connection is not invoked for
+a private-root build: an unclassified failure remains `PrivateProfileUnknown`,
+not an exception about public-origin configuration. Neither path accepts TLS or
+retries with weaker certificate, name or revocation checks.
+
 The diagnostic now reads conversation/message history directly from the Shared
 protected local owner without bootstrap HTTP or fresh endpoint proofs.
 `CanReadLocal` is separate from network `IsReady`; loss of network verification

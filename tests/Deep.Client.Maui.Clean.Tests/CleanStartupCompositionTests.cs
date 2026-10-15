@@ -247,6 +247,8 @@ public sealed class CleanStartupCompositionTests
             StringComparison.Ordinal);
         Assert.Contains("Did2TlsFailureClassifier.Classify(exception)", admission,
             StringComparison.Ordinal);
+        Assert.Contains("chain == \"Unknown\" && PrivateCaPin().Length == 0", admission);
+        Assert.Contains("chain = \"PrivateProfileUnknown\"", admission);
         Assert.Contains("catch (TimeoutException exception)", admission);
         Assert.Contains("DID2 {stage} failed (Timeout).", admission);
         Assert.Contains("catch (IOException exception)", admission);

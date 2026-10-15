@@ -116,9 +116,10 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
             {
                 var chain = Did2TlsFailureClassifier.Classify(exception);
 #if DEEP_DID2_HTTPS_ADMISSION
-                if (chain == "Unknown")
+                if (chain == "Unknown" && PrivateCaPin().Length == 0)
                     chain = await Did2TlsFailureClassifier.ObserveRejectedHandshakeAsync(
                         new Uri(ValidatedOrigin()), cancellationToken).ConfigureAwait(false);
+                else if (chain == "Unknown") chain = "PrivateProfileUnknown";
 #endif
                 tls = $"; Chain {chain}";
             }

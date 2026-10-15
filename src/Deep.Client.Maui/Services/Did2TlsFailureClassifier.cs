@@ -12,7 +12,9 @@ internal static class Did2TlsFailureClassifier
 {
     private static readonly string[] KnownStatuses = ["Revoked", "NotTimeValid",
         "UntrustedRoot", "PartialChain", "RevocationStatusUnknown", "OfflineRevocation",
-        "RemoteCertificateNameMismatch", "RemoteCertificateNotAvailable"];
+        "RemoteCertificateNameMismatch", "RemoteCertificateNotAvailable",
+        "CleartextBlocked", "CrlUnavailable", "RevocationUndetermined",
+        "PlatformNotSupported", "PrivateRootValidationError", "OtherChainError"];
 
     internal static string Classify(Exception exception)
     {

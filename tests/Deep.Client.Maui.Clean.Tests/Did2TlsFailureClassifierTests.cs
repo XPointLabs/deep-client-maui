@@ -8,6 +8,13 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class Did2TlsFailureClassifierTests
 {
     [Theory]
+    [InlineData("App-scoped TLS rejected (RevocationStatusUnknown CleartextBlocked).", "RevocationStatusUnknown CleartextBlocked")]
+    [InlineData("App-scoped TLS rejected (RevocationStatusUnknown CrlUnavailable).", "RevocationStatusUnknown CrlUnavailable")]
+    [InlineData("App-scoped TLS rejected (PlatformNotSupported).", "PlatformNotSupported")]
+    public void PrivateRootRejectionsKeepClosedCauseWithoutPublicOriginFallback(string message, string expected)
+        => Assert.Equal(expected, Did2TlsFailureClassifier.Classify(new HttpRequestException("private", new AuthenticationException(message))));
+
+    [Theory]
     [InlineData("Cleartext HTTP traffic to private.example is not permitted", " CleartextBlocked")]
     [InlineData("No CRLs found for issuer private certificate", " CrlUnavailable")]
     [InlineData("Could not determine revocation status for private certificate", " RevocationUndetermined")]
