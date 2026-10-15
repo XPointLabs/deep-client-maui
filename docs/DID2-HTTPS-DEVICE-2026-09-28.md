@@ -15,6 +15,26 @@ that failure and the account. It is not a completed cold-reopen gate, loss of
 commit, or permission to reset. Cross-device contacts/text/files/groups remain
 unproven; the older dated observations below do not override current evidence.
 
+Latest diagnostic scope is MAUI `0293453`, Shared `23fbca3`, Protocol `605090b`.
+Android APK15 failed before MAUI startup with a recent exact-QA JNI missing
+implementation for `MauiApplication.n_onCreate`. A same-source APK16 built with
+fresh generated Android intermediates reopened the retained account (Inspect62).
+The previous generated cache was moved recoverably outside Git; device data,
+native floors and protected packages were not cleared. This is an observed
+cache-sensitive startup failure, not evidence of a cryptographic defect.
+The next supported-builder revision requires a nonincremental graph build;
+Clean183 passed, while its matching installed startup is still pending.
+
+APK16 AddContact12 restored the retained newer intent without dispatch; explicit
+retry13 ended at `XurWindow / RequireCurrentIssuer / IL87` with no Store observed
+(Inspect66). Exact-process/tag logcat provided only closed code metadata; no
+private file was read. StopContact02 was submitted but has no terminal evidence
+yet. It is not recall or noncommit proof. The prior first intent remains stopped.
+Windows build11 restored the retained account, but subsequent UI automation was
+stopped by physical Escape; no new Windows contact acceptance or send occurred.
+Protocol boundary/public-surface focused15 passed0fail/skip/native0. These are
+diagnostic/source observations, not contacts/messages/files/groups acceptance.
+
 `eng/Invoke-PhysicalDid2AccountProbeAndroid.ps1` adds HTTPS-only phases:
 Contacts/SetPeerAddress/AddContact, Chats/RefreshConversations/OpenOnlyConversation,
 AcceptContact, SetQaText/SendQaText/RefreshMessages. SetPeerAddress requires its
