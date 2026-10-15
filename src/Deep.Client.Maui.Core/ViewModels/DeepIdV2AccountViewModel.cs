@@ -215,8 +215,10 @@ public sealed class DeepIdV2AccountViewModel : ViewModelBase
                 throw new InvalidOperationException(
                     "Contact input changed during DID2 proof verification.");
             IsNetworkVerified = true;
-            await contactDiscovery.VerifyAsync(accounts, compactDescriptor,
-                exactDid2Hex, ct);
+            if (reconnect is null)
+                await contactDiscovery.VerifyAsync(accounts, compactDescriptor,exactDid2Hex,ct);
+            else await reconnect.RunForegroundAsync(token =>
+                contactDiscovery.VerifyAsync(accounts,compactDescriptor,exactDid2Hex,token),ct);
             if (inputRevision != Volatile.Read(ref contactInputRevision))
                 throw new InvalidOperationException(
                     "Contact input changed during DID2 proof verification.");

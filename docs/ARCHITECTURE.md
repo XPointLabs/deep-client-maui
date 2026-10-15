@@ -44,12 +44,30 @@ single pipeline; they no longer launch a second admission/publication flight.
 An idle explicit check starts a fresh flight, not a cached success. Cancelling
 one waiter does not cancel the shared owner, while suspend/offline/account-change
 still cancels the operation and all pending waiters. RetryAfter and the existing
-two-minute whole-attempt budget remain unchanged. A routine periodic refresh
+two-minute active-pipeline budget remain unchanged. A routine periodic refresh
 does not turn a previously verified UI offline while it is running; an actual
 failure/offline/invalidation still does. This UI state is advisory, never a
 freshness capability: each contact/message mutation independently obtains and
 verifies its actual proof, placement, time and protected account authority.
 This source correction requires new matched client builds and physical retest.
+
+Network-dependent contact/accept/text actions and the network part of mailbox
+refresh now share that same process-owned lane with background verification and
+account mutation. Local history/selection does not wait for it. A queued refresh
+has not begun authority/HTTP work: its existing two-minute budget starts only
+after acquiring the lane. Actual per-request/cryptographic lifetimes do not move.
+Foreground work retains its caller's UI context; offline/suspend/account revision
+changes cancel its actual token, reject stale queued work and drain the old owner
+before account mutation. A cancelled foreground waiter cannot cancel another
+background owner. Exceptions release the lane and retain their inner cause,
+while visible messaging errors remain closed text. This coordination conveys
+no authority, success, retry/non-delivery or permission to reset original work.
+The Android Rejected/foreground-cancellation observation motivated this source
+audit; it does not by itself establish this race as that device's exact cause.
+Source qualification: `artifacts/s05-current-publication-20261015/foreground-pipeline-focused-02`
+passed35/0/0/native0; `foreground-pipeline-clean-01` passed150/0/0/native0.
+The scheduling cases use controlled delegates, not network/physical evidence.
+Matched Windows/Android builds and retained-device retest remain required.
 
 Network suspension follows actual `Window.Stopped`/`Destroying`, not loss of
 focus through `Deactivated`; resume/activation is idempotent for an already

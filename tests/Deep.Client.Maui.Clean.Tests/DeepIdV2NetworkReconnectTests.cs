@@ -9,6 +9,125 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class DeepIdV2NetworkReconnectTests
 {
     [Fact]
+    public async Task ForegroundDelegateRetainsCallerContextAfterWaitingForBackgroundOwner()
+    {
+        var network = new Network();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var reconnect = new DeepIdV2NetworkReconnect(async token => {
+            entered.TrySetResult(); await finish.Task.WaitAsync(token);
+        },network);
+        reconnect.Resume(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var context = new CallerContext(); var previous = SynchronizationContext.Current;
+        Task foreground;
+        try {
+            SynchronizationContext.SetSynchronizationContext(context);
+            foreground = reconnect.RunForegroundAsync(_ => {
+                Assert.Same(context,SynchronizationContext.Current); return Task.CompletedTask;
+            });
+        } finally { SynchronizationContext.SetSynchronizationContext(previous); }
+        finish.TrySetResult(); await foreground.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Theory]
+    [InlineData("account")]
+    [InlineData("offline")]
+    [InlineData("suspend")]
+    public async Task QueuedForegroundCannotRunAfterItsWindowOrAccountRevisionChanges(string invalidation)
+    {
+        var network = new Network(); var ran = false;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var reconnect = new DeepIdV2NetworkReconnect(async _ => {
+            entered.TrySetResult(); await finish.Task;
+        },network);
+        reconnect.Resume(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var foreground = reconnect.RunForegroundAsync(_ => { ran=true; return Task.CompletedTask; });
+        if (invalidation == "account") reconnect.AccountChanged();
+        else if (invalidation == "offline") network.Set(false);
+        else reconnect.Suspend();
+        finish.TrySetResult();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => foreground.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.False(ran);
+    }
+
+    [Fact]
+    public async Task ForegroundOwnsRefreshLaneAndOfflineCancelsActualWorkAndManualWaiter()
+    {
+        var network = new Network(); var calls = 0;
+        await using var reconnect = new DeepIdV2NetworkReconnect(_ => {
+            Interlocked.Increment(ref calls); return Task.CompletedTask;
+        },network);
+        reconnect.Resume(); await WaitFor(reconnect,DeepIdV2ReconnectState.Verified);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var foreground = reconnect.RunForegroundAsync(async token => {
+            entered.TrySetResult(); await Task.Delay(Timeout.InfiniteTimeSpan,token);
+        });
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var manual = reconnect.VerifyNowAsync();
+        await Task.Delay(150);
+        Assert.Equal(1,calls); Assert.False(manual.IsCompleted);
+        Assert.Equal(DeepIdV2ReconnectState.Verified,reconnect.State);
+        network.Set(false);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => foreground.WaitAsync(TimeSpan.FromSeconds(5)));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => manual.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(DeepIdV2ReconnectState.Offline,reconnect.State);
+    }
+
+    [Fact]
+    public async Task CancelledForegroundWaiterCannotCancelBackgroundOwnerOrRunItsDelegate()
+    {
+        var network = new Network(); var calls = 0; var foregroundRan = false;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var reconnect = new DeepIdV2NetworkReconnect(async token => {
+            Interlocked.Increment(ref calls); entered.TrySetResult(); await finish.Task.WaitAsync(token);
+        },network);
+        reconnect.Resume(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var manual = reconnect.VerifyNowAsync();
+        using var stop = new CancellationTokenSource();
+        var foreground = reconnect.RunForegroundAsync(_ => { foregroundRan=true; return Task.CompletedTask; },stop.Token);
+        stop.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => foreground.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.False(foregroundRan); Assert.False(manual.IsCompleted); Assert.Equal(1,calls);
+        finish.TrySetResult(); await manual.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(DeepIdV2ReconnectState.Verified,reconnect.State);
+    }
+
+    [Fact]
+    public async Task ForegroundFailureReleasesLaneWithoutMaskingActualAuthorityRejection()
+    {
+        var network = new Network(); var calls = 0;
+        await using var reconnect = new DeepIdV2NetworkReconnect(_ => {
+            if (Interlocked.Increment(ref calls) > 1) throw new CryptographicException("Test authority rejection.");
+            return Task.CompletedTask;
+        },network);
+        reconnect.Resume(); await WaitFor(reconnect,DeepIdV2ReconnectState.Verified);
+        var failure = new IOException("Test retained outcome.");
+        var observed = await Assert.ThrowsAsync<IOException>(() => reconnect.RunForegroundAsync(_ => Task.FromException(failure)));
+        Assert.Same(failure,observed); Assert.Equal(1,calls);
+        await Assert.ThrowsAsync<CryptographicException>(() => reconnect.VerifyNowAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(DeepIdV2ReconnectState.Rejected,reconnect.State);
+    }
+
+    [Fact]
+    public async Task AccountMutationDrainsCancelledForegroundAndRejectsItsLateSuccess()
+    {
+        var network = new Network(); var mutationRan = false;
+        await using var reconnect = new DeepIdV2NetworkReconnect(_ => Task.CompletedTask,network);
+        reconnect.Resume(); await WaitFor(reconnect,DeepIdV2ReconnectState.Verified);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var foreground = reconnect.RunForegroundAsync(async _ => { entered.TrySetResult(); await finish.Task; return 7; });
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var mutation = reconnect.MutateAccountAsync(_ => { mutationRan=true; return Task.CompletedTask; });
+        try { await Task.Delay(100); Assert.False(mutationRan); }
+        finally { finish.TrySetResult(); }
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => foreground.WaitAsync(TimeSpan.FromSeconds(5)));
+        await mutation.WaitAsync(TimeSpan.FromSeconds(5)); Assert.True(mutationRan);
+    }
+
+    [Fact]
     public async Task RepeatedActivationDoesNotCancelActiveVerificationOrClearVerifiedState()
     {
         var status = new Network(); var calls = 0;
@@ -214,6 +333,15 @@ public sealed class DeepIdV2NetworkReconnectTests
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(6));
         while (reconnect.State != state) await Task.Delay(10,deadline.Token);
+    }
+    private sealed class CallerContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback callback,object? state) =>
+            ThreadPool.QueueUserWorkItem(_ => {
+                var previous = Current; SetSynchronizationContext(this);
+                try { callback(state); }
+                finally { SetSynchronizationContext(previous); }
+            });
     }
     private sealed class Network : INetworkStatusService
     {

@@ -104,6 +104,16 @@ No second AddContact or text send occurred. Source Smoke119 passed. Continue
 diagnosing that retained device; do not infer noncommit, relax authority, reset
 the account or transfer the successful Windows read claim to Android.
 
+Manual Verify09/Inspect30 recovered verified-publication/Verified. Contacts05
+then observed the retained exact peer and Add enabled; one AddContact02 retry
+ran without resetting/replacing the logical intent. Inspect32 ended in the closed
+operation-cancelled UI category, without contactRequestStored. No third send
+occurred. The existing UI already cancels active business work when background
+verification loses readiness. Source review found those two pipelines were not
+serialized despite sharing protected account/network custody; a MAUI-only
+coordination correction is being qualified. Neither this observation nor a
+scheduler unit test proves that concurrency was this physical failure's cause.
+
 ## VPN retry after contact rollout — 2026-10-02
 
 The focused increment adds Shared's typed genesis admission availability

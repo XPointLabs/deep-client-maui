@@ -23,6 +23,7 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
     private readonly TimeSpan refreshInterval;
     private readonly Task worker;
     private CancellationTokenSource? attempt;
+    private CancellationTokenSource? foregroundAttempt;
     private TaskCompletionSource? requestedVerification;
     private bool verificationWakeAllowed;
     private long revision;
@@ -62,6 +63,46 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
             return requestedVerification.Task.WaitAsync(cancellationToken);
         }
     }
+    // Scheduling only: business work still obtains its own current authority.
+    // It shares the actual refresh/mutation lane, not a second account pipeline.
+    public async Task<T> RunForegroundAsync<T>(Func<CancellationToken,Task<T>> action,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken,lifetime.Token);
+        long stamp;
+        lock (gate) { RequireForeground(); stamp = revision; }
+        // Preserve the caller's UI context: the business delegate may update
+        // its owned ViewModel after awaits. The background worker stays free
+        // to use ConfigureAwait(false) in its separate scheduling loop.
+        await pipelineGate.WaitAsync(linked.Token);
+        try {
+            lock (gate) {
+                if (stamp != revision) throw new OperationCanceledException(linked.Token);
+                RequireForeground();
+                foregroundAttempt = linked;
+            }
+            var result = await action(linked.Token);
+            linked.Token.ThrowIfCancellationRequested();
+            lock (gate) { if (stamp != revision) throw new OperationCanceledException(linked.Token); }
+            return result;
+        } finally {
+            lock (gate) { if (ReferenceEquals(foregroundAttempt,linked)) foregroundAttempt = null; }
+            pipelineGate.Release();
+        }
+    }
+    public Task RunForegroundAsync(Func<CancellationToken,Task> action,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        return RunForegroundAsync(async token => { await action(token).ConfigureAwait(false); return true; },cancellationToken);
+    }
+    private void RequireForeground()
+    {
+        ObjectDisposedException.ThrowIf(disposed,this);
+        if (!foreground || !network.IsConnected || accountMutations != 0)
+            throw new IOException("DID2 business work requires an active connected account window.");
+    }
     public void Resume() { lock (gate) { if (disposed || foreground) return; foreground = true; Invalidate(); } }
     public void Suspend() { lock (gate) { if (disposed || !foreground) return; foreground = false; Invalidate(); } }
     public void AccountChanged() { lock (gate) { if (!disposed) Invalidate(); } }
@@ -84,6 +125,7 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
     {
         var stamp = ++revision;
         var previous = attempt;
+        var previousForeground = foregroundAttempt;
         CompleteRequestedVerification(new OperationCanceledException());
         SetState(foreground ? network.IsConnected ? DeepIdV2ReconnectState.Reconnecting : DeepIdV2ReconnectState.Offline : DeepIdV2ReconnectState.Dormant);
         // State notifications may reenter and supersede this invalidation.
@@ -93,6 +135,7 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
         // continuation can run the worker inside this reentrant lock. Nothing
         // from the old invalidation may overwrite its newer success afterward.
         if (ReferenceEquals(previous, attempt)) previous?.Cancel();
+        if (ReferenceEquals(previousForeground, foregroundAttempt)) previousForeground?.Cancel();
     }
     private void SetState(DeepIdV2ReconnectState value)
     {
@@ -112,7 +155,7 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
                     while (wake.Reader.TryRead(out _)) { }
                     stamp = revision;
                     if (!foreground || !network.IsConnected || accountMutations != 0) { token = default; }
-                    else { attempt?.Dispose(); attempt = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token); attempt.CancelAfter(TimeSpan.FromMinutes(2)); token = attempt.Token; }
+                    else { attempt?.Dispose(); attempt = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token); token = attempt.Token; }
                 }
                 if (!token.CanBeCanceled) { await WaitAsync(Timeout.InfiniteTimeSpan); continue; }
                 var remaining = backoff - System.Diagnostics.Stopwatch.GetElapsedTime(backoffStart);
@@ -129,6 +172,10 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
                     await pipelineGate.WaitAsync(token).ConfigureAwait(false);
                     try {
                         lock (gate) { if (stamp != revision || accountMutations != 0) continue; }
+                        // No authority/HTTP work has started while waiting for
+                        // foreground work. Its original2m attempt budget starts
+                        // only after owning this lane, never during that queue.
+                        attempt!.CancelAfter(TimeSpan.FromMinutes(2));
                         await reconnect(token).ConfigureAwait(false);
                     } finally { pipelineGate.Release(); }
                     lock (gate) {

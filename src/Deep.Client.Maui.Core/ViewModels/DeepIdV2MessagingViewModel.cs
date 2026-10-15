@@ -13,6 +13,7 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
     private readonly IDeepIdV2AccountRuntimeAccessor accounts;
     private readonly DeepIdV2AccountViewModel account;
     private readonly IDeepIdV2ConversationRuntime? runtime;
+    private readonly DeepIdV2NetworkReconnect? reconnect;
     private readonly Dictionary<string, byte[]> contactIntents = new(StringComparer.Ordinal);
     private readonly Dictionary<string, byte[]> acceptanceOperations = new(StringComparer.Ordinal);
     private string contactAddress = string.Empty, draftText = string.Empty, status = string.Empty;
@@ -24,10 +25,12 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
     private readonly DeepIdV2TextComposerState textComposer = new();
 
     public DeepIdV2MessagingViewModel(IDeepIdV2AccountRuntimeAccessor accounts,
-        DeepIdV2AccountViewModel account, IDeepIdV2ConversationRuntime? runtime = null)
+        DeepIdV2AccountViewModel account, IDeepIdV2ConversationRuntime? runtime = null,
+        DeepIdV2NetworkReconnect? reconnect = null)
     {
         this.accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
         this.account = account ?? throw new ArgumentNullException(nameof(account)); this.runtime = runtime;
+        this.reconnect = reconnect;
         projectedAccount = account.Account?.PermanentId.CanonicalText;
         RefreshCommand = new(RefreshAsync, () => CanReadLocal && !IsBusy);
         StartContactCommand = new(StartContactAsync, () => IsReady && !IsBusy && !string.IsNullOrWhiteSpace(ContactAddress));
@@ -103,7 +106,8 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
         await LoadConversationsAsync(owner, Selected?.Conversation.ConversationId, token);
         if (!IsReady) { Status = "Локальная история. Для отправки требуется подключение к сети."; return; }
         activeRequiresNetwork = true;
-        var received = await runtime!.SynchronizeAsync(owner, token);
+        var received = reconnect is null ? await runtime!.SynchronizeAsync(owner, token) :
+            await reconnect.RunForegroundAsync(next => runtime!.SynchronizeAsync(owner,next),token);
         RequireCurrentOperation(token);
         await LoadConversationsAsync(owner, Selected?.Conversation.ConversationId, token);
         Status = received.HasMore ? "Страница получена. Обновите ещё раз для продолжения." : "Синхронизация завершена";
@@ -233,7 +237,9 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
             try
             {
                 if (!(requiresNetwork ? IsReady : CanReadLocal) || generation != accountGeneration) throw new InvalidOperationException("The DID2 runtime is unavailable.");
-                await action(scope.Token);
+                if (requiresNetwork && reconnect is not null)
+                    await reconnect.RunForegroundAsync(action,scope.Token);
+                else await action(scope.Token);
                 if (!(requiresNetwork ? IsReady : CanReadLocal) || generation != accountGeneration)
                 {
                     throw new InvalidOperationException("Account state changed during the operation.");
@@ -251,7 +257,7 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
                     CryptographicException or InvalidDataException => "Проверка защищённого состояния не пройдена. Данные не отправлены повторно.",
                     _ => "Операция не завершена. Повторите её с тем же адресом или текстом."
                 };
-                throw new InvalidOperationException(message);
+                throw new InvalidOperationException(message,error);
             }
             finally { activeOperation = null; activeRequiresNetwork = false; }
         }, ct);
