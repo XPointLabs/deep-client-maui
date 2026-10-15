@@ -281,6 +281,10 @@ public sealed class CleanStartupCompositionTests
         var paths = ReadSource(Path.Combine("Services", "AppDataPath.cs"));
         Assert.Contains("#if DEEP_DID2_HTTPS_ADMISSION && WINDOWS", paths);
         Assert.Contains("#elif DEEP_DID2_HTTPS_ADMISSION && ANDROID", paths);
+        Assert.Contains("context.DataDir?.CanonicalPath", paths);
+        Assert.Contains("context.FilesDir?.CanonicalPath", paths);
+        Assert.Contains("Path.Combine(sandbox, \"files\")", paths);
+        Assert.Contains("Did2ProbeStorageScope.RequireOwnedPhysicalPath(appDataRoot, physicalRoot)", paths);
         Assert.Contains("Did2ProbeStorageScope.ResolvePhysicalRoot(", paths);
         Assert.True(paths.IndexOf("RejectReparsePoints(physicalRoot)", StringComparison.Ordinal)
             < paths.IndexOf("Directory.CreateDirectory(physicalRoot)", StringComparison.Ordinal));
@@ -395,6 +399,16 @@ public sealed class CleanStartupCompositionTests
             Assert.Contains("-p:DeepDid2PrivateCertificateAuthority=", script);
             Assert.Contains("-p:DeepDid2PrivateCaSha256=", script);
         }
+    }
+
+    [Fact]
+    public void Did2AppDoesNotShipUnusedRetiredCmsAttestationPackage()
+    {
+        var project = System.Xml.Linq.XDocument.Parse(ReadSource("Deep.Client.Maui.csproj"));
+        Assert.DoesNotContain(project.Descendants("PackageReference"), value =>
+            (string?)value.Attribute("Include") == "System.Security.Cryptography.Pkcs");
+        Assert.Contains(project.Descendants("Compile"), value =>
+            (string?)value.Attribute("Remove") == "Services\\ProductionMailboxClientIdentityAttestor.cs");
     }
 
     [Fact]

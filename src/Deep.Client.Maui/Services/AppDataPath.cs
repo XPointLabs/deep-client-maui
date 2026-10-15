@@ -22,10 +22,20 @@ internal static class AppDataPath
 #elif DEEP_DID2_HTTPS_ADMISSION && ANDROID
         // A different signed dev network must not open the older HTTPS QA
         // account merely because both binaries use the diagnostic package.
+        // Android owns the canonical sandbox root. Do not inspect foreign
+        // ancestors using the Windows filesystem/reparse interpretation.
+        var context = global::Android.App.Application.Context;
+        var sandbox = context.DataDir?.CanonicalPath
+            ?? throw new InvalidOperationException("Android app sandbox is unavailable.");
+        var appDataRoot = context.FilesDir?.CanonicalPath
+            ?? throw new InvalidOperationException("Android app files directory is unavailable.");
+        if (!string.Equals(appDataRoot, Path.Combine(sandbox, "files"), StringComparison.Ordinal))
+            throw new InvalidOperationException("Android app files directory is outside its sandbox.");
         var physicalRoot = Did2ProbeStorageScope.ResolvePhysicalRoot(
-            FileSystem.AppDataDirectory, ActiveBuildNetworkId.Load().Span);
-        RejectReparsePoints(physicalRoot);
+            appDataRoot, ActiveBuildNetworkId.Load().Span);
+        Did2ProbeStorageScope.RequireOwnedPhysicalPath(appDataRoot, physicalRoot);
         Directory.CreateDirectory(physicalRoot);
+        Did2ProbeStorageScope.RequireOwnedPhysicalPath(appDataRoot, physicalRoot);
         return physicalRoot;
 #else
 #if DEEP_DID2_ACCOUNT_PROBE && WINDOWS

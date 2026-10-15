@@ -50,6 +50,24 @@ switching the signed network does not reset or open another network's account.
 Previously stored diagnostic data is left untouched, not migrated. This is
 configuration support, not physical E2E acceptance.
 
+Android obtains canonical `DataDir`/`FilesDir` from its OS context and requires
+the files directory to be the sandbox's exact `files` child. The physical
+directory must remain below that anchor, with no symlink, reparse point or
+regular-file component before and after creation. Foreign OS ancestors above
+the sandbox are not subjected to Windows reparse-point checks. The initial
+device attempt with the all-ancestor guard crashed before account/network
+activation; installation alone was not startup or E2E evidence. No data reset
+is part of the correction.
+
+The current DID2 application no longer references the unused Windows `Pkcs`
+package: its sole CMS-attestation consumer is already outside the compiled
+service whitelist. This removes an unnecessary vulnerable package rather than
+suppressing NuGet audit warnings. Separate retired attestation tools are not
+qualified by that application-package cleanup; the Microsoft
+[CMS decode advisory](https://github.com/advisories/GHSA-2fmv-rv2c-59x7) and
+[CMS signature advisory](https://github.com/advisories/GHSA-846f-f764-76mx)
+still require a patched package wherever those tools remain in use.
+
 The diagnostic now reads conversation/message history directly from the Shared
 protected local owner without bootstrap HTTP or fresh endpoint proofs.
 `CanReadLocal` is separate from network `IsReady`; loss of network verification
