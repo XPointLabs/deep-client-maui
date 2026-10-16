@@ -240,8 +240,10 @@ Windows20's Android-peer form was filled. On the next observation the contact
 operation was already Busy; no duplicate input followed. Fresh activation and
 independent observation subsequently found terminal protected-state failure.
 Closed metadata at17:14:20Z identifies `ProtectedDid2MailboxGrantJournal.OriginalCeiling`
-line624 while preparing Initial Deposit custody, not a confirmed Store. It does
-not distinguish the compound policy/route/request predicate. The contact intent
+line624 while preparing Initial Deposit custody, not a confirmed Store. Matching
+build20 DLL/PDB now maps IL758 to the no-possible-interval rejection, correcting
+the earlier compound-guard diagnosis. [Shared source correction and receipts](../../deep-client-shared/docs/testing/s05-logical-grant-custody-2026-10-16.md)
+do not yet prove device delivery. The contact intent
 remains retained; do not infer non-delivery, reset or loosen the guard. The
 [foreground scheduling correction](S05-FOREGROUND-DEADLINE-2026-10-16.md) is a
 separate source fix, not this physical rejection's cause or repair. Android

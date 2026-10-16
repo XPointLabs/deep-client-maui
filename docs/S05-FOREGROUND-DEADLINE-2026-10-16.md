@@ -9,8 +9,11 @@ After activating the selected QA window again, an independent observation found
 the terminal protected-state error. Its closed log reports
 `ProtectedDid2MailboxGrantJournal.OriginalCeiling`, line624, during Initial
 Deposit acquisition, at17:14:20Z. Thus the earlier Busy observations do not
-measure the actual duration or prove an infinite wait. That compound evidence
-binding rejection is separate from the independently verified scheduling defect;
+measure the actual duration or prove an infinite wait. Matching build20 DLL/PDB
+subsequently mapped IL758 to the no-possible-interval rejection, not the compound
+binding check at line616. The Shared logical-ceiling/current-policy correction
+is recorded in [its checkpoint](../../deep-client-shared/docs/testing/s05-logical-grant-custody-2026-10-16.md).
+That rejection is separate from the independently verified scheduling defect;
 the deadline change does not repair it or authorize replacing the saved intent.
 
 Source audit independently found that `RunForegroundAsync` had no active-attempt
