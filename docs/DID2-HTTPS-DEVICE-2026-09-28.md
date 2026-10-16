@@ -64,6 +64,19 @@ rotation between closure fetch and fresh DTT proof; it needs a signed controlled
 reproduction before claiming a cause or changing acquisition. No further contact
 send/Store, reset, deadline extension or physical acceptance is claimed.
 
+The signed source race is now reproduced and corrected under
+[DR-0128](../../docs/survival-program/decisions/DR-0128-coherent-network-view-acquisition.md):
+Protocol `cacbd67` supplies the non-authoritative strictly-newer-view observation;
+Shared `32de907` reacquires closure/own proof at most once under the existing
+gate/budget, with complete verification and actual history/floor/CAS afterward.
+Protocol observation14 / expanded204 and Shared acquisition5 / regression47
+passed, native0; the Protocol Release solution build had0 warnings/errors.
+Graph09 still fails the existing MAU2 shipping-token check, not waived.
+These inputs are not yet installed on the devices. Old APK28's measured
+improvement is not evidence for this new acquisition branch; same-account
+matching builds and retest remain required. No server wire or production
+deployment change is needed for this additive client observation API.
+
 ### Matched capped-successor correction
 
 Windows16 and APK25 compile MAUI `7fb384d`, Shared `104b24b`, Protocol
