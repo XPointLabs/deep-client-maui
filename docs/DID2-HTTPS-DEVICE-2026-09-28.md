@@ -8,6 +8,23 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 
 ### Matched acquisition retest
 
+APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
+`b7046d13fafe09146ad8d12bfa08af3b829ad152901c9e37bc20b2fd5fcb06b2`.
+Build30 completed with0 warnings/errors and the unchanged signer. Exact packaged
+code contains the three separate fixed prekey refusals; supported dry/update
+Install01 and Settings01 preserve recovery and protected-package audits.
+The complete attempt recorded51435ms /482 unprotect calls /29805ms protection
+and reached `PreKeyInventoryExpiry`: the unchanged authenticated upper-time
+coverage predicate rejects the staged XPI1. No key replacement/reset occurred.
+The original Protocol exception type/stage/rejection and verification conditions
+are unchanged. Protocol focused9 and MAUI diagnostic-focused108 passed/native0;
+the original ambiguous-message red1FAIL is retained. This diagnoses the missing
+ordinary prekey lifecycle, not a completed renewal or contact exchange.
+
+Windows UI access was separately revalidated: fresh selection confirms build17
+running with the retained QA profile. Its previously unobserved launch is now
+observed; do not carry the former tool-budget refusal forward as a current block.
+
 APK29 compiles MAUI `893db64`, Shared `32de907`, Protocol `cacbd67`; SHA256
 `3f29b8a4517ea17f5d55b6798aebae5bcc96d31507d31e88910b749e4f9dfe9c`.
 Build29 completed with0 compiler warnings/errors and the unchanged signer.
