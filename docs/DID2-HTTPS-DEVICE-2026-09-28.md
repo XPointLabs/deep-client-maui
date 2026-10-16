@@ -6,6 +6,52 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 
 ## Current retained-device checkpoint — 2026-10-16
 
+### Matched capped-successor correction
+
+Windows16 and APK25 compile MAUI `7fb384d`, Shared `104b24b`, Protocol
+`0867668`. APK25 SHA256 is
+`98d69ca72fbe4d5d118139db7a2996a6746d74545ac76c35ad924b01653642c0`.
+The exact signed APK assembly store was matched to its build manifest and
+contains the corrected successor-chain predicate. Retained-update preflight /
+Install01 passed. Windows16 apphost SHA256 is
+`4a42fb442cb0ad067f12a85d47c3d63dd64f22766403fabeacb6f24f7695a3ee`;
+MAUI assembly SHA256 is
+`14a4a8f853c93e690487a7a287d4fc5c4a600c61442dc1921562b9e4fb83b1a8`.
+The old QA window was closed through its UI and the new build opened the same
+profile. Both settings views independently confirmed retained recovery.
+
+The matching local server update and supported smoke passed without reset;
+exact image and mount checks belong to the
+[contact transport checkpoint](../../deep-devops/docs/S05-CONTACT-TRANSPORT-2026-10-15.md).
+Android Verify01 -> independent Inspect02 reached verified-publication / Verified;
+Windows16's explicit check also reached Verified with current proof saved.
+This confirms same-account recovery past the earlier capped-successor guard,
+not sustained readiness, a contact exchange or message delivery.
+
+Android Contacts -> SetPeerAddress -> DismissKeyboard -> Add01/02 did not
+observe Store or a business-failure record. The retry caption remained. Harness
+`c9e6a7a` adds only exact-owned ScrollContacts; focused Clean05 passed23/0/0/native0.
+Clean04 retained22PASS/1FAIL because its old static settings-ID assertion had not
+yet been updated to require the closed settings/contacts mapping. After the
+supported scroll, a closed UI read confirmed NetworkRequired=true, Busy=false,
+not a successful contact dispatch. Settings later showed Unavailable. Verify02
+-> Inspect05 ended failure-redacted; closed exact-process logs repeatedly show
+Cancelled in local account/floor/compaction reads at the existing attempt bound.
+An owned-process CPU snapshot reported44% CPU (35% user,9% kernel); it does not
+identify the cause or prove network time authority. No deadline was extended.
+
+Windows16 RefreshConversations really entered the network path after verified
+registration, then ended with a closed business error. Metadata at04:59Z locates
+OutcomeUnknown at PrivacyManagedIngressHttpTransport.ForwardAsync line304.
+Existing bounded node diagnostics show two relay504/64-byte OutcomeUnknown
+responses and the exit's ContactResolve custody-or-io failure. No correlated
+coordination rejection was observed; absence of a log is not proof of absence.
+The precise inner exit failure remains unproven. All originals, accounts,
+recovery and node state remain retained. Contacts/text/files/images/groups
+physical acceptance remains0/4; no new send or acceptance is claimed.
+
+### Earlier retained-device observations
+
 The next Shared candidate `acc65f1` carries independently verified contact
 authority on one command's async stack and uses explicit existing borrowed
 account/ONION custody for its single read and claim. Real protected floor,
