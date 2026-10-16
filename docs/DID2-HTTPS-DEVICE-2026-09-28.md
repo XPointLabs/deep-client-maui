@@ -30,6 +30,20 @@ No first contact/text, attachment or group acceptance is claimed (0/4).
 Windows input remains stopped after the user's physical Escape; automatic goal
 continuation is not permission to resume it.
 
+APK32 (MAUI `fa45de2`, Shared `1c5008a`, Protocol `fed7d30`) built with0
+warnings/errors; SHA256
+`12759d4d195e6c4dec940ecffa388c5260d6e820716e827c02da9f643359b40f`.
+Supported preflight33/update34/settings35/scroll36–37 under
+`artifacts/s05-prekey-read-path-20261016/` retained account/recovery and protected
+packages. One complete attempt still cancelled at120071ms,897 unprotect calls,
+69613ms protection (PreKeyPublication88819ms/658 calls/50890ms protection).
+The cancelled stack was waiting for the account lease in directory-floor
+restoration during a repeated current-proof acquisition; it does not by itself
+prove a deadlock, a sole cause or a particular replica's noncommit. No registration
+or business success is accepted. The next candidate removes complete per-fragment
+network reacquisition while retaining ordinary currentness checks under DR-0131;
+it is not installed by these receipts. Windows remains stopped after Escape.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
