@@ -319,7 +319,8 @@ new work. It failed during permanent-contact read, at ForwardOnceAsync line146 /
 PrivacyManagedIngressHttpTransport line299 (46429ms,26 Protect/1173 Unprotect,
 23944ms protection). One exact UI retry failed at the same boundary (5650ms,
 1 Protect/372 Unprotect,2637ms protection). The original new intent remains;
-neither operation is a delivered contact or a new native Store receipt.
+neither operation is a delivered contact or an authenticated new native Store
+receipt. The read refusal does not establish the absence of any earlier effect.
 
 The existing QA observer loses the already decoded ingress error class. A
 display-only correction maps complete fixed literals from the exact sealed
@@ -328,3 +329,24 @@ unknown text remain unread/unreported; no route, retry, certainty or authority
 decision consumes a label. Unfiltered Clean284 passed/native0/0 skipped without
 compiler diagnostics (`clean-02`). Matching diagnostic builds/retest are pending.
 No further blind retry, account reset or server authority change was performed.
+
+Windows28 diagnostic build from MAUI `a2a758a` / Shared runtime `f63b432`
+(docs-only head `ce65494`) / Protocol `9d6df07` passed native0 without compiler
+diagnostics. Apphost SHA256
+`b31c4df5be6cbda043c73e26ca7a938effc5e70388774a2c275d9d7886080aa3`;
+assembly `ef2fe8cd8629896b3fcd00d927e4de3b7d4f81c5327aae3488e53f8093399d7e`.
+The unchanged account reopened. Add selected an actual protected pending request;
+one separate exact Retry did not reproduce the prior ingress-class failure.
+It ended at the existing foreground budget: ContactStartTotal120050ms,
+9 Protect/1809 Unprotect,75840ms protection. Closed locations identify
+OpenInitialSessionCustodyAsync:28 / OpenCurrentDeviceStateStoreAsync:109 /
+RequireRetainedInitialDraftAndRecipientUnderLeaseAsync:208 /
+DeliverOwnInitialContactAsync:108. Independent UI showed cancellation, retained
+retry choice and no busy command. No additional retry or reset followed.
+
+Receipt: `artifacts/s05-initial-retry-entry-20261017/windows-28-build/closed-business.json`.
+The ingress class remains unobserved, not fixed by a successful read. The next
+bounded source inspection is repeated fresh device-source/retirement/checkpoint
+inventory opening under the held account lease. Keep every actual SQL/native/
+retirement binding and reread; no plaintext cache or time-window extension.
+APK44 remains installed; no diagnostic-only Android rebuild was launched.
