@@ -236,6 +236,18 @@ the old draft. Scroll120 was rejected by dirty-doc preflight before input and
 rerun only after the documentation checkpoint commit. Both failures remain.
 Closed receipts: `android-37-contact-diagnosis-123`, same artifact prefix.
 
+Windows20's Android-peer form was filled. On the next observation the contact
+operation was already Busy; no duplicate input followed. Fresh activation and
+independent observation subsequently found terminal protected-state failure.
+Closed metadata at17:14:20Z identifies `ProtectedDid2MailboxGrantJournal.OriginalCeiling`
+line624 while preparing Initial Deposit custody, not a confirmed Store. It does
+not distinguish the compound policy/route/request predicate. The contact intent
+remains retained; do not infer non-delivery, reset or loosen the guard. The
+[foreground scheduling correction](S05-FOREGROUND-DEADLINE-2026-10-16.md) is a
+separate source fix, not this physical rejection's cause or repair. Android
+Refresh125 -> independent Inspect127 again completes empty incoming sync without
+error; no incoming contact or physical business acceptance is established.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
