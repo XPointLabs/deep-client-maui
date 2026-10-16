@@ -5,6 +5,39 @@ namespace Deep.Client.Maui.Clean.Tests;
 
 public sealed class Did2QaWorkDiagnosticsTests
 {
+    [Theory]
+    [InlineData("ContactStartTotal")]
+    [InlineData("ContactStopTotal")]
+    [InlineData("ContactAcceptTotal")]
+    [InlineData("TextQueueTotal")]
+    [InlineData("TextRetryTotal")]
+    [InlineData("MailboxSyncTotal")]
+    public async Task ClosedBusinessStagesCountActualProtectionWithoutKeepingAmbientState(string stage)
+    {
+        var lines = new List<string>(); var observed = Did2QaWorkDiagnostics.Observe(new Protector());
+        using (Did2QaWorkDiagnostics.Begin(stage, lines.Add))
+        { await Task.Yield(); observed.Unprotect([1]); }
+        observed.Protect([2]);
+        AssertClosed(Assert.Single(lines), stage, 0, 1);
+    }
+
+    [Fact]
+    public async Task CancelledBusinessPreservesOriginalTokenAndCannotBeChangedByObserver()
+    {
+        using var cancelled = new CancellationTokenSource();
+        var lines = new List<string>(); var observed = Did2QaWorkDiagnostics.Observe(new Protector());
+        var original = new OperationCanceledException(cancelled.Token);
+        async Task Work()
+        {
+            using var scope = Did2QaWorkDiagnostics.Begin("ContactStartTotal", line => { lines.Add(line); throw new PrivateFailure(); });
+            await Task.Yield(); observed.Unprotect([1]); cancelled.Cancel(); throw original;
+        }
+        var actual = await Assert.ThrowsAsync<OperationCanceledException>(Work);
+        Assert.Same(original, actual); Assert.Equal(cancelled.Token, actual.CancellationToken);
+        AssertClosed(Assert.Single(lines), "ContactStartTotal", 0, 1);
+        observed.Unprotect([2]); Assert.Single(lines);
+    }
+
     [Fact]
     public void WrapperPreservesBytesAndDoesNotRequireObservation()
     {

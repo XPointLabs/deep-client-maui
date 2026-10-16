@@ -22,7 +22,9 @@ internal static class Did2QaWorkDiagnostics
     {
         "VerificationTotal" or "BootstrapAuthority" or "DirectoryFloor" or "AccountProof" or
         "NetworkFloor" or "NetworkVerification" or "OnionCustody" or
-        "PreKeyPublication" or "ContactPublication" or "ContactResolution" => stage,
+        "PreKeyPublication" or "ContactPublication" or "ContactResolution" or
+        "ContactStartTotal" or "ContactStopTotal" or "ContactAcceptTotal" or
+        "TextQueueTotal" or "TextRetryTotal" or "MailboxSyncTotal" => stage,
         _ => "Unclassified",
     };
 
