@@ -8,6 +8,19 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class Did2BusinessFailureDiagnosticsTests
 {
     [Theory]
+    [InlineData("XPP1 inventory begins after the authenticated lower time bound.", "PreKeyInventoryNotBefore")]
+    [InlineData("XPP1 inventory does not cover the authenticated upper time bound.", "PreKeyInventoryExpiry")]
+    [InlineData("XPP1 XPS1/XPI1 differ from the current DID2 device authority.", "PreKeyInventoryBinding")]
+    [InlineData("private credential payload and endpoint", "Unclassified")]
+    public void ReplicaPreKeyDiagnosticIsClosedAndDoesNotClassifyAnOrdinaryFormatException(string message, string expected)
+    {
+        Assert.Equal(expected, Did2BusinessFailureDiagnostics.ReplicaPreKeyCheck(message));
+        var entry = Assert.Single(Did2BusinessFailureDiagnostics.Capture(new FormatException(message)));
+        Assert.Contains("check=Unclassified;", entry);
+        Assert.DoesNotContain(message, entry);
+    }
+
+    [Theory]
     [InlineData("protected", "ProtectedState")]
     [InlineData("canonical", "ProtectedState")]
     [InlineData("timeout", "Timeout")]

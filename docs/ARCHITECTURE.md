@@ -81,7 +81,13 @@ literals are mapped to closed diagnostic codes; unknown/private messages remain
 Unclassified and custom getters are never invoked. Data/ToString are not read.
 These labels cannot authenticate a remote failure or change retry. The UI keeps its closed error text. The observer
 does not change business state, retry, cancellation or authority and cannot mask
-the original failure if diagnostics itself fails. The shipping composition does
+the original failure if diagnostics itself fails. The sealed Protocol
+`ApplicationCoreFormatException` at the exact cryptographic-verification/failure
+stage additionally maps three fixed replica-prekey literals to binding,
+not-before and expiry labels. An ordinary/custom FormatException is not
+classified from its text. These observations cannot authorize retry, replacement
+keys or a longer lifetime; raw exception text never enters the log.
+The shipping composition does
 not register it. `business-diagnostics-clean-02` passed160/0/0/native0; these
 privacy/observer tests are not device delivery evidence.
 `business-diagnostics-windows-compile-01` compiled the matching working tree

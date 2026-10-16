@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using Deep.Client.Shared.Services;
+using Deep.Protocol.ApplicationCore;
 
 namespace Deep.Client.Maui.Services;
 
@@ -55,8 +56,10 @@ internal static class Did2BusinessFailureDiagnostics
 
     // QA-only code-owned guard classification, never a message-based trust
     // check or a fallback. Renamed/unknown/private messages remain Unclassified.
-    private static string ContactCheck(Exception error) => error.GetType() != typeof(CryptographicException)
-        ? "Unclassified" : error.Message switch
+    private static string ContactCheck(Exception error) => error is ApplicationCoreFormatException
+        { Stage: ApplicationCoreValidationStage.CryptographicVerification, Rejection: ApplicationCoreRejection.VerificationFailed } prekey
+        ? ReplicaPreKeyCheck(prekey.Message)
+        : error.GetType() != typeof(CryptographicException) ? "Unclassified" : error.Message switch
         {
             "Contact control requires two current DID2 directory proofs." => "PairFreshness",
             "Contact control requires distinct current accounts on one network." => "PairNetwork",
@@ -105,6 +108,17 @@ internal static class Did2BusinessFailureDiagnostics
             "The route publisher is not an active DID2 device." => "ContactPublisherInactive",
             _ => RouteTimeCheck(error.Message)
         };
+
+    // Display only; no label grants retry, renewal, noncommit or currentness.
+    // ApplicationCoreFormatException is sealed; arbitrary exception getters
+    // are never consulted for these exact Protocol-owned literals.
+    internal static string ReplicaPreKeyCheck(string message) => message switch
+    {
+        "XPP1 inventory begins after the authenticated lower time bound." => "PreKeyInventoryNotBefore",
+        "XPP1 inventory does not cover the authenticated upper time bound." => "PreKeyInventoryExpiry",
+        "XPP1 XPS1/XPI1 differ from the current DID2 device authority." => "PreKeyInventoryBinding",
+        _ => "Unclassified"
+    };
 
     private static string RouteTimeCheck(string message)
     {
