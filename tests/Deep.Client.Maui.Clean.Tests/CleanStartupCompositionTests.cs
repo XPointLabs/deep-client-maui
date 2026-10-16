@@ -470,6 +470,9 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("'Did2Workspace.MobileSettings'", installer);
         Assert.Contains("'ScrollSettings'", installer);
         Assert.Contains("'ScrollSettingsUp'", installer);
+        Assert.Contains("'ScrollContacts'", installer);
+        Assert.Contains("$Phase -ceq 'ScrollContacts'", installer);
+        Assert.Contains("'Page.Contacts'", installer);
         Assert.Contains("$Phase -eq 'ScrollSettingsUp'", installer);
         Assert.Contains("(($bottom-$top)/3)", installer);
         Assert.DoesNotContain("[string]($bottom-100)", installer);
@@ -481,7 +484,8 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("Test-OwnedResetDialogFocus $focus $packageOwner", installer);
         Assert.Contains("mOwnerUid=(?<uid>", installer);
         Assert.Contains("$ownedResetDialog -and -not $resetConfirmationVisible", installer);
-        Assert.Contains("${probePackage}:id/Page.Settings", installer);
+        Assert.Contains("$paneId = if ($Phase -ceq 'ScrollContacts') { 'Page.Contacts' } else { 'Page.Settings' }", installer);
+        Assert.Contains("${probePackage}:id/$paneId", installer);
         Assert.Contains("'android.widget.ScrollView'", installer);
         Assert.DoesNotContain("uninstall", installer);
         Assert.DoesNotContain("pm clear", installer);

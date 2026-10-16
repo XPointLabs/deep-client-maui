@@ -15,7 +15,7 @@ param(
     [ValidateSet('Did2Account', 'Did2Https')]
     [string]$Lane = 'Did2Account',
     [string]$ApkPath,
-    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset', 'BeginIncompatibleReset', 'ConfirmIncompatibleReset', 'ScrollSettingsUp', 'Contacts', 'SetPeerAddress', 'AddContact', 'StopContactRetry', 'Chats', 'RefreshConversations', 'OpenOnlyConversation', 'AcceptContact', 'SetQaText', 'SendQaText', 'RefreshMessages')]
+    [ValidateSet('Install', 'Inspect', 'SetName', 'DismissKeyboard', 'CreateAccount', 'Settings', 'ScrollSettings', 'VerifyNetwork', 'Restart', 'BeginReset', 'ConfirmReset', 'BeginIncompatibleReset', 'ConfirmIncompatibleReset', 'ScrollSettingsUp', 'Contacts', 'SetPeerAddress', 'AddContact', 'StopContactRetry', 'ScrollContacts', 'Chats', 'RefreshConversations', 'OpenOnlyConversation', 'AcceptContact', 'SetQaText', 'SendQaText', 'RefreshMessages')]
     [string]$Phase = 'Install',
     [ValidatePattern('^deep1[a-z0-9]{50,180}$')][string]$PeerAddress,
     [ValidateSet('DID2 Android QA 20261015 A')][string]$QaText,
@@ -32,7 +32,7 @@ if ($Phase -in @('ConfirmReset', 'ConfirmIncompatibleReset') -and -not $ConfirmI
 if ($ConfirmIsolatedAccountReset -and $Phase -notin @('ConfirmReset', 'ConfirmIncompatibleReset')) {
     throw 'Reset confirmation is accepted only by an explicit confirmation phase.'
 }
-$messagingPhases = @('Contacts', 'SetPeerAddress', 'AddContact', 'StopContactRetry', 'Chats', 'RefreshConversations',
+$messagingPhases = @('Contacts', 'SetPeerAddress', 'AddContact', 'StopContactRetry', 'ScrollContacts', 'Chats', 'RefreshConversations',
     'OpenOnlyConversation', 'AcceptContact', 'SetQaText', 'SendQaText', 'RefreshMessages')
 if ($Phase -in $messagingPhases -and $Lane -cne 'Did2Https') {
     throw 'Messaging phases require the dedicated DID2 HTTPS lane.'
@@ -510,10 +510,11 @@ if ($Execute) {
                     } else { 'Did2Workspace.Settings' }
                     Click-ProbeControl $ui $settingsId
                 }
-                { $_ -in @('ScrollSettings', 'ScrollSettingsUp') } {
+                { $_ -in @('ScrollSettings', 'ScrollSettingsUp', 'ScrollContacts') } {
                     if ($ui.ImeShowing) { throw 'Dismiss the probe keyboard before scrolling settings.' }
+                    $paneId = if ($Phase -ceq 'ScrollContacts') { 'Page.Contacts' } else { 'Page.Settings' }
                     $pane = @($ui.Nodes | Where-Object {
-                        $_.GetAttribute('resource-id') -ceq "${probePackage}:id/Page.Settings" -and
+                        $_.GetAttribute('resource-id') -ceq "${probePackage}:id/$paneId" -and
                         $_.GetAttribute('scrollable') -ceq 'true' -and
                         $_.GetAttribute('class') -ceq 'android.widget.ScrollView'
                     })

@@ -22,7 +22,11 @@ are not evidence that the current application composes that feature.
 The dedicated Android HTTPS driver now exposes bounded contact/direct-text UI
 phases in addition to account diagnostics. It still requires an explicit serial,
 exact APK/source/signing provenance, foreground ownership and before/after
-protected-package snapshots. Only one observed conversation may be selected;
+protected-package snapshots.
+`ScrollContacts` uses the same bounded gesture and exact owned ScrollView guard
+as settings, selecting only the fixed `Page.Contacts` ID. It exposes off-screen
+retry/status controls without choosing retry, changing the draft or dispatching.
+Only one observed conversation may be selected;
 typing requires an empty exact editor and independently reobserved focus. Peer
 addresses and message contents are not included in result JSON. The only message
 input is a fixed synthetic QA marker. Each phase is one action plus observation,
