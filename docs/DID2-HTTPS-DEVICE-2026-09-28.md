@@ -150,6 +150,41 @@ the assertion now uses its predicate overload without changing expectations.
 Final maui05 passed82/0/0/native0 with0 compiler warnings/errors. Packaged
 physical caller evidence remains required.
 
+APK36 (MAUI `51eda49`, Protocol `d2e3d42`, Shared `ca1df5f`) built with0
+warnings/errors; SHA256
+`36f8bd64c43d1087f9f18f91d4e476b12fa2d1f574f6b392da53912eedbb4f47`.
+Preflight78/update79 retained the QA account. Settings80 failed before a usable
+hierarchy; fresh Inspect81 reobserved the workspace. Settings82 retained recovery.
+Scroll83/84 overlapped in orchestration;83 failed a protected-package audit and
+is not qualified. Both processes were terminal before independent Inspect85,
+which passed its package audit and observed Verified. Publication completions
+were63597/59703ms. No business acceptance is inferred from either scroll.
+
+Chats86 -> single Refresh87 -> Inspect88 again failed `MailboxGrantExpiry`.
+Distinct-owner metadata now identifies `RetrieveOwnMailboxAsync` IL3129. The
+exact built Shared assembly SHA256
+`2fd094b027e2c42fce6e6f1ae904b67c71a7429643e21699be56666eb1ab1448`
+and its build-output portable PDB map this to source lines57–59, the `winner ??=` restoration of
+an active read's original grant. The preceding branch acquires a new winner only
+when Active is absent; this is active-cycle recovery, not a new-read renewal bug.
+The exact subphase within1–6 is not observed. Metadata is preserved in
+`android-active-read-diagnostic-89`; failed incomplete phases remain separate.
+The metadata-only PDB probe exited0; earlier exploratory token/IL reader failures
+do not qualify independent disassembly or change the physical outcome.
+The Android-target assembly copy has the same digest as the inspected build
+output. A direct raw-byte search in the signed APK's compressed assembly store
+did not find that DLL; it is not extraction or exact packaged-IL qualification.
+The caller inference combines runtime method/IL with this matching build PDB;
+full package qualification remains open.
+
+The unresolved implementation boundary is recovery of expired active Retrieve/
+ACK while retaining original request/grant/counter/page custody and independently
+current authorization. The existing new-work selector cannot replace an active
+cycle. Do not bypass grant expiry, rewrite original MAU, discard active state or
+reset the account as a remedy. Freeze any required allocation under the existing
+transport-neutral transition owner before implementation. Publication readiness
+does not close this gap; contacts/messages/files/groups physical acceptance0/4.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
