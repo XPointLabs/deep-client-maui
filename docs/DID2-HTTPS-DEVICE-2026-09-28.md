@@ -6,6 +6,32 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 
 ## Current retained-device checkpoint — 2026-10-16
 
+### Matched acquisition retest
+
+APK29 compiles MAUI `893db64`, Shared `32de907`, Protocol `cacbd67`; SHA256
+`3f29b8a4517ea17f5d55b6798aebae5bcc96d31507d31e88910b749e4f9dfe9c`.
+Build29 completed with0 compiler warnings/errors and the unchanged signer.
+Exact APK assembly-store inspection confirms the bounded acquisition observation
+call and atomic journal-group read. Supported dry/update Install01 passed;
+Settings01 confirms retained recovery and protected-package audits are unchanged.
+The complete attempt recorded65241ms /763 unprotect calls /40120ms protection.
+It passed NetworkVerification and PreKeyPublication but failed ContactPublication.
+Exact packaged IL maps the new transport failure to the non-success HTTP response
+branch, not the previous DTT binding guard. Matching local relay logs show504,
+the exit reports backend503, and Registry reports route `Admission/busy`.
+This identifies this attempt's refusal; it does not prove the prior physical
+DTT failure's subcondition or sustained acquisition recovery. No Store/contact
+acceptance, message, attachment or group effect is accepted (0/4).
+
+Windows17 with the same three source revisions built with0 warnings/errors;
+apphost SHA256 `d67b1be24ae369ace45307613c90e59cd6b56b698474e9d20272f5283289a5d0`.
+Windows16 was closed through its UI. The subsequent launch action returned
+`computer-use request budget exhausted`; its launch outcome is unobserved.
+Do not assume Windows17 is running or reuse the old window binding. Fresh
+selection is required when the supported UI tool becomes available. No account
+reset or automation fallback was attempted. Source/full/shipping gates remain
+open, including Graph09's existing MAU2 blocker. Production is unchanged.
+
 ### Bounded work-cost diagnostic candidate
 
 After Node build13 / supported Up14, Windows16's incoming refresh at05:24Z
@@ -72,9 +98,9 @@ gate/budget, with complete verification and actual history/floor/CAS afterward.
 Protocol observation14 / expanded204 and Shared acquisition5 / regression47
 passed, native0; the Protocol Release solution build had0 warnings/errors.
 Graph09 still fails the existing MAU2 shipping-token check, not waived.
-These inputs are not yet installed on the devices. Old APK28's measured
-improvement is not evidence for this new acquisition branch; same-account
-matching builds and retest remain required. No server wire or production
+The first APK29 retest is recorded above; Windows17 launch remains unobserved.
+Old APK28's measured improvement is not evidence for this new acquisition branch;
+sustained same-account recovery remains required. No server wire or production
 deployment change is needed for this additive client observation API.
 
 ### Matched capped-successor correction
