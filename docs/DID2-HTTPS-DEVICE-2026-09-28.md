@@ -250,6 +250,41 @@ separate source fix, not this physical rejection's cause or repair. Android
 Refresh125 -> independent Inspect127 again completes empty incoming sync without
 error; no incoming contact or physical business acceptance is established.
 
+Matching follow-up: Windows22 and APK38 compile MAUI `381fe2c`, Shared runtime
+`d3642b6`, Protocol `2bb61d0`, native0 and zero compiler diagnostics. Windows22
+was launched and APK38 installed through dry129/update130; Inspect131 and
+Settings132 confirm the same Android account/encrypted recovery. Windows also
+retains its profile/recovery and reconnects Verified. No reset.
+Windows apphost SHA256 `076aa9ebcdd9601a2d54d27e56d0e22a065a96dbf3bd4881fc501bd136b97be1`;
+assembly `9aab3cbf14dd17f7747db03f949e457160698a61ccadc791610155244dbb8153`.
+APK SHA256 `90458cc5d3aed33efd9083ea97c53ae19e5b49f1a19bfbe5156e0db8a151e2cd`;
+the previous signing certificate is unchanged. These remain diagnostic builds.
+
+Original Windows retry rejected XurWindow at18:06:41Z. Its normal owned stop
+completed; a separately explicit new contact attempt then reached Store dispatch
+and returned OutcomeUnknown/inner Cancelled at18:12:13Z (MailboxDispatch lines467/416).
+The same intent's next retry cancelled at18:19:53Z in
+RequireRetainedInitialDraftAndRecipientUnderLeaseAsync line236 before new dispatch.
+Preserve both original attempts; no absence-of-effect inference or automatic replacement.
+Android Chats133/Refresh134 lost UI hierarchy after input; independent Inspect135
+observed Busy, then Inspect136 observed a messaging error. Closed caller metadata
+reports Retrieve OutcomeUnknown. Do not repeat the input based on missing hierarchy.
+
+Bounded existing-meter observation on local node2 captured only closed mailbox
+phases for180s using official dotnet-counters9.0.661903, without app restart,
+configuration/security changes or payload capture. Initial attachment to PID1
+failed; process discovery selected the actual XNode, and the second collection
+completed native0. The maximum reported interval P99 was1302ms for lease-check
+and1298ms for authority-source. These are not request-correlated measurements,
+raw maxima or proof of the specific timeout's cause. Local onion peer logs also
+show bounded504/OutcomeUnknown responses; delivery remains unconfirmed.
+Windows closed observations and metric summary:
+`artifacts/s05-prekey-maintenance-20261016/windows-22/`;
+Android phases129–136: `artifacts/s05-prekey-read-path-20261016/`.
+Next: narrow actual protected-storage/authority work, retaining existing batch
+reads and all cryptographic/currentness/native checks. No plaintext cache or
+deadline extension is implemented by this checkpoint. Physical acceptance0/4.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
