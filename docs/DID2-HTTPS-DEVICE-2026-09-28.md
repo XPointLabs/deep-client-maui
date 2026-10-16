@@ -6,6 +6,30 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 
 ## Current retained-device checkpoint — 2026-10-16
 
+### Local replica rollover retest
+
+APK31 (MAUI `fcc84fc`, Shared `cbcd28a`, Protocol `b3d24cb`) was installed by
+supported preflight/update phases without resetting the QA account. Its SHA256
+is `3b2ca1dfa2ccd74492dfc5b69ba491d529cc608fa6d7223c0a866c7f86d6d410`.
+The existing recovery copy remains stored and protected-package audits match.
+Receipts: `artifacts/s05-service-rollover-20261016/android-preflight-12`,
+`android-install-13`, `android-inspect-14`, `android-settings-15`,
+`android-scroll-16`, `android-scroll-17`, `android-inspect-18`.
+The local server uses DR-0132's fixed replica service transition; this older
+client pair is diagnostic only, not latest-source package qualification.
+
+Two complete background attempts hit the unchanged120s budget during local
+protected-state reads in PreKeyPublication, not the old PreKeyInventoryExpiry
+guard. First:120094ms total,913 unprotect calls,62965ms protection; second:
+120070ms total,931 calls,73478ms protection. Their cancellation frames identify
+account reopen/retirement or current-pointer/resolver reads. These aggregate
+costs are not proof of a sole cause or of noncommit at a particular replica.
+Current source groups repeated retirement registration reads under the actual
+account lease; source and matching mobile qualification remain separate.
+No first contact/text, attachment or group acceptance is claimed (0/4).
+Windows input remains stopped after the user's physical Escape; automatic goal
+continuation is not permission to resume it.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
