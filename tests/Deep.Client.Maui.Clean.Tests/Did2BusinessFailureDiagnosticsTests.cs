@@ -187,6 +187,25 @@ public sealed class Did2BusinessFailureDiagnosticsTests
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void ThrowOwnedFailure(Exception error) => throw error;
+
+    [Fact]
+    public void RepeatedOwnerHelpersDoNotHideTheCallerWithinTheSameFourFrameBound()
+    {
+        IReadOnlyList<string> entries;
+        try { RepeatedOwnerFrames.Enter(); throw new InvalidOperationException(); }
+        catch (Exception error) { entries = Did2BusinessFailureDiagnostics.Capture(error); }
+        Assert.InRange(entries.Count, 2, 4);
+        Assert.Single(entries, entry => entry.Contains(nameof(RepeatedOwnerFrames), StringComparison.Ordinal));
+        Assert.Contains(entries, entry => entry.Contains(nameof(RepeatedOwnerHelpersDoNotHideTheCallerWithinTheSameFourFrameBound), StringComparison.Ordinal));
+        Assert.All(entries, entry => Assert.DoesNotContain("private", entry));
+    }
+
+    private static class RepeatedOwnerFrames
+    {
+        [MethodImpl(MethodImplOptions.NoInlining)] internal static void Enter() => Middle();
+        [MethodImpl(MethodImplOptions.NoInlining)] private static void Middle() => Fail();
+        [MethodImpl(MethodImplOptions.NoInlining)] private static void Fail() => throw new CryptographicException("private");
+    }
     private sealed class UnreadablePrivateFailure : IOException
     {
         public override string Message => throw new InvalidOperationException("Must not read private details.");

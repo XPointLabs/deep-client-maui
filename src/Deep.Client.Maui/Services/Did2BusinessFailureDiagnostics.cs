@@ -34,6 +34,7 @@ internal static class Did2BusinessFailureDiagnostics
             };
             var check = ContactCheck(error);
             var trace = new StackTrace(error,true); var count = 0;
+            var observedOwners = new HashSet<Type>();
             for (var index = 0; index < Math.Min(trace.FrameCount,48) && count < 4; index++)
             {
                 var frame = trace.GetFrame(index); var method = frame?.GetMethod();
@@ -41,6 +42,11 @@ internal static class Did2BusinessFailureDiagnostics
                 if (space is null || !(space.StartsWith("Deep.Client.Shared",StringComparison.Ordinal) ||
                     space.StartsWith("Deep.Protocol",StringComparison.Ordinal) ||
                     space.StartsWith("Deep.Client.Maui",StringComparison.Ordinal))) continue;
+                // Keep the original four-frame privacy bound, but do not let
+                // several helpers on one owner hide the actual caller boundary.
+                var owner = typeof(System.Runtime.CompilerServices.IAsyncStateMachine).IsAssignableFrom(type)
+                    ? type!.DeclaringType ?? type! : type!;
+                if (!observedOwners.Add(owner)) continue;
                 var origin = (type!.DeclaringType is { } parent ? parent.Name + "+" : "") + type.Name + "." + method!.Name;
                 if (origin.Length is 0 or > 240 || !origin.All(ch => char.IsAsciiLetterOrDigit(ch) || "_.+<>`".Contains(ch))) continue;
                 var line = Math.Clamp(frame!.GetFileLineNumber(),0,99999);

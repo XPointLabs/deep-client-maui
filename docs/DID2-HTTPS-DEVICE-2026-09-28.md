@@ -129,6 +129,27 @@ It is not installed by APK34. Shared canonical-preflight05 (before these
 diagnostic Protocol edits) completed build0/6 fixture PASS/0skip/terminal0,
 2042 captured inputs, FullAccepted=false; it is not a full source gate.
 
+APK35 (MAUI `2b8519f`, Protocol `d2e3d42`, unchanged Shared `ca1df5f`)
+built with0 warnings/errors and the same signer; SHA256
+`5c1183b81a2c76710e89e39cef13f2e32adf1b2b4ce99f53dd422dbcb025f0f5`.
+Preflight68/update69/settings70/scroll71–72/Inspect73 retained recovery and
+protected packages, observing Verified after61266ms; the next background cycle
+completed56077ms. Chats74 -> one Refresh75 -> Inspect76 failed explicitly at
+`MailboxGrantExpiry`, not a generic issuer/signature/network predicate. Closed
+metadata is in `android-grant-expiry-diagnostic-77`. It does not prove whether
+the caller is resuming an active read/ACK, restoring a result or acquiring new
+work: the four reported frames belonged to one Protocol owner. No expired grant
+was accepted, and no original/grant/counter/cycle was deleted or replaced.
+
+The next QA-only diagnostic keeps four frames/error and four exception depths,
+but takes only the first frame of each logical owner (async state machines are
+grouped under their declaring owner). The first rejecting guard remains visible
+without hiding the account caller behind redundant same-owner helpers. Focused
+maui03/04 passed161/0/0/native0 but retained an xUnit assertion-style warning;
+the assertion now uses its predicate overload without changing expectations.
+Final maui05 passed82/0/0/native0 with0 compiler warnings/errors. Packaged
+physical caller evidence remains required.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
