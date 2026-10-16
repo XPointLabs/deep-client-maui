@@ -8,6 +8,43 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class Did2BusinessFailureDiagnosticsTests
 {
     [Theory]
+    [InlineData("MalformedFrame")] [InlineData("UnsupportedResponseType")] [InlineData("FrameTooLarge")]
+    [InlineData("UnsupportedMediaType")] [InlineData("WrongOrigin")] [InlineData("EarlyDataRejected")]
+    [InlineData("Saturated")] [InlineData("InvalidUpstreamResponse")] [InlineData("Unavailable")]
+    [InlineData("UpstreamOutcomeUnknown")]
+    public void OnlyExactSealedSharedIngressFailuresGetClosedLabels(string reason)
+    {
+        var message = $"Privacy ingress rejected the request before forwarding ({reason}).";
+        var error = CreateOwnedIngressFailure(message);
+        var entry = Assert.Single(Did2BusinessFailureDiagnostics.Capture(error));
+        Assert.Equal($"kind=Io; check=Ingress{reason}; depth=0; method=unavailable; line=0; il=-1", entry);
+        Assert.DoesNotContain(message, entry);
+        Assert.Contains("check=Unclassified;", Assert.Single(Did2BusinessFailureDiagnostics.Capture(new IOException(message))));
+    }
+
+    [Fact]
+    public void OwnedIngressUnknownTextNeverLeavesTheClosedObserver()
+    {
+        const string privateText = "private credential payload and endpoint";
+        var unknown = CreateOwnedIngressFailure(privateText);
+        Assert.Equal("kind=Io; check=Unclassified; depth=0; method=unavailable; line=0; il=-1",
+            Assert.Single(Did2BusinessFailureDiagnostics.Capture(unknown)));
+        var connection = CreateOwnedIngressFailure("Privacy ingress was unreachable before the opaque frame could be forwarded.");
+        Assert.Contains("check=IngressConnection;", Assert.Single(Did2BusinessFailureDiagnostics.Capture(connection)));
+    }
+
+    private static Exception CreateOwnedIngressFailure(string message)
+    {
+        // Test-only construction of the real internal sealed transport failure.
+        // No reflection is used in the production observer or routing decisions.
+        var type = typeof(ClientMailboxTransportException).Assembly.GetType(
+            "Deep.Client.Shared.Services.PrivacyIngressRejectedBeforeForwardException", throwOnError: true)!;
+        return (Exception)Activator.CreateInstance(type,
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic, binder: null,
+            args: new object?[] { true, message, null }, culture: null)!;
+    }
+
+    [Theory]
     [InlineData("XPP1 inventory begins after the authenticated lower time bound.", "PreKeyInventoryNotBefore")]
     [InlineData("XPP1 inventory does not cover the authenticated upper time bound.", "PreKeyInventoryExpiry")]
     [InlineData("XPP1 XPS1/XPI1 differ from the current DID2 device authority.", "PreKeyInventoryBinding")]

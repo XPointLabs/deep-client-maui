@@ -296,3 +296,35 @@ plumbing evidence with a stub expiry outcome, not an authenticated native stop.
 [Shared's actual PQ/SQLCipher qualification](../../deep-client-shared/docs/testing/s05-initial-retry-entry-2026-10-17.md)
 is separate. Windows26/APK43 are unchanged; matching new builds and physical
 request/accept/text are still required. No physical business acceptance claimed.
+
+Matching Windows27/APK44 were built from MAUI `8181f0a`, Shared `f63b432`,
+Protocol `9d6df07`, native0 and no compiler diagnostics. The first Windows
+wrapper failed parameter binding before compiler launch; the fresh build-02
+receipt succeeded. Windows apphost SHA256
+`b1ef531581c305ba26f2905faaa88ca682081ab635124c1c989a7630109e794e`;
+assembly `8be67b75a909765ffe131dcc548470aa611f5ad4bf7cf99b6a2ef66fb5deced7`.
+APK44 SHA256 `6e5a7e4e5b760ecfd486791ad396dd7d25e0e1cb72c2f6a4328bc7e80964794a`,
+same previously pinned signer. Supported dry193 passed; Install194 correctly
+refused an existing package before update permission, then explicit update195
+installed/launched without reset. Settings196 retained identity/recovery;
+Scroll198 exposed Verified. Unrelated off-screen account flags mean visibility,
+not account loss. Production packages were preserved by the harness snapshots.
+
+Windows27 retained the exact previous account and encrypted recovery. Add first
+projected the existing unfinished request. One exact Retry completed the owned
+expiry path: the UI showed original expiry/possible remote receipt, no error,
+no retry choice and no automatic replacement. ContactStartTotal17668ms,
+6 Protect/1028 Unprotect,13985ms protection. Only a separate explicit Add began
+new work. It failed during permanent-contact read, at ForwardOnceAsync line146 /
+PrivacyManagedIngressHttpTransport line299 (46429ms,26 Protect/1173 Unprotect,
+23944ms protection). One exact UI retry failed at the same boundary (5650ms,
+1 Protect/372 Unprotect,2637ms protection). The original new intent remains;
+neither operation is a delivered contact or a new native Store receipt.
+
+The existing QA observer loses the already decoded ingress error class. A
+display-only correction maps complete fixed literals from the exact sealed
+Shared-owned ingress exception to closed labels. Foreign exception getters and
+unknown text remain unread/unreported; no route, retry, certainty or authority
+decision consumes a label. Unfiltered Clean284 passed/native0/0 skipped without
+compiler diagnostics (`clean-02`). Matching diagnostic builds/retest are pending.
+No further blind retry, account reset or server authority change was performed.

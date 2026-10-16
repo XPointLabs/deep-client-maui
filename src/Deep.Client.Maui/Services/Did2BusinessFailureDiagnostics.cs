@@ -62,7 +62,15 @@ internal static class Did2BusinessFailureDiagnostics
 
     // QA-only code-owned guard classification, never a message-based trust
     // check or a fallback. Renamed/unknown/private messages remain Unclassified.
-    private static string ContactCheck(Exception error) => error is ApplicationCoreFormatException
+    private static string ContactCheck(Exception error)
+    {
+        // This exact sealed Shared-owned exception inherits Message without an
+        // override. Foreign exception getters and arbitrary text stay unread.
+        var type = error.GetType();
+        if (type.Assembly == typeof(ClientMailboxTransportException).Assembly && type.IsSealed &&
+            type.FullName == "Deep.Client.Shared.Services.PrivacyIngressRejectedBeforeForwardException")
+            return IngressCheck(error.Message);
+        return error is ApplicationCoreFormatException
         { Stage: ApplicationCoreValidationStage.CryptographicVerification, Rejection: ApplicationCoreRejection.VerificationFailed } prekey
         ? ReplicaPreKeyCheck(prekey.Message)
         : error.GetType() != typeof(CryptographicException) ? "Unclassified" : error.Message switch
@@ -116,6 +124,23 @@ internal static class Did2BusinessFailureDiagnostics
             "Retained read success exceeds its exact request/current issuer/horizon." => RetainedReadCheck(error),
             _ => RouteTimeCheck(error.Message)
         };
+    }
+
+    private static string IngressCheck(string message) => message switch
+    {
+        "Privacy ingress rejected the request before forwarding (MalformedFrame)." => "IngressMalformedFrame",
+        "Privacy ingress rejected the request before forwarding (UnsupportedResponseType)." => "IngressUnsupportedResponseType",
+        "Privacy ingress rejected the request before forwarding (FrameTooLarge)." => "IngressFrameTooLarge",
+        "Privacy ingress rejected the request before forwarding (UnsupportedMediaType)." => "IngressUnsupportedMediaType",
+        "Privacy ingress rejected the request before forwarding (WrongOrigin)." => "IngressWrongOrigin",
+        "Privacy ingress rejected the request before forwarding (EarlyDataRejected)." => "IngressEarlyDataRejected",
+        "Privacy ingress rejected the request before forwarding (Saturated)." => "IngressSaturated",
+        "Privacy ingress rejected the request before forwarding (InvalidUpstreamResponse)." => "IngressInvalidUpstreamResponse",
+        "Privacy ingress rejected the request before forwarding (Unavailable)." => "IngressUnavailable",
+        "Privacy ingress rejected the request before forwarding (UpstreamOutcomeUnknown)." => "IngressUpstreamOutcomeUnknown",
+        "Privacy ingress was unreachable before the opaque frame could be forwarded." => "IngressConnection",
+        _ => "Unclassified"
+    };
 
     private static string MailboxGrantCheck(Exception error) => error.Data["Deep.MailboxAuthority.Check"] switch
     {
