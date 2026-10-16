@@ -176,3 +176,51 @@ closed-observer cases (including unreadable private exception fields, throwing
 logger and preserved caller cancellation). The initial compile failure in
 focused-01 is retained separately. This is focused source evidence, not a full
 XNode gate, local runtime observation or physical business acceptance.
+
+## Retained local deployment and native pending Store diagnosis
+
+Local XNode `17cee31` was built and activated through supported current-dev
+Build13/Up14/Verify15, each native0. All nine services run their captured desired
+images. All54 mounts (29 volumes/25 binds), including read/write modes, are
+preserved. The raw representation comparison did not pass: seven bind sources
+changed between Windows and Docker Desktop path notation. A separate finite
+alias comparison resolved each target within the named workspace and matched
+all54 original identities; it does not overwrite or relabel the raw failure.
+Receipts: `deep-devops/artifacts/s05-native-terminal-observation-20261017/`.
+No enrollment, key/floor/genesis replacement, account reset or production change.
+
+Android43 remains the independently hash-qualified installed APK above.
+Inspect170 refused before device action because the new exact evidence document
+was absent from the harness's documentation-only allowlist. A harness-only
+correction adds that single path, not a wildcard or application source exception;
+its focused UI/source contract passed1/0/0/native0. Strict ancestry, clean source,
+APK/source/signature and install checks remain. Dry171, Inspect172, Refresh173
+and independent Inspect174 then passed their scoped UI observations. The final
+screen has messaging error, not synchronization. MailboxSyncTotal34793ms,
+2 Protect/248 Unprotect,22929ms protection; Retrieve OutcomeUnknown remains.
+
+During this bounded receive, the closed native logger observed a node terminal
+failure in `MailboxPeerMutationStore.ReadCurrentWindowAsync` IL1074. The actual
+container module/PDB maps it to source47: live unresolved native Store custody.
+Module SHA256 `9d558e9404d3c176358a213dbebb7ff93826f52e0de6b3c8d61156cbcacbbbc4`;
+PDB SHA256 `b0c47d4a58801f003bc3551c4c6ae039a55b6ad413c60100d1d61a00880de992`.
+This identifies an actual native refusal, not a local managed cancellation.
+Closed observations do not correlate by operation ID and do not prove which
+earlier sender request created that pending mutation or why its Store failed.
+The existing pending-prefix guard must remain: skipping it can lose a later
+completion below a cross-replica cursor. An empty successful page is not a fix.
+
+Windows26 selected the same existing peer. The first Add action projected the
+retained pending request; a separate explicit Retry ended at XurWindow in
+`PrepareInitialContactDraftAsync`, before another native Store. ContactStartTotal
+42690ms,2 Protect/498 Unprotect,23382ms protection. No stop, replacement intent,
+account reset or repeated submission followed. This does not qualify Store
+reconciliation or associate the native pending mutation with this exact request.
+
+The immediate S05 investigation is the real original pending Store's bounded
+settlement/recovery and its expiry boundary, alongside the retained sender's
+application deadline. Preserve exact native intent/replay and client uncertainty;
+do not make XUR/grant freshness renewable, remint a peer nonce, skip the cursor
+barrier or use a new account to qualify retained recovery. No new wire/API or
+recovery bypass is frozen by this checkpoint. Physical acceptance remains0/4;
+canonical full/package, remaining lifecycle and release gates are still open.
