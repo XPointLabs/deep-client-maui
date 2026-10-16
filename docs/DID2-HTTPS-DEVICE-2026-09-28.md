@@ -223,6 +223,19 @@ error and an empty conversation list. Its closed receipt is
 No other Windows application was controlled. Physical contacts/messages/files/
 groups remain0/4, and these diagnostic binaries are not Release packages.
 
+Android Contacts112/Peer113 reopened the previous exact intent. Add114 refused
+before input because the keyboard was visible; its native1 receipt is retained.
+Dismiss115 -> Add116 restored the saved retry choice, not Store. Retry117 ->
+independent Inspect118/Scroll121 reports protected-state failure. Its closed
+caller metadata points to `PrepareInitialContactDraftAsync` IL4129; matching
+build DLL/PDB maps that to line86, the exact retained metadata equality guard.
+This identifies the compound guard, not which field differs or APK-extracted IL.
+The original intent was not reset, stopped, rebound or reauthored. DR-0064's
+exact endpoint/contact binding remains enforced; a fresh proof cannot rewrite
+the old draft. Scroll120 was rejected by dirty-doc preflight before input and
+rerun only after the documentation checkpoint commit. Both failures remain.
+Closed receipts: `android-37-contact-diagnosis-123`, same artifact prefix.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
