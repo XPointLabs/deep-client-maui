@@ -8,9 +8,13 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 
 ### Bounded work-cost diagnostic candidate
 
-After Node build13 / supported Up14, Windows16's single incoming refresh at
-05:24Z completed synchronization with an empty list and no new closed failure.
-This does not prove a contact/message effect or identify the earlier exit cause.
+After Node build13 / supported Up14, Windows16's incoming refresh at05:24Z
+completed synchronization with an empty list and no new closed failure. A second
+refresh started05:39Z, was still Busy at05:41Z, and was observed completed by
+06:00Z; its exact completion time/cause of delay was not measured. A bounded
+sample-only trace had no interpretable owned frames and is not cause evidence.
+These observations do not prove a contact/message effect or explain the earlier
+exit failure.
 Android25 Verify03 still ended failure-redacted with the same profile retained.
 
 The HTTPS QA composition now measures verification stages and aggregate platform
@@ -22,9 +26,25 @@ Observer failure cannot replace the operation result. It is absent from normal
 and Release composition and does not cache plaintext or authorize work.
 Focused work/storage/reconnect/composition tests passed52/0/0; the unfiltered
 Clean project passed227/0/0, native0 under Windows PowerShell5.1 / SDK10.0.301
-(`artifacts/s05-work-cost-20261016/focused-01`, `clean-02`). Matching Android
-build/retained install and actual measurement remain required. Source tests do
-not prove a Keystore bottleneck or physical delivery; acceptance remains0/4.
+(`artifacts/s05-work-cost-20261016/focused-01`, `clean-02`).
+
+APK27 compiles MAUI `1ba92e6`, Shared `104b24b`, Protocol `0867668`; SHA256
+`7b3cea2ced7485235df064e7d64ab060703d71bfd539b4de66f60c8375726a17`.
+Build27 completed with0 warnings/errors and the unchanged signer. Supported
+dry/update Install01 passed; Settings01 confirms recovery remains stored. Build26
+failed before compilation on a missing required lab-pin parameter, with no
+installation; Build27 retained the existing compiled diagnostic pin, not a new
+authority. All protected-package audits remain unchanged.
+
+The actual cancelled verification recorded120067ms total,1226 unprotect calls
+and66813ms in platform protection. ContactPublication alone recorded56456ms /
+562 calls /31129ms protection; PreKeyPublication recorded25281ms /236 calls /
+12995ms protection. These are inclusive local operation costs, not trusted time
+or proof that protection is the sole cause. Shared's atomic journal read-group
+candidate is qualified separately in
+[owned local read groups](../../deep-client-shared/docs/architecture/owned-authored-counter-custody.md#actual-atomic-local-read-groups).
+Matching post-optimization APK/device measurement remains required. No account,
+original intent, floor, key or timeout was reset/replaced; acceptance remains0/4.
 
 ### Matched capped-successor correction
 
