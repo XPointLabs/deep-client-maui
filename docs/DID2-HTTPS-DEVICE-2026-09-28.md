@@ -25,6 +25,16 @@ Windows UI access was separately revalidated: fresh selection confirms build17
 running with the retained QA profile. Its previously unobserved launch is now
 observed; do not carry the former tool-budget refusal forward as a current block.
 
+The DR-0129 source successor changes the fixed genesis-only prekey diagnostic
+to `ContactPrekeyScope`; MAUI's exact classifier and test mapping follow that
+current source only, without a legacy alias. Focused `maui-05` under
+`artifacts/s05-prekey-service-succession-20261016/` passed108/0/0/native0.
+This diagnostic update is not installed on either device. The
+[Protocol checkpoint](../../deep-protocol/docs/testing/s05-prekey-service-succession-2026-10-16.md)
+records signed source evidence and the still-failing MAU2 package gate.
+Multi-generation inventory custody and matched same-account physical recovery
+remain open; do not count either installed profile as recovered by these edits.
+
 APK29 compiles MAUI `893db64`, Shared `32de907`, Protocol `cacbd67`; SHA256
 `3f29b8a4517ea17f5d55b6798aebae5bcc96d31507d31e88910b749e4f9dfe9c`.
 Build29 completed with0 compiler warnings/errors and the unchanged signer.

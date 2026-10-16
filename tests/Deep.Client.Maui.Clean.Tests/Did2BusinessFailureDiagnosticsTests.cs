@@ -102,7 +102,7 @@ public sealed class Did2BusinessFailureDiagnosticsTests
     [InlineData("New contact issuance requires a route anchored at the current verified directory head.", "ContactIssuanceAnchor")]
     [InlineData("The object requires the exact authorized invite kind and route generation.", "ContactInviteGeneration")]
     [InlineData("The exact active-device prekey descriptor is absent.", "ContactPrekeyDevice")]
-    [InlineData("The prekey descriptor is not the exact current genesis service.", "ContactPrekeyGenesis")]
+    [InlineData("The prekey descriptor is outside the exact current device scope or interval.", "ContactPrekeyScope")]
     [InlineData("Contact validity cannot cover the complete trusted time interval.", "ContactObjectValidity")]
     [InlineData("The contact object is not the exact current reusable route.", "ContactObjectRoute")]
     [InlineData("Contact authoring crossed a trusted clock discontinuity.", "ContactAuthorClock")]
