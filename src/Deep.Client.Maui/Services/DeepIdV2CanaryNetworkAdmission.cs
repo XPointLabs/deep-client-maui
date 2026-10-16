@@ -66,19 +66,10 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
             accounts.OpenNetworkLkgStoreAsync(genesisPin, cancellationToken));
         var networkSource = new DeepIdV2ContactPathAuthoritySource(genesisPin,
             accounts, proof, closure, networkFloor, clock);
-        var network = await HttpStageAsync("NetworkVerification", () =>
-            networkSource.VerifyCurrentNetworkAsync(
-                genesisPin.NetworkId, cancellationToken).AsTask(), cancellationToken);
-        network.EnsureCurrent();
-        var custody = await ObserveWorkAsync("OnionCustody", () =>
-            accounts.OpenOwnOnionClientCustodyAsync(cancellationToken));
-        // One owned command maintains/seals the inventory before dispatch.
-        // Success requires authenticated replies from both selected exits,
-        // independently verified XIC1 signatures and durable pair recording.
-        // A Registry proof or local staging alone cannot complete this action.
-        _ = await HttpStageAsync("PreKeyPublication", () =>
-            accounts.PublishOwnPreKeyInventoryAsync(networkSource,
-                custody, cancellationToken), cancellationToken);
+        // One account-owned command independently verifies the complete network,
+        // maintains/publishes both prekey replicas and then publishes the contact.
+        // Each subphase rechecks live proof/floors/time; the UI does not perform
+        // redundant full acquisitions or supply a cached authority capability.
         _ = await HttpStageAsync("ContactPublication", () =>
             accounts.EnsureOwnPermanentContactPublishedAsync(networkSource,
                 cancellationToken), cancellationToken);

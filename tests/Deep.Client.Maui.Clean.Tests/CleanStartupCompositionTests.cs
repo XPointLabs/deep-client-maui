@@ -341,16 +341,18 @@ public sealed class CleanStartupCompositionTests
             StringComparison.Ordinal);
         Assert.Contains("accounts.OpenNetworkLkgStoreAsync(genesisPin,",
             admission, StringComparison.Ordinal);
-        Assert.Contains("networkSource.VerifyCurrentNetworkAsync(",
-            admission, StringComparison.Ordinal);
+        var accountVerification = admission[..admission.IndexOf(
+            "private static HttpServiceClientOptions? DiagnosticHttpOptions()", StringComparison.Ordinal)];
+        Assert.DoesNotContain("networkSource.VerifyCurrentNetworkAsync(",
+            accountVerification, StringComparison.Ordinal);
         Assert.DoesNotContain("accounts.EnsureOwnPreKeyInventoryAsync(", admission, StringComparison.Ordinal);
-        Assert.Contains("accounts.OpenOwnOnionClientCustodyAsync(cancellationToken)",
-            admission, StringComparison.Ordinal);
-        Assert.Contains("accounts.PublishOwnPreKeyInventoryAsync(networkSource,",
-            admission, StringComparison.Ordinal);
+        Assert.DoesNotContain("accounts.OpenOwnOnionClientCustodyAsync(cancellationToken)",
+            accountVerification, StringComparison.Ordinal);
+        Assert.DoesNotContain("accounts.PublishOwnPreKeyInventoryAsync(networkSource,",
+            accountVerification, StringComparison.Ordinal);
         Assert.Contains("HttpStageAsync(\"AccountProof\"", admission);
-        Assert.Contains("HttpStageAsync(\"NetworkVerification\"", admission);
-        Assert.Contains("HttpStageAsync(\"PreKeyPublication\"", admission);
+        Assert.DoesNotContain("HttpStageAsync(\"NetworkVerification\"", accountVerification);
+        Assert.DoesNotContain("HttpStageAsync(\"PreKeyPublication\"", accountVerification);
         Assert.Contains("HttpStageAsync(\"ContactPublication\"", admission);
         Assert.Contains("accounts.EnsureOwnPermanentContactPublishedAsync(networkSource,", admission);
         Assert.Contains("HttpStageAsync(\"ContactResolution\"", admission);
@@ -614,7 +616,20 @@ public sealed class CleanStartupCompositionTests
         var admission = source[..source.IndexOf("private static HttpServiceClientOptions?", StringComparison.Ordinal)];
         Assert.True(admission.IndexOf("ReadBootstrapAsync(", StringComparison.Ordinal) <
             admission.IndexOf("accounts.AdmitAndVerifyGenesisAsync(", StringComparison.Ordinal));
-        Assert.Contains("network.EnsureCurrent()", admission);
+        Assert.Contains("accounts.EnsureOwnPermanentContactPublishedAsync(networkSource,", admission);
+        var shared = Path.Combine(Path.GetDirectoryName(FindRepository())!, "deep-client-shared",
+            "src", "Deep.Client.Shared", "Services");
+        var workflow = File.ReadAllText(Path.Combine(shared, "DeepIdV2AccountService.ContactRoute.cs"));
+        var command = workflow[workflow.IndexOf("public async Task<VerifiedDeepIdV2PublicationCommit> EnsureOwnPermanentContactPublishedAsync(",
+            StringComparison.Ordinal)..workflow.IndexOf("internal async Task<VerifiedDeepIdV2PublicationCommit> EnsureOwnPermanentContactPublishedAsync(",
+            StringComparison.Ordinal)];
+        Assert.Contains("source.VerifyForOwnPreKeyAuthoringAsync(this,", command);
+        Assert.True(command.IndexOf("source.VerifyForOwnPreKeyAuthoringAsync(", StringComparison.Ordinal) <
+            command.IndexOf("PublishOwnPreKeyInventoryCoreAsync(", StringComparison.Ordinal));
+        Assert.Contains("EnsureOwnPermanentContactPublishedCoreAsync(", command);
+        Assert.Contains("await source.RecheckOwnPreKeyAuthoringAsync(fresh, ct)", workflow);
+        var authority = File.ReadAllText(Path.Combine(shared, "ContactV2", "DeepIdV2ContactPathAuthoritySource.cs"));
+        Assert.Contains("verified.EnsureCurrent()", authority);
     }
 
     [Fact]

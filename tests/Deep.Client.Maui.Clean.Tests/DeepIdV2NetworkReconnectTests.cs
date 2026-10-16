@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using Deep.Client.Maui.Core.Services;
 using Deep.Client.Maui.Services;
+using Deep.Client.Shared.Services;
 using Deep.Client.Shared.Services.AccountDirectoryV2;
 
 namespace Deep.Client.Maui.Clean.Tests;
@@ -335,6 +336,44 @@ public sealed class DeepIdV2NetworkReconnectTests
         await manual.WaitAsync(TimeSpan.FromSeconds(6));
         await WaitFor(reconnect, DeepIdV2ReconnectState.Verified);
         Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public async Task WrappedRetryableOnionDependencyReverifiesWithoutBeingPermanentlyRejected()
+    {
+        var cause = new ClientMailboxTransportException(ClientMailboxTransportFailure.DependencyUnavailable,
+            true, "Test dependency unavailable.", new IOException("Test private transport cause."));
+        var wrapped = Did2NetworkIoFailure.AtStage("ContactPublication", cause);
+        var calls = 0;
+        await using var reconnect = new DeepIdV2NetworkReconnect(_ => {
+            if (Interlocked.Increment(ref calls) == 1) throw wrapped;
+            return Task.CompletedTask;
+        }, new Network());
+        reconnect.Resume();
+        await WaitFor(reconnect, DeepIdV2ReconnectState.Unavailable);
+        await WaitFor(reconnect, DeepIdV2ReconnectState.Verified);
+        Assert.Equal(2, calls);
+        Assert.Same(cause, wrapped.InnerException);
+    }
+
+    [Theory]
+    [InlineData(ClientMailboxTransportFailure.DependencyUnavailable, false)]
+    [InlineData(ClientMailboxTransportFailure.AuthorizationRejected, false)]
+    [InlineData(ClientMailboxTransportFailure.ProtocolViolation, true)]
+    public async Task TypedTransportDenialCannotGainRetryFromInnerHttpFailure(
+        ClientMailboxTransportFailure failure, bool retryable)
+    {
+        var cause = new ClientMailboxTransportException(failure, retryable,
+            "Test typed refusal.", new HttpRequestException("Test nested network failure."));
+        var wrapped = Did2NetworkIoFailure.AtStage("ContactPublication", cause);
+        var calls = 0;
+        await using var reconnect = new DeepIdV2NetworkReconnect(_ => {
+            Interlocked.Increment(ref calls); throw wrapped;
+        }, new Network());
+        reconnect.Resume();
+        await WaitFor(reconnect, DeepIdV2ReconnectState.Rejected);
+        await Task.Delay(200);
+        Assert.Equal(1, calls);
     }
 
     [Fact]

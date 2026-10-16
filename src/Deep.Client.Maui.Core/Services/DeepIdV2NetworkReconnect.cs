@@ -1,5 +1,6 @@
 using System.Net;
 using System.Threading.Channels;
+using Deep.Client.Shared.Services;
 using Deep.Client.Shared.Services.AccountDirectoryV2;
 
 namespace Deep.Client.Maui.Core.Services;
@@ -215,6 +216,11 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
         // Display wrappers carry their typed cause. Corrupt floors, malformed
         // records, signature failures and generic IO are not retry authority.
         for (var depth = 0; depth < 8; depth++,error = error.InnerException!) {
+            // A typed producer's negative decision is authoritative here:
+            // an inner HTTP error cannot promote a nonretryable rejection.
+            if (error is ClientMailboxTransportException transport)
+                return transport is { Failure: ClientMailboxTransportFailure.DependencyUnavailable, Retryable: true }
+                    ? TimeSpan.Zero : null;
             if (error is DeepIdV2DirectoryProofUnavailableException unavailable && unavailable.StatusCode is HttpStatusCode.ServiceUnavailable or HttpStatusCode.TooManyRequests)
                 return unavailable.RetryAfter ?? TimeSpan.Zero;
             if (error is HttpRequestException or TimeoutException or OperationCanceledException) return TimeSpan.Zero;

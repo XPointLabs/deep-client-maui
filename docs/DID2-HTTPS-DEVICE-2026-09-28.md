@@ -44,6 +44,45 @@ or business success is accepted. The next candidate removes complete per-fragmen
 network reacquisition while retaining ordinary currentness checks under DR-0131;
 it is not installed by these receipts. Windows remains stopped after Escape.
 
+APK33 (MAUI `e6418ff`, Shared `472457e`, Protocol `fed7d30`) built with0
+warnings/errors; SHA256
+`ab6442ab358ec13253b6c2d2c2f0f99b222a7a5667711d35f88d3b274a788e85`.
+Supported preflight38/update39/settings40/scroll41–42 retained recovery and
+protected-package audits. PreKeyPublication returned successfully before the
+pipeline entered ContactPublication:65884ms/506 unprotects/40313ms protection.
+By source order this requires both verified XIC1 signatures and durable pair
+recording, not only local staging. The next command completed that phase in
+21205ms/181 unprotects/0 protects; a further repeat used24306ms/181/0.
+`android-pair-diagnostic-45` retains the closed code/stage metadata. No account,
+key, inventory or original contact intent was reset/replaced.
+
+Full verification still did not complete. First/second attempts cancelled at
+120048/120011ms during contact publication. A third ended at113481ms with a
+typed ingress dependency refusal and Rejected scheduling. A contemporaneous
+node log reports IssuedLowerBound before backend forwarding; adjusting the
+independently observed phone wall-clock offset puts it within24ms of the device
+failure, but there is no request-identity correlation. No clock rule or issue
+time was relaxed/backdated. Manual Verify47 also cancelled at120006ms during
+the same retained contact renewal. Contacts/messages/files/groups remain0/4.
+
+The next source candidate makes the existing public contact workflow complete
+its own dependencies with one independently fresh context, retaining all owner
+phase checks. MAUI no longer duplicates complete network/prekey acquisition.
+Its scheduler also consumes the existing typed retryable dependency failure
+instead of treating it as a permanent security rejection; an explicit typed
+denial cannot gain retry from an inner HTTP exception. These changes require
+new focused checks and matched APK; APK33 observations do not qualify them.
+Shared workflow04 passed18/0/0/native0. MAUI focused06 passed79/0/0/native0;
+the original focused05 has78 PASS/1 stale source-assertion FAIL: it searched for
+the removed redundant UI-level `network.EnsureCurrent()` call. The replacement
+still checks pinned bootstrap/admission order and follows verification, prekey
+completion and final currentness into the actual account-owned workflow.
+Unfiltered Smoke project07 passed119/0/0/native0. All three successful runs
+used Windows PowerShell5.1/SDK10.0.301 without compiler warnings/errors. They do
+not qualify canonical full/package gates or physical delivery. The renamed
+ContactPublication work scope now includes the complete owned workflow; compare
+whole verification totals, not old versus new isolated contact-stage timings.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
