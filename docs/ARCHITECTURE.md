@@ -66,6 +66,14 @@ before account mutation. A cancelled foreground waiter cannot cancel another
 background owner. Exceptions release the lane and retain their inner cause,
 while visible messaging errors remain closed text. This coordination conveys
 no authority, success, retry/non-delivery or permission to reset original work.
+The foreground delegate now receives its own at-most-two-minute cancellation
+budget only after acquiring the lane. Previously that budget applied to the
+background pipeline alone. The same actual delegate must drain before release;
+an uncooperative operation is not detached with `WaitAsync`, and late success
+after cancellation is rejected. This scheduling bound is not request expiry,
+proof of noncommit, an automatic resend or permission to replace retained work.
+Only the internal test constructor may select a shorter positive budget; zero,
+negative and budgets above the production maximum reject before subscription.
 The Android Rejected/foreground-cancellation observation motivated this source
 audit; it does not by itself establish this race as that device's exact cause.
 Source qualification: `artifacts/s05-current-publication-20261015/foreground-pipeline-focused-02`

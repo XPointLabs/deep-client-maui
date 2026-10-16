@@ -10,6 +10,91 @@ namespace Deep.Client.Maui.Clean.Tests;
 // Scheduling and lifecycle only; delegate success is not device/transport evidence.
 public sealed class DeepIdV2NetworkReconnectTests
 {
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(120001)]
+    public void ForegroundDeadlineCannotBeDisabledOrExceedProductionBudget(int milliseconds)
+    {
+        var network = new Network();
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DeepIdV2NetworkReconnect(
+            _ => Task.CompletedTask, network, null, TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(milliseconds)));
+        Assert.Equal(0, network.Subscribers);
+    }
+
+    [Fact]
+    public async Task ForegroundAttemptDeadlineCancelsItsActualTokenAndReleasesLane()
+    {
+        var calls = 0;
+        await using var reconnect = new DeepIdV2NetworkReconnect(_ => {
+            Interlocked.Increment(ref calls); return Task.CompletedTask;
+        }, new Network(), null, TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(100));
+        reconnect.Resume(); await WaitFor(reconnect, DeepIdV2ReconnectState.Verified);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cleanup = new CancellationTokenSource();
+        var foreground = reconnect.RunForegroundAsync(async token => {
+            entered.TrySetResult();
+            try { await Task.Delay(Timeout.InfiniteTimeSpan, token); }
+            catch (OperationCanceledException) { cancelled.TrySetResult(); throw; }
+        }, cleanup.Token);
+        try {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // Background verification has no ownership of this deadline.
+            await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => foreground);
+            Assert.Equal(1, calls);
+            Assert.Equal(DeepIdV2ReconnectState.Verified, reconnect.State);
+            Assert.Equal(7, await reconnect.RunForegroundAsync(_ => Task.FromResult(7)));
+        } finally {
+            cleanup.Cancel();
+            try { await foreground; } catch (OperationCanceledException) { }
+        }
+    }
+
+    [Fact]
+    public async Task ForegroundDeadlineStartsOnlyAfterOwningLane()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var reconnect = new DeepIdV2NetworkReconnect(async token => {
+            entered.TrySetResult(); await finish.Task.WaitAsync(token);
+        }, new Network(), null, TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(100));
+        reconnect.Resume(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var foreground = reconnect.RunForegroundAsync(token => {
+            Assert.False(token.IsCancellationRequested); return Task.FromResult(9);
+        });
+        try {
+            await Task.Delay(250);
+            Assert.False(foreground.IsCompleted);
+        } finally { finish.TrySetResult(); }
+        Assert.Equal(9, await foreground.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public async Task ForegroundDeadlineCannotReleaseUncooperativeOwnerOrAcceptItsLateSuccess()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var reconnect = new DeepIdV2NetworkReconnect(_ => Task.CompletedTask,
+            new Network(), null, TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(100));
+        reconnect.Resume(); await WaitFor(reconnect, DeepIdV2ReconnectState.Verified);
+        var foreground = reconnect.RunForegroundAsync(async token => {
+            using var registration = token.Register(() => cancelled.TrySetResult());
+            entered.TrySetResult(); await finish.Task; return 1;
+        });
+        var nextRan = false;
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var next = reconnect.RunForegroundAsync(_ => { nextRan = true; return Task.FromResult(2); });
+        try {
+            await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            Assert.False(nextRan); Assert.False(foreground.IsCompleted);
+        } finally { finish.TrySetResult(); }
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => foreground.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(2, await next.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
     [Fact]
     public async Task ForegroundDelegateRetainsCallerContextAfterWaitingForBackgroundOwner()
     {

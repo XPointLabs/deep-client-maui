@@ -22,6 +22,7 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
     private readonly object gate = new();
     private readonly SemaphoreSlim pipelineGate = new(1,1);
     private readonly TimeSpan refreshInterval;
+    private readonly TimeSpan foregroundOperationTimeout;
     private readonly Task worker;
     private CancellationTokenSource? attempt;
     private CancellationTokenSource? foregroundAttempt;
@@ -35,7 +36,7 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
         Action<Action>? dispatch = null)
         : this(reconnect, network, dispatch, TimeSpan.FromSeconds(60)) { }
     internal DeepIdV2NetworkReconnect(Func<CancellationToken,Task> reconnect, INetworkStatusService network,
-        Action<Action>? dispatch, TimeSpan refreshInterval)
+        Action<Action>? dispatch, TimeSpan refreshInterval, TimeSpan? foregroundOperationTimeout = null)
     {
         this.reconnect = reconnect ?? throw new ArgumentNullException(nameof(reconnect));
         this.network = network ?? throw new ArgumentNullException(nameof(network));
@@ -43,6 +44,9 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
         if (refreshInterval <= TimeSpan.Zero || refreshInterval > TimeSpan.FromSeconds(60))
             throw new ArgumentOutOfRangeException(nameof(refreshInterval));
         this.refreshInterval = refreshInterval;
+        this.foregroundOperationTimeout = foregroundOperationTimeout ?? TimeSpan.FromMinutes(2);
+        if (this.foregroundOperationTimeout <= TimeSpan.Zero || this.foregroundOperationTimeout > TimeSpan.FromMinutes(2))
+            throw new ArgumentOutOfRangeException(nameof(foregroundOperationTimeout));
         network.StatusChanged += ConnectivityChanged;
         worker = RunAsync();
     }
@@ -83,6 +87,12 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
                 RequireForeground();
                 foregroundAttempt = linked;
             }
+            // Scheduling only, like the background attempt: do not consume
+            // the active budget while queued behind another owner. Cancel the
+            // actual delegate token, but keep ownership until it has drained;
+            // racing WaitAsync against it would permit overlapping mutations.
+            // Cancellation is not proof of noncommit or replacement authority.
+            linked.CancelAfter(foregroundOperationTimeout);
             var result = await action(linked.Token);
             linked.Token.ThrowIfCancellationRequested();
             lock (gate) { if (stamp != revision) throw new OperationCanceledException(linked.Token); }
