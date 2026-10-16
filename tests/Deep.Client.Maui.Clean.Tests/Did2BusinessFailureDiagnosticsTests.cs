@@ -95,11 +95,47 @@ public sealed class Did2BusinessFailureDiagnosticsTests
     [InlineData("Contact authoring crossed a trusted clock discontinuity.", "ContactAuthorClock")]
     [InlineData("Route custody is not the current authorized DID2 publisher device.", "ContactOwnedPublisher")]
     [InlineData("The contact bundle is not the exact owned DID2 delegation.", "ContactOwnedDelegation")]
+    [InlineData("libsodium initialization failed.", "ContactSodiumInit")]
+    [InlineData("libsodium failed to derive an Ed25519 public key.", "ContactSodiumKey")]
+    [InlineData("libsodium failed to create an Ed25519 signature.", "ContactSodiumSign")]
+    [InlineData("The completed route differs from its closed retained issuance.", "ContactRetainedRoute")]
+    [InlineData("Retained issuance exceeds the completed route's independently verified floor.", "ContactRetainedFloor")]
+    [InlineData("Contact minimum checkpoint differs from its signed route issuance anchor or current verified floor.", "ContactBundleAnchor")]
+    [InlineData("Contact successor does not advance its exact signed predecessor.", "ContactSuccessorAdvance")]
+    [InlineData("Contact successor requires separate identity, service, profile or policy rollover.", "ContactSuccessorScope")]
+    [InlineData("Contact successor does not bind its exact current route generation.", "ContactSuccessorGeneration")]
+    [InlineData("Contact successor changed its exact reusable invite lineage.", "ContactSuccessorInvite")]
+    [InlineData("The current DID2 recipient and network do not share exact directory/view authority.", "ContactCurrentContext")]
+    [InlineData("The route publisher is not an active DID2 device.", "ContactPublisherInactive")]
     public void OnlyFixedOwnedGuardLiteralHasAClosedDiagnosticLabel(string message,string expected)
     {
         var entry = Assert.Single(Did2BusinessFailureDiagnostics.Capture(new CryptographicException(message)));
         Assert.Equal($"kind=ProtectedState; check={expected}; depth=0; method=unavailable; line=0; il=-1",entry);
         Assert.DoesNotContain(message,entry);
+    }
+
+    [Fact]
+    public void RouteTimeLabelsUseOnlyTheCompleteClosedArtifactAndReasonProduct()
+    {
+        foreach (var artifact in new[] { "XNA1", "XNV1", "XNH1", "ADH1", "DeviceCertificate", "DCA1", "PMT2",
+            "XRA1", "PMS2", "XRC1", "XSS1", "XIR1V2", "XRR1", "ThresholdAuthoring", "ResolveRequest" })
+            foreach (var reason in new[] { "InvalidInterval", "NotBefore", "Expiry" })
+            {
+                var entry = Assert.Single(Did2BusinessFailureDiagnostics.Capture(
+                    new CryptographicException($"DID2 route time coverage failed ({artifact}; {reason}).")));
+                Assert.Equal($"kind=ProtectedState; check=RouteTime{artifact}{reason}; depth=0; method=unavailable; line=0; il=-1",entry);
+            }
+    }
+
+    [Theory]
+    [InlineData("DID2 route time coverage failed (private endpoint; Expiry).")]
+    [InlineData("DID2 route time coverage failed (XNA1; private payload).")]
+    [InlineData("DID2 route time coverage failed (XNA1; Expiry). private payload")]
+    [InlineData("DID2 route time coverage failed (xna1; Expiry).")]
+    public void RouteTimeLookalikesNeverEnterTheDiagnosticLabel(string message)
+    {
+        var entry = Assert.Single(Did2BusinessFailureDiagnostics.Capture(new CryptographicException(message)));
+        Assert.Equal("kind=ProtectedState; check=Unclassified; depth=0; method=unavailable; line=0; il=-1",entry);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

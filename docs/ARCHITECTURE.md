@@ -92,6 +92,14 @@ literal-only classifier. It adds no outcome, private text or recovery operation.
 project suite; device mapping is still a separate check.
 Matching `contact-author-diagnostics-smoke-02` passed119/0/0/native0. Both use
 Windows PowerShell5.1 / SDK10.0.301 and do not qualify physical delivery.
+The follow-up diagnostic covers the remaining bundle-signing, retained issuance,
+successor scope and current-context guards plus the closed route-time artifact /
+reason product. Complete literal matching is required; unknown artifacts, private
+suffixes and custom exception getters cannot enter a label. This is still QA-only
+metadata, not an exception-text trust decision or a change to crypto/expiry policy.
+`contact-author-diagnostics-clean-03` passed220/0/0/native0 and matching
+`contact-author-diagnostics-smoke-03` passed119/0/0/native0, using the same pinned
+Windows PowerShell5.1 / SDK10.0.301 project-suite lane, not release qualification.
 
 Network suspension follows actual `Window.Stopped`/`Destroying`, not loss of
 focus through `Deactivated`; resume/activation is idempotent for an already

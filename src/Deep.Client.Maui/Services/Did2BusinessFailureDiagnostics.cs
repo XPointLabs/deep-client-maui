@@ -91,6 +91,29 @@ internal static class Did2BusinessFailureDiagnostics
             "Contact authoring crossed a trusted clock discontinuity." => "ContactAuthorClock",
             "Route custody is not the current authorized DID2 publisher device." => "ContactOwnedPublisher",
             "The contact bundle is not the exact owned DID2 delegation." => "ContactOwnedDelegation",
-            _ => "Unclassified"
+            "libsodium initialization failed." => "ContactSodiumInit",
+            "libsodium failed to derive an Ed25519 public key." => "ContactSodiumKey",
+            "libsodium failed to create an Ed25519 signature." => "ContactSodiumSign",
+            "The completed route differs from its closed retained issuance." => "ContactRetainedRoute",
+            "Retained issuance exceeds the completed route's independently verified floor." => "ContactRetainedFloor",
+            "Contact minimum checkpoint differs from its signed route issuance anchor or current verified floor." => "ContactBundleAnchor",
+            "Contact successor does not advance its exact signed predecessor." => "ContactSuccessorAdvance",
+            "Contact successor requires separate identity, service, profile or policy rollover." => "ContactSuccessorScope",
+            "Contact successor does not bind its exact current route generation." => "ContactSuccessorGeneration",
+            "Contact successor changed its exact reusable invite lineage." => "ContactSuccessorInvite",
+            "The current DID2 recipient and network do not share exact directory/view authority." => "ContactCurrentContext",
+            "The route publisher is not an active DID2 device." => "ContactPublisherInactive",
+            _ => RouteTimeCheck(error.Message)
         };
+
+    private static string RouteTimeCheck(string message)
+    {
+        // Compare complete literals; never parse or copy caller text into a label.
+        foreach (var artifact in new[] { "XNA1", "XNV1", "XNH1", "ADH1", "DeviceCertificate", "DCA1", "PMT2",
+            "XRA1", "PMS2", "XRC1", "XSS1", "XIR1V2", "XRR1", "ThresholdAuthoring", "ResolveRequest" })
+            foreach (var reason in new[] { "InvalidInterval", "NotBefore", "Expiry" })
+                if (message == $"DID2 route time coverage failed ({artifact}; {reason}).")
+                    return "RouteTime" + artifact + reason;
+        return "Unclassified";
+    }
 }

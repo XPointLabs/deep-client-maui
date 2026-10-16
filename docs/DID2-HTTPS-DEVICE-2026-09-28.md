@@ -57,6 +57,23 @@ Windows helper with `coordinate input geometry is unavailable`, including its
 one recovery attempt. No click outcome/success is claimed; further Windows
 input is stopped pending the operator restoring/maximizing that same window.
 
+APK23 at MAUI `258a3e3` / Shared `acc65f1` / Protocol `605090b` was signed,
+installed over the same QA package and launched without reset. Its SHA256 is
+`709572933665f2ce4a12f779776c6f9452430e21e268224c729ddbdac3ef4fd7`.
+Inspect92/93 retained the account/recovery; Verify02 finished Rejected with the
+same ProtectedState/Unclassified authoring location. A first Verify phase had
+no enabled control in the viewport and was rejected before input. An initial
+protected-package audit transiently failed; the independent exact-device audit
+and subsequent guarded inspection succeeded, without treating the failed phase
+as success. No contact Store or delivery is accepted.
+Read-only inspection of the exact APK assembly store, bounded and matched to
+the build manifest, confirms the new closed classifier is packaged. Earlier
+companion-only IL and a reader attempt with prematurely disposed code streams
+do not prove Android binary identity; only the corrected exact-APK read does.
+The code offset still does not identify an exact guard. A later Windows retry
+again failed before input with the same geometry error; no account changes or
+successful network check are claimed.
+
 Supported current-dev Verify failed with Registry readiness timeouts/503;
 independent node reads found all three mailbox hosts unavailable while ONION
 and required contact terminals remained ready. Closed Registry NTS acquisition
