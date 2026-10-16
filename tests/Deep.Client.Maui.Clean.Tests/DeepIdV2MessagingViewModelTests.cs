@@ -146,6 +146,35 @@ public sealed class DeepIdV2MessagingViewModelTests
     }
 
     [Fact]
+    public async Task ClosedContactExpiryRequiresSeparateExplicitAddAndDoesNotResetAccount()
+    {
+        // UI plumbing only. The fake typed result is not expiry/stop authority;
+        // actual owned closure and protected list selection are tested in Shared.
+        var directory = Path.Combine(Path.GetTempPath(), "deep-did2-contact-expiry-ui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var accounts = new OwnedAccounts(directory);
+            var account = new DeepIdV2AccountViewModel(accounts, new UiAdmission()) { DisplayName = "UI contract" };
+            await account.CreateAccountAsync(); await account.VerifyNetworkAsync();
+            var identity = account.Account!.PermanentId.CanonicalText;
+            var runtime = new ThrowingRuntime { ExpiredContact = true };
+            var view = new DeepIdV2MessagingViewModel(accounts, account, runtime) { ContactAddress = identity };
+            await view.StartContactAsync();
+            var original = Assert.Single(runtime.Intents);
+            Assert.Null(view.ErrorMessage); Assert.False(view.IsBusy); Assert.False(view.HasContactRetry);
+            Assert.Contains("истёк", view.Status); Assert.Contains("не отзывает", view.Status);
+            Assert.Equal("Добавить контакт", view.StartContactCaption); Assert.Empty(runtime.Stops);
+            Assert.Equal(identity, account.Account.PermanentId.CanonicalText); Assert.Equal(identity, view.ContactAddress);
+            runtime.ExpiredContact = false;
+            await view.StartContactAsync(); // A distinct explicit command, not automatic replacement.
+            Assert.Equal(2, runtime.Intents.Count); Assert.NotEqual(original, runtime.Intents[1]);
+            Assert.True(view.HasContactRetry); Assert.NotNull(view.ErrorMessage);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
     public async Task ContactStopFailureRetainsOriginalAndConfirmedStopRequiresSeparateNewAdd()
     {
         // Stub command plumbing only; confirmation here is not native stop or
@@ -371,13 +400,14 @@ public sealed class DeepIdV2MessagingViewModelTests
         public List<byte[]> Intents { get; } = [];
         public List<byte[]> Stops { get; } = [];
         public bool ConfirmStop { get; set; }
+        public bool ExpiredContact { get; set; }
         public TaskCompletionSource<DeepIdV2ContactStartResult>? PendingStart { get; set; }
         public TaskCompletionSource PendingStartEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task StopContactRetryAsync(DeepIdV2AccountService accounts, ReadOnlyMemory<byte> intent, CancellationToken ct = default)
         { Stops.Add(intent.ToArray()); if (!ConfirmStop) throw Failure(); return Task.CompletedTask; }
         private Exception Failure() { Calls++; return new IOException("PRIVATE payload key endpoint password"); }
         public Task<DeepIdV2ContactStartResult> StartAsync(DeepIdV2AccountService accounts, DeepPermanentIdV2 address, ReadOnlyMemory<byte> intent, CancellationToken ct = default)
-        { Intents.Add(intent.ToArray()); if (PendingStart is not null) { PendingStartEntered.TrySetResult(); return PendingStart.Task; } throw Failure(); }
+        { Intents.Add(intent.ToArray()); if (ExpiredContact) throw new DeepIdV2ContactRetryExpiredException(); if (PendingStart is not null) { PendingStartEntered.TrySetResult(); return PendingStart.Task; } throw Failure(); }
         public Task<IReadOnlyList<DeepIdV2ConversationSnapshot>> ListAsync(DeepIdV2AccountService accounts, CancellationToken ct = default) => throw Failure();
         public Task AcceptAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, ReadOnlyMemory<byte> operation, CancellationToken ct = default) => throw Failure();
         public Task<ReadOnlyMemory<byte>> QueueTextAsync(DeepIdV2AccountService accounts, DeepIdV2Conversation conversation, string text, CancellationToken ct = default) => throw Failure();

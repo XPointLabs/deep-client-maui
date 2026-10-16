@@ -280,3 +280,19 @@ not another node reset or expiry bypass. Which metadata binding differs is not
 yet established. Full source/package, cold/sustained transport and complete
 physical business acceptance remain open. The first Windows timeout remains
 a failure receipt, not relabelled by its later successful retry.
+
+## Original contact retry expiry entry: source candidate
+
+[DR-0135](../../docs/survival-program/decisions/DR-0135-owned-initial-retry-expiry-entry.md)
+uses Shared's actual owned expiry result before peer resolution. MAUI clears
+only the matching in-memory retry choice and explains that the original may
+already have reached the recipient. No automatic new intent or dispatch follows.
+A separate Add rereads protected operations; arbitrary failures retain the old
+choice. Account/recovery and unknown-delivery facts are not reset.
+
+Unfiltered MAUI Clean273 passed/native0/0 skipped, no compiler diagnostics.
+Receipt: `artifacts/s05-initial-retry-entry-20261017/clean-01`; this is UI source
+plumbing evidence with a stub expiry outcome, not an authenticated native stop.
+[Shared's actual PQ/SQLCipher qualification](../../deep-client-shared/docs/testing/s05-initial-retry-entry-2026-10-17.md)
+is separate. Windows26/APK43 are unchanged; matching new builds and physical
+request/accept/text are still required. No physical business acceptance claimed.

@@ -170,8 +170,23 @@ public sealed class DeepIdV2MessagingViewModel : ViewModelBase
                 { intent = NewOperation(); contactIntents.Add(peer, intent); NotifyContactRetry(); }
                 return await runtime!.StartAsync(owner, address, intent, next);
             }
-            var started = reconnect is null ? await DispatchAsync(token) :
-                await reconnect.RunForegroundAsync(DispatchAsync, token);
+            DeepIdV2ContactStartResult started;
+            try
+            {
+                started = reconnect is null ? await DispatchAsync(token) :
+                    await reconnect.RunForegroundAsync(DispatchAsync, token);
+            }
+            catch (DeepIdV2ContactRetryExpiredException)
+            {
+                RequireCurrentOperation(token);
+                if (intent is null || !contactIntents.TryGetValue(peer, out var retained) ||
+                    !CryptographicOperations.FixedTimeEquals(retained, intent))
+                    throw new CryptographicException("Contact expiry changed the exact UI retry choice.");
+                contactIntents.Remove(peer); CryptographicOperations.ZeroMemory(retained);
+                NotifyContactRetry();
+                Status = "Исходный запрос истёк; его повторы закрыты. Это не отзывает запрос у получателя. Для нового запроса нажмите «Добавить контакт» отдельно.";
+                return; // Never author or dispatch a replacement in this command.
+            }
             RequireCurrentOperation(token);
             await LoadConversationsAsync(owner, started.Conversation.ConversationId, token);
             Status = "Запрос контакта сохранён в сети. Ожидаем принятия.";
