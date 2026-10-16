@@ -83,6 +83,31 @@ not qualify canonical full/package gates or physical delivery. The renamed
 ContactPublication work scope now includes the complete owned workflow; compare
 whole verification totals, not old versus new isolated contact-stage timings.
 
+APK34 (MAUI `438474b`, Shared `ca1df5f`, Protocol `fed7d30`) built with0
+warnings/errors, unchanged signer and SHA256
+`71e0ad10e46b6004de0c27cb721301499ce64302b13c31806c0f117bf07d66e7`.
+Supported preflight49/update50/settings51/scroll52–53 retained the existing
+account/recovery and unchanged protected-package audits. Independent Inspect54
+observed Verified after the first complete workflow:65238ms total,
+491 unprotects/42137ms protection/0 protects; ContactPublication45544ms.
+Manual Verify55 followed by independent Inspect56 observed
+`verified-publication / Verified`:62920ms total,491 unprotects/44823ms protection/
+0 protects; ContactPublication47621ms. The source now requires the prekey pair,
+contact commit and final currentness check before that success. These two actual
+retained-account completions are not sustained, restart or business acceptance.
+Closed metadata is retained in `android-workflow-diagnostic-58`; first launch's
+earlier cancelled setup is retained, not relabelled successful. Contacts57 has
+an empty address editor and disabled Add control; no new intent or Store was
+submitted. Contacts/messages/files/groups acceptance remains0/4.
+
+Matching Windows19 built/published with0 warnings/errors from the same source;
+apphost SHA256
+`541edf6ae4cd6c4e29c62f722e3019ce75f8da30c7d233b319785511f7748300`.
+Receipt: `artifacts/s05-prekey-maintenance-20261016/windows-19`.
+It has not been installed/launched or physically accepted. Windows input remains
+stopped after physical Escape and requires a fresh human authorization to resume.
+No production changes, GitHub Release or main merge occurred.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
