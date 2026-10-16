@@ -224,3 +224,16 @@ do not make XUR/grant freshness renewable, remint a peer nonce, skip the cursor
 barrier or use a new account to qualify retained recovery. No new wire/API or
 recovery bypass is frozen by this checkpoint. Physical acceptance remains0/4;
 canonical full/package, remaining lifecycle and release gates are still open.
+
+## Original Store recovery runtime observation
+
+The [native recovery candidate](../../xnode/docs/testing/s05-native-store-recovery-2026-10-17.md)
+was activated locally as Node `30cd519`, with9 desired images/54 retained mounts
+and successful supported readiness. It does not renew expired original grants.
+Android43 Dry175/Inspect176/Refresh177/Inspect178 used the same installed APK and
+account, no reset. Final UI has messaging error, not synchronization.
+MailboxSyncTotal60611ms,10 Protect/345 Unprotect,32642ms protection;
+ForwardAsync IL1150 still reports Retrieve OutcomeUnknown. A native pending
+Store refusal was observed again. Generic unavailable worker events do not
+identify the failed original-admission guard or correlate an old sender intent.
+This is not recovery/delivery acceptance; physical0/4 remains unchanged.
