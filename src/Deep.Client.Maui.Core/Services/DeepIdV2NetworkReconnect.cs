@@ -48,7 +48,11 @@ public sealed class DeepIdV2NetworkReconnect : IAsyncDisposable
         if (this.foregroundOperationTimeout <= TimeSpan.Zero || this.foregroundOperationTimeout > TimeSpan.FromMinutes(2))
             throw new ArgumentOutOfRangeException(nameof(foregroundOperationTimeout));
         network.StatusChanged += ConnectivityChanged;
-        worker = RunAsync();
+        // A background worker must not capture the constructing UI context.
+        // Awaiting an already-complete lane/storage task does not yield;
+        // native crypto in the reconnect delegate can otherwise block input.
+        // Foreground delegates still retain their caller context below.
+        worker = Task.Run(RunAsync);
     }
     public DeepIdV2ReconnectState State => (DeepIdV2ReconnectState)Volatile.Read(ref state);
     public event EventHandler? StateChanged;

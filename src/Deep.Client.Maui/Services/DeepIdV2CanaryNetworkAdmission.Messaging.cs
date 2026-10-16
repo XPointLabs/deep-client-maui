@@ -12,9 +12,13 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission : IDeepIdV2Conversa
 {
     // Network mutations recreate fresh proof/authority. Read-only history
     // goes straight to the protected local owner, without bootstrap HTTP.
-    private static async Task<T> RunConversationAsync<T>(DeepIdV2AccountService accounts, string workStage,
+    private static Task<T> RunConversationAsync<T>(DeepIdV2AccountService accounts, string workStage,
         Func<DeepIdV2ContactPathAuthoritySource, CancellationToken, Task<T>> action, CancellationToken ct)
+        => Task.Run(async () =>
     {
+        // The domain owns synchronous native crypto/SQL work between awaits.
+        // Keep it off the UI thread, without moving ViewModel mutations or
+        // releasing the actual foreground lane before the delegate drains.
         using var work = Did2QaWorkDiagnostics.Begin(workStage, MauiProgram.ObserveDid2QaWork);
         var origin = ValidatedOrigin();
         var factory = await CreateHttpFactoryAsync(ct);
@@ -27,12 +31,12 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission : IDeepIdV2Conversa
         var networkFloor = await accounts.OpenNetworkLkgStoreAsync(genesis, ct);
         var source = new DeepIdV2ContactPathAuthoritySource(genesis, accounts, proofs, artifacts, networkFloor, clock);
         return await action(source, ct);
-    }
+    }, ct);
     public Task<DeepIdV2ContactStartResult> StartAsync(DeepIdV2AccountService accounts, DeepPermanentIdV2 address,
         ReadOnlyMemory<byte> intent, CancellationToken ct = default)
         => RunConversationAsync(accounts, "ContactStartTotal", (source, token) => accounts.StartContactAsync(address, intent, source, token), ct);
     public Task<IReadOnlyList<DeepIdV2ConversationSnapshot>> ListAsync(DeepIdV2AccountService accounts, CancellationToken ct = default)
-        => accounts.ListConversationsAsync(ct);
+        => Task.Run(() => accounts.ListConversationsAsync(ct), ct);
     public async Task StopContactRetryAsync(DeepIdV2AccountService accounts, ReadOnlyMemory<byte> intent, CancellationToken ct = default)
         => _ = await RunConversationAsync(accounts, "ContactStopTotal", async (source, token) =>
         { await accounts.CancelOwnInitialContactAsync(intent, source, token); return true; }, ct);
@@ -46,7 +50,7 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission : IDeepIdV2Conversa
         => _ = await RunConversationAsync(accounts, "TextRetryTotal", (source, token) => accounts.RetryTextAsync(conversation, op, text, source, token), ct);
     public Task<IReadOnlyList<DirectMessageCreateSnapshot>> MessagesAsync(DeepIdV2AccountService accounts,
         DeepIdV2Conversation conversation, CancellationToken ct = default)
-        => accounts.ListMessagesAsync(conversation, ct);
+        => Task.Run(() => accounts.ListMessagesAsync(conversation, ct), ct);
     public Task<DeepIdV2MailboxSynchronizationResult> SynchronizeAsync(DeepIdV2AccountService accounts, CancellationToken ct = default)
         => RunConversationAsync(accounts, "MailboxSyncTotal", accounts.SynchronizeOwnMailboxAsync, ct);
 }

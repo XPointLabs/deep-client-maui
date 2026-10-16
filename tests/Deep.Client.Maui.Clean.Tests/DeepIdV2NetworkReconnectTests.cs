@@ -10,6 +10,28 @@ namespace Deep.Client.Maui.Clean.Tests;
 // Scheduling and lifecycle only; delegate success is not device/transport evidence.
 public sealed class DeepIdV2NetworkReconnectTests
 {
+    [Fact]
+    public async Task BackgroundWorkerCannotRunSynchronousCryptoOnItsConstructingUiContext()
+    {
+        var observed = new System.Collections.Concurrent.ConcurrentQueue<SynchronizationContext?>();
+        var context = new CallerContext(); var previous = SynchronizationContext.Current;
+        DeepIdV2NetworkReconnect reconnect;
+        try {
+            SynchronizationContext.SetSynchronizationContext(context);
+            reconnect = new DeepIdV2NetworkReconnect(_ => {
+                observed.Enqueue(SynchronizationContext.Current);
+                return Task.CompletedTask;
+            }, new Network());
+            reconnect.Resume();
+        } finally { SynchronizationContext.SetSynchronizationContext(previous); }
+        await using (reconnect) {
+            await WaitFor(reconnect, DeepIdV2ReconnectState.Verified);
+            await reconnect.VerifyNowAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(observed.Count >= 2);
+            Assert.All(observed, value => Assert.Null(value));
+        }
+    }
+
     [Theory]
     [InlineData(-1)]
     [InlineData(0)]

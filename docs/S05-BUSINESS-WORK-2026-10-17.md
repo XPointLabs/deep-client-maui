@@ -95,3 +95,38 @@ upper bound, then verified unchanged once that test clock advances. This
 proves guard/diagnostic behavior only, not the actual device's failing reason
 or permission to wait out a future result in runtime. Matching Android
 observation, source canonical full/package and physical acceptance remain open.
+
+## APK42 and UI-context correction candidate
+
+APK42: MAUI `3bf452f`, Shared runtime `7d64fe7`, Protocol `8ea886f`;
+native0, no compiler diagnostics, signer unchanged. APK SHA256:
+`c42e940ecc571fb3b020100b3c4cce1b895ef86b616af468d456c75885cbbf7c`.
+Dry155 passed; install156 failed on a protected-package ADB preflight, before
+installation. Settings157 therefore does NOT qualify APK42. Fresh install158
+passed and an independent `pm path`→base-APK SHA256 read matched the exact
+local APK. No account reset or protected-package mutation was requested.
+
+Settings159/Inspect160 failed UI bounds; a real device screenshot revealed the
+Android system ANR dialog over Deep Chats. The device was awake and unlocked.
+Supported restart161 completed without reset; Inspect162 observed Chats;
+Refresh163 failed the initial UI read, before any confirmed Refresh action.
+No APK42 mailbox synchronization or retained-result reason is established.
+The earlier APK41 refusal is still the last qualified business observation.
+
+Source reproduces a concrete UI scheduling defect: reconnect's background
+worker inherited the constructing synchronization context through its first
+wait. A synchronously completing gate does not move the reconnect delegate
+off that UI thread. `artifacts/s05-ui-crypto-context-20261017/red-01` records
+the new test's0PASS/1FAIL/native1: both observed background entries used the
+test UI context. This establishes the source defect, not an ANR stack cause.
+
+The correction starts the process-owned worker with Task.Run. Foreground
+delegates retain the caller context and actual lane until complete; unchanged
+deadline, cancellation and stale-success tests remain. The MAUI conversation
+adapter similarly runs domain/native crypto and local history reads off UI,
+not its caller's ViewModel mutations. No new authority, retry, fallback,
+generation, payload cache or timer. `clean-02`:unfiltered272PASS/0FAIL/0skip/
+native0, Windows PowerShell5.1/SDK10.0.301, no compiler diagnostics. Matching
+Windows/Android compilation and physical ANR/receive retest are still required.
+The same correction's unfiltered `smoke-03` also passed119/0/0/native0, no
+compiler diagnostics. Smoke is source/harness evidence, not device acceptance.
