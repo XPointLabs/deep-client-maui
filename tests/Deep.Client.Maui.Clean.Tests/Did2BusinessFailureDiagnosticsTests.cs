@@ -185,6 +185,36 @@ public sealed class Did2BusinessFailureDiagnosticsTests
         Assert.Contains("check=Unclassified;", Assert.Single(Did2BusinessFailureDiagnostics.Capture(foreign)));
     }
 
+    [Theory]
+    [InlineData("GrantHorizon", "RetainedGrantHorizon")]
+    [InlineData("GrantOverlap", "RetainedGrantOverlap")]
+    [InlineData("RequestInterval", "RetainedRequestInterval")]
+    [InlineData("GrantStart", "RetainedGrantStart")]
+    [InlineData("ResponseDeadline", "RetainedResponseDeadline")]
+    [InlineData("IssuedBeforeRequest", "RetainedIssuedBeforeRequest")]
+    [InlineData("IssuedAfterRequest", "RetainedIssuedAfterRequest")]
+    [InlineData("IssuedAfterCurrentUpper", "RetainedIssuedAfterCurrentUpper")]
+    [InlineData("private credential payload", "Unclassified")]
+    public void RetainedReadWindowReasonsRemainClosedObservationOnly(string reason, string expected)
+    {
+        var error = new CryptographicException("Retained read success exceeds its exact request/current issuer/horizon.");
+        error.Data["Deep.MailboxRetainedRead.Check"] = reason;
+        var entry = Assert.Single(Did2BusinessFailureDiagnostics.Capture(error));
+        Assert.Equal($"kind=ProtectedState; check={expected}; depth=0; method=unavailable; line=0; il=-1", entry);
+        Assert.DoesNotContain(error.Message, entry);
+    }
+
+    [Fact]
+    public void RetainedReadUnknownObjectsAndForeignFailuresNeverRenderData()
+    {
+        var error = new CryptographicException("Retained read success exceeds its exact request/current issuer/horizon.");
+        error.Data["Deep.MailboxRetainedRead.Check"] = new UnreadablePrivateFailure();
+        Assert.Contains("check=Unclassified;", Assert.Single(Did2BusinessFailureDiagnostics.Capture(error)));
+        var foreign = new CryptographicException("private credential payload");
+        foreign.Data["Deep.MailboxRetainedRead.Check"] = "IssuedAfterCurrentUpper";
+        Assert.Contains("check=Unclassified;", Assert.Single(Did2BusinessFailureDiagnostics.Capture(foreign)));
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void ThrowOwnedFailure(Exception error) => throw error;
 

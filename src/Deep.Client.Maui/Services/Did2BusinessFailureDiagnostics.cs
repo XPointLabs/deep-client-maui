@@ -113,6 +113,7 @@ internal static class Did2BusinessFailureDiagnostics
             "The current DID2 recipient and network do not share exact directory/view authority." => "ContactCurrentContext",
             "The route publisher is not an active DID2 device." => "ContactPublisherInactive",
             "Mailbox grant is outside current issuer/network/time authority." => MailboxGrantCheck(error),
+            "Retained read success exceeds its exact request/current issuer/horizon." => RetainedReadCheck(error),
             _ => RouteTimeCheck(error.Message)
         };
 
@@ -124,6 +125,15 @@ internal static class Did2BusinessFailureDiagnostics
         "GrantExpiry" => "MailboxGrantExpiry", "PolicyExpiry" => "MailboxGrantPolicyExpiry",
         "NetworkExpiry" => "MailboxGrantNetworkExpiry", "Lifetime" => "MailboxGrantLifetime",
         "Signature" => "MailboxGrantSignature", _ => "Unclassified"
+    };
+
+    private static string RetainedReadCheck(Exception error) => error.Data["Deep.MailboxRetainedRead.Check"] switch
+    {
+        "GrantHorizon" => "RetainedGrantHorizon", "GrantOverlap" => "RetainedGrantOverlap",
+        "RequestInterval" => "RetainedRequestInterval", "GrantStart" => "RetainedGrantStart",
+        "ResponseDeadline" => "RetainedResponseDeadline", "IssuedBeforeRequest" => "RetainedIssuedBeforeRequest",
+        "IssuedAfterRequest" => "RetainedIssuedAfterRequest", "IssuedAfterCurrentUpper" => "RetainedIssuedAfterCurrentUpper",
+        _ => "Unclassified"
     };
 
     // Display only; no label grants retry, renewal, noncommit or currentness.

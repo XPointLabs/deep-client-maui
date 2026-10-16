@@ -54,3 +54,44 @@ The measured resource cost selects a cache-free
 Source-focused checks do not replace matching device verification or canonical
 full/package qualification. Diagnostic totals alone do not identify every
 remaining transport failure.
+
+## Owned-read correction retest and current refusal
+
+Windows25/APK41 contain Shared `7d64fe7`; MAUI `fa927e2`, Protocol `2bb61d0`.
+Both build native0 without compiler diagnostics. Windows apphost SHA256:
+`115221707b2c44376a4f9a11ddcea45bd99b7caaaf1888d0df6f9a75b1e2175d`.
+Android APK SHA256:
+`500ba1f13fa880068a87ac8d2e257d5485bf2fda129a2aae80782f06921cd668`;
+signer unchanged. Dry149/update150 and Settings151 retained account/recovery.
+
+Exact Windows retry rejected expired XUR; the normal owned stop succeeded.
+A separately explicit fresh command reached managed forwarding and returned
+Store OutcomeUnknown at19:45:41Z (116234ms,32 Protect/2058 Unprotect,
+70861ms protection). Closed peer metadata reports504, not verified Store or
+noncommit. The current new intent is preserved. Android Refresh153 followed
+by independent Inspect154 ended in error (MailboxSyncTotal47635ms,
+4 Protect/256 Unprotect,23281ms protection).
+
+Actual APK41 build DLL/PDB identifies the Android failure precisely:
+Protocol `RequireRetainedReadSuccessAsync` IL502→source216 (the compound
+request/result/current-time guard); Shared acquisition IL3783→source108
+(first newly received result verification). Protocol module/PDB SHA256:
+`d188acf9e6f908330c45b18b3d9a0848ec130bf3358edc11972c361d81ac2056`,
+`71fe16eedff26bfa78bbc039305b0c31553fba21cb7084ae972cf73d4e750b7e`.
+Shared module/PDB SHA256:
+`ce02629b312508ac5dabeaf8b0c5cb2a73b76c0f6c79a9641d20f075081c0850`,
+`4a95405e0fb85713e52e52e41019b1bc36c5d2773a399d086f647215e1df28cd`.
+This does not identify the failing predicate or establish a clock defect.
+
+The next diagnostic candidate attaches one of eight fixed reason labels to
+that same ordered guard, using the existing exception-data/QA allowlist
+pattern. No timestamp/value, address, capability, message or exception text
+is emitted. Predicates/order/refusal and wire/API/state generations are
+unchanged; no reset or consumer data migration is required by this
+metadata-only change. Consumers still require matching rebuilt binaries. Protocol
+focused140 and unfiltered MAUI Clean271 PASS/native0, no compiler diagnostics.
+Includes a real signed winner rejected by an independently earlier client
+upper bound, then verified unchanged once that test clock advances. This
+proves guard/diagnostic behavior only, not the actual device's failing reason
+or permission to wait out a future result in runtime. Matching Android
+observation, source canonical full/package and physical acceptance remain open.
