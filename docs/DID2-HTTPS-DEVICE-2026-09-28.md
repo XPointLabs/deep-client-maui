@@ -285,6 +285,28 @@ Next: narrow actual protected-storage/authority work, retaining existing batch
 reads and all cryptographic/currentness/native checks. No plaintext cache or
 deadline extension is implemented by this checkpoint. Physical acceptance0/4.
 
+Windows23/APK39 follow-up: MAUI `07b9065`, Shared `5fa8789`, Protocol `2bb61d0`;
+both build native0 with no compiler diagnostics. The Shared change batches
+existing protected current/future marker reads, not authority or plaintext
+caching; [47-case source scope](../../deep-client-shared/docs/testing/s05-protected-floor-batch-2026-10-16.md).
+Windows23 apphost SHA256 `ce984db4c80b9011251a999b47277f78f1937f99a1e5dcecb00706f746c32782`;
+assembly `3ca91ab795c7e966438273cb09a57d21c2cb2bcbdfb4771b6b502c6d8e92095e`.
+APK SHA256 `82132edc9a5b7f4c2b9c82634e2cf9b99499569a3759d515c07d914707d6207b`,
+same signer, dry137/update138, Settings139 retained account/encrypted recovery.
+Windows retained profile opens; saved retry rejects expired XUR at18:43:44Z.
+Normal owned stop completed; a separately explicit fresh request then returned
+OutcomeUnknown at18:50:31Z with cancellation in JournaledDeepSecureStorage batch
+read line101 / DirectoryLkgStore marker validation line247. Store path entered
+does NOT prove actual network forwarding. Keep that exact attempt for recovery.
+Android Chats140/Refresh141 -> independent Inspect142 shows messaging error;
+closed metadata identifies Retrieve OutcomeUnknown, no delivery acceptance.
+Node2's second210s meter capture completed without restart; maximum interval
+reported P99 lease/source values1530/1528ms. It is not request-correlated and
+does not establish a timeout cause or prove absence of remote effects.
+Closed observations/metrics: `artifacts/s05-prekey-maintenance-20261016/windows-23/`.
+Accounts, old pending bytes, recovery and node identities remain; no reset,
+deadline extension or plaintext cache. Physical acceptance remains0/4.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
