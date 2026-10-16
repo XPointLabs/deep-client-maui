@@ -158,3 +158,21 @@ The APK41 time refusal did not recur here; its exact predicate/cause is still
 unknown. Do not infer a clock fix, noncommit, Store/Retrieve success or text
 delivery. Physical acceptance remains0/4. The next narrow investigation is
 the actual local native mailbox terminal refusal behind the bounded504.
+
+## Closed native terminal observation candidate
+
+XNode now observes the existing uncertain terminal branches through its existing
+structured logger. Only fixed stage/category, bounded inner depth and an owned
+assembly code method/IL are emitted; no exception text/data, request, route,
+identity, payload, path or authority time is logged. Emission is limited to one
+event per ten actual seconds. Absent/throwing logging cannot change the original
+unknown result or caller cancellation. Quorum, deadlines and retry rules remain
+unchanged; this is not an HTTP response or protocol change.
+
+`xnode/artifacts/s05-native-terminal-observation-20261017/focused-02`:
+43PASS/0FAIL/0skip/native0, Windows PowerShell5.1/SDK10.0.301. Includes the
+native ingress/onion suite, real three-host Store/Retrieve/ACK and three new
+closed-observer cases (including unreadable private exception fields, throwing
+logger and preserved caller cancellation). The initial compile failure in
+focused-01 is retained separately. This is focused source evidence, not a full
+XNode gate, local runtime observation or physical business acceptance.
