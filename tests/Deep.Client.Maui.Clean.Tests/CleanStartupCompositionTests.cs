@@ -343,15 +343,13 @@ public sealed class CleanStartupCompositionTests
             admission, StringComparison.Ordinal);
         Assert.Contains("networkSource.VerifyCurrentNetworkAsync(",
             admission, StringComparison.Ordinal);
-        Assert.Contains("accounts.EnsureOwnInitialPreKeyInventoryAsync(networkSource,",
-            admission, StringComparison.Ordinal);
+        Assert.DoesNotContain("accounts.EnsureOwnPreKeyInventoryAsync(", admission, StringComparison.Ordinal);
         Assert.Contains("accounts.OpenOwnOnionClientCustodyAsync(cancellationToken)",
             admission, StringComparison.Ordinal);
-        Assert.Contains("accounts.PublishOwnStagedPreKeyInventoryAsync(networkSource,",
+        Assert.Contains("accounts.PublishOwnPreKeyInventoryAsync(networkSource,",
             admission, StringComparison.Ordinal);
         Assert.Contains("HttpStageAsync(\"AccountProof\"", admission);
         Assert.Contains("HttpStageAsync(\"NetworkVerification\"", admission);
-        Assert.Contains("HttpStageAsync(\"PreKeyStaging\"", admission);
         Assert.Contains("HttpStageAsync(\"PreKeyPublication\"", admission);
         Assert.Contains("HttpStageAsync(\"ContactPublication\"", admission);
         Assert.Contains("accounts.EnsureOwnPermanentContactPublishedAsync(networkSource,", admission);

@@ -34,7 +34,7 @@ public sealed class Did2QaWorkDiagnosticsTests
         var observed = Did2QaWorkDiagnostics.Observe(new Protector());
         var first = Task.Run(async () => {
             var lines = new List<string>();
-            using (Did2QaWorkDiagnostics.Begin("PreKeyStaging", lines.Add))
+            using (Did2QaWorkDiagnostics.Begin("PreKeyPublication", lines.Add))
             { await Task.Yield(); observed.Protect([1]); }
             return Assert.Single(lines);
         });
@@ -44,7 +44,7 @@ public sealed class Did2QaWorkDiagnosticsTests
             { await Task.Yield(); observed.Unprotect([1]); observed.Unprotect([2]); }
             return Assert.Single(lines);
         });
-        AssertClosed(await first, "PreKeyStaging", 1, 0);
+        AssertClosed(await first, "PreKeyPublication", 1, 0);
         AssertClosed(await second, "ContactPublication", 0, 2);
     }
 

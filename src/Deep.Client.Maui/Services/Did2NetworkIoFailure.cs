@@ -15,7 +15,7 @@ internal static class Did2NetworkIoFailure
     {
         ArgumentNullException.ThrowIfNull(exception);
         if (stage is not ("BootstrapAuthority" or "AccountProof" or "NetworkVerification" or
-            "PreKeyStaging" or "PreKeyPublication" or "ContactPublication" or "ContactResolution"))
+            "PreKeyPublication" or "ContactPublication" or "ContactResolution"))
             throw new ArgumentException("Unknown DID2 diagnostic stage.", nameof(stage));
 
         // Classify only code-owned exception types, never private messages or

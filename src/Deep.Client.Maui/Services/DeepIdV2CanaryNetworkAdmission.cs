@@ -70,18 +70,14 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
             networkSource.VerifyCurrentNetworkAsync(
                 genesisPin.NetworkId, cancellationToken).AsTask(), cancellationToken);
         network.EnsureCurrent();
-        // Seal all local pre-key capabilities before publication.
-        // An exact staged retry is historical state, not a delivery authority.
-        _ = await HttpStageAsync("PreKeyStaging", () =>
-            accounts.EnsureOwnInitialPreKeyInventoryAsync(networkSource,
-                cancellationToken), cancellationToken);
         var custody = await ObserveWorkAsync("OnionCustody", () =>
             accounts.OpenOwnOnionClientCustodyAsync(cancellationToken));
+        // One owned command maintains/seals the inventory before dispatch.
         // Success requires authenticated replies from both selected exits,
         // independently verified XIC1 signatures and durable pair recording.
         // A Registry proof or local staging alone cannot complete this action.
         _ = await HttpStageAsync("PreKeyPublication", () =>
-            accounts.PublishOwnStagedPreKeyInventoryAsync(networkSource,
+            accounts.PublishOwnPreKeyInventoryAsync(networkSource,
                 custody, cancellationToken), cancellationToken);
         _ = await HttpStageAsync("ContactPublication", () =>
             accounts.EnsureOwnPermanentContactPublishedAsync(networkSource,

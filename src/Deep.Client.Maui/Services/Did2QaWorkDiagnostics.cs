@@ -21,7 +21,7 @@ internal static class Did2QaWorkDiagnostics
     private static string ClosedStage(string stage) => stage switch
     {
         "VerificationTotal" or "BootstrapAuthority" or "DirectoryFloor" or "AccountProof" or
-        "NetworkFloor" or "NetworkVerification" or "PreKeyStaging" or "OnionCustody" or
+        "NetworkFloor" or "NetworkVerification" or "OnionCustody" or
         "PreKeyPublication" or "ContactPublication" or "ContactResolution" => stage,
         _ => "Unclassified",
     };

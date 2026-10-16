@@ -566,12 +566,11 @@ network closure through the owned HTTPS adapter and invokes Shared's
 The account-owned SQLCipher network floor must commit and reauthenticate
 before the action succeeds. A missing, stale, altered or incomplete closure
 fails closed while retaining the local account; the HTTP loopback probe remains
-admission-only. HTTPS UAT then asks the account owner to author and seal its
-first complete V2 pre-key inventory from a newly obtained proof. Private keys
-stay in account-owned SQLCipher; repeats return exact protected staged public
-bytes without regenerating keys or treating cached state as current authority.
-The HTTPS diagnostic now opens account-owned ONION custody and dispatches
-that exact inventory through the two independently selected replicas, using
+admission-only. HTTPS QA opens account-owned ONION custody and invokes the one
+`PublishOwnPreKeyInventoryAsync` command under
+[DR-0131](../../docs/survival-program/decisions/DR-0131-owned-prekey-maintenance-author.md).
+It prepares/maintains and seals the complete inventory with fresh authority before
+dispatch through the two independently selected replicas, using
 the selected-entry transport frozen in
 [`DR-0009`](../../docs/survival-program/decisions/DR-0009-did2-selected-entry-transport.md).
 The action completes only after independently verified XIC1 signatures and
@@ -622,7 +621,7 @@ IME key through a stale application layout.
 `ScrollSettings` swipes only inside one exact owned vertical `Page.Settings`
 pane with validated bounds, then requires a fresh observation before a tap.
 HTTP diagnostic failures identify one of the fixed account-proof,
-network-verification, pre-key-staging or publication stages using exception
+network-verification or publication stages using exception
 classifications only. They preserve the cause without exposing private request
 bytes or exception messages and do not authorize retries or fallback.
 TLS failures additionally classify only a closed list of standard
