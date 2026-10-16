@@ -204,7 +204,24 @@ Publication completed in60969ms with491 unprotect calls and0 protects. Preserve
 the exact newly pending issuer request too: OutcomeUnknown is not noncommit.
 Receipts live under `artifacts/s05-prekey-read-path-20261016/android-37-*`;
 sanitized failure metadata is in `android-37-closed-diagnostics-100`. No retry,
-account reset, production update, Windows UI action or business PASS is implied.
+account reset, production update, Windows UI action or business PASS is implied
+by those earlier observations.
+
+The subsequent local [Registry correction and activation](../../deep-registry-api/docs/testing/s05-private-grant-hop-2026-10-16.md)
+passed supported build10/Up11/smoke12 with all9 expected images and all54 original
+mounts proved. APK37 Refresh106 -> independent Inspect110 now observes completed
+incoming synchronization without messaging error. Settings111 again confirms
+account/recovery; no reset or phrase reveal. These are empty-mailbox observations,
+not a claim of captured-page/ACK recovery or message delivery.
+
+After fresh human permission to resume only Deep QA, Windows build20 from MAUI
+`bf154f4` / Shared `a06c121` (runtime `2cd2f77`) / Protocol `2bb61d0` compiled with0
+warnings/errors, then launched the existing profile. Registration verification
+and one incoming refresh completed; independent UI observation found no messaging
+error and an empty conversation list. Its closed receipt is
+`artifacts/s05-prekey-maintenance-20261016/windows-20/observation.json`.
+No other Windows application was controlled. Physical contacts/messages/files/
+groups remain0/4, and these diagnostic binaries are not Release packages.
 
 ### Matched acquisition retest
 
