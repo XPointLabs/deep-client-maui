@@ -237,3 +237,46 @@ ForwardAsync IL1150 still reports Retrieve OutcomeUnknown. A native pending
 Store refusal was observed again. Generic unavailable worker events do not
 identify the failed original-admission guard or correlate an old sender intent.
 This is not recovery/delivery acceptance; physical0/4 remains unchanged.
+
+## Original Store expiry exclusion: retained read recovered
+
+The [native DR-0134 consumer](../../xnode/docs/testing/s05-store-expiry-exclusion-2026-10-17.md)
+was activated only in retained local deep-dev-current as Node `3fe03ab` /
+Protocol `9d6df07`. Supported Build25/Up26/Verify27 all native0, nine desired
+images and54 original mounts retained. Raw path representation FAIL and a
+separate finite equivalence proof (one alias) remain separate evidence. No
+production deployment, new ceremony, APK replacement or account reset occurred.
+Installed Windows26/APK43 binaries and their previously recorded hashes remain.
+
+APK43 dry179 passed. Refresh180 initially showed busy; independent Inspect182
+showed SynchronizationCompleted=true, MessagingError=false and no busy control.
+MailboxSyncTotal68814ms,13 Protect/384 Unprotect,36851ms protection. Contacts183
+and Settings189/190/191 retained the account/recovery; reconnect was Verified
+when its section became visible. Recovery/account flags on unrelated pages
+mean only visible controls, not deletion. This is retained incoming read
+recovery, not contact/text delivery or a sustained acceptance run.
+
+Windows26's first explicit Refresh ended OutcomeUnknown after33095ms,
+9 Protect/267 Unprotect,9751ms protection. An uncorrelated node1 native-deadline
+event identified LinuxBootOnionMonotonicClock.ReadAsync IL24, not noncommit or
+an authenticated grant failure. One ordinary UI retry completed without error:
+MailboxSyncTotal24834ms,4 Protect/218 Unprotect,10742ms protection; independent
+UI showed synchronization completed and four existing outgoing awaiting-acceptance
+rows. Those rows and their uncertainty were preserved; no Stop/new intent.
+
+Android SetPeerAddress184 used the preserved public Windows QA address, then
+Dismiss185/Add186/Inspect187 projected the existing unfinished contact request.
+The first Add is not a new Store or contact-delivery receipt. Separate exact
+Retry188 entered actual business work and failed in the same retained-draft
+metadata guard as earlier diagnostic117: PrepareInitialContactDraftAsync IL4129
+(matching installed source line86), before another native Store. ContactStartTotal
+69531ms,3 Protect/382 Unprotect,35200ms protection. Contacts192 independently
+showed the error; original request/account/seed custody remain. No repeated
+submission, stop, replacement intent or reset followed that failure.
+
+Physical contacts/text/attachments/groups remain0/4; S05 is unaccepted. Next
+implementation is the actual retained Initial draft/current dependency boundary,
+not another node reset or expiry bypass. Which metadata binding differs is not
+yet established. Full source/package, cold/sustained transport and complete
+physical business acceptance remain open. The first Windows timeout remains
+a failure receipt, not relabelled by its later successful retry.
