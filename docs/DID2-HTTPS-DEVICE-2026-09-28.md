@@ -35,6 +35,13 @@ closed latest Android metadata identifies genesis-admission I/O. No further
 business send or account reset followed. This build does not yet qualify the
 scoped command physically. Older evidence below retains its original inputs.
 
+The next same-account Windows registration check and Android Verify28 followed
+by independent Inspect88 both ended Rejected with
+`DID2 AccountProof failed (AdmissionAuthorityUnavailable)`. Android's supported
+receipts retain recovery and report no contact Store or delivery. Windows was
+observed and checked through its existing settings UI only. No create/delete,
+business send, identity reset or recovery deletion occurred in this check.
+
 Supported current-dev Verify failed with Registry readiness timeouts/503;
 independent node reads found all three mailbox hosts unavailable while ONION
 and required contact terminals remained ready. Closed Registry NTS acquisition
