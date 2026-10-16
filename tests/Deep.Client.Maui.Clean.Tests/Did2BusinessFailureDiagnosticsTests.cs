@@ -151,6 +151,40 @@ public sealed class Did2BusinessFailureDiagnosticsTests
         Assert.Equal("kind=ProtectedState; check=Unclassified; depth=0; method=unavailable; line=0; il=-1",entry);
     }
 
+    [Theory]
+    [InlineData("Lifecycle", "MailboxGrantLifecycle")]
+    [InlineData("Network", "MailboxGrantNetwork")]
+    [InlineData("Generation", "MailboxGrantGeneration")]
+    [InlineData("IssuerKey", "MailboxGrantIssuerKey")]
+    [InlineData("IssuerNotBefore", "MailboxGrantIssuerNotBefore")]
+    [InlineData("GrantNotBefore", "MailboxGrantNotBefore")]
+    [InlineData("GrantExpiry", "MailboxGrantExpiry")]
+    [InlineData("PolicyExpiry", "MailboxGrantPolicyExpiry")]
+    [InlineData("NetworkExpiry", "MailboxGrantNetworkExpiry")]
+    [InlineData("Lifetime", "MailboxGrantLifetime")]
+    [InlineData("Signature", "MailboxGrantSignature")]
+    [InlineData("private credential payload and endpoint", "Unclassified")]
+    public void MailboxGrantReasonsAreClosedMetadataOnly(string reason, string expected)
+    {
+        var error = new CryptographicException("Mailbox grant is outside current issuer/network/time authority.");
+        error.Data["Deep.MailboxAuthority.Check"] = reason;
+        var entry = Assert.Single(Did2BusinessFailureDiagnostics.Capture(error));
+        Assert.Equal($"kind=ProtectedState; check={expected}; depth=0; method=unavailable; line=0; il=-1", entry);
+        Assert.DoesNotContain(error.Message, entry);
+    }
+
+    [Fact]
+    public void MailboxGrantUnknownDataAndForeignFailureNeverBecomePrivateDiagnosticText()
+    {
+        var value = new UnreadablePrivateFailure();
+        var error = new CryptographicException("Mailbox grant is outside current issuer/network/time authority.");
+        error.Data["Deep.MailboxAuthority.Check"] = value;
+        Assert.Contains("check=Unclassified;", Assert.Single(Did2BusinessFailureDiagnostics.Capture(error)));
+        var foreign = new CryptographicException("private credential payload and endpoint");
+        foreign.Data["Deep.MailboxAuthority.Check"] = "GrantExpiry";
+        Assert.Contains("check=Unclassified;", Assert.Single(Did2BusinessFailureDiagnostics.Capture(foreign)));
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void ThrowOwnedFailure(Exception error) => throw error;
     private sealed class UnreadablePrivateFailure : IOException

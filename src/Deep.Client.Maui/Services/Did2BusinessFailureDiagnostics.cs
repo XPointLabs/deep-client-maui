@@ -7,8 +7,8 @@ using Deep.Protocol.ApplicationCore;
 namespace Deep.Client.Maui.Services;
 
 // Display/log metadata only. Never emits exception text or file paths. Only an
-// exact built-in CryptographicException message is compared with fixed owned
-// guard literals; unknown text and custom getters never enter the output.
+// exact built-in CryptographicException message/closed reason is compared with
+// fixed owned literals; unknown text and custom getters never enter the output.
 // No outcome/authority/retry decision consumes these diagnostic labels.
 internal static class Did2BusinessFailureDiagnostics
 {
@@ -106,8 +106,19 @@ internal static class Did2BusinessFailureDiagnostics
             "Contact successor changed its exact reusable invite lineage." => "ContactSuccessorInvite",
             "The current DID2 recipient and network do not share exact directory/view authority." => "ContactCurrentContext",
             "The route publisher is not an active DID2 device." => "ContactPublisherInactive",
+            "Mailbox grant is outside current issuer/network/time authority." => MailboxGrantCheck(error),
             _ => RouteTimeCheck(error.Message)
         };
+
+    private static string MailboxGrantCheck(Exception error) => error.Data["Deep.MailboxAuthority.Check"] switch
+    {
+        "Lifecycle" => "MailboxGrantLifecycle", "Network" => "MailboxGrantNetwork",
+        "Generation" => "MailboxGrantGeneration", "IssuerKey" => "MailboxGrantIssuerKey",
+        "IssuerNotBefore" => "MailboxGrantIssuerNotBefore", "GrantNotBefore" => "MailboxGrantNotBefore",
+        "GrantExpiry" => "MailboxGrantExpiry", "PolicyExpiry" => "MailboxGrantPolicyExpiry",
+        "NetworkExpiry" => "MailboxGrantNetworkExpiry", "Lifetime" => "MailboxGrantLifetime",
+        "Signature" => "MailboxGrantSignature", _ => "Unclassified"
+    };
 
     // Display only; no label grants retry, renewal, noncommit or currentness.
     // ApplicationCoreFormatException is sealed; arbitrary exception getters

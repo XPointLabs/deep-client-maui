@@ -108,6 +108,27 @@ It has not been installed/launched or physically accepted. Windows input remains
 stopped after physical Escape and requires a fresh human authorization to resume.
 No production changes, GitHub Release or main merge occurred.
 
+Android34 Restart59 -> Settings60/scroll61–62 -> independent Inspect63 retained
+the same account/recovery and again reached Verified:66931ms total,
+496 unprotects/45083ms protection/1 protect. Subsequent background completions
+used64838/59496ms. Chats64 -> one RefreshConversations65 -> Inspect66 ended with
+a visible error, not an authenticated empty page or incoming delivery. Closed
+business metadata locates `RequireIssuerGrant` through retained-read success
+verification; the failed field of its issuer/network/time guard is not yet proven.
+No replacement acquisition, contact intent, reset or clock/lifetime change was
+used as a remedy. Physical business acceptance remains0/4.
+
+The next diagnostic candidate preserves every original ordered grant predicate,
+CryptographicException/message and signature check, attaching only one fixed
+reason without grant bytes, times or identifiers. The QA classifier accepts only
+that exact built-in failure plus the closed reason set; arbitrary objects/text
+and foreign failures remain Unclassified. Protocol focused01 passed89 and MAUI
+focused02 passed160, all0fail/0skip/native0, under
+`artifacts/s05-mailbox-grant-diagnostic-20261016/` in their respective repos.
+It is not installed by APK34. Shared canonical-preflight05 (before these
+diagnostic Protocol edits) completed build0/6 fixture PASS/0skip/terminal0,
+2042 captured inputs, FullAccepted=false; it is not a full source gate.
+
 ### Matched acquisition retest
 
 APK30 compiles MAUI `c8732ab`, Shared `32de907`, Protocol `ef6b5f4`; SHA256
