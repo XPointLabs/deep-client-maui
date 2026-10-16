@@ -23,6 +23,14 @@ This identifies this attempt's refusal; it does not prove the prior physical
 DTT failure's subcondition or sustained acquisition recovery. No Store/contact
 acceptance, message, attachment or group effect is accepted (0/4).
 
+After the matching local Registry route-admission update, one explicit
+VerifyNetwork01 followed by independent Inspect02 completed
+`verified-publication/Verified`, with recovery retained and protected-package
+audits unchanged. Work metadata records99542ms /887 unprotect calls /51049ms
+protection, within the unchanged two-minute budget. No new network failure was
+logged for that attempt. This is one same-account verification/publication
+success, not sustained readiness or contact/message/files/groups acceptance.
+
 Windows17 with the same three source revisions built with0 warnings/errors;
 apphost SHA256 `d67b1be24ae369ace45307613c90e59cd6b56b698474e9d20272f5283289a5d0`.
 Windows16 was closed through its UI. The subsequent launch action returned
