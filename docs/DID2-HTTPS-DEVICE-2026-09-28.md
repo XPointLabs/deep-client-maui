@@ -42,6 +42,21 @@ receipts retain recovery and report no contact Store or delivery. Windows was
 observed and checked through its existing settings UI only. No create/delete,
 business send, identity reset or recovery deletion occurred in this check.
 
+Later local Node `7520654` diagnostics observed native generations468/455 and
+then Retrieve456 on a retrying node. At03:00Z all three nodes independently
+reported recovered mailbox plus ONION/contact readiness; supported smoke09
+exited0. This is one current recovery check, not sustained/physical acceptance.
+Android Verify29 -> Inspect89/90 preserved recovery but ended Rejected, now with
+ProtectedState/Unclassified at contact-object authoring (AuthorClosureCoreAsync
+IL2719 and AuthorGenesisCoreAsync IL315), not the preceding AccountProof503.
+The matching build-output IL places that area near bundle authoring but does
+not establish the exact guard in the packaged Android assembly. Do not reset
+the account or infer a particular failing predicate from that offset alone.
+Windows remained on its saved profile: both Verify clicks were rejected by the
+Windows helper with `coordinate input geometry is unavailable`, including its
+one recovery attempt. No click outcome/success is claimed; further Windows
+input is stopped pending the operator restoring/maximizing that same window.
+
 Supported current-dev Verify failed with Registry readiness timeouts/503;
 independent node reads found all three mailbox hosts unavailable while ONION
 and required contact terminals remained ready. Closed Registry NTS acquisition

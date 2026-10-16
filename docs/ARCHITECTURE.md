@@ -85,6 +85,13 @@ with0 warnings/errors; compile-only is neither an installed artifact nor release
 qualification. The earlier158-case receipt remains unchanged.
 `business-guard-diagnostics-clean-01` passed174/0/0/native0 for the narrowed
 guard/IL metadata slice. A diagnostic guard label is not an authenticated result.
+The next QA-only label extension covers contact-object authoring, prekey
+selection/validity and exact owned publisher/delegation guards, using the same
+literal-only classifier. It adds no outcome, private text or recovery operation.
+`contact-author-diagnostics-clean-02` passed203/0/0/native0 on the full Clean
+project suite; device mapping is still a separate check.
+Matching `contact-author-diagnostics-smoke-02` passed119/0/0/native0. Both use
+Windows PowerShell5.1 / SDK10.0.301 and do not qualify physical delivery.
 
 Network suspension follows actual `Window.Stopped`/`Destroying`, not loss of
 focus through `Deactivated`; resume/activation is idempotent for an already

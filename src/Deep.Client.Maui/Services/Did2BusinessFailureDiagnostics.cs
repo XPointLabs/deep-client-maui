@@ -81,6 +81,16 @@ internal static class Did2BusinessFailureDiagnostics
             "Owned claim route clock changed its protected boot." => "ClaimRouteBoot",
             "Owned claim read issuance exceeds trusted lower time." => "ClaimIssuedLower",
             "Owned claim read expiry does not cover trusted upper time." => "ClaimRequestUpper",
+            "Duplicate device prekey descriptors are forbidden." => "ContactPrekeyDuplicate",
+            "New contact issuance requires a route anchored at the current verified directory head." => "ContactIssuanceAnchor",
+            "The object requires the exact authorized invite kind and route generation." => "ContactInviteGeneration",
+            "The exact active-device prekey descriptor is absent." => "ContactPrekeyDevice",
+            "The prekey descriptor is not the exact current genesis service." => "ContactPrekeyGenesis",
+            "Contact validity cannot cover the complete trusted time interval." => "ContactObjectValidity",
+            "The contact object is not the exact current reusable route." => "ContactObjectRoute",
+            "Contact authoring crossed a trusted clock discontinuity." => "ContactAuthorClock",
+            "Route custody is not the current authorized DID2 publisher device." => "ContactOwnedPublisher",
+            "The contact bundle is not the exact owned DID2 delegation." => "ContactOwnedDelegation",
             _ => "Unclassified"
         };
 }

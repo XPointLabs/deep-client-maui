@@ -85,6 +85,16 @@ public sealed class Did2BusinessFailureDiagnosticsTests
     [InlineData("Owned claim route clock changed its protected boot.", "ClaimRouteBoot")]
     [InlineData("Owned claim read issuance exceeds trusted lower time.", "ClaimIssuedLower")]
     [InlineData("Owned claim read expiry does not cover trusted upper time.", "ClaimRequestUpper")]
+    [InlineData("Duplicate device prekey descriptors are forbidden.", "ContactPrekeyDuplicate")]
+    [InlineData("New contact issuance requires a route anchored at the current verified directory head.", "ContactIssuanceAnchor")]
+    [InlineData("The object requires the exact authorized invite kind and route generation.", "ContactInviteGeneration")]
+    [InlineData("The exact active-device prekey descriptor is absent.", "ContactPrekeyDevice")]
+    [InlineData("The prekey descriptor is not the exact current genesis service.", "ContactPrekeyGenesis")]
+    [InlineData("Contact validity cannot cover the complete trusted time interval.", "ContactObjectValidity")]
+    [InlineData("The contact object is not the exact current reusable route.", "ContactObjectRoute")]
+    [InlineData("Contact authoring crossed a trusted clock discontinuity.", "ContactAuthorClock")]
+    [InlineData("Route custody is not the current authorized DID2 publisher device.", "ContactOwnedPublisher")]
+    [InlineData("The contact bundle is not the exact owned DID2 delegation.", "ContactOwnedDelegation")]
     public void OnlyFixedOwnedGuardLiteralHasAClosedDiagnosticLabel(string message,string expected)
     {
         var entry = Assert.Single(Did2BusinessFailureDiagnostics.Capture(new CryptographicException(message)));
