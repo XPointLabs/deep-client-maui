@@ -130,3 +130,31 @@ native0, Windows PowerShell5.1/SDK10.0.301, no compiler diagnostics. Matching
 Windows/Android compilation and physical ANR/receive retest are still required.
 The same correction's unfiltered `smoke-03` also passed119/0/0/native0, no
 compiler diagnostics. Smoke is source/harness evidence, not device acceptance.
+
+## Matching UI correction observation
+
+Windows26/APK43 compiled from MAUI `443e9b7`, Shared runtime `7d64fe7`,
+Protocol `8ea886f`; both native0 without compiler diagnostics. Windows26
+opened the existing QA profile; no new Windows business request was submitted.
+Apphost SHA256:
+`a596798c36a1f40f1cd845b811ab24cd4490b1276355cb0bc124ae7ee81843ae`.
+APK43 SHA256:
+`4ea56851b5f8d1d301754932e7eced954b1225d7faa98a36625422dd17d18b5e`;
+signer unchanged. Dry164/update165 passed. An independent installed base-APK
+SHA256 read matched; Settings166 confirmed retained account/recovery.
+Chats167, Refresh168 and independent Inspect169 all returned UI observations.
+No ANR was observed in this bounded sequence, including the active receive;
+this is not sustained responsiveness qualification or an ANR stack diagnosis.
+
+MailboxSyncTotal69575ms,10 Protect/332 Unprotect,30534ms protection. The command
+passed retained-result verification but returned Retrieve OutcomeUnknown.
+Independent Inspect169 confirmed messaging error, not synchronization. Actual
+Shared module/PDB maps ForwardAsync IL1150→source304 (received non-success
+response), not a local cancellation throw. Closed node1/node3 peer metadata
+reported504. Shared module/PDB SHA256:
+`a2e34d7ba6a1075a26645d688ab3c169e35084052b4a6dae53c9c41cd439cf11`,
+`7e02ea508715215affc13ef61aa54edc87b22d4226c11a8516b5c1426bfe2353`.
+The APK41 time refusal did not recur here; its exact predicate/cause is still
+unknown. Do not infer a clock fix, noncommit, Store/Retrieve success or text
+delivery. Physical acceptance remains0/4. The next narrow investigation is
+the actual local native mailbox terminal refusal behind the bounded504.
