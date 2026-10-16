@@ -463,6 +463,8 @@ public sealed class CleanStartupCompositionTests
         Assert.Contains("merge-base --is-ancestor $apkSourceCommit $commit", installer);
         Assert.Contains("$Phase -eq 'Install'", installer);
         Assert.Contains("$_ -cnotin $harnessOnly", installer);
+        Assert.Contains("'docs/S05-BUSINESS-WORK-2026-10-17.md'", installer);
+        Assert.DoesNotContain("$changed | Where-Object { $_ -like 'docs/*'", installer);
         Assert.Contains("commit = $apkSourceCommit", installer);
         Assert.Contains("harnessCommit = $commit", installer);
         Assert.Contains("$Ui.ImeShowing -and $Id -cne 'Welcome.DisplayName'", installer);

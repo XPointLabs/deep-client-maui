@@ -401,7 +401,8 @@ if ($apkSourceCommit -cne $commit) {
     if ($LASTEXITCODE -ne 0) { throw 'Unable to check APK/harness source separation.' }
     $harnessOnly = @('eng/Invoke-PhysicalDid2AccountProbeAndroid.ps1',
         'tests/Deep.Client.Maui.Clean.Tests/CleanStartupCompositionTests.cs',
-        'docs/ARCHITECTURE.md', 'docs/DID2-HTTPS-DEVICE-2026-09-28.md')
+        'docs/ARCHITECTURE.md', 'docs/DID2-HTTPS-DEVICE-2026-09-28.md',
+        'docs/S05-BUSINESS-WORK-2026-10-17.md')
     if ($Lane -ne 'Did2Https' -or $Phase -eq 'Install' -or
         @($changed | Where-Object { $_ -cnotin $harnessOnly }).Count -ne 0) {
         throw 'Older APKs are allowed only for UI phases with strictly harness/documentation-only changes.'
