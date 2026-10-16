@@ -74,6 +74,24 @@ The code offset still does not identify an exact guard. A later Windows retry
 again failed before input with the same geometry error; no account changes or
 successful network check are claimed.
 
+The subsequent screenshot-backed Windows recovery restored input geometry.
+One VerifyNetwork action completed Rejected at ContactPublication /
+OnionCompletionUnknown. Closed code metadata locates it at
+PrivacyManagedIngressHttpTransport.ForwardAsync line304, handling an
+unclassified/outcome-unknown HTTP error response. It is not a completed
+publication, proven noncommit or evidence of an Android authoring failure.
+
+APK24 (`3505482`, same Shared/Protocol) built without compiler warnings/errors;
+SHA256 `80336e62f5a61966f556f2daa26223a9dde4f66ed557cadbf425aa1d6ad381ae`.
+The first Install was refused before mutation because AllowProbeUpdate was
+absent. Explicit retained-update preflight and Install02 then passed. Settings
+confirmed retained recovery; the two guarded scrolls exposed VerifyNetwork.
+Verify01 and separate Inspect03 ended Rejected, without contact Store/delivery.
+Exact-PID/tag closed logs identify ContactSuccessorAdvance during local
+successor authoring. The matching signed source reproduction and semantic fix
+belong to [DR-0127](../../docs/survival-program/decisions/DR-0127-capped-contact-object-successor-validity.md).
+APK24 predates that Protocol correction; no fixed-device success is claimed.
+
 Supported current-dev Verify failed with Registry readiness timeouts/503;
 independent node reads found all three mailbox hosts unavailable while ONION
 and required contact terminals remained ready. Closed Registry NTS acquisition
