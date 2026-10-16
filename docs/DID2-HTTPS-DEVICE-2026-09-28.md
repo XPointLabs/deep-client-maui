@@ -43,8 +43,26 @@ and66813ms in platform protection. ContactPublication alone recorded56456ms /
 or proof that protection is the sole cause. Shared's atomic journal read-group
 candidate is qualified separately in
 [owned local read groups](../../deep-client-shared/docs/architecture/owned-authored-counter-custody.md#actual-atomic-local-read-groups).
-Matching post-optimization APK/device measurement remains required. No account,
+The matching post-optimization observation follows below. No account,
 original intent, floor, key or timeout was reset/replaced; acceptance remains0/4.
+
+APK28 now compiles MAUI `68caf0d`, Shared `f87fc97`, Protocol `0867668`; SHA256
+`e5659419b1e2a4f0d382c748ab42480d16c75c7a8872fafa3e5849bd5b58857f`.
+Build28 completed with0 warnings/errors and the unchanged signer. Exact APK
+assembly-store inspection proves one atomic journal-group call in account reopen
+and the QA observer. Supported dry/update Install01 and Settings01 passed;
+recovery remains stored and protected-package audits are unchanged.
+
+The first complete post-update attempt ended after103803ms with1008 unprotect
+calls /53603ms protection, rather than the baseline's1226 /66813ms. It still
+failed, so this is measured improvement, not successful registration. Closed
+metadata now reaches `XPointOnionCapabilityProducer.VerifyDtt` at IL168 and the
+UI reports Rejected. Exact packaged IL maps that offset to the existing
+`dtt-binding-invalid` guard, not to a specific failed subcondition. All three
+local nodes reported ready/recovered at06:13Z. One source hypothesis is a view
+rotation between closure fetch and fresh DTT proof; it needs a signed controlled
+reproduction before claiming a cause or changing acquisition. No further contact
+send/Store, reset, deadline extension or physical acceptance is claimed.
 
 ### Matched capped-successor correction
 
