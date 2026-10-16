@@ -181,9 +181,30 @@ The unresolved implementation boundary is recovery of expired active Retrieve/
 ACK while retaining original request/grant/counter/page custody and independently
 current authorization. The existing new-work selector cannot replace an active
 cycle. Do not bypass grant expiry, rewrite original MAU, discard active state or
-reset the account as a remedy. Freeze any required allocation under the existing
-transport-neutral transition owner before implementation. Publication readiness
-does not close this gap; contacts/messages/files/groups physical acceptance0/4.
+reset the account as a remedy. The uncaptured allocation is now frozen in
+[DR-0133](../../docs/survival-program/decisions/DR-0133-expired-owned-retrieve-attempt-closure.md);
+captured-page/ACK continuation remains open. Publication readiness does not close
+this gap; contacts/messages/files/groups physical acceptance0/4.
+
+APK37 builds MAUI `71c973b`, Shared `2cd2f77`, Protocol `2bb61d0`;
+SHA256 `71a987e64b9d311ce15cc4c9760710f364ac939d4a06b275044ec26f4db0b800`.
+The supported nonincremental optimized-JIT Debug diagnostic build exited0 with
+no compiler warnings/errors and the unchanged signer; this is not Release or
+shipping-package qualification. Preflight90/update91/Inspect92/Settings93 retain
+the existing QA account and recovery, with protected-package audits passing.
+Scroll94/95 and independent Inspect96 ran sequentially;96 observes Verified.
+
+Chats97 -> one Refresh98 -> Inspect99 observes busy, not completion. Independent
+Inspect101 observes Messaging.Error and no completed synchronization. Closed
+diagnostic100 records OutcomeUnknown in `Did2MailboxGrantOnionTransport.SendAsync`
+and `AcquireRetainedMailboxReadUnderLeaseAsync`, rather than the prior active
+grant-expiry guard. This is progress into grant acquisition, not successful
+Retrieve/delivery or an independent observation of the private read subphase.
+Publication completed in60969ms with491 unprotect calls and0 protects. Preserve
+the exact newly pending issuer request too: OutcomeUnknown is not noncommit.
+Receipts live under `artifacts/s05-prekey-read-path-20261016/android-37-*`;
+sanitized failure metadata is in `android-37-closed-diagnostics-100`. No retry,
+account reset, production update, Windows UI action or business PASS is implied.
 
 ### Matched acquisition retest
 
