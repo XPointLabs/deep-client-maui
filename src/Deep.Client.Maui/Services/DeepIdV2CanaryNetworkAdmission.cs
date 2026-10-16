@@ -38,8 +38,8 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
         var factory = await CreateHttpFactoryAsync(cancellationToken);
         var (genesisPin, authority, exactHead, headPin) = await ReadBootstrapAsync(
             factory, origin, cancellationToken);
-        var protectedFloor = await accounts.OpenDirectoryLkgStoreAsync(
-            authority, exactHead, headPin, cancellationToken);
+        var protectedFloor = await ObserveWorkAsync("DirectoryFloor", () =>
+            accounts.OpenDirectoryLkgStoreAsync(authority, exactHead, headPin, cancellationToken));
 
         var publicClientOptions = DiagnosticHttpOptions();
         using var admission = factory.CreateDeepIdV2GenesisAdmissionClient(
@@ -62,8 +62,8 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
         // The HTTP loopback probe remains admission-only, never a TLS claim.
         using var closure = factory.CreateDeepIdV2NetworkClosureArtifactSource(origin,
             clientOptions: publicClientOptions);
-        var networkFloor = await accounts.OpenNetworkLkgStoreAsync(genesisPin,
-            cancellationToken);
+        var networkFloor = await ObserveWorkAsync("NetworkFloor", () =>
+            accounts.OpenNetworkLkgStoreAsync(genesisPin, cancellationToken));
         var networkSource = new DeepIdV2ContactPathAuthoritySource(genesisPin,
             accounts, proof, closure, networkFloor, clock);
         var network = await HttpStageAsync("NetworkVerification", () =>
@@ -75,7 +75,8 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
         _ = await HttpStageAsync("PreKeyStaging", () =>
             accounts.EnsureOwnInitialPreKeyInventoryAsync(networkSource,
                 cancellationToken), cancellationToken);
-        var custody = await accounts.OpenOwnOnionClientCustodyAsync(cancellationToken);
+        var custody = await ObserveWorkAsync("OnionCustody", () =>
+            accounts.OpenOwnOnionClientCustodyAsync(cancellationToken));
         // Success requires authenticated replies from both selected exits,
         // independently verified XIC1 signatures and durable pair recording.
         // A Registry proof or local staging alone cannot complete this action.
@@ -108,6 +109,9 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
     private static async Task<T> HttpStageAsync<T>(string stage, Func<Task<T>> action,
         CancellationToken cancellationToken)
     {
+#if DEEP_DID2_HTTPS_ADMISSION
+        using var work = Did2QaWorkDiagnostics.Begin(stage, MauiProgram.ObserveDid2QaWork);
+#endif
         try { return await action(); }
         catch (HttpRequestException exception)
         {
@@ -144,6 +148,14 @@ internal sealed partial class DeepIdV2CanaryNetworkAdmission :
                 ? exception.Code : "network-verification-rejected";
             throw new InvalidOperationException($"DID2 {stage} failed ({code}).", exception);
         }
+    }
+
+    private static async Task<T> ObserveWorkAsync<T>(string stage, Func<Task<T>> action)
+    {
+#if DEEP_DID2_HTTPS_ADMISSION
+        using var work = Did2QaWorkDiagnostics.Begin(stage, MauiProgram.ObserveDid2QaWork);
+#endif
+        return await action();
     }
 
     public async Task VerifyAsync(DeepIdV2AccountService accounts,

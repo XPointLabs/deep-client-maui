@@ -30,6 +30,9 @@ public static partial class MauiProgram
         builder.Services.AddSingleton<INetworkStatusService,MauiConnectivityStatusService>();
         builder.Services.AddSingleton<DeepIdV2NetworkReconnect>(services => new(
             async ct => {
+#if DEEP_DID2_HTTPS_ADMISSION
+                using var work = Did2QaWorkDiagnostics.Begin("VerificationTotal", ObserveDid2QaWork);
+#endif
                 try
                 {
                     var accounts = await services.GetRequiredService<IDeepIdV2AccountRuntimeAccessor>().GetAccountsAsync(ct);
@@ -69,6 +72,14 @@ public static partial class MauiProgram
     }
 
 #if DEEP_DID2_HTTPS_ADMISSION
+    internal static void ObserveDid2QaWork(string summary)
+    {
+        CrashDiagnostics.LogInfo("Did2.Work", summary);
+#if ANDROID
+        global::Android.Util.Log.Info("Deep.Did2Qa", "Did2.Work " + summary);
+#endif
+    }
+
     private static void ObserveDid2QaFailure(string channel, Exception error)
     {
         if (channel is not ("Did2.BusinessFailure" or "Did2.NetworkFailure"))

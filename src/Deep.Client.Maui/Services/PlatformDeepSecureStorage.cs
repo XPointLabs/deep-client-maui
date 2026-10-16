@@ -30,8 +30,11 @@ internal static class PlatformDeepSecureStorage
         ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
         var root = Path.GetFullPath(appDataDirectory);
         var statePath = Path.Combine(root, "deep-store-v2", StateFileName);
-        return new JournaledDeepSecureStorage(statePath,
-            new PlatformDeepSecretProtector(useV2: true));
+        IDeepSecretProtector protector = new PlatformDeepSecretProtector(useV2: true);
+#if DEEP_DID2_HTTPS_ADMISSION
+        protector = Did2QaWorkDiagnostics.Observe(protector);
+#endif
+        return new JournaledDeepSecureStorage(statePath, protector);
     }
 }
 

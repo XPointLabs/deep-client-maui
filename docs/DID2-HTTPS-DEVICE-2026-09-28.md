@@ -6,6 +6,26 @@ testing there until he explicitly reports users exist. There is no remote UAT.
 
 ## Current retained-device checkpoint — 2026-10-16
 
+### Bounded work-cost diagnostic candidate
+
+After Node build13 / supported Up14, Windows16's single incoming refresh at
+05:24Z completed synchronization with an empty list and no new closed failure.
+This does not prove a contact/message effect or identify the earlier exit cause.
+Android25 Verify03 still ended failure-redacted with the same profile retained.
+
+The HTTPS QA composition now measures verification stages and aggregate platform
+protection call count/time. Output is fixed stage names, bounded numeric counts
+and monotonic durations only: no slots, lengths, identifiers, paths, values or
+exception text. An async-local scope follows the actual operation; the original
+protector, ciphertext, lease/floor checks and two-minute attempt budget remain.
+Observer failure cannot replace the operation result. It is absent from normal
+and Release composition and does not cache plaintext or authorize work.
+Focused work/storage/reconnect/composition tests passed52/0/0; the unfiltered
+Clean project passed227/0/0, native0 under Windows PowerShell5.1 / SDK10.0.301
+(`artifacts/s05-work-cost-20261016/focused-01`, `clean-02`). Matching Android
+build/retained install and actual measurement remain required. Source tests do
+not prove a Keystore bottleneck or physical delivery; acceptance remains0/4.
+
 ### Matched capped-successor correction
 
 Windows16 and APK25 compile MAUI `7fb384d`, Shared `104b24b`, Protocol
