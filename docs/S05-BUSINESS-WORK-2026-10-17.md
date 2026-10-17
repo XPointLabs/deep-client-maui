@@ -384,7 +384,30 @@ No raw dump/editor text is recorded and no foreground/typing guard is relaxed.
 Parsed-function true/false/stale/hostile tests and unfiltered MAUI Clean285
 passed/native0/0skip (Windows PowerShell5.1, SDK10.0.301), receipt
 `artifacts/s05-device-source-batch-20261017/harness-clean-01`.
-This is harness source evidence; matching physical reobservation remains open.
+This is harness source evidence, separate from the physical reobservation below.
 The existing exact ancestor/harness-only provenance exception keeps APK45 tied
 to its actual source, not to an unbuilt application revision. Physical business
 acceptance remains0/4; source full/package qualification is separate.
+
+Harness `b5fcd98` subsequently passed dry207 against the unchanged APK45 source
+`5b7132d`. Settings208 retained account/recovery; Scroll210 showed Verified.
+Chats211 and one Refresh212 were followed by independent Chats216: no error,
+no Busy, synchronization complete. Closed MailboxSyncTotal70937ms,
+12 Protect/362 Unprotect,34456ms protection. Closed read-only list observation
+counted0 incoming/0 outgoing/0 accepted rows. OpenOnly217 correctly refused
+before tapping because the list did not contain exactly one conversation.
+This is successful empty-mailbox synchronization, not request delivery.
+Settings215 also remained usable during the earlier busy observation; no account
+or process reset was needed to complete this attempt. Windows29 independently
+loaded its local history without network authority; that is not remote receipt.
+
+After the local Node diagnostic activation described in
+[its checkpoint](../../xnode/docs/testing/s05-private-grant-hop-2026-10-16.md#2026-10-17-native-network-gate-observation),
+one explicit Windows network recheck retained account/recovery and reached
+Verified (VerificationTotal13088ms,2 Protect/364 Unprotect,7291ms protection).
+At00:26:43Z one exact original contact Retry was started; no replacement or reset.
+It completed the existing owned expiry path at00:27:12Z:29330ms,
+6 Protect/1025 Unprotect,25938ms protection. Independent UI cleared the retry
+choice, showed expiry/possible recipient receipt and no error. Only a separate
+explicit Add at00:28:03Z began new work for the same QA peer; its outcome and
+recipient acceptance remain pending observation.
