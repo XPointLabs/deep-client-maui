@@ -409,5 +409,18 @@ At00:26:43Z one exact original contact Retry was started; no replacement or rese
 It completed the existing owned expiry path at00:27:12Z:29330ms,
 6 Protect/1025 Unprotect,25938ms protection. Independent UI cleared the retry
 choice, showed expiry/possible recipient receipt and no error. Only a separate
-explicit Add at00:28:03Z began new work for the same QA peer; its outcome and
-recipient acceptance remain pending observation.
+explicit Add at00:28:03Z began new work for the same QA peer. It ended at the
+unchanged foreground budget:120047ms,30 Protect/1717 Unprotect,69458ms protection.
+Closed cancellation locations: ReadOwnedBatchAsync:101,
+ProtectedInitialKeyRetirementJournal.ReadAsync:242,
+SqliteDeviceStateStore.ReconcileInitialSessionsUnderGateAsync:308 and
+ReadOwnedMailboxEnvelopeUnderLeaseAsync:91. Independent UI retained the new
+retry choice, showed cancellation and was no longer busy. No further retry or
+reset followed. No delivery/noncommit inference follows from these locations;
+the prior empty Android read predates this new command.
+
+The next bounded candidate batches segmented protected custody: actual idle
+compaction's16 part reads and pending payload's floor+18 parts, preserving
+missing/extra/length/hash/owner/cancellation checks and fresh per-call inventory.
+It is not installed or physically qualified here. No timeout/cache/authority
+change, and no additional native Store claim.
