@@ -535,3 +535,42 @@ native-owner review. Full/package/strict-registry and matching device qualificat
 are pending. These observations do not establish consent, text, file or group
 delivery, peer quorum causality, full gates or release readiness. Physical0/4;
 S05 remains unaccepted.
+
+## Installed APK provenance correction
+
+Local Build37/Up38/Verify39 completed with native0:9 services use the expected
+candidate images and retain54 mounts,5 raw path-alias differences but0 normalized
+differences/missing mounts. Native source is `7c01546b`; all three nodes reported
+recovered/privacy-ready at the subsequent point-in-time read, not a sustained gate.
+
+Windows33 and APK49 compiled with native0/0 compiler diagnostics from Shared
+`a93ac90b`, Protocol `f0376371`, MAUI `4186a1a5`. Windows33's actual deployed
+Shared DLL contains both new continuation methods;32's does not. Windows32 was
+closed normally,33 retained the same identity/recovery and reached Verified.
+
+**Disqualified Android observations:**245 was dry Inspect;246 mistakenly used
+Inspect plus AllowProbeUpdate, which did not install. Phases247–252 therefore
+observed the old APK48 even though the old harness printed the supplied local
+APK49 hash. Refresh251's25459ms/0P/162U/16218ms expiry failure belongs to48, not49.
+Those immutable receipts are retained, but are not matching49 evidence and do
+not show that the correction failed on49. The truncated log read also missed
+terminal events; the bounded closed-metadata reader now filters the complete
+current-PID/tag buffer before taking its final events.
+
+Actual Install253 returned installed-and-launched without reset. An independent
+read of the dedicated package's public base APK confirmed candidate SHA256
+`a5105ac276085aea0237befc2e2c8251151d61729d42bafb2ad7c3f9380f14e5`.
+New device business validation remains pending; earlier48 UI state does not
+establish retained49 account/reconnect/business success.
+
+The harness now rejects AllowProbeUpdate outside Install, checks actual installed
+executable bytes before every UI phase (including dry preflight), verifies the
+installed bytes before launching an update and again after execution. The local
+APK's verified signature plus byte equality binds the installed signer. Split,
+foreign, traversal, injected or ambiguous code paths/digests fail before UI;
+no app data, root/run-as or protected-package mutation is involved. Source scope:
+`artifacts/s05-installed-probe-provenance-20261017/focused-01`,26PASS/native0/0skip,
+no compiler diagnostics. Includes parsed real PowerShell functions with synthetic
+ADB responses, not device-delivery evidence. Only allowed harness/test/docs
+ancestors may observe the already built APK; the existing Install same-source
+requirement is unchanged. Contacts/text/files/groups remain0/4.

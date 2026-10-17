@@ -3,6 +3,97 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
+    public async Task AndroidUiEvidenceRequiresExactInstalledExecutableNotOnlyLocalApk()
+    {
+        // Parsed production functions; synthetic package-manager/code digests,
+        // no Android device and no private app data or installation in this test.
+        var script = Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1");
+        var source = File.ReadAllText(script);
+        Assert.Contains("$installedApkSha256Before -cne $apkSha256", source);
+        Assert.True(source.IndexOf("$installedApkSha256Before =", StringComparison.Ordinal) <
+            source.IndexOf("$ui = Read-ProbeUi", StringComparison.Ordinal));
+        Assert.True(source.IndexOf("$result.installedApkSha256AfterInstall = Assert-ProbeInstalledApk", StringComparison.Ordinal) <
+            source.IndexOf("$launch = Invoke-Adb", StringComparison.Ordinal));
+        Assert.Contains("$result.installedApkSha256After = Assert-ProbeInstalledApk", source);
+        var start = new System.Diagnostics.ProcessStartInfo("pwsh")
+        { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        start.Environment["DEEP_DIAGNOSTIC_SCRIPT"] = script;
+        const string test = """
+            $ErrorActionPreference='Stop'
+            $tokens=$null;$errors=$null
+            $ast=[Management.Automation.Language.Parser]::ParseFile($env:DEEP_DIAGNOSTIC_SCRIPT,[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { throw 'Parser failed' }
+            foreach($name in @('Get-ProbeInstalledApkSha256','Assert-ProbeInstalledApk')) {
+                $functions=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $name},$true))
+                if ($functions.Count -ne 1) { throw 'Function scope failed' }
+                . ([scriptblock]::Create($functions[0].Extent.Text))
+            }
+            $probePackage='network.xpoint.deep.did2https'
+            $script:code='/data/app/~~fixture/network.xpoint.deep.did2https-fixture==/base.apk'
+            $script:pathReply='package:'+$script:code
+            $script:digestReply=('a'*64)+'  '+$script:code
+            $script:calls=0
+            function Invoke-Adb([string[]]$Arguments,[string]$Label) {
+                $script:calls++
+                if (($Arguments -join '|') -ceq ('shell|pm|path|'+$probePackage)) { return $script:pathReply }
+                if (($Arguments -join '|') -ceq ('shell|toybox|sha256sum|'+$script:code)) { return $script:digestReply }
+                throw 'Only exact owned executable reads are allowed'
+            }
+            if ((Assert-ProbeInstalledApk ('a'*64)) -cne ('a'*64) -or $script:calls -ne 2) { throw 'Exact executable was not joined' }
+            $seen=$false
+            try { $null=Assert-ProbeInstalledApk ('b'*64) } catch {
+                $seen=$true
+                if ($_.Exception.Message -cne 'Installed dedicated probe APK differs from the approved candidate.') { throw 'Unclosed mismatch error' }
+            }
+            if (-not $seen) { throw 'Stale installed APK qualified as the local candidate' }
+            foreach($bad in @('', ('package:'+$script:code+"`npackage:"+$script:code),
+                'package:/data/app/../network.xpoint.deep.did2https-fixture==/base.apk',
+                'package:/data/app/~~fixture/network.xpoint.deep.production-fixture==/base.apk',
+                'package:/data/app/~~fixture/network.xpoint.deep.did2https-fixture==/base.apk;private',
+                ('x'*2049))) {
+                $script:pathReply=$bad;$script:calls=0;$seen=$false
+                try { $null=Assert-ProbeInstalledApk ('a'*64) } catch { $seen=$true }
+                if (-not $seen -or $script:calls -ne 1) { throw 'Foreign or ambiguous path reached executable read' }
+            }
+            $script:pathReply='package:'+$script:code
+            foreach($bad in @(('a'*64)+'  /data/app/foreign/base.apk', ('a'*64)+"  "+$script:code+"`n"+('a'*64),
+                ('A'*64)+'  '+$script:code, 'private', ('x'*2049))) {
+                $script:digestReply=$bad;$script:calls=0;$seen=$false
+                try { $null=Assert-ProbeInstalledApk ('a'*64) } catch { $seen=$true }
+                if (-not $seen -or $script:calls -ne 2) { throw 'Unknown digest output qualified' }
+            }
+            Write-Output 'passed'
+            """;
+        foreach (var argument in new[] { "-NoProfile", "-Command", test }) start.ArgumentList.Add(argument);
+        using var process = System.Diagnostics.Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+        try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
+        catch { if (!process.HasExited) process.Kill(entireProcessTree: true); throw; }
+        Assert.Equal(string.Empty, (await errors).Trim());
+        Assert.Equal(0, process.ExitCode);
+        Assert.Equal("passed", (await output).Trim());
+    }
+
+    [Fact]
+    public async Task AndroidUpdateCannotBeSilentlyReinterpretedAsAnInspectPhase()
+    {
+        var script = Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1");
+        var start = new System.Diagnostics.ProcessStartInfo("pwsh")
+        { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var argument in new[] { "-NoProfile", "-File", script, "-AndroidSerial", "synthetic-device",
+            "-ExpectedCommit", new string('1', 40), "-ExpectedApkSha256", new string('1', 64),
+            "-ExpectedSignerSha256", new string('1', 64), "-Phase", "Inspect", "-AllowProbeUpdate" })
+            start.ArgumentList.Add(argument);
+        using var process = System.Diagnostics.Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+        try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
+        catch { if (!process.HasExited) process.Kill(entireProcessTree: true); throw; }
+        Assert.NotEqual(0, process.ExitCode);
+        Assert.Contains("AllowProbeUpdate is accepted only by the explicit Install phase.", await errors);
+        Assert.Equal(string.Empty, (await output).Trim());
+    }
+
+    [Fact]
     public async Task AndroidKeyboardUsesActualServiceStateAndRejectsAmbiguousInput()
     {
         // Parsed production function with synthetic dumps only, not physical evidence.

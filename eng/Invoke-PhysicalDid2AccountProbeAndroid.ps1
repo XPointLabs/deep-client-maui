@@ -26,6 +26,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($AllowProbeUpdate -and $Phase -cne 'Install') {
+    throw 'AllowProbeUpdate is accepted only by the explicit Install phase.'
+}
 if ($Phase -in @('ConfirmReset', 'ConfirmIncompatibleReset') -and -not $ConfirmIsolatedAccountReset) {
     throw 'ConfirmReset requires explicit -ConfirmIsolatedAccountReset. The same guard applies to ConfirmIncompatibleReset.'
 }
@@ -168,6 +171,36 @@ function Get-PackageSnapshot([string]$Package) {
         pathSha256 = Get-TextHash $path
         metadataSha256 = Get-TextHash ($stable | ConvertTo-Json -Compress)
     }
+}
+
+# Match public executable bytes, never app data. Local APK signature verification
+# plus exact installed-byte equality also binds the installed signer. A path or
+# package/version snapshot alone cannot prove which build owns the observed UI.
+function Get-ProbeInstalledApkSha256 {
+    $pathOutput = Invoke-Adb @('shell', 'pm', 'path', $probePackage) 'Dedicated probe code path'
+    if ($pathOutput.Length -gt 2048 -or $pathOutput -cnotmatch
+        '\Apackage:(/data/app/(?:[A-Za-z0-9.~_+=-]{1,256}/){1,3}base[.]apk)\z') {
+        throw 'Dedicated probe must have one exact base APK code path.'
+    }
+    $codePath = $Matches[1]
+    if (@($codePath.Split('/') | Where-Object { $_ -cin @('.', '..') }).Count -ne 0 -or
+        $codePath -cnotmatch ('/' + [regex]::Escape($probePackage) + '-[A-Za-z0-9_+=-]{1,256}/base[.]apk\z')) {
+        throw 'Dedicated probe code path is outside its exact package.'
+    }
+    $digest = Invoke-Adb @('shell', 'toybox', 'sha256sum', $codePath) 'Dedicated probe executable digest'
+    if ($digest.Length -gt 2048 -or $digest -cnotmatch
+        ('\A([0-9a-f]{64})  ' + [regex]::Escape($codePath) + '\z')) {
+        throw 'Dedicated probe executable digest is unavailable or ambiguous.'
+    }
+    return $Matches[1]
+}
+
+function Assert-ProbeInstalledApk([string]$Expected) {
+    $actual = Get-ProbeInstalledApkSha256
+    if ($Expected -cnotmatch '\A[0-9a-f]{64}\z' -or $actual -cne $Expected) {
+        throw 'Installed dedicated probe APK differs from the approved candidate.'
+    }
+    return $actual
 }
 
 function Assert-SameSnapshot($Before, $After, [string]$Package) {
@@ -459,6 +492,10 @@ if ($Phase -ne 'Install' -and ($Lane -ne 'Did2Https' -or -not $probeBefore.insta
 if ($Phase -eq 'Install' -and $probeBefore.installed -and -not $AllowProbeUpdate) {
     throw 'The dedicated DID2 probe package already exists; explicit -AllowProbeUpdate is required.'
 }
+$installedApkSha256Before = if ($probeBefore.installed) { Get-ProbeInstalledApkSha256 } else { $null }
+if ($Phase -cne 'Install' -and $installedApkSha256Before -cne $apkSha256) {
+    throw 'Installed dedicated probe APK differs from the approved candidate.'
+}
 $result = [ordered]@{
     schema = $(if ($Lane -eq 'Did2Https') { 'deep.did2-https-android-diagnostic.v1' } else { 'deep.did2-account-android-probe.v1' })
     commit = $apkSourceCommit
@@ -477,6 +514,7 @@ $result = [ordered]@{
     deviceDeliveryVerified = $false
     protectedBefore = $before
     probeBefore = $probeBefore
+    installedApkSha256Before = $installedApkSha256Before
 }
 if ($Execute) {
     try {
@@ -490,6 +528,7 @@ if ($Execute) {
         if ($install -notmatch 'Success') {
             throw 'The dedicated DID2 probe install was not acknowledged.'
         }
+        $result.installedApkSha256AfterInstall = Assert-ProbeInstalledApk $apkSha256
         $launch = Invoke-Adb @('shell', 'monkey', '-p', $probePackage,
             '-c', 'android.intent.category.LAUNCHER', '1') `
             'Dedicated DID2 probe launch' 30000
@@ -603,6 +642,7 @@ if ($Execute) {
         }
         $result.protectedAfter = $after
         $result.probeInstalled = (Get-PackageSnapshot $probePackage).installed
+        $result.installedApkSha256After = Assert-ProbeInstalledApk $apkSha256
     }
 }
 $result | ConvertTo-Json -Depth 6
