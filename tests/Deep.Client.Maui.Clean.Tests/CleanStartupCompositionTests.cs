@@ -3,6 +3,58 @@ namespace Deep.Client.Maui.Clean.Tests;
 public sealed class CleanStartupCompositionTests
 {
     [Fact]
+    public async Task AndroidKeyboardUsesActualServiceStateAndRejectsAmbiguousInput()
+    {
+        // Parsed production function with synthetic dumps only, not physical evidence.
+        var script = Path.Combine(FindRepository(), "eng", "Invoke-PhysicalDid2AccountProbeAndroid.ps1");
+        var source = File.ReadAllText(script);
+        Assert.Contains("@('shell', 'dumpsys', 'input_method')", source);
+        Assert.Contains("$imeShowing = Get-ProbeImeShowing $inputMethod", source);
+        Assert.Contains("ImeShowing=$imeShowing", source);
+        Assert.Contains("keyboardShown=$imeShowing", source);
+        Assert.DoesNotContain("($focus -match 'mImeShowing=true')", source);
+        Assert.True(source.IndexOf("throw 'The exact DID2 package does not own the foreground window.'", StringComparison.Ordinal) <
+            source.IndexOf("$inputMethod = Invoke-Adb", StringComparison.Ordinal));
+        var start = new System.Diagnostics.ProcessStartInfo("pwsh")
+        { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        start.Environment["DEEP_DIAGNOSTIC_SCRIPT"] = script;
+        const string test = """
+            $ErrorActionPreference='Stop'
+            $tokens=$null;$errors=$null
+            $ast=[Management.Automation.Language.Parser]::ParseFile($env:DEEP_DIAGNOSTIC_SCRIPT,[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { throw 'Parser failed' }
+            $functions=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Get-ProbeImeShowing'},$true))
+            if ($functions.Count -ne 1) { throw 'Function scope failed' }
+            . ([scriptblock]::Create($functions[0].Extent.Text))
+            $prefix='  mShowRequested=false mShowExplicitlyRequested=false mShowForced=false mInputShown='
+            foreach($ending in @("`n", "`r`n")) {
+                if (Get-ProbeImeShowing ("mImeShowing=true`n"+$prefix+'false'+$ending)) { throw 'Stale window flag authorized keyboard dismissal' }
+                if (-not (Get-ProbeImeShowing ("mImeShowing=false`n"+$prefix+'true'+$ending))) { throw 'Actual shown keyboard was ignored' }
+            }
+            foreach($invalid in @('', 'mImeShowing=true', 'mInputShown=false',
+                ($prefix+'unknown'), ($prefix+'false extra'), ($prefix+'false'+"`n"+$prefix+'true'),
+                ($prefix+'false'+"`nprivate mInputShown=false"),
+                ('payload '+$prefix+'false'), ('x'*1048577))) {
+                $seen=$false
+                try { $null=Get-ProbeImeShowing $invalid } catch {
+                    $seen=$true
+                    if ($_.Exception.Message -cne 'DID2 input-method state is unavailable.') { throw 'Diagnostic leaked unapproved input' }
+                }
+                if (-not $seen) { throw 'Unknown or ambiguous service state accepted' }
+            }
+            Write-Output 'passed'
+            """;
+        foreach (var argument in new[] { "-NoProfile", "-Command", test }) start.ArgumentList.Add(argument);
+        using var process = System.Diagnostics.Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+        try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
+        catch { if (!process.HasExited) process.Kill(entireProcessTree: true); throw; }
+        Assert.Equal(string.Empty, (await errors).Trim());
+        Assert.Equal(0, process.ExitCode);
+        Assert.Equal("passed", (await output).Trim());
+    }
+
+    [Fact]
     public void DiagnosticNetworkLifecycleUsesVisibilityAndExposesOnlyClosedReconnectState()
     {
         var app = ReadSource("App.Did2.cs");

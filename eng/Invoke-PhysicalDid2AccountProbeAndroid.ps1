@@ -217,6 +217,21 @@ function Get-ProbeNetworkOutcome([string]$Text) {
     return 'not-observed';
 }
 
+function Get-ProbeImeShowing([string]$InputMethodDump) {
+    # WindowManager's global mImeShowing can remain stale after the IME hides.
+    # Read the actual service input state; unknown/ambiguous formats reject,
+    # never authorize a Back press from a stale WindowManager flag.
+    if ([string]::IsNullOrEmpty($InputMethodDump) -or $InputMethodDump.Length -gt 1048576) {
+        throw 'DID2 input-method state is unavailable.'
+    }
+    $states = [regex]::Matches($InputMethodDump,
+        '(?m)^[ \t]*mShowRequested=(?:true|false)[ \t]+mShowExplicitlyRequested=(?:true|false)[ \t]+mShowForced=(?:true|false)[ \t]+mInputShown=(?<shown>true|false)[ \t]*\r?$')
+    if ($states.Count -ne 1 -or [regex]::Matches($InputMethodDump, '\bmInputShown=').Count -ne 1) {
+        throw 'DID2 input-method state is unavailable.'
+    }
+    return $states[0].Groups['shown'].Value -ceq 'true'
+}
+
 function Read-ProbeUi {
     $focus = Invoke-Adb @('shell', 'dumpsys', 'window') 'DID2 foreground owner'
     $ownedResetDialog = $false
@@ -227,6 +242,8 @@ function Read-ProbeUi {
             throw 'The exact DID2 package does not own the foreground window.'
         }
     }
+    $inputMethod = Invoke-Adb @('shell', 'dumpsys', 'input_method') 'DID2 keyboard state'
+    $imeShowing = Get-ProbeImeShowing $inputMethod
     $raw = Invoke-Adb @('exec-out', 'uiautomator', 'dump', '/dev/tty') 'DID2 UI inspection'
     $start = $raw.IndexOf('<hierarchy', [StringComparison]::Ordinal)
     $end = $raw.LastIndexOf('</hierarchy>', [StringComparison]::Ordinal)
@@ -280,10 +297,10 @@ function Read-ProbeUi {
     $failure = [regex]::Match($text, 'DID2 (BootstrapAuthority|AccountProof|NetworkVerification|PreKeyStaging|PreKeyPublication|ContactPublication|ContactResolution) failed \(([A-Za-z0-9; ]{1,160}|network-(stale-or-fork|history-mismatch|genesis-required|rehydration-mismatch|fork|verification-rejected))\)')
     return [pscustomobject]@{
         Nodes=$nodes
-        ImeShowing=($focus -match 'mImeShowing=true')
+        ImeShowing=$imeShowing
         Summary=[ordered]@{
             controls=$controls
-            keyboardShown=($focus -match 'mImeShowing=true')
+            keyboardShown=$imeShowing
             accountVisible=($text -match '(?m)^deep1[a-z0-9]+$')
             recoveryRetained=($text.Contains('Зашифрованная копия хранится на этом устройстве.'))
             verifying=($text.Contains('Проверяем подписанный каталог и регистрацию'))

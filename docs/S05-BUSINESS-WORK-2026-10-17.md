@@ -350,3 +350,41 @@ bounded source inspection is repeated fresh device-source/retirement/checkpoint
 inventory opening under the held account lease. Keep every actual SQL/native/
 retirement binding and reread; no plaintext cache or time-window extension.
 APK44 remains installed; no diagnostic-only Android rebuild was launched.
+
+### Device-source batch: matching builds and keyboard harness
+
+Windows29 and APK45 were built from MAUI `5b7132d`, Shared `c9fbb0f`,
+Protocol `9d6df07`, native0 with no compiler diagnostics. Receipts are under
+`artifacts/s05-device-source-batch-20261017/{windows-29-build,android-45-build}`.
+Windows apphost SHA256
+`c2b07d5d3640999a1ddcc784f3754e0ef28a7af4f02a7e5a723c9759f12ee6d2`;
+assembly `1cfedd39c468b92f83470dcb31aa4964b65cadf3342e446e22c5ba5d7b1034e3`.
+APK SHA256 `b11ab05e9d8ece0c676df50046cfa39b2f91372fe3423987c7cc39a1069066fb`,
+same pinned signer. Both installed without reset; Windows independently retained
+its identity and encrypted recovery. Android dry201/update202 passed with
+protected-package snapshots unchanged; account/recovery readback on45 is pending.
+
+Windows29 Add selected the actual protected pending request; a separate exact
+Retry reached native Store transport but ended OutcomeUnknown. ContactStartTotal
+65429ms,4 Protect/1615 Unprotect,11204ms protection. Closed client locations:
+PrivacyManagedIngressHttpTransport.ForwardAsync:304,
+OwnedStoreIngress.StoreOnRouteAsync:781, ClientMailboxAdapter.DispatchStoreAsync:887.
+Independent terminal UI was not busy and retained the retry/error. This is not
+delivery, noncommit or a controlled latency comparison. A temporally nearby
+node2 native-deadline at ReadNetworkAsync IL163 is not correlated by identifier;
+its exact awaited stage is not yet mapped. No subsequent blind retry occurred.
+
+Android Settings203/206 refused before tapping because WindowManager reported
+`mImeShowing=true` while input-method service reported `mInputShown=false`.
+Dismiss204 lost QA foreground after Back; it is a failed phase, not successful
+keyboard dismissal. Supported Restart205 returned the QA package without reset.
+The harness now reads one exact, bounded input-service state row after the
+unchanged package-owner check; missing, duplicate or unknown state rejects.
+No raw dump/editor text is recorded and no foreground/typing guard is relaxed.
+Parsed-function true/false/stale/hostile tests and unfiltered MAUI Clean285
+passed/native0/0skip (Windows PowerShell5.1, SDK10.0.301), receipt
+`artifacts/s05-device-source-batch-20261017/harness-clean-01`.
+This is harness source evidence; matching physical reobservation remains open.
+The existing exact ancestor/harness-only provenance exception keeps APK45 tied
+to its actual source, not to an unbuilt application revision. Physical business
+acceptance remains0/4; source full/package qualification is separate.
