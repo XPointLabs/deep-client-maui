@@ -574,3 +574,33 @@ no compiler diagnostics. Includes parsed real PowerShell functions with syntheti
 ADB responses, not device-delivery evidence. Only allowed harness/test/docs
 ancestors may observe the already built APK; the existing Install same-source
 requirement is unchanged. Contacts/text/files/groups remain0/4.
+
+## Actual retained49 receive and Windows33 unknown send
+
+After genuine Install253, installed-byte-guarded Settings255 confirmed retained
+account/recovery and Scroll257 Verified. Chats258/Refresh259 began03:31:20 UTC;
+the terminal event03:32:19 UTC recorded51859ms,0P/301U and29568ms protection.
+The stack reached owned responder preparation and the embedded Hello XUR current
+window check. Therefore final-page local recovery and committed-recipient claim
+verification had passed; atomic receiver consumption, consent and ACK had not.
+Independent Inspect260 confirmed a terminal error, not completion. The earlier
+48 failure is not reused as evidence for this49 attempt.
+
+Windows33 restored the exact existing intent, then its retry03:38:11–03:39:07
+completed the existing owner's terminal-expiry path:55765ms,6P/962U,51487ms
+protection. The UI explicitly closed retries and distinguished a separate new
+Add. That separate Add03:41:40 ended03:43:41 as OutcomeUnknown after120003ms,
+33P/1580U and65139ms protection. This is not proof of noncommit. A later fresh
+independent UI observation showed retained Repeat/StopRetry and Messaging.Error;
+no duplicate Add, reset or new account was performed.
+
+Closed native logs during the fresh-send window show send/cancelled first, then
+MalformedCanonicalBody/ExpiredOrStale ingress and peer headers/status400. These
+are separate observations without identifier-level correlation or a proved
+causal join. The first-reservation120s rule, TLS and peer budgets are unchanged.
+
+[DR-0138](../../docs/survival-program/decisions/DR-0138-expired-authenticated-initial-disposal.md)
+owns the bounded terminal-disposal source correction for the captured expired
+Initial. It creates no live session/contact or new journal generation. The
+matching update and physical receive/ACK/next-poll check are still required.
+Physical acceptance0/4; no release publication or main merge.
