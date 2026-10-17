@@ -604,3 +604,38 @@ owns the bounded terminal-disposal source correction for the captured expired
 Initial. It creates no live session/contact or new journal generation. The
 matching update and physical receive/ACK/next-poll check are still required.
 Physical acceptance0/4; no release publication or main merge.
+
+## Matched expired-Initial update: ACK remains unresolved
+
+Windows34/APK50 build native0 with no compiler diagnostics from MAUI `d0032ab1`,
+Shared `e20f395a`, Protocol `f65666cb`. Windows33 was closed normally;34 launched
+with the retained profile/recovery and Verified. Its actual deployed Shared DLL
+contains the terminal-disposal members. APK50 signer verification and installed
+byte guards passed; APK SHA256
+`09dfde334d0101318ffca96dbe66fb2577d8fe24d1b0a132ac6a6d530f0eeeb2`.
+Install262 retained the account; Settings264 retained recovery and Scroll266
+observed Verified. No reset, production-package mutation or new account.
+
+After the build, an independent point-in-time native read observed3/3
+recovered/privacy-ready/required-terminals-ready. A less complete read during
+the build is retained separately and is not promoted to readiness evidence.
+Refresh268 began04:30:38 UTC and reached `AcknowledgeOwnMailboxAsync`, without
+the old XurWindow failure. It ended04:32:44 UTC as OutcomeUnknown/cancellation:
+119996ms,12P/588U,59510ms protection. Inspect270 independently confirmed terminal
+Messaging.Error/no Busy/no completion. Reaching the ACK owner is not proof of
+quorum completion, dispatch/non-dispatch or the exact protected ACK phase.
+
+One ordinary retained retry271 began04:33:59 UTC, after the existing retry
+lease. It reached managed ingress/owned ACK dispatch, then failed at04:35:27 UTC:
+80855ms,1P/423U,42606ms protection. Inspect272 confirmed terminal error/no Busy.
+No new Add, new read intent, replacement ACK or expiry extension was requested.
+Closed native logs in this window show recipient peer AuthorizationFailed /
+cryptographic-rejection and the forwarding peer's headers/status403. No
+identifier-level correlation or exact rejecting predicate is asserted.
+
+Next: identify the actual native peer authorization predicate and recover the
+exact retained ACK under its legitimate authority. Expired pending/prepared ACK
+remains closed under DR-0137; do not infer noncommit, silently reauthorize or
+clear its page. The source correction is committed/pushed with12 Shared and22
+Protocol focused passes; full/package/frozen input and physical contact/text/
+file/group qualification remain open. Physical0/4; no release/main.
