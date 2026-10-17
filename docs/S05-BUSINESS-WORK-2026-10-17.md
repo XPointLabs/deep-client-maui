@@ -505,3 +505,33 @@ exact-current-placement guard (0PASS/1FAIL/native1). This supports the
 correction but does not prove an identifier-level correlation or every physical
 rejection field. Matching corrected clients, contact consent/text and full
 business acceptance remain open (0/4).
+
+## Captured final-page authority expiry
+
+Matching Windows32/APK48 compiled with native0 and no compiler diagnostics,
+using Protocol `f037637`, Shared `a78d59e` and MAUI `b03c855`. Windows32 retained
+the same account/recovery and reported ReconnectStateVerified. APK48 dry237 and
+update238 retained the account; Settings239/Scroll241 showed recovery/Verified.
+No new Windows send was attempted during these builds.
+
+Android Chats242/Refresh243 reached a different, earlier guard:
+MailboxSyncTotal30923ms,0 Protect/162 Unprotect,16341ms protection;
+MailboxGrantExpiry in RequireIssuerGrant, before the corrected claim verifier.
+Independent Inspect244 observed terminal MessagingError, not synchronization
+completion. DR-0136 has therefore not yet been exercised successfully on the
+physical recipient. Neither account nor its captured page was reset.
+
+[DR-0137](../../docs/survival-program/decisions/DR-0137-captured-final-page-expiry-continuation.md)
+allocates the narrow final-page recovery in Shared: local authenticated capture
+completion is separate from independently current first-ACK authority. Non-final
+pagination, expired prepared ACK and captured ACK-response continuation remain closed, not silently
+accepted. The initial two encrypted source regressions reproduced the old grant
+expiry rejection (red01:0PASS/2FAIL/native1). The corrected source batch passed16
+cases/failed1/native1 because its new exact retry ran before the existing lease
+elapsed. Only the fixture clocks were corrected; final focused06 passed2/native0,
+0skip with no compiler diagnostics. Expired prepared-ACK reauthorization is
+explicitly rejected; a permissive intermediate test transport was removed after
+native-owner review. Full/package/strict-registry and matching device qualification
+are pending. These observations do not establish consent, text, file or group
+delivery, peer quorum causality, full gates or release readiness. Physical0/4;
+S05 remains unaccepted.
