@@ -465,4 +465,11 @@ Matching local Build34/Up35/Verify36 subsequently exited0, preserving all54
 mounts and using all9 desired images. After the node restart, Windows network
 reverification returned Verified without changing identity or recovery. Exact
 retry was clicked at01:21:03Z, with no overlapping heavy build/gate. Its terminal
-result and recipient receipt remain required.
+result:30900ms,3 Protect/1191 Unprotect,8662ms protection, ProtectedState at
+RetainInitialStoreEvidenceUnderLeaseAsync:168 before dispatch. Independent UI
+preserved the retry and showed no Busy state. A native encrypted fixture
+reproduces that guard across an ordinary view renewal; the
+[Shared correction](../../deep-client-shared/docs/testing/s05-logical-grant-custody-2026-10-16.md#2026-10-17-pending-initial-across-ordinary-carriage-renewal)
+passed23 focused source cases, but still needs matching client builds and physical retry. APK46 dry227/Inspect228
+passed provenance/foreground checks, recovery retained and Verified; no reset.
+No recipient receipt or contact/text acceptance follows.
