@@ -424,3 +424,30 @@ compaction's16 part reads and pending payload's floor+18 parts, preserving
 missing/extra/length/hash/owner/cancellation checks and fresh per-call inventory.
 It is not installed or physically qualified here. No timeout/cache/authority
 change, and no additional native Store claim.
+
+### Segmented custody matching builds
+
+Windows30/APK46 built from MAUI `a3fc002`, Shared `94bc6d8`, Protocol `9d6df07`,
+native0 without compiler diagnostics. Receipts:
+`artifacts/s05-segmented-custody-batch-20261017/{windows-30-build,android-46-build}`.
+Windows apphost SHA256 `d9bb32a862f9e7d1f9d1df6d650f899824d2c0c073b7192b574042f30df23bbc`;
+assembly `2171f68afec89e64f3c6b9a920b9154439fa788a71b6c87422e24d27d21abdf9`.
+APK46 SHA256 `be10d91e05b5feff533f8f7697b12aedc042f7c4ba5680309e6b4999e7537b5d`,
+same pinned signer. Windows29 closed normally;30 retained the exact identity,
+encrypted recovery and Verified state. No reset or new account.
+
+Add selected the actual pending command; one separate exact Retry was clicked
+at00:46:33Z. It waited behind background verification until the business delegate
+entered at00:46:54Z. ContactStartTotal114784ms,6 Protect/1353 Unprotect,
+58968ms protection; result OutcomeUnknown at ForwardAsync:304 → SendAsync:75 →
+StoreOnRouteAsync:781 → DispatchStoreAsync:887. Store transport was reached;
+durable storage/recipient receipt is not proven. This attempt overlapped the
+Android46 build and is not a controlled device performance comparison. Future
+Windows business attempts must not overlap heavy host builds/gates.
+
+Before update, APK45 Refresh220→Inspect221 completed without error; closed
+MailboxSyncTotal77176ms,12 Protect/366 Unprotect,35838ms protection. Independent
+list counts again0/0/0. This read predates the Windows30 retry and does not settle
+its uncertainty. APK46 dry222/update223 passed without reset, preserving protected
+packages; Settings224 retained account/recovery and Scroll226 showed Verified.
+No request/accept/text acceptance claimed; physical business acceptance0/4.
