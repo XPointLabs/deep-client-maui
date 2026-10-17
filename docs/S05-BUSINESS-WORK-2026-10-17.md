@@ -473,3 +473,35 @@ reproduces that guard across an ordinary view renewal; the
 passed23 focused source cases, but still needs matching client builds and physical retry. APK46 dry227/Inspect228
 passed provenance/foreground checks, recovery retained and Verified; no reset.
 No recipient receipt or contact/text acceptance follows.
+
+### Matching original-evidence correction: Windows31/APK47
+
+Both builds use MAUI `20b16b2`, Shared `e78290f`, Protocol `9d6df07`, native0
+without compiler diagnostics. Windows apphost SHA256
+`cf74deeaa5676e254f9cdd45ca00f1ce9949fdb1d0f6ad6d7df181206bcc1d8c`;
+assembly `6aa8f6e9f3a02c33af3b90be32a1e5ce3d69806af5ad8230353a4b0e33e3949d`.
+APK SHA256 `db9cabb8b209536aa871bd1b2fa9a6ce9d9087c99c43d2925efec2b23c90b06d`,
+same pinned signer. Receipts:
+`artifacts/s05-pending-initial-view-20261017/{windows-31-build,android-47-build}`.
+Windows30 closed normally;31 retained the exact identity/recovery and reached
+Verified. APK47 dry229/update230 passed without reset; Settings231 retained
+account/recovery and Scroll233 showed Verified. SDK RID-only lock churn was
+reviewed and removed, leaving the original lock bytes unchanged.
+
+Windows31 selected the retained peer intent, then exact Retry at01:41:18Z ended
+OutcomeUnknown after113584ms (4 Protect/1272 Unprotect,63431ms protection) at Store
+transport. Independent UI was terminal, preserved retry and showed no Busy.
+Native node2 reported quorum-not-durable, not the earlier BlobTtl refusal; no
+identifier correlation or proof of noncommit is asserted. Peer rejection cause
+is still unclassified; the fixed120s first-reservation rule is not changed.
+
+APK47 Chats234/Refresh235 -> independent Inspect236 found a terminal error.
+MailboxSyncTotal82640ms,11 Protect/420 Unprotect,42062ms protection. An Initial
+envelope reached Dph2InitialClaimPreview.VerifyCurrentAsync and failed at
+DeepIdV2PreKeyClaimReplicaSignatureVerifier.Reject; it was not promoted or ACKed.
+The owned source regression after ordinary view renewal reproduces the
+exact-current-placement guard (0PASS/1FAIL/native1). This supports the
+[DR-0136](../../docs/survival-program/decisions/DR-0136-committed-claim-original-carriage.md)
+correction but does not prove an identifier-level correlation or every physical
+rejection field. Matching corrected clients, contact consent/text and full
+business acceptance remain open (0/4).
