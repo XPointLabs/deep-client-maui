@@ -451,3 +451,18 @@ list counts again0/0/0. This read predates the Windows30 retry and does not sett
 its uncertainty. APK46 dry222/update223 passed without reset, preserving protected
 packages; Settings224 retained account/recovery and Scroll226 showed Verified.
 No request/accept/text acceptance claimed; physical business acceptance0/4.
+
+After matching native diagnostic activation, Windows30 exact Retry at01:03:41Z
+completed owned expiry (49831ms,6 Protect/926 Unprotect,46119ms protection), with
+no automatic replacement. The separate explicit Add at01:05:48Z ended
+OutcomeUnknown after107650ms (33 Protect/1580 Unprotect,59140ms protection), again
+at actual Store transport. Independent UI showed the retained retry choice,
+terminal error and no Busy state. No reset or further retry followed this
+observation. The node's closed reason is `BlobTtl`; the shipped7-day cap conflicts
+with current30-day object retention. Node fix and its148 focused tests are
+recorded in the [native checkpoint](../../xnode/docs/testing/s05-private-grant-hop-2026-10-16.md).
+Matching local Build34/Up35/Verify36 subsequently exited0, preserving all54
+mounts and using all9 desired images. After the node restart, Windows network
+reverification returned Verified without changing identity or recovery. Exact
+retry was clicked at01:21:03Z, with no overlapping heavy build/gate. Its terminal
+result and recipient receipt remain required.
