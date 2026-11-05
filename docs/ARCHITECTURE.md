@@ -3,7 +3,7 @@
 ## Current composition baseline — 2026-10-03
 
 This is a source-composition description, not release qualification. The
-[workspace audit](../../docs/architecture/ARCHITECTURE-AUDIT-2026-10-03.md) records the
+[current specification](../../docs/architecture/README.md) records the
 cross-repository findings; the
 [implementation plan](../../docs/architecture/IMPLEMENTATION-PLAN-V1.md)
 owns the execution order and acceptance gates. Dated notes below preserve
@@ -239,7 +239,7 @@ certainty from its public constructor. Other mailbox failure categories retain
 generic IO classification. No retry, reset, key repair or transport
 fallback is introduced; this is not physical localization until the rebuilt
 device actually observes a label. The current physical checkpoint is recorded
-in [the workspace evidence](../../docs/DID2-PRODUCTION-DEVICE-CHECKPOINT-2026-10-03.md).
+in [current specification](../../docs/architecture/README.md#acceptance).
 
 ## Publication coordination clean break (2026-10-03)
 
@@ -381,10 +381,10 @@ an extra attempt afterward. A deterministic cancellation/reconnect regression
 preserves the exact two-attempt assertion. Local availability and delivery
 semantics belong to the [normative owner](../../docs/architecture/TRANSPORT-NEUTRAL-MESSAGING.md#31-local-availability-и-delivery-lifecycle);
 test scopes and receipts belong to the
-[Shared checkpoint](../../deep-client-shared/docs/testing/s07-local-history-2026-10-04.md).
+[Shared checkpoint](https://github.com/XPointLabs/deep-client-shared/blob/ac8e049940d9bdda6bdb0368d20ceeb4ebe924ce/docs/testing/s07-local-history-2026-10-04.md).
 
 Local command evidence and exact test counts are in
-[SPRINT-HISTORY](../../docs/SPRINT-HISTORY.md). Windows ARM64 normal and opt-in
+[current specification](../../docs/NEXT-SPRINT.md). Windows ARM64 normal and opt-in
 HTTPS compilation passed without warnings; neither is physical delivery evidence.
 `Invoke-Did2HttpsWindowsBuild.ps1 -CompileOnly` permits a dirty-tree compiler
 check only, never a device-qualified package. Normal `-Execute` still requires

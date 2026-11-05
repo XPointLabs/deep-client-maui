@@ -1,4 +1,6 @@
-﻿# Deep Client MAUI
+# Deep Client MAUI
+
+Current architecture: [Deep / XPoint specification](../docs/architecture/README.md).
 
 `deep-client-maui` contains the .NET MAUI client for Deep over XPoint Network.
 The current application uses the DID2 account graph. Connected contact and
